@@ -16,6 +16,30 @@
 
 #define AUDIO_VOLTAGE  5.f
 
+//
+// Trigger copied from ImpromptuMopdular
+//
+struct Trigger : dsp::SchmittTrigger {
+	// implements a 0.1V - 1.0V SchmittTrigger (see include/dsp/digital.hpp) instead of
+	//   calling SchmittTriggerInstance.process(math::rescale(in, 0.1f, 1.f, 0.f, 1.f))
+	bool process(float in) {
+		if (state) {
+			// HIGH to LOW
+			if (in <= 0.1f) {
+				state = false;
+			}
+		}
+		else {
+			// LOW to HIGH
+			if (in >= 1.0f) {
+				state = true;
+				return true;
+			}
+		}
+		return false;
+	}
+};
+
 struct Fence : Module {
 	//
 	// Module defaults
@@ -121,6 +145,10 @@ struct Fence : Module {
 
 	bool  initialized = false;
 
+	Trigger trgIn;
+	dsp::PulseGenerator trgOutPulse;
+	double sampleTime;
+
 	//
 	// Constructor
 	//
@@ -194,6 +222,8 @@ struct Fence : Module {
 		bool stepChanged      = false;
 		bool modeChanged      = false;
 
+		sampleTime = 1.0 / (double)(APP->engine->getSampleRate());
+
 		//
 		// Initialize Module Params when added to patch
 		//
@@ -241,12 +271,18 @@ struct Fence : Module {
 			initialized = true;
 		}
 
+
 		//
 		// Handle Mode Switch
-		// Ignored if quantized
+		// Implicitly disabeling quantized mode
 		//
 		if (params[MODE_PARAM].getValue () == 1) {
-			if (!modeHold && !quantized) {
+			if (!modeHold) {
+				if (quantized) {
+					quantized = false;
+					lights[QUANTIZE_LIGHT].value = 0;
+					params[H_QUANTIZED_PARAM].setValue (quantized);
+				}
 				mode = !mode;
 				params[H_MODE_PARAM].setValue (mode);
 				modeChanged = true;
@@ -271,10 +307,15 @@ struct Fence : Module {
 		//
 		//
 		// Handle Quantize Switch
-		// Ignored when mode is audio
+		// Implicitly disabeling audio mode
 		//
 		if (params[QUANTIZE_PARAM].getValue () == 1) {
-			if (!quantizedHold && !(mode == MODE_AUDIO)) {
+			if (!quantizedHold) {
+				if (mode == MODE_AUDIO) {
+					mode = MODE_NORMAL;
+					lights[MODE_LIGHT].value = 0;
+					params[H_MODE_PARAM].setValue (mode);
+				}
 				quantized = !quantized;
 				params[H_QUANTIZED_PARAM].setValue (quantized);
 				quantizedChanged = true;
@@ -467,7 +508,18 @@ struct Fence : Module {
 		//
 		// Process cvIn
 		//
-		cvIn = inputs[CV_INPUT].getVoltage ();
+		//
+		// Check for Input Trigger 
+		//
+		bool trgInConnected = inputs[TRG_INPUT].isConnected ();
+		bool gotInTrg = false;
+		if (trgInConnected) {
+		       	if ((gotInTrg = trgIn.process(inputs[TRG_INPUT].getVoltage()))) 
+				cvIn = inputs[CV_INPUT].getVoltage ();
+		}
+		else {
+			cvIn = inputs[CV_INPUT].getVoltage ();
+		}
 		if (cvIn != oldCvIn || highChanged || lowChanged || quantizedChanged || stepChanged || modeChanged) {
 			cvOut = cvIn;
 			float effectiveLow = low;
@@ -535,7 +587,7 @@ struct Fence : Module {
 				// Now we check whether cvIn + effectiveStep would match
 				//
 				float altCv = cvOut - 1 + effectiveStep;
-				printf("effectiveLow = %f, altCv = %f\n",effectiveLow,altCv);
+				// printf("effectiveLow = %f, altCv = %f\n",effectiveLow,altCv);
 				if (altCv >= effectiveLow && altCv <= effectiveHigh)
 					cvOut = altCv;
 				else
@@ -554,15 +606,25 @@ struct Fence : Module {
 				cvOut *= 2 * AUDIO_VOLTAGE / absRange;
 			}
 
-			//
-			// Set cvOut
-			//
-			if (cvOut != oldCvOut) {
-				outputs[CV_OUTPUT].setVoltage (cvOut);
-				oldCvOut = cvOut;
+			if (!trgInConnected || gotInTrg) {
+				//
+				// Set cvOut
+				//
+				if (cvOut != oldCvOut) {
+					//
+					// Send a trigger on change of cv out
+					//
+					trgOutPulse.trigger(0.001f);
+					outputs[CV_OUTPUT].setVoltage (cvOut);
+					oldCvOut = cvOut;
+				}
+				oldCvIn = cvIn;
 			}
-			oldCvIn = cvIn;
 		}
+		//
+		// Trigger 
+		//
+		outputs[TRG_OUTPUT].setVoltage(trgOutPulse.process((float)sampleTime) ? 10.0f : 0.0f);
 	}
 };
 
@@ -675,13 +737,13 @@ struct FenceWidget : ModuleWidget {
 		addChild (FenceWidget::createVOctWidget (mm2px (Vec(5.09 - 2, 128.5 -  71.267 + 0.25 )), pStepValue, Fence::defaultStep, pQuantized, Fence::defaultQuantized, TYPE_STEP));
 
 		addParam (createParamCentered<LEDButton>		(mm2px (Vec (12.858 + 2.38, 128.5 - 88.900 - 2.38)), module, Fence::LINK_PARAM));
- 		addChild (createLightCentered<LargeLight<BlueLight>>	(mm2px (Vec (12.858 + 2.38, 128.5 - 88.900 - 2.38)), module, Fence::LINK_LIGHT));
+ 		addChild (createLightCentered<LargeLight<GreenLight>>	(mm2px (Vec (12.858 + 2.38, 128.5 - 88.900 - 2.38)), module, Fence::LINK_LIGHT));
 		
 		addParam (createParamCentered<LEDButton>		(mm2px (Vec (20.638 + 2.38, 128.5 - 56.525 - 2.38)), module, Fence::QUANTIZE_PARAM));
- 		addChild (createLightCentered<LargeLight<BlueLight>>	(mm2px (Vec (20.638 + 2.38, 128.5 - 56.525 - 2.38)), module, Fence::QUANTIZE_LIGHT));
+ 		addChild (createLightCentered<LargeLight<GreenLight>>	(mm2px (Vec (20.638 + 2.38, 128.5 - 56.525 - 2.38)), module, Fence::QUANTIZE_LIGHT));
 		
 		addParam (createParamCentered<LEDButton>		(mm2px (Vec (20.638 + 2.38, 128.5 - 48.577 - 2.38)), module, Fence::MODE_PARAM));
- 		addChild (createLightCentered<LargeLight<RedLight>>	(mm2px (Vec (20.638 + 2.38, 128.5 - 48.577 - 2.38)), module, Fence::MODE_LIGHT));
+ 		addChild (createLightCentered<LargeLight<GreenLight>>	(mm2px (Vec (20.638 + 2.38, 128.5 - 48.577 - 2.38)), module, Fence::MODE_LIGHT));
 
 		addInput (createInputCentered<PJ301MPort>		(mm2px (Vec ( 4.049 + 4.2 , 128.5 - 82.947 - 4.2)),  module, Fence::LOW_INPUT));
 		addInput (createInputCentered<PJ301MPort>		(mm2px (Vec (18.019 + 4.2 , 128.5 - 82.947 - 4.2)),  module, Fence::HIGH_INPUT));
