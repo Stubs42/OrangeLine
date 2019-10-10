@@ -166,12 +166,12 @@ struct Fence : Module {
 		//
 		// GUI Parameters
 		//
-		configParam (          LOW_PARAM,  -10.f, 10.f,    0.f, "Lower Bound");
-		configParam (         HIGH_PARAM,  -10.f, 10.f, 0.916f, "Upper Bound");
+		configParam (          LOW_PARAM,        -10.f, 10.f,    0.f, "Lower Bound");
+		configParam (         HIGH_PARAM,        -10.f, 10.f, 0.916f, "Upper Bound");
 		configParam (         STEP_PARAM, MIN_VOCTSTEP, 10.f,    1.f, "Step");
-		configParam (     QUANTIZE_PARAM,    0.f,  1.f,    0.f, "Toggle Quantize On/Off");
-		configParam (         LINK_PARAM,    0.f,  1.f,    0.f, "Toggle Link Range On/Off");
-		configParam (         MODE_PARAM,    0.f,  1.f,    0.f, "Change Mode");
+		configParam (     QUANTIZE_PARAM,          0.f,  1.f,    0.f, "Toggle Quantize On/Off");
+		configParam (         LINK_PARAM,          0.f,  1.f,    0.f, "Toggle Link Range On/Off");
+		configParam (         MODE_PARAM,          0.f,  1.f,    0.f, "Change Mode");
 	}
 
 	//
@@ -282,6 +282,7 @@ struct Fence : Module {
 					quantized = false;
 					lights[QUANTIZE_LIGHT].value = 0;
 					params[H_QUANTIZED_PARAM].setValue (quantized);
+					configParam (STEP_PARAM, MIN_VOCTSTEP, 10.f, 1.f, "Step");
 				}
 				mode = !mode;
 				params[H_MODE_PARAM].setValue (mode);
