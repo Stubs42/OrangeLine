@@ -14,4 +14,9 @@ Modules not marked as beta will maintained in a backward compatible way if possi
 <p align="center"><img src="res/FenceWork.svg"></p>
 
 Fence is a helpful modul to keep a cv in a certain range if possible.
+
+This module is still in early development and may underly some changes in user interface and functionality.
+
+Trigger functionaty is not yet implemented, so the TRG IN and OUT sockets don't have any functionality yet.
+
 More Documentation still to come...
