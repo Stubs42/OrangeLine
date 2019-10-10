@@ -1,0 +1,28 @@
+{
+  "slug": "OrangeLine",
+  "name": "OrangeLine",
+  "version": "1.0.0",
+  "license": "AGPL",
+  "brand": "",
+  "author": "Dieter Stubler",
+  "authorEmail": "dieter.stubler@googlemail.com",
+  "authorUrl": "",
+  "pluginUrl": "",
+  "manualUrl": "",
+  "sourceUrl": "",
+  "donateUrl": "",
+  "modules": [
+    {
+      "slug": "Fence",
+      "name": "Fence",
+      "description": "Keep CVs in a defined pitch range",
+      "tags": [
+        "Quantizer",
+        "Tuner",
+        "Utility",
+	"Distorsion",
+	"WaveShaper"
+      ]
+    }
+  ]
+}
