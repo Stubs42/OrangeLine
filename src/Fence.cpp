@@ -873,13 +873,23 @@ struct Fence : Module {
 
 	unsigned long determineEffectiveStep (unsigned long changeBits) {
 		//
-		// knob setting is ignored by overwriting effectiveStep, if step cv in is connected
+		// if step cv in is connected, the step knob will handled differently in the raw/qtz/ahpr modes
+		// in QTZ mode step knob is a positive offset to the stepCv in
+		// in RAW and SHPR mode it is used as an attenuator
 		//
 		if (CHG_STEP | CHG_MODE | CHG_STEP_CV) {
 			effectiveStep = step;
-			if (inputs[STEP_INPUT].isConnected ())
-				// Use stepCvIn only if step cv is connected
-				effectiveStep = stepCvIn;
+			if (inputs[STEP_INPUT].isConnected ()) {
+				switch (int(mode)) {
+				case int(MODE_RAW):
+				case int(MODE_SHPR):
+					effectiveStep = (step / 10.f) * stepCvIn;
+					break;
+				case int(MODE_QTZ):
+					effectiveStep = step + stepCvIn;
+					break;
+				}
+			}
 		}
 		if (mode == MODE_QTZ)
 			effectiveStep = note (effectiveStep);
