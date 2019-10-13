@@ -589,7 +589,7 @@ struct Fence : Module {
 
 	unsigned long processHighCvIn (float value) {
 		if (highCvIn != value) {
-			lowCvIn = value;
+			highCvIn = value;
 			return CHG_HIGH_CV;
 		}
 		return 0x0;
@@ -597,6 +597,7 @@ struct Fence : Module {
 
 	unsigned long processStepCvIn (float value) {
 		if (stepCvIn != value) {
+			stepCvIn = value;
 			return CHG_STEP_CV;
 		}
 		return 0;
@@ -604,6 +605,7 @@ struct Fence : Module {
 
 	unsigned long processCvIn (float value) {
 		if (cvIn != value) {
+			cvIn = value;
 			return CHG_CV;
 		}
 		return 0x0;
@@ -626,7 +628,7 @@ struct Fence : Module {
 		// StepCvIn
 		//
 		if (inputs[STEP_INPUT].isConnected ())
-			changeBits |= processHighCvIn (inputs[STEP_INPUT].getVoltage ());
+			changeBits |= processStepCvIn (inputs[STEP_INPUT].getVoltage ());
 		//
 		// cvIn
 		//
