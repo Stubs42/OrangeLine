@@ -3,56 +3,9 @@
 
 #include "plugin.hpp"
 
-#define RANGE_MIN -10
-#define RANGE_MAX  10
-
-#define MIN_VOCTSTEP  0.001f
-
-#define TYPE_VOCT 1
-#define TYPE_STEP 2
-
-#define MODE_NORMAL false
-#define MODE_AUDIO  true
-
-#define AUDIO_VOLTAGE  5.f
-
-//
-// Trigger copied from ImpromptuMopdular
-//
-struct Trigger : dsp::SchmittTrigger {
-	// implements a 0.1V - 1.0V SchmittTrigger (see include/dsp/digital.hpp) instead of
-	//   calling SchmittTriggerInstance.process(math::rescale(in, 0.1f, 1.f, 0.f, 1.f))
-	bool process(float in) {
-		if (state) {
-			// HIGH to LOW
-			if (in <= 0.1f) {
-				state = false;
-			}
-		}
-		else {
-			// LOW to HIGH
-			if (in >= 1.0f) {
-				state = true;
-				return true;
-			}
-		}
-		return false;
-	}
-};
+#include "Fence.hpp"
 
 struct Fence : Module {
-	//
-	// Module defaults
-	//
-	static constexpr float defaultHigh = 11. / 12;
-	static constexpr float defaultLow  = 0;
-	static constexpr float defaultLinked = true;
-	static constexpr float defaultQuantized = true;
-	static constexpr float defaultMode = MODE_NORMAL;
-
-	static constexpr float defaultVOctStep = 1.;
-	static constexpr float defaultQtzStep = 0.;
-	static constexpr float defaultStep = defaultQtzStep;
 
 	// 
 	// Static function to quantize a cv to a semitone value
@@ -71,463 +24,926 @@ struct Fence : Module {
 	}
 
 	//
-	// VCV Component Ids
+	// Parameter Ids
 	//
 	enum ParamIds {
-		H_INITIALIZED_PARAM,
-		H_QUANTIZED_PARAM,
-		H_MODE_PARAM,
-		H_LINKED_PARAM,
-		H_VOCTSTEP_PARAM,
-		H_QTZSTEP_PARAM,
-		HIGH_PARAM,
-		LOW_PARAM,
-		LINK_PARAM,
-		QUANTIZE_PARAM,
-		MODE_PARAM,
-		STEP_PARAM,
+		//
+		// Parameters not bound to any user interface component to save internal module state
+		//
+		H_INITIALIZED_PARAM,	// We store here whether this module has been initialized after adding it to a patch
+
+		H_MODE_PARAM,			// Mode qtz/shpr/raw
+		
+		H_LOW_RAW_PARAM,		// knob values for min/max/step and link setting for raw mode (quantize and shpr off)
+		H_HIGH_RAW_PARAM,
+		H_LINK_RAW_PARAM,
+		H_STEP_RAW_PARAM,
+		
+		H_LOW_QTZ_PARAM,		// knob values for min/max/step and link setting for qtz mode (quantize on and shpr off)
+		H_HIGH_QTZ_PARAM,
+		H_LINK_QTZ_PARAM,
+		H_STEP_QTZ_PARAM,
+
+		H_LOW_SHPR_PARAM,		// knob values for min/max/step and link setting for shpr mode (quantize off and shpr on)
+		H_HIGH_SHPR_PARAM,
+		H_LINK_SHPR_PARAM,
+		H_STEP_SHPR_PARAM,
+
+		H_LOWCLAMPED_PARAM,
+		H_HIGHCLAMPED_PARAM,
+
+		// Reserved Parameter Ids to keep backward compatibility with future releases
+		// H_RESERVED_1, H_RESERVED_2 used up 
+		H_RESERVED_3, H_RESERVED_4, H_RESERVED_5, H_RESERVED_6, H_RESERVED_7, H_RESERVED_8,
+		
+		//
+		// Paramater for user interface components
+		//
+		LOW_PARAM,				// Range Low Knob
+		HIGH_PARAM,				// Range High Knob
+		LINK_PARAM,				// Range Link Button
+		QTZ_PARAM,				// Quantize Button
+		SHPR_PARAM,				// Shpr Button (Audio Mode)
+		STEP_PARAM,				// Step Knob
+		
+		// Reserved Parameter Ids to keep backward compatibility with future releases
+		P_RESERVED_1, P_RESERVED_2, P_RESERVED_3, P_RESERVED_4, P_RESERVED_5, P_RESERVED_6, P_RESERVED_7, P_RESERVED_8,
+		
 		NUM_PARAMS
 	};
+
+	//
+	// Input Ids
+	//
 	enum InputIds {
-		HIGH_INPUT,
-		LOW_INPUT,
-		CV_INPUT,
-		STEP_INPUT,
-		TRG_INPUT,
+		LOW_INPUT,				// Range Low CV Input
+		HIGH_INPUT,				// Range High CV Input
+		STEP_INPUT,				// Step CV Input
+		TRG_INPUT,				// Trigger Input
+		CV_INPUT,				// Cv In to process
+
+		// Reserved Parameter Ids to keep backward compatibility with future releases
+		I_RESERVED_1, I_RESERVED_2, I_RESERVED_3, I_RESERVED_4, I_RESERVED_5, I_RESERVED_6, I_RESERVED_7, I_RESERVED_8,
+
 		NUM_INPUTS
 	};
+
+	//
+	// Output Ids
+	//
 	enum OutputIds {
-		CV_OUTPUT,
-		TRG_OUTPUT,
+		TRG_OUTPUT,				// Trigger output for signaling Cv Out changes
+		CV_OUTPUT,				// Cv Out
+
+		// Reserved Parameter Ids to keep backward compatibility with future releases
+		O_RESERVED_1, O_RESERVED_2, O_RESERVED_3, O_RESERVED_4, O_RESERVED_5, O_RESERVED_6, O_RESERVED_7, O_RESERVED_8,
+
 		NUM_OUTPUTS
 	};
+
+	//
+	// Ligh Ids
+	//
 	enum LightIds {
-		QUANTIZE_LIGHT,
-		MODE_LIGHT,
-		LINK_LIGHT,
+		QTZ_LIGHT,				// Light indicating quantized mode
+		SHPR_LIGHT,				// Light indicating shpr (Audio mode)
+		LINK_LIGHT,				// Light indicating range min/max linkage
+
+		// Reserved Parameter Ids to keep backward compatibility with future releases
+		L_RESERVED_1, L_RESERVED_2, L_RESERVED_3, L_RESERVED_4, L_RESERVED_5, L_RESERVED_6, L_RESERVED_7, L_RESERVED_8,
+
 		NUM_LIGHTS
 	};
 	//
-	// Module State
+	// Cache Params as local variables to avoid getValue() calls where possible
 	//
-	bool  mode = defaultMode;
-	bool  oldMode = mode;
-	bool  modeHold = false;
+	float mode = DEFAULT_MODE;
+	float oldMode = mode;
 
-	bool  quantized = defaultQuantized;
-	bool  oldQuantized = quantized;
-	bool  quantizedHold = false;
+	float low  = (mode == MODE_QTZ ? Fence::quantize ( DEFAULT_LOW_QTZ) : (mode == MODE_SHPR ?  DEFAULT_LOW_SHPR :  DEFAULT_LOW_RAW));
+	float high = (mode == MODE_QTZ ? Fence::quantize (DEFAULT_HIGH_QTZ) : (mode == MODE_SHPR ? DEFAULT_HIGH_SHPR : DEFAULT_HIGH_RAW));
+	bool  link = (mode == MODE_QTZ ?                  DEFAULT_LINK_QTZ  : (mode == MODE_SHPR ? DEFAULT_LINK_SHPR : DEFAULT_LINK_RAW));
+	float step = (mode == MODE_QTZ ? Fence::quantize (DEFAULT_STEP_QTZ) : (mode == MODE_SHPR ? DEFAULT_STEP_SHPR : DEFAULT_STEP_RAW));
 
-	bool  linked = defaultLinked;
-	bool  oldLinked = linked;
-	bool  linkedHold = false;
+	//
+	// Input values and their old values from Inputs to detect changes	
+    //
+	float cvIn = 0;
+	float lowCvIn = 0;
+	float highCvIn = 0;
+	float stepCvIn = 0;
 
-	float high = quantized ? Fence::quantize (defaultHigh) : defaultHigh;
-	float oldHigh = high;
+	//
+	// Sum of low knob and lowCvIn
+	//
+    float effectiveLow = low;
+    float oldEffectiveLow = effectiveLow;
+	//
+	// Sum of high knob and highCvIn
+	//
+    float effectiveHigh = high;
+    float oldEffectiveHigh = effectiveHigh;
 
-	float low = quantized ? Fence::quantize (defaultLow)  : defaultLow;
-	float oldLow = low;
+	//
+	// Old value of cvOut to detect changes for triggering trgOut
+	//
+	float oldCvOut = 0;
 
-	float vOctStep = defaultVOctStep;
-	float qtzStep = defaultQtzStep;
-	float step = defaultStep;
-	float oldStep = step;
+	// 
+	// distance used to link low and high buttons
+	//
+	float linkDelta = high - low;
+	bool lowClamped = false;
+	bool highClamped = false;
+
 	float effectiveStep = step;
 	float oldEffectiveStep = effectiveStep;
 
-	float cvIn = 0;
-	float oldCvIn = 0;
-
-	float cvOut = 0;
-	float oldCvOut = 0;
-
-	float linkDelta = high - low;
-
-	bool  initialized = false;
-
+	//
+	// Triggers for Trigger Inputs
+	//
 	Trigger trgIn;
+
+	//
+	// Triggers for Buttons
+	//
+	Trigger btnQtz;
+	Trigger btnLink;
+	Trigger btnShpr;
+
 	dsp::PulseGenerator trgOutPulse;
 	double sampleTime;
+
+	unsigned long changeBits = CHG_ALL;
+
+	//
+	// remember whether we are already initialized after (re)loading
+	//
+	bool initialized = false;
+
+	bool presetLoaded = false;
+	//
+	// initialize param configs
+	//
+	void initParamConfig() {
+		float minValue;
+		float maxValue;
+		float defaultValue;
+
+		//
+		// Config internal Parameters not bound to a user interface object
+		//
+		configParam (H_INITIALIZED_PARAM,           0.f,           1.f,                0.f, "");
+
+		configParam (       H_MODE_PARAM,      MODE_MIN,      MODE_MAX,       DEFAULT_MODE, "");
+
+		configParam (    H_LOW_RAW_PARAM,   LOW_MIN_RAW,   LOW_MAX_RAW,    DEFAULT_LOW_RAW, "");
+		configParam (   H_HIGH_RAW_PARAM,  HIGH_MIN_RAW,  HIGH_MAX_RAW,   DEFAULT_HIGH_RAW, "");
+		configParam (   H_LINK_RAW_PARAM,           0.f,           1.f,   DEFAULT_LINK_RAW, "");
+		configParam (   H_STEP_RAW_PARAM,  STEP_MIN_RAW,  STEP_MAX_RAW,   DEFAULT_STEP_RAW, "");
+
+		configParam (    H_LOW_QTZ_PARAM,   LOW_MIN_QTZ,   LOW_MAX_QTZ,    DEFAULT_LOW_QTZ, "");
+		configParam (   H_HIGH_QTZ_PARAM,  HIGH_MIN_QTZ,  HIGH_MAX_QTZ,   DEFAULT_HIGH_QTZ, "");
+		configParam (   H_LINK_QTZ_PARAM,           0.f,           1.f,   DEFAULT_LINK_QTZ, "");
+		configParam (   H_STEP_QTZ_PARAM,  STEP_MIN_QTZ,  STEP_MAX_QTZ,   DEFAULT_STEP_QTZ, "");
+
+		configParam (   H_LOW_SHPR_PARAM,  LOW_MIN_SHPR,  LOW_MAX_SHPR,   DEFAULT_LOW_SHPR, "");
+		configParam (  H_HIGH_SHPR_PARAM, HIGH_MIN_SHPR, HIGH_MAX_SHPR,  DEFAULT_HIGH_SHPR, "");
+		configParam (  H_LINK_SHPR_PARAM,           0.f,           1.f,  DEFAULT_LINK_SHPR, "");
+		configParam (  H_STEP_SHPR_PARAM, STEP_MIN_SHPR,  STEP_MAX_RAW,  DEFAULT_STEP_SHPR, "");
+
+		configParam (H_HIGHCLAMPED_PARAM,           0.f,           1.f,                0.f, "");
+		configParam ( H_LOWCLAMPED_PARAM,           0.f,           1.f,                0.f, "");
+
+		//
+		// GUI Parameters
+		//
+		minValue     = (mode == MODE_QTZ ?     LOW_MIN_QTZ : (mode == MODE_SHPR ?       LOW_MIN_SHPR : LOW_MIN_RAW)); 
+		maxValue     = (mode == MODE_QTZ ?     LOW_MAX_QTZ : (mode == MODE_SHPR ?       LOW_MAX_SHPR : LOW_MAX_RAW));
+
+		defaultValue = (mode == MODE_QTZ ? DEFAULT_LOW_QTZ : (mode == MODE_SHPR ?   DEFAULT_LOW_SHPR : DEFAULT_LOW_RAW));
+
+		configParam (          LOW_PARAM,     minValue,       maxValue,       defaultValue, "Lower Bound");
+
+		// min/max are the same as for LOW_PARAM
+		defaultValue = (mode == MODE_QTZ ? DEFAULT_HIGH_QTZ : (mode == MODE_SHPR ? DEFAULT_HIGH_SHPR : DEFAULT_HIGH_RAW));
+
+		configParam (         HIGH_PARAM,     minValue,       maxValue,       defaultValue, "Upper Bound");
+
+		minValue     = (mode == MODE_QTZ ?     STEP_MIN_QTZ : (mode == MODE_SHPR ?     STEP_MIN_SHPR : STEP_MIN_RAW)); 
+		maxValue     = (mode == MODE_QTZ ?     STEP_MAX_QTZ : (mode == MODE_SHPR ?     STEP_MAX_SHPR : STEP_MAX_RAW));
+		defaultValue = (mode == MODE_QTZ ? DEFAULT_STEP_QTZ : (mode == MODE_SHPR ? DEFAULT_STEP_SHPR : DEFAULT_STEP_RAW));
+
+		configParam (         STEP_PARAM,      minValue,      maxValue,       defaultValue, "Step");
+		
+		configParam (          QTZ_PARAM,           0.f,           1.f,                0.f, "Toggle Quantize On/Off");
+		configParam (         LINK_PARAM,           0.f,           1.f,                0.f, "Toggle Link Range On/Off");
+		configParam (         SHPR_PARAM,           0.f,           1.f,                0.f, "Toggle Shpr On/Off");
+	}
+
+	//
+	// initialize hidden parameter values not reset by Rack itself as it does with ui components like knobs
+	// and local variables whenuser choses initialize from right click menu
+	//
+	void initializeFromMenu () {
+
+		params[H_INITIALIZED_PARAM].setValue(               1.0f);
+
+		params[       H_MODE_PARAM].setValue(       DEFAULT_MODE);
+		
+		params[    H_LOW_RAW_PARAM].setValue(    DEFAULT_LOW_RAW);
+		params[   H_HIGH_RAW_PARAM].setValue(   DEFAULT_HIGH_RAW);
+		params[   H_LINK_RAW_PARAM].setValue(   DEFAULT_LINK_RAW);
+		params[   H_STEP_RAW_PARAM].setValue(   DEFAULT_STEP_RAW);
+
+		params[    H_LOW_QTZ_PARAM].setValue(    DEFAULT_LOW_QTZ);
+		params[   H_HIGH_QTZ_PARAM].setValue(   DEFAULT_HIGH_QTZ);
+		params[   H_LINK_QTZ_PARAM].setValue(   DEFAULT_LINK_QTZ);
+		params[   H_STEP_QTZ_PARAM].setValue(   DEFAULT_STEP_QTZ);
+
+		params[   H_LOW_SHPR_PARAM].setValue(   DEFAULT_LOW_SHPR);
+		params[  H_HIGH_SHPR_PARAM].setValue(  DEFAULT_HIGH_SHPR);
+		params[  H_LINK_SHPR_PARAM].setValue(  DEFAULT_LINK_SHPR);
+		params[  H_STEP_SHPR_PARAM].setValue(  DEFAULT_STEP_SHPR);
+
+		params[H_HIGHCLAMPED_PARAM].setValue(                0.f);
+		params[ H_LOWCLAMPED_PARAM].setValue(                0.f);
+
+		mode = DEFAULT_MODE;
+		oldMode = mode;
+
+		low  = (mode == MODE_QTZ ? Fence::quantize ( DEFAULT_LOW_QTZ) : (mode == MODE_SHPR ?  DEFAULT_LOW_SHPR :  DEFAULT_LOW_RAW));
+		high = (mode == MODE_QTZ ? Fence::quantize (DEFAULT_HIGH_QTZ) : (mode == MODE_SHPR ? DEFAULT_HIGH_SHPR : DEFAULT_HIGH_RAW));
+		link = (mode == MODE_QTZ ?                  DEFAULT_LINK_QTZ  : (mode == MODE_SHPR ? DEFAULT_LINK_SHPR : DEFAULT_LINK_RAW));
+		step = (mode == MODE_QTZ ? Fence::quantize (DEFAULT_STEP_QTZ) : (mode == MODE_SHPR ? DEFAULT_STEP_SHPR : DEFAULT_STEP_RAW));
+
+		cvIn = 0;
+		lowCvIn = 0;
+		highCvIn = 0;
+		stepCvIn = 0;
+
+    	effectiveLow = low;
+    	oldEffectiveLow = effectiveLow;
+    	effectiveHigh = high;
+    	oldEffectiveHigh = effectiveHigh;
+
+		oldCvOut = 0;
+
+		linkDelta = high - low;
+		lowClamped = false;
+		highClamped = false;
+
+		effectiveStep = step;
+		oldEffectiveStep = effectiveStep;
+
+		changeBits = CHG_ALL;
+
+		// module initialize still has to be done
+		initialized = false;
+	}
 
 	//
 	// Constructor
 	//
 	Fence () {
 		config (NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		//
-		// Hidden Memory
-		//
-		configParam (H_INITIALIZED_PARAM,   0.f,     1.f, 0.f,    "");
-		configParam (  H_QUANTIZED_PARAM,   0.f,     1.f, 0.f,    "");
-		configParam (     H_LINKED_PARAM,   0.f,     1.f, 0.f,    "");
-		configParam (       H_MODE_PARAM,   0.f,     1.f, 0.f,    "");
-		configParam (    H_QTZSTEP_PARAM,   0.f,     1.f, 0.916f, "");
-		configParam (   H_VOCTSTEP_PARAM,   MIN_VOCTSTEP, 10.f, 1.f,    "");
-		//
-		// GUI Parameters
-		//
-		configParam (          LOW_PARAM,        -10.f, 10.f,    0.f, "Lower Bound");
-		configParam (         HIGH_PARAM,        -10.f, 10.f, 0.916f, "Upper Bound");
-		configParam (         STEP_PARAM, MIN_VOCTSTEP, 10.f,    1.f, "Step");
-		configParam (     QUANTIZE_PARAM,          0.f,  1.f,    0.f, "Toggle Quantize On/Off");
-		configParam (         LINK_PARAM,          0.f,  1.f,    0.f, "Toggle Link Range On/Off");
-		configParam (         MODE_PARAM,          0.f,  1.f,    0.f, "Change Mode");
+		initParamConfig();
 	}
 
 	//
-	// Change Range Knobs Value Range depending on Mode
+	// Function to switch between raw/qtz/shpr modes
 	//
-	void setRange() {
-		float tmp;
-		if (mode == MODE_AUDIO) {
-			if (high > AUDIO_VOLTAGE) {
-				high = AUDIO_VOLTAGE;
+	void setMode (int newMode) {
+		switch (newMode) {
+			case int(MODE_RAW):
+				low  = params[  H_LOW_RAW_PARAM].getValue ();
+				high = params[ H_HIGH_RAW_PARAM].getValue ();
+				step = params[ H_STEP_RAW_PARAM].getValue ();
+				link = params[ H_LINK_RAW_PARAM].getValue ();
+				configParam ( LOW_PARAM,  LOW_MIN_RAW,   LOW_MAX_RAW,   DEFAULT_LOW_RAW, "Lower Bound");
+				configParam (HIGH_PARAM, HIGH_MIN_RAW,  HIGH_MAX_RAW,  DEFAULT_HIGH_RAW, "Upper Bound");
+				configParam (STEP_PARAM, STEP_MIN_RAW,  STEP_MAX_RAW,  DEFAULT_STEP_RAW, "Step");
+				params[ LOW_PARAM].setValue (low);
 				params[HIGH_PARAM].setValue (high);
-			}
-			tmp = high;
-			configParam (HIGH_PARAM, -AUDIO_VOLTAGE, AUDIO_VOLTAGE, AUDIO_VOLTAGE, "High");
-			params[HIGH_PARAM].setValue (tmp);
+				params[STEP_PARAM].setValue (step);
+				lights[ QTZ_LIGHT].value = 0;
+				lights[SHPR_LIGHT].value = 0;
+				break;
+			case int(MODE_QTZ):
+				low  = params[  H_LOW_QTZ_PARAM].getValue ();
+				high = params[ H_HIGH_QTZ_PARAM].getValue ();
+				step = params[ H_STEP_QTZ_PARAM].getValue ();
+				link = params[ H_LINK_QTZ_PARAM].getValue ();
 
-			if (low < -AUDIO_VOLTAGE) {
-				low = -AUDIO_VOLTAGE;
+				configParam ( LOW_PARAM,  LOW_MIN_QTZ,   LOW_MAX_QTZ,   DEFAULT_LOW_QTZ, "Lower Bound");
+				configParam (HIGH_PARAM, HIGH_MIN_QTZ,  HIGH_MAX_QTZ,  DEFAULT_HIGH_QTZ, "Upper Bound");
+				configParam (STEP_PARAM, STEP_MIN_QTZ,  STEP_MAX_QTZ,  DEFAULT_STEP_QTZ, "Step");
+				params[ LOW_PARAM].setValue (low);
+				params[HIGH_PARAM].setValue (high);
+				params[STEP_PARAM].setValue (step);
+				lights[ QTZ_LIGHT].value = 1.f;
+				lights[SHPR_LIGHT].value = 0.f;
+				break;
+			case int(MODE_SHPR):
+				low  = params[ H_LOW_SHPR_PARAM].getValue ();
+				high = params[H_HIGH_SHPR_PARAM].getValue ();
+				step = params[H_STEP_SHPR_PARAM].getValue ();
+				link = params[H_LINK_SHPR_PARAM].getValue ();
+				configParam ( LOW_PARAM,  LOW_MIN_SHPR,  LOW_MAX_SHPR,  DEFAULT_LOW_SHPR, "Lower Bound");
+				configParam (HIGH_PARAM, HIGH_MIN_SHPR, HIGH_MAX_SHPR, DEFAULT_HIGH_SHPR, "Upper Bound");
+				configParam (STEP_PARAM, STEP_MIN_SHPR, STEP_MAX_SHPR, DEFAULT_STEP_SHPR, "Step");
+				params[ LOW_PARAM].setValue (low);
+				params[HIGH_PARAM].setValue (high);
+				params[STEP_PARAM].setValue (step);
+				lights[ QTZ_LIGHT].value = 0.f;
+				lights[SHPR_LIGHT].value = 1.f;
+				break;
+		}
+
+		lights[LINK_LIGHT].value = link;
+
+		lowClamped = false;
+		params[H_LOWCLAMPED_PARAM].setValue(0.f);
+		highClamped = false;
+		params[H_HIGHCLAMPED_PARAM].setValue(0.f);
+
+		mode = oldMode = newMode;
+		if (params[H_MODE_PARAM].getValue () != mode)
+			params[H_MODE_PARAM].setValue (float(mode));
+	}
+
+	//
+	// Callback for RightClick initialize
+	//
+	void onReset () override {
+		initializeFromMenu ();
+	}
+
+	//
+	// Method to initialize the module when added to a patch
+	// Currently does nothing maybe remove later
+	//
+	unsigned long initNew (unsigned long changeBits) {
+		if (params[H_INITIALIZED_PARAM].getValue () == 1.f) 
+			// already initialized, nothing to do
+			return changeBits;
+
+		params[H_INITIALIZED_PARAM].setValue (1.f);
+		return changeBits;
+	}
+
+	//
+	// Method to initialize the module when loading a patch
+	//
+	unsigned long postLoad (unsigned long changeBits) {
+		if (!initialized || presetLoaded) {
+			//
+			// Restore params for active mode
+			//
+			setMode (params[H_MODE_PARAM].getValue ());
+
+			lowClamped  = (params[ H_LOWCLAMPED_PARAM].getValue () > 0.f);
+			highClamped = (params[H_HIGHCLAMPED_PARAM].getValue () > 0.f);	
+
+			presetLoaded = false;
+			initialized = true;
+		}
+		return changeBits;
+	}
+
+	unsigned long processLow (float value, bool doSetParam) {
+		if (low != value) {
+			//
+			// Save low value for active mode
+			//
+			switch (int(mode)) {
+				case int(MODE_RAW):
+					params[H_LOW_RAW_PARAM].setValue (value);
+					break;
+				case int(MODE_QTZ):
+					params[H_LOW_QTZ_PARAM].setValue (value);
+					break;
+				case int(MODE_SHPR):
+					params[H_LOW_SHPR_PARAM].setValue (value);
+					break;
+			}
+
+			low = value;
+
+			//
+			// when called from a foreign change handler we have to set the param
+			// 
+			if (doSetParam) {
 				params[LOW_PARAM].setValue (low);
 			}
-			tmp = low;
-			configParam (LOW_PARAM, -AUDIO_VOLTAGE, AUDIO_VOLTAGE, -AUDIO_VOLTAGE, "Low");
-			params[LOW_PARAM].setValue (tmp);
+
+			return CHG_LOW;
 		}
-		else {
-			tmp = low;
-			params[LOW_PARAM].setValue (tmp-0.001f);
-			configParam (LOW_PARAM,  -10.f, 10.f,    0.f, "Lower Bound");
-			params[LOW_PARAM].setValue (tmp);
-			tmp = high;
-			params[HIGH_PARAM].setValue (tmp-0.001f);
-			if (quantized)
-				configParam (HIGH_PARAM,  -10.f, 10.f, 0.916f, "Upper Bound");
+		return 0;
+	}
+
+	unsigned long processHigh (float value, bool doSetParam) {
+		if (high != value) {
+			//
+			// Save high value for active mode
+			//
+			switch (int(mode)) {
+				case int(MODE_RAW):
+					params[H_HIGH_RAW_PARAM].setValue (value);
+					break;
+				case int(MODE_QTZ):
+					params[H_HIGH_QTZ_PARAM].setValue (value);
+					break;
+				case int(MODE_SHPR):
+					params[H_HIGH_SHPR_PARAM].setValue (value);
+					break;
+			}
+			high = value;
+
+			//
+			// when called from a foreign change handler we have to set the param
+			// 
+			if (doSetParam)
+				params[HIGH_PARAM].setValue (high);
+
+			return CHG_HIGH;
+		}
+		return 0;
+	}
+
+	unsigned long processStep(float value, bool doSetParam) {
+		//
+		// Save step value for active mode
+		//
+		if (step != value) {
+			switch (int(mode)) {
+				case int(MODE_RAW):
+					params[H_STEP_RAW_PARAM].setValue (value);
+					break;
+				case int(MODE_QTZ):
+					params[H_STEP_QTZ_PARAM].setValue (value);
+					break;
+				case int(MODE_SHPR):
+					params[H_STEP_SHPR_PARAM].setValue (value);
+					break;
+			}
+			step = value;
+
+			//
+			// when called from a foreign change handler we have to set the param
+			// 
+			if (doSetParam)
+				params[STEP_PARAM].setValue (high);
+
+			return CHG_STEP;
+		}
+		return 0;
+	}
+
+	//
+	// Method to check for user interactions
+	//
+	unsigned long checkUserInteraction (unsigned long changeBits) {
+		//
+		// Check for qtz button click
+		//
+		if (btnQtz.process (params[QTZ_PARAM].getValue ())) {
+			if (mode != MODE_QTZ)
+				mode = MODE_QTZ;
 			else
-				configParam (HIGH_PARAM,  -10.f, 10.f, 1.f, "Upper Bound");
-			params[HIGH_PARAM].setValue (tmp);
+				mode = MODE_RAW;
+
+			changeBits |= CHG_MODE;
 		}
+
+		//
+		// Check for shpr button click
+		//
+		if (btnShpr.process (params[SHPR_PARAM].getValue ())) {
+			if (mode != MODE_SHPR)
+				mode = MODE_SHPR;
+			else
+				mode = MODE_RAW;
+
+			changeBits |= CHG_MODE;
+		}
+
+		//
+		// Check for link button click
+		//
+		if (btnLink.process (params[LINK_PARAM].getValue ())) {
+			float value;
+			
+			link = !link;
+			
+			if (link)
+				value = 1.f;
+			else
+				value = 0.f;
+
+			lights[LINK_LIGHT].value = value;
+
+			//
+			// Save link state for active mode
+			//			
+			switch(int(mode)) {
+				case int(MODE_RAW):
+					params[H_LINK_RAW_PARAM].setValue (value);
+					break;
+				case int(MODE_QTZ):
+					params[H_LINK_QTZ_PARAM].setValue (value);
+					break;
+				case int(MODE_SHPR):
+					params[H_LINK_SHPR_PARAM].setValue (value);
+					break;
+			}
+
+			changeBits |= CHG_LINK;
+		}
+
+		//
+		// Get low from knob
+		//
+		changeBits |=  processLow (params[ LOW_PARAM].getValue (), false);
+
+		//
+		// Get high from knob
+		//
+		changeBits |= processHigh (params[HIGH_PARAM].getValue (), false);
+
+		//
+		// Get step from knob
+		//
+		changeBits |= processStep (params[STEP_PARAM].getValue (), false);
+
+		return changeBits;
+	}
+
+	unsigned long processLowCvIn (float value) {
+		if (lowCvIn != value) {
+			lowCvIn = value;
+			return CHG_LOW_CV;
+		}
+		return 0x0;
+	}
+
+	unsigned long processHighCvIn (float value) {
+		if (highCvIn != value) {
+			lowCvIn = value;
+			return CHG_HIGH_CV;
+		}
+		return 0x0;
+	}
+
+	unsigned long processStepCvIn (float value) {
+		if (stepCvIn != value) {
+			return CHG_STEP_CV;
+		}
+		return 0;
+	}
+
+	unsigned long processCvIn (float value) {
+		if (cvIn != value) {
+			return CHG_CV;
+		}
+		return 0x0;
+	}
+	//
+	// Method to check for input changes
+	//
+	unsigned long checkInputs (unsigned long changeBits) {
+		//
+		// LowCvIn
+		//
+		if (inputs[LOW_INPUT].isConnected ())
+			changeBits |= processLowCvIn (inputs[LOW_INPUT].getVoltage ());
+		//
+		// HighCvIn
+		//
+		if (inputs[HIGH_INPUT].isConnected ())
+			changeBits |= processHighCvIn (inputs[HIGH_INPUT].getVoltage ());
+		//
+		// StepCvIn
+		//
+		if (inputs[STEP_INPUT].isConnected ())
+			changeBits |= processHighCvIn (inputs[STEP_INPUT].getVoltage ());
+		//
+		// cvIn
+		//
+		if (inputs[CV_INPUT].isConnected ())
+			changeBits |= processCvIn (inputs[CV_INPUT].getVoltage ());
+
+		return changeBits;
+	}
+
+	//
+	// Method to retrieve minimum low value for mode
+	//
+	float getMinLow () {
+		float minValue = 0;
+		switch (int(mode)) {
+			case int(MODE_RAW):
+				minValue = LOW_MIN_RAW;
+				break;
+			case int(MODE_SHPR):
+				minValue = LOW_MIN_SHPR;
+				break;
+			case int(MODE_QTZ):
+				minValue = LOW_MIN_QTZ;
+				break;
+		}
+		return minValue;
+	}
+
+	//
+	// Method to retrieve maximum low value for mode
+	//
+	float getMaxLow () {
+		float maxValue = 0;
+		switch (int(mode)) {
+			case int(MODE_RAW):
+				maxValue = LOW_MAX_RAW;
+				break;
+			case int(MODE_SHPR):
+				maxValue = LOW_MAX_SHPR;
+				break;
+			case int(MODE_QTZ):
+				maxValue = LOW_MAX_QTZ;
+				break;
+		}
+		return maxValue;
+	}
+
+	//
+	// Method to retrieve minimum high value for mode
+	//
+	float getMinHigh () {
+		float minValue = 0;
+		switch (int(mode)) {
+			case int(MODE_RAW):
+				minValue = HIGH_MIN_RAW;
+				break;
+			case int(MODE_SHPR):
+				minValue = HIGH_MIN_SHPR;
+				break;
+			case int(MODE_QTZ):
+				minValue = HIGH_MIN_QTZ;
+				break;
+		}
+		return minValue;
+	}
+
+	//
+	// Method to retrieve maximum low value for mode
+	//
+	float getMaxHigh () {
+		float maxValue = 0;
+		switch (int(mode)) {
+			case int(MODE_RAW):
+				maxValue = HIGH_MAX_RAW;
+				break;
+			case int(MODE_SHPR):
+				maxValue = HIGH_MAX_SHPR;
+				break;
+			case int(MODE_QTZ):
+				maxValue = HIGH_MAX_QTZ;
+				break;
+		}
+		return maxValue;
+	}
+
+	//
+	// Method to retrieve minimum step value for mode
+	//
+	float getMinStep () {
+		float minValue = 0;
+		switch (int(mode)) {
+			case int(MODE_RAW):
+				minValue = STEP_MIN_RAW;
+				break;
+			case int(MODE_SHPR):
+				minValue = STEP_MIN_SHPR;
+				break;
+			case int(MODE_QTZ):
+				minValue = STEP_MIN_QTZ;
+				break;
+		}
+		return minValue;
+	}
+
+	//
+	// Method to retrieve maximum step value for mode
+	//
+	float getMaxStep () {
+		float maxValue = 0;
+		switch (int(mode)) {
+			case int(MODE_RAW):
+				maxValue = STEP_MAX_RAW;
+				break;
+			case int(MODE_SHPR):
+				maxValue = STEP_MAX_SHPR;
+				break;
+			case int(MODE_QTZ):
+				maxValue = STEP_MAX_QTZ;
+				break;
+		}
+		return maxValue;
+	}
+
+	float getLowClamped (float value) {
+		float lowClamped = value;
+		float minValue = getMinLow ();
+		float maxValue = getMaxLow ();
+		if (value < minValue) lowClamped = minValue;
+		if (value > maxValue) lowClamped = maxValue;
+		return lowClamped;
+	}
+
+	float getHighClamped (float value) {
+		float highClamped = value;
+		float minValue = getMinHigh ();
+		float maxValue = getMaxHigh ();
+		if (value < minValue) highClamped = minValue;
+		if (value > maxValue) highClamped = maxValue;
+		return highClamped;
+	}
+
+	float getEffectiveStepClamped (float value) {
+		float stepClamped = value;
+		float minValue = getMinStep ();
+		float maxValue = getMaxStep ();
+		if (value < minValue) stepClamped = minValue;
+		if (value > maxValue) stepClamped = maxValue;
+		return stepClamped;
+	}
+
+	//
+	// Method to determine new effective low value	
+	//
+	unsigned long determineEffectiveLow (unsigned long changeBits) {
+		//
+		// Calculate effective low value	
+		//
+		if (changeBits & (CHG_LOW | CHG_LOW_CV | CHG_MODE)) {
+			effectiveLow = getLowClamped (low + lowCvIn);
+
+			if (effectiveLow != oldEffectiveLow) {
+				oldEffectiveLow = effectiveLow;
+				changeBits |= CHG_EFF_LOW;
+			}
+		}
+		return changeBits;
+	}
+
+	//
+	// Method to determine new effective high value	
+	//
+	unsigned long determineEffectiveHigh (unsigned long changeBits) {
+		//
+		// Calculate effective high value	
+		//
+		if (changeBits & (CHG_HIGH | CHG_HIGH_CV | CHG_MODE)) {
+			effectiveHigh = getHighClamped (high + highCvIn);
+
+			if (effectiveHigh != oldEffectiveHigh) {
+				oldEffectiveHigh = effectiveHigh;
+				changeBits |= CHG_EFF_HIGH;
+			}
+		}
+		return changeBits;
+	}
+
+	unsigned long doLink (unsigned long changeBits) {
+		float clamped;
+
+		if (!link) return changeBits;
+
+		if (changeBits & CHG_LOW && lowClamped) {
+			lowClamped = false;
+			params[H_LOWCLAMPED_PARAM].setValue (0.f);
+			linkDelta = high - low;
+		}
+
+		if (changeBits & CHG_HIGH && highClamped) {
+			highClamped = false;
+			params[H_HIGHCLAMPED_PARAM].setValue (0.f);
+			linkDelta = high - low;
+		}
+
+		if (changeBits & CHG_LOW) {
+			float newHigh = low + linkDelta;
+
+			if ((clamped = getHighClamped (newHigh)) < newHigh) {
+				highClamped = true;
+				params[H_HIGHCLAMPED_PARAM].setValue(1.f);
+			}
+			newHigh = clamped;
+
+			if (newHigh != high)
+				changeBits |= processHigh (newHigh, true);
+		}
+
+		if (changeBits & CHG_HIGH) {
+			float newLow = high - linkDelta;
+
+			if ((clamped = getLowClamped (newLow)) > newLow) {
+				lowClamped = true;
+				params[H_LOWCLAMPED_PARAM].setValue(1.f);
+			}
+			newLow = clamped;
+
+			if (newLow != low)
+				changeBits |= processLow(newLow, true);
+		}
+
+		return changeBits;
+	}
+
+	unsigned long forceLowLeHigh (unsigned long changeBits) {
+		if (changeBits & CHG_LOW && low > high)
+			changeBits |= processHigh (low, true);
+
+		if (changeBits & CHG_HIGH && low > high)
+			changeBits |= processLow (high, true);
+
+		return changeBits;
+	}
+
+	unsigned long determineEffectiveStep (unsigned long changeBits) {
+		//
+		// knob setting is ignored by overwriting effectiveStep, if step cv in is connected
+		//
+		if (CHG_STEP | CHG_MODE | CHG_STEP_CV) {
+			effectiveStep = step;
+			if (inputs[STEP_INPUT].isConnected ())
+				// Use stepCvIn only if step cv is connected
+				effectiveStep = stepCvIn;
+		}
+		if (mode == MODE_QTZ)
+			effectiveStep = note (effectiveStep);
+
+		effectiveStep = getEffectiveStepClamped (effectiveStep);
+
+		if (effectiveStep != oldEffectiveStep) {
+			oldEffectiveStep = effectiveStep;
+			changeBits |= CHG_EFF_STEP;
+		}
+
+		return changeBits;
 	}
 
 	//
 	// Process Step
 	//
 	void process (const ProcessArgs &args) override {
-		bool highChanged      = false;
-		bool lowChanged       = false;
-		bool quantizedChanged = false;
-		bool linkedChanged    = false;
-		bool stepChanged      = false;
-		bool modeChanged      = false;
+		unsigned long changeBits = 0x0;
 
-		sampleTime = 1.0 / (double)(APP->engine->getSampleRate());
+		sampleTime = 1.0 / (double)(APP->engine->getSampleRate ());
 
-		//
-		// Initialize Module Params when added to patch
-		//
-		if (params[H_INITIALIZED_PARAM].getValue () == 0) {
-			params[HIGH_PARAM].setValue (high);
-			highChanged = true;
-			params[LOW_PARAM].setValue (low);
-			lowChanged = true;
-			params[STEP_PARAM].setValue (step);
-			stepChanged = true;
-			lights[QUANTIZE_LIGHT].value = quantized ? 1. : 0.;
-			quantizedChanged = true;
-			lights[LINK_LIGHT].value = linked ? 1. : 0.;
-			linkedChanged = true;
-			params[H_QUANTIZED_PARAM].setValue (quantized);
-			params[H_LINKED_PARAM].setValue (linked);
-			params[H_QTZSTEP_PARAM].setValue (qtzStep);
-			params[H_VOCTSTEP_PARAM].setValue (vOctStep);
-			params[H_MODE_PARAM].setValue (mode);
+		changeBits = initNew (changeBits);
+		changeBits = postLoad (changeBits);
+		changeBits = checkUserInteraction (changeBits);
+		changeBits = checkInputs (changeBits);
+		changeBits = doLink (changeBits);
+		changeBits = forceLowLeHigh (changeBits);
 
-			params[H_INITIALIZED_PARAM].setValue (1);
-		}
+		if (changeBits & CHG_MODE)
+			setMode (mode);
+
+		changeBits = determineEffectiveLow  (changeBits);
+		changeBits = determineEffectiveHigh (changeBits);
+		changeBits = determineEffectiveStep (changeBits);
 
 		//
-		// Initialize Module after add to patch or reload
+		// Set linkDelta if link is switched on
 		//
-		if (!initialized) {
-			mode = oldMode = params[H_MODE_PARAM].getValue ();
-			modeChanged = true;
-
-			quantized = oldQuantized = params[H_QUANTIZED_PARAM].getValue ();
-			quantizedChanged = true;
-
-			setRange();
-
-			if (quantized)
-				oldStep = step = qtzStep = params[H_QTZSTEP_PARAM].getValue ();
-			else
-				oldStep = step = vOctStep = params[H_VOCTSTEP_PARAM].getValue ();
-			stepChanged = true;
-
-			linked = oldLinked = params[H_LINKED_PARAM].getValue ();
-			linkedChanged = true;
-
-			initialized = true;
-		}
-
-
-		//
-		// Handle Mode Switch
-		// Implicitly disabeling quantized mode
-		//
-		if (params[MODE_PARAM].getValue () == 1) {
-			if (!modeHold) {
-				if (quantized) {
-					quantized = false;
-					lights[QUANTIZE_LIGHT].value = 0;
-					params[H_QUANTIZED_PARAM].setValue (quantized);
-					configParam (STEP_PARAM, MIN_VOCTSTEP, 10.f, 1.f, "Step");
-				}
-				mode = !mode;
-				params[H_MODE_PARAM].setValue (mode);
-				modeChanged = true;
-				modeHold = true;
-			}
-		}
-		else
-			modeHold = false;
-
-		if (modeChanged) {
-			if (mode) {
-				lights[MODE_LIGHT].value = 1;
-
-			}
-			else {
-			 	lights[MODE_LIGHT].value = 0;
-			}
-			params[H_MODE_PARAM].setValue(mode);
-			setRange();
-			modeChanged = true;
-		}
-		//
-		//
-		// Handle Quantize Switch
-		// Implicitly disabeling audio mode
-		//
-		if (params[QUANTIZE_PARAM].getValue () == 1) {
-			if (!quantizedHold) {
-				if (mode == MODE_AUDIO) {
-					mode = MODE_NORMAL;
-					lights[MODE_LIGHT].value = 0;
-					params[H_MODE_PARAM].setValue (mode);
-				}
-				quantized = !quantized;
-				params[H_QUANTIZED_PARAM].setValue (quantized);
-				quantizedChanged = true;
-				quantizedHold = true;
-			}
-		}
-		else
-			quantizedHold = false;
-
-		if (quantizedChanged) {
-			if (quantized) {
-				oldStep = step = qtzStep;
-				configParam (STEP_PARAM, 0.f, (1.f / 12) * 11, 0.f, "Step");
-				lights[QUANTIZE_LIGHT].value = 1;
-				low  = quantize (low);
-				high = quantize (high);
-			}
-			else {
-				oldStep = step = vOctStep;
-				configParam (STEP_PARAM, MIN_VOCTSTEP, 10.f, 1.f, "Step");
-			 	lights[QUANTIZE_LIGHT].value = 0;
-				low  = params[LOW_PARAM].getValue ();
-				high = params[LOW_PARAM].getValue ();
-			}
-			params[STEP_PARAM].setValue(step);
-			setRange();
-			stepChanged = true;
-		}
-
-		//
-		// Get high from knob
-		//
-		high = params[HIGH_PARAM].getValue ();
-
-		//
-		// Add high input if connected
-		//
-		if (inputs[HIGH_INPUT].isConnected ())
-			high += inputs[HIGH_INPUT].getVoltage ();
-
-		//
-		// Handle high change
-		//
-		if (quantized)
-			high = quantize (high);
-
-		if (high != oldHigh) {
-			if (linked) {
-				low = high - linkDelta;
-
-				if (quantized)
-					low = quantize(low);
-
-				if (mode == MODE_AUDIO) {
-					if (low < -AUDIO_VOLTAGE)
-						low = -AUDIO_VOLTAGE;
-					else if (low > AUDIO_VOLTAGE)
-						low = AUDIO_VOLTAGE;
-				}
-				else {
-					if (low < RANGE_MIN)
-						low = RANGE_MIN;
-					else if (low > RANGE_MAX)
-						low = RANGE_MAX;
-				}
-
-				params[LOW_PARAM].setValue (low);
-			}
-			else {
-				if (high < low) {
-					low = high;
-					params[LOW_PARAM].setValue (low);
-				}
-			}
-			oldHigh = high;
-			highChanged = true;
-		}
-
-		//
-		// Get low from knob
-		//
-		low = params[LOW_PARAM].getValue();
-
-		//
-		// Add low input if connected
-		//
-		if (inputs[LOW_INPUT].isConnected ())
-			low += inputs[LOW_INPUT].getVoltage ();
-
-		//
-		// Handle low change
-		//
-		if (quantized)
-			low = quantize (low);
-
-		if (low != oldLow) {
-			if (linked) {
-				high = low + linkDelta;
-
-				if (quantized)
-					high = quantize(high);
-
-				if (mode == MODE_AUDIO) {
-					if (high < -AUDIO_VOLTAGE)
-						high = -AUDIO_VOLTAGE;
-					else if (high > AUDIO_VOLTAGE)
-						high = AUDIO_VOLTAGE;
-				}
-				else {
-					if (high < RANGE_MIN)
-						high = RANGE_MIN;
-					else if (high > RANGE_MAX)
-						high = RANGE_MAX;
-				}
-
-				params[HIGH_PARAM].setValue (high);
-			}
-			else {
-				if (low > high) {
-					high = low;
-					params[HIGH_PARAM].setValue (high);
-				}
-			}
-			oldLow = low;
-			lowChanged = true;
-		}
-
-		//
-		// Handle Link Switch
-		//
-		if (params[LINK_PARAM].getValue () == 1) {
-			if (!linkedHold) {
-				linked = !linked;
-				params[H_LINKED_PARAM].setValue (linked);
-				linkedChanged = true;
-				linkedHold = true;
-			}
-		}
-		else
-			linkedHold = false;
-
-		if (linkedChanged) {
-			if (linked) {
-				lights[LINK_LIGHT].value = 1;
+		if (changeBits & CHG_LINK) {
+			if (link)
 				linkDelta = high - low;
-			}
-			else {
-			 	lights[LINK_LIGHT].value = 0;
-			}
-		}
-
-		//
-		// Get step from knob
-		//
-		step = params[STEP_PARAM].getValue();
-
-		//
-		// Handle step change
-		//
-		if (quantized) {
-			qtzStep = step = note (step);
-			if (step != oldStep)
-				params[H_QTZSTEP_PARAM].setValue (qtzStep);
-		}
-		else {
-			vOctStep = step;
-			if (step != oldStep)
-				params[H_VOCTSTEP_PARAM].setValue (vOctStep);
-		}
-		effectiveStep = step;
-
-		//
-		// knob setting is ignored by overwriting effectiveStep, if step cv in is connected
-		//
-		if (inputs[STEP_INPUT].isConnected ()) {
-			effectiveStep = inputs[STEP_INPUT].getVoltage ();
-			if (quantized)
-				effectiveStep = note (effectiveStep); 
 			else
-				if (effectiveStep < MIN_VOCTSTEP)
-					effectiveStep = MIN_VOCTSTEP;
+				lowClamped = highClamped = false;
 		}
-		if (effectiveStep != oldEffectiveStep) {
-			oldEffectiveStep = effectiveStep;
-			stepChanged = true;
-		}
-		if (effectiveStep <= 0)
-			effectiveStep = MIN_VOCTSTEP;
 
 		//
 		// Process cvIn
 		//
+		float cvOut = oldCvOut;
+
 		//
-		// Check for Input Trigger 
+		// Check for Input Trigger
+		// When trigger in is not connected we work like we would get a trigger for each process call
 		//
-		bool trgInConnected = inputs[TRG_INPUT].isConnected ();
-		bool gotInTrg = false;
-		if (trgInConnected) {
-		       	if ((gotInTrg = trgIn.process(inputs[TRG_INPUT].getVoltage()))) 
-				cvIn = inputs[CV_INPUT].getVoltage ();
+		bool gotInTrg = true;
+		if (inputs[TRG_INPUT].isConnected ()) {
+			gotInTrg = trgIn.process (inputs[TRG_INPUT].getVoltage ());
 		}
-		else {
-			cvIn = inputs[CV_INPUT].getVoltage ();
-		}
-		if (cvIn != oldCvIn || highChanged || lowChanged || quantizedChanged || stepChanged || modeChanged) {
+
+		if (gotInTrg && (changeBits & (CHG_CV | CHG_LOW | CHG_HIGH | CHG_STEP | CHG_MODE))) {
 			cvOut = cvIn;
-			float effectiveLow = low;
-			float effectiveHigh = high;
+
 			float realStep = effectiveStep;
 
-			if (quantized)
+			if (mode == MODE_QTZ)
 				cvOut = quantize (cvIn);
 
 			//
@@ -535,7 +951,7 @@ struct Fence : Module {
 			// low and high is clamped to +-AUDIO_VOLTAGE 
 			//
 			float absRange = 0;
-			if (mode == MODE_AUDIO) {
+			if (mode == MODE_SHPR) {
 				if (effectiveLow < -AUDIO_VOLTAGE)
 					effectiveLow = -AUDIO_VOLTAGE;
 				if (effectiveLow > AUDIO_VOLTAGE)
@@ -548,52 +964,52 @@ struct Fence : Module {
 				absRange = effectiveHigh - effectiveLow;
 				if (absRange < 0)
 					absRange *= -1.f;
-				if (absRange < 2 * MIN_VOCTSTEP) {
-					absRange = 2 * MIN_VOCTSTEP;
-					effectiveLow  -= MIN_VOCTSTEP;
-					effectiveHigh += MIN_VOCTSTEP;
+				if (absRange < 2 * STEP_MIN_SHPR) {
+					absRange = 2 * STEP_MIN_SHPR;
+					effectiveLow  -= STEP_MIN_SHPR;
+					effectiveHigh += STEP_MIN_SHPR;
 				}
 				if (realStep > absRange)
 					realStep = absRange;
 			}
 
 			if (cvOut > effectiveHigh) {
-				if (quantized) {
-					cvOut -= floor(cvOut - effectiveHigh);
+				if (mode == MODE_QTZ) {
+					cvOut -= floor (cvOut - effectiveHigh);
 					if (cvOut > effectiveHigh)
 						cvOut -= 1.;
 				}
 				else {
-					cvOut -= floor((cvOut - effectiveHigh) / realStep) * realStep;
+					cvOut -= floor ((cvOut - effectiveHigh) / realStep) * realStep;
 					if (cvOut > effectiveHigh)
 						cvOut -= realStep;
 				}
 			}
+
 			if (cvOut < effectiveLow) {
-				if (quantized) {
-					cvOut += floor(effectiveLow - cvOut);
+				if (mode == MODE_QTZ) {
+					cvOut += floor (effectiveLow - cvOut);
 					if (cvOut < effectiveLow)
 						cvOut += 1.;
 				}
 				else {
-					cvOut += floor((effectiveLow - cvOut) / realStep) * realStep;
+					cvOut += floor ((effectiveLow - cvOut) / realStep) * realStep;
 					if (cvOut < effectiveLow)
 						cvOut += realStep;
 				}
 			}
 
-			if (quantized && cvOut > effectiveHigh) {
+			if (mode == MODE_QTZ && cvOut > effectiveHigh) {
 				//
 				// We didn't find the same note in our range
 				// Now we check whether cvIn + effectiveStep would match
 				//
 				float altCv = cvOut - 1 + effectiveStep;
-				// printf("effectiveLow = %f, altCv = %f\n",effectiveLow,altCv);
 				if (altCv >= effectiveLow && altCv <= effectiveHigh)
 					cvOut = altCv;
 				else
 					//
-					// Alternative note does note match also
+					// Alternative note does note match also, we use altCv anyway if altCv is vetter than cvOut
 					// 
 					if (cvIn > effectiveHigh && altCv > effectiveHigh && altCv < cvIn)
 						cvOut = altCv;
@@ -602,12 +1018,12 @@ struct Fence : Module {
 			//
 			// In audio mode we rescale the output so that range is mapped to -5, +5V
 			//
-			if (mode == MODE_AUDIO) {
+			if (mode == MODE_SHPR) {
 				cvOut -=  effectiveHigh - absRange / 2.f;
 				cvOut *= 2 * AUDIO_VOLTAGE / absRange;
 			}
 
-			if (!trgInConnected || gotInTrg) {
+			if (gotInTrg) {
 				//
 				// Set cvOut
 				//
@@ -615,17 +1031,26 @@ struct Fence : Module {
 					//
 					// Send a trigger on change of cv out
 					//
-					trgOutPulse.trigger(0.001f);
+					trgOutPulse.trigger (0.001f);
 					outputs[CV_OUTPUT].setVoltage (cvOut);
 					oldCvOut = cvOut;
 				}
-				oldCvIn = cvIn;
 			}
 		}
 		//
 		// Trigger 
 		//
-		outputs[TRG_OUTPUT].setVoltage(trgOutPulse.process((float)sampleTime) ? 10.0f : 0.0f);
+		outputs[TRG_OUTPUT].setVoltage (trgOutPulse.process ((float)sampleTime) ? 10.0f : 0.0f);
+	}
+
+	json_t *dataToJson() override {
+		json_t *rootJ = json_object();
+		json_object_set_new(rootJ, "dummy", json_integer(42));
+		return rootJ;
+	}
+
+	void dataFromJson(json_t *rootJ) override {
+		presetLoaded = true;
 	}
 };
 
@@ -641,8 +1066,7 @@ struct VOctWidget : TransparentWidget {
 
 	float *pValue = NULL;
 	float  defaultValue = 0;
-	bool  *pQuantized = NULL;
-	bool   defaultQuantized = true;
+	float *pMode = NULL;
 	char   str[8]; // Space for 7 Chars
 	int    type = TYPE_VOCT;
 	//
@@ -662,15 +1086,15 @@ struct VOctWidget : TransparentWidget {
 	// else the cv is displayed as float with a maximum of 7 chars in the format '-99.999'
 	// If not in the range [-10,10] the string 'ERROR' will be
 	//
-	static char* cv2Str (char *pStr, float cv, bool quantized, int type) {
+	static char* cv2Str (char *pStr, float cv, float mode, int type) {
 		if (cv < -10. || cv > 10.) {
 			strcpy (pStr, "ERROR");
 		}
 		else {
-			if (quantized) {
+			if (mode == MODE_QTZ) {
 				if (type == TYPE_VOCT) {
 					float octave = floor (cv);
-					int note = round ((cv - octave) * 12);
+					int note = int(round ((cv - octave) * 12)) % 12;
 					sprintf (pStr, " %c%c%2.0f", notes[note], sharps[note], octave + 4);
 				}
 				if (type == TYPE_STEP) {
@@ -689,15 +1113,15 @@ struct VOctWidget : TransparentWidget {
 		nvgFontSize (drawArgs.vg, 18);
 		nvgFillColor (drawArgs.vg, nvgRGB(255, 102, 0)); // Orange
 
-		float    value = pValue     != NULL ? *pValue     : defaultValue;
-		bool quantized = pQuantized != NULL ? *pQuantized : defaultQuantized;
+		float value = pValue != NULL ? *pValue : defaultValue;
+		float mode  = pMode  != NULL ? *pMode  : DEFAULT_MODE;
 
 		float xOffset = 0;
-		if (quantized) {
+		if (mode == MODE_QTZ) {
 			xOffset = mm2px (2.25);
 		}
 
-		nvgText (drawArgs.vg, xOffset, 0, cv2Str (str, value, quantized, type), NULL);
+		nvgText (drawArgs.vg, xOffset, 0, cv2Str (str, value, mode, type), NULL);
 	}
 };
 
@@ -706,14 +1130,13 @@ struct FenceWidget : ModuleWidget {
 	//
 	// create and initialize a note display widget
 	//
-	static VOctWidget* createVOctWidget(Vec pos, float *pValue, float defaultValue, bool *pQuantized, bool defaultQuantized, int type) {
+	static VOctWidget* createVOctWidget(Vec pos, float *pValue, float defaultValue, float *pMode, int type) {
 		VOctWidget *w = new VOctWidget ();
 
 		w->box.pos = pos;
 		w->pValue = pValue;
 		w->defaultValue = defaultValue;
-		w->pQuantized = pQuantized;
-		w->defaultQuantized = defaultQuantized;
+		w->pMode = pMode;
 		w->type = type;
 
 		return w;
@@ -728,23 +1151,33 @@ struct FenceWidget : ModuleWidget {
 		addParam (createParamCentered<RoundBlackKnob>		(mm2px (Vec ( 3.276 + 5,    128.5 - 92.970 - 5)),    module, Fence::LOW_PARAM));
 		addParam (createParamCentered<RoundBlackKnob>		(mm2px (Vec ( 3.276 + 5,    128.5 - 57.568 - 5)),    module, Fence::STEP_PARAM));
 
-		float *pHighValue = module != NULL ? &(module->high)       : NULL;
-		float *pLowValue  = module != NULL ? &(module->low)        : NULL;
-		bool  *pQuantized = module != NULL ? &(module->quantized)  : NULL;
-		float *pStepValue = module != NULL ? &(module->step)       : NULL;
+		float *pHighValue = (module != NULL ? &(module->high) : NULL);
+		float *pLowValue  = (module != NULL ? &(module->low)  : NULL);
+		float *pMode      = (module != NULL ? &(module->mode) : NULL);
+		float *pStepValue = (module != NULL ? &(module->step) : NULL);
 
-		addChild (FenceWidget::createVOctWidget (mm2px (Vec(5.09 - 2, 128.5 - 113.252 - 0.25 )), pHighValue, Fence::defaultHigh, pQuantized, Fence::defaultQuantized, TYPE_VOCT));
-		addChild (FenceWidget::createVOctWidget (mm2px (Vec(5.09 - 2, 128.5 - 106.267 - 0.25 )), pLowValue,  Fence::defaultLow,  pQuantized, Fence::defaultQuantized, TYPE_VOCT));
-		addChild (FenceWidget::createVOctWidget (mm2px (Vec(5.09 - 2, 128.5 -  71.267 + 0.25 )), pStepValue, Fence::defaultStep, pQuantized, Fence::defaultQuantized, TYPE_STEP));
+		float mode;
+		if (pMode)
+			mode = *pMode;
+		else
+		    mode = DEFAULT_MODE;
+
+		float defaultLow  = (mode == MODE_QTZ ? DEFAULT_LOW_QTZ  : (mode == MODE_SHPR ?   DEFAULT_LOW_SHPR  : DEFAULT_LOW_RAW));
+		float defaultHigh = (mode == MODE_QTZ ? DEFAULT_HIGH_QTZ : (mode == MODE_SHPR ?   DEFAULT_HIGH_SHPR : DEFAULT_HIGH_RAW));
+		float defaultStep = (mode == MODE_QTZ ? DEFAULT_STEP_QTZ : (mode == MODE_SHPR ?   DEFAULT_STEP_SHPR : DEFAULT_HIGH_RAW));
+
+		addChild (FenceWidget::createVOctWidget (mm2px (Vec(5.09 - 2, 128.5 - 113.252 - 0.25 )), pHighValue, defaultHigh, pMode, TYPE_VOCT));
+		addChild (FenceWidget::createVOctWidget (mm2px (Vec(5.09 - 2, 128.5 - 106.267 - 0.25 )), pLowValue,  defaultLow,  pMode, TYPE_VOCT));
+		addChild (FenceWidget::createVOctWidget (mm2px (Vec(5.09 - 2, 128.5 -  71.267 + 0.25 )), pStepValue, defaultStep, pMode, TYPE_STEP));
 
 		addParam (createParamCentered<LEDButton>		(mm2px (Vec (12.858 + 2.38, 128.5 - 88.900 - 2.38)), module, Fence::LINK_PARAM));
  		addChild (createLightCentered<LargeLight<GreenLight>>	(mm2px (Vec (12.858 + 2.38, 128.5 - 88.900 - 2.38)), module, Fence::LINK_LIGHT));
 		
-		addParam (createParamCentered<LEDButton>		(mm2px (Vec (20.638 + 2.38, 128.5 - 56.525 - 2.38)), module, Fence::QUANTIZE_PARAM));
- 		addChild (createLightCentered<LargeLight<GreenLight>>	(mm2px (Vec (20.638 + 2.38, 128.5 - 56.525 - 2.38)), module, Fence::QUANTIZE_LIGHT));
+		addParam (createParamCentered<LEDButton>		(mm2px (Vec (20.638 + 2.38, 128.5 - 56.525 - 2.38)), module, Fence::QTZ_PARAM));
+ 		addChild (createLightCentered<LargeLight<GreenLight>>	(mm2px (Vec (20.638 + 2.38, 128.5 - 56.525 - 2.38)), module, Fence::QTZ_LIGHT));
 		
-		addParam (createParamCentered<LEDButton>		(mm2px (Vec (20.638 + 2.38, 128.5 - 48.577 - 2.38)), module, Fence::MODE_PARAM));
- 		addChild (createLightCentered<LargeLight<GreenLight>>	(mm2px (Vec (20.638 + 2.38, 128.5 - 48.577 - 2.38)), module, Fence::MODE_LIGHT));
+		addParam (createParamCentered<LEDButton>		(mm2px (Vec (20.638 + 2.38, 128.5 - 48.577 - 2.38)), module, Fence::SHPR_PARAM));
+ 		addChild (createLightCentered<LargeLight<GreenLight>>	(mm2px (Vec (20.638 + 2.38, 128.5 - 48.577 - 2.38)), module, Fence::SHPR_LIGHT));
 
 		addInput (createInputCentered<PJ301MPort>		(mm2px (Vec ( 4.049 + 4.2 , 128.5 - 82.947 - 4.2)),  module, Fence::LOW_INPUT));
 		addInput (createInputCentered<PJ301MPort>		(mm2px (Vec (18.019 + 4.2 , 128.5 - 82.947 - 4.2)),  module, Fence::HIGH_INPUT));
