@@ -6,7 +6,7 @@ Beta modules are published for early adopters and should not be considered stabl
 They may even disappear again if the concept behind the module doesn't work es expected.
 Functionality can change and no backward compatibility is promised between beta versions of a module.
 So problems with upgrading between beta versions may arise.
-After collecting feedback from the community and doing the polishing of GUI and functionalityi, those modules will hopefully enter a stable state.
+After collecting feedback from the community and doing the polishing of GUI and functionality, those modules will hopefully enter a stable state.
 
 When a module has reached its stable state, the [Beta] mark will disappear.
 Modules not marked as beta will maintained in a backward compatible way if possible.
