@@ -401,6 +401,7 @@ struct Fence : Module {
 			// Restore params for active mode
 			//
 			setMode (params[H_MODE_PARAM].getValue ());
+			changeBits |= CHG_MODE;
 
 			lowClamped  = (params[ H_LOWCLAMPED_PARAM].getValue () > 0.f);
 			highClamped = (params[H_HIGHCLAMPED_PARAM].getValue () > 0.f);	
@@ -971,7 +972,7 @@ struct Fence : Module {
 			gotInTrg = trgIn.process (inputs[TRG_INPUT].getVoltage ());
 		}
 
-		if (gotInTrg && (changeBits & (CHG_CV | CHG_LOW | CHG_HIGH | CHG_STEP | CHG_MODE))) {
+		if (gotInTrg && (changeBits & (CHG_CV | CHG_MODE | CHG_EFF_LOW | CHG_EFF_HIGH | CHG_EFF_STEP))) {
 			cvOut = cvIn;
 
 			float realStep = effectiveStep;
