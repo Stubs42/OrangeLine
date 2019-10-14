@@ -783,11 +783,21 @@ struct Fence : Module {
 	// Method to determine new effective low value	
 	//
 	unsigned long determineEffectiveLow (unsigned long changeBits) {
+		float lowCv = low;
+		unsigned long chg_high_cv = 0x0;
+
+		if (inputs[LOW_INPUT].isConnected ())
+			lowCv += lowCvIn;
+		else
+			if (link && inputs[HIGH_INPUT].isConnected ()) {
+				chg_high_cv = CHG_HIGH_CV;
+				lowCv += highCvIn;
+			}
 		//
 		// Calculate effective low value	
 		//
-		if (changeBits & (CHG_LOW | CHG_LOW_CV | CHG_MODE)) {
-			effectiveLow = getLowClamped (low + lowCvIn);
+		if (changeBits & (CHG_LOW | CHG_LOW_CV | chg_high_cv | CHG_MODE)) {
+			effectiveLow = getLowClamped (lowCv);
 
 			if (effectiveLow != oldEffectiveLow) {
 				oldEffectiveLow = effectiveLow;
@@ -801,11 +811,22 @@ struct Fence : Module {
 	// Method to determine new effective high value	
 	//
 	unsigned long determineEffectiveHigh (unsigned long changeBits) {
+		float highCv = high;
+		unsigned long chg_low_cv = 0x0;
+
+		if (inputs[HIGH_INPUT].isConnected ())
+			highCv += highCvIn;
+		else
+			if (link && inputs[LOW_INPUT].isConnected ()) {
+				chg_low_cv = CHG_LOW_CV;
+				highCv += lowCvIn;
+			}
+
 		//
 		// Calculate effective high value	
 		//
-		if (changeBits & (CHG_HIGH | CHG_HIGH_CV | CHG_MODE)) {
-			effectiveHigh = getHighClamped (high + highCvIn);
+		if (changeBits & (CHG_HIGH | CHG_HIGH_CV | chg_low_cv | CHG_MODE)) {
+			effectiveHigh = getHighClamped (highCv);
 
 			if (effectiveHigh != oldEffectiveHigh) {
 				oldEffectiveHigh = effectiveHigh;
@@ -1162,11 +1183,16 @@ struct FenceWidget : ModuleWidget {
 		addParam (createParamCentered<RoundBlackKnob>		(mm2px (Vec (17.246 + 5,    128.5 - 92.970 - 5)),    module, Fence::HIGH_PARAM));
 		addParam (createParamCentered<RoundBlackKnob>		(mm2px (Vec ( 3.276 + 5,    128.5 - 92.970 - 5)),    module, Fence::LOW_PARAM));
 		addParam (createParamCentered<RoundBlackKnob>		(mm2px (Vec ( 3.276 + 5,    128.5 - 57.568 - 5)),    module, Fence::STEP_PARAM));
-
+/*
 		float *pHighValue = (module != NULL ? &(module->high) : NULL);
 		float *pLowValue  = (module != NULL ? &(module->low)  : NULL);
-		float *pMode      = (module != NULL ? &(module->mode) : NULL);
 		float *pStepValue = (module != NULL ? &(module->step) : NULL);
+*/
+		float *pLowValue  = (module != NULL ? &(module->effectiveLow)  : NULL);
+		float *pHighValue = (module != NULL ? &(module->effectiveHigh) : NULL);
+		float *pStepValue = (module != NULL ? &(module->effectiveStep) : NULL);
+
+		float *pMode      = (module != NULL ? &(module->mode) : NULL);
 
 		float mode;
 		if (pMode)
