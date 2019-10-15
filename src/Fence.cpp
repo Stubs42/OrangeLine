@@ -1107,7 +1107,7 @@ struct VOctWidget : TransparentWidget {
 	// Constructor
 	//
 	VOctWidget() {
-		box.size = Vec(55, 80);
+		box.size = mm2px (Vec(25, 6));
 		pFont = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
 	}
 	//
@@ -1168,7 +1168,6 @@ struct FenceWidget : ModuleWidget {
 		VOctWidget *w = new VOctWidget ();
 
 		w->box.pos = pos;
-		w->box.size = mm2px (Vec(25, 6));
 		w->pValue = pValue;
 		w->defaultValue = defaultValue;
 		w->pMode = pMode;
@@ -1193,7 +1192,7 @@ struct FenceWidget : ModuleWidget {
 		float *pMode      = (module != NULL ? &(module->mode) : NULL);
 
 		float mode;
-		if (pMode)
+		if (pMode != NULL)
 			mode = *pMode;
 		else
 		    mode = DEFAULT_MODE;
