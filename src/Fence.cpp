@@ -1168,6 +1168,7 @@ struct FenceWidget : ModuleWidget {
 		VOctWidget *w = new VOctWidget ();
 
 		w->box.pos = pos;
+		w->box.size = mm2px (Vec(25, 6));
 		w->pValue = pValue;
 		w->defaultValue = defaultValue;
 		w->pMode = pMode;
