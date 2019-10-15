@@ -1107,7 +1107,7 @@ struct VOctWidget : TransparentWidget {
 	// Constructor
 	//
 	VOctWidget() {
-		w->box.size = mm2px (Vec(26, 7));
+		box.size = mm2px (Vec(26, 7));
 		pFont = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
 	}
 	//
