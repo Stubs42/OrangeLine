@@ -1121,6 +1121,7 @@ struct VOctWidget : TransparentWidget {
 	// If not in the range [-10,10] the string 'ERROR' will be
 	//
 	static char* cv2Str (char *pStr, float cv, float mode, int type) {
+		*pStr = '\0';
 		if (cv < -10. || cv > 10.) {
 			strcpy (pStr, "ERROR");
 		}
@@ -1131,9 +1132,13 @@ struct VOctWidget : TransparentWidget {
 					int note = int(round ((cv - octave) * 12)) % 12;
 					sprintf (pStr, " %c%c%2.0f", notes[note], sharps[note], octave + 4);
 				}
-				if (type == TYPE_STEP) {
-					int semis = Fence::note(cv) * 12;
-					sprintf (pStr, "%2d ST", semis);
+				else {
+					if (type == TYPE_STEP) {
+						int semis = Fence::note(cv) * 12;
+						sprintf (pStr, "%2d ST", semis);
+					}
+					else 
+						sprintf (pStr, "TYPE ?");
 				}
 			}
 			else {
