@@ -1107,7 +1107,7 @@ struct VOctWidget : TransparentWidget {
 	// Constructor
 	//
 	VOctWidget() {
-		box.size = Vec(55, 80);
+		w->box.size = mm2px (Vec(26, 7));
 		pFont = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
 	}
 	//
@@ -1168,7 +1168,6 @@ struct FenceWidget : ModuleWidget {
 		VOctWidget *w = new VOctWidget ();
 
 		w->box.pos = pos;
-		w->box.size = mm2px (Vec(25, 6));
 		w->pValue = pValue;
 		w->defaultValue = defaultValue;
 		w->pMode = pMode;
@@ -1185,11 +1184,7 @@ struct FenceWidget : ModuleWidget {
 		addParam (createParamCentered<RoundBlackKnob>		(mm2px (Vec (17.246 + 5,    128.5 - 92.970 - 5)),    module, Fence::HIGH_PARAM));
 		addParam (createParamCentered<RoundBlackKnob>		(mm2px (Vec ( 3.276 + 5,    128.5 - 92.970 - 5)),    module, Fence::LOW_PARAM));
 		addParam (createParamCentered<RoundBlackKnob>		(mm2px (Vec ( 3.276 + 5,    128.5 - 57.568 - 5)),    module, Fence::STEP_PARAM));
-/*
-		float *pHighValue = (module != NULL ? &(module->high) : NULL);
-		float *pLowValue  = (module != NULL ? &(module->low)  : NULL);
-		float *pStepValue = (module != NULL ? &(module->step) : NULL);
-*/
+
 		float *pLowValue  = (module != NULL ? &(module->effectiveLow)  : NULL);
 		float *pHighValue = (module != NULL ? &(module->effectiveHigh) : NULL);
 		float *pStepValue = (module != NULL ? &(module->effectiveStep) : NULL);
@@ -1197,7 +1192,7 @@ struct FenceWidget : ModuleWidget {
 		float *pMode      = (module != NULL ? &(module->mode) : NULL);
 
 		float mode;
-		if (pMode)
+		if (pMode != NULL)
 			mode = *pMode;
 		else
 		    mode = DEFAULT_MODE;
