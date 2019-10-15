@@ -6,10 +6,10 @@
   "brand": "",
   "author": "Dieter Stubler",
   "authorEmail": "dieter.stubler@googlemail.com",
-  "authorUrl": "",
-  "pluginUrl": "",
-  "manualUrl": "",
-  "sourceUrl": "",
+  "authorUrl": "https://github.com/Stubs42/OrangeLine",
+  "pluginUrl": "https://github.com/Stubs42/OrangeLine",
+  "manualUrl": "https://github.com/Stubs42/OrangeLine/blob/master/README.md",
+  "sourceUrl": "https://github.com/Stubs42/OrangeLine",
   "donateUrl": "",
   "modules": [
     {
