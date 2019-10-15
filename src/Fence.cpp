@@ -319,7 +319,6 @@ struct Fence : Module {
 		pq->maxValue = maxValue;
 		pq->defaultValue = defaultValue;
 		pq->label = pLabel;
-		// pq->reset();
 	}
 
 	//
