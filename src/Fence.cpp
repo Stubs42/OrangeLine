@@ -311,6 +311,18 @@ struct Fence : Module {
 	}
 
 	//
+	// function to reconfigure parameters to new min, max and default values
+	//
+	void reConfigParam (int paramId, float minValue, float maxValue, float defaultValue, const char *pLabel) {
+		ParamQuantity *pq = paramQuantities[paramId];
+		pq->minValue = minValue;
+		pq->maxValue = maxValue;
+		pq->defaultValue = defaultValue;
+		pq->label = pLabel;
+		// pq->reset();
+	}
+
+	//
 	// Function to switch between raw/qtz/shpr modes
 	//
 	void setMode (int newMode) {
@@ -320,9 +332,9 @@ struct Fence : Module {
 				high = params[ H_HIGH_RAW_PARAM].getValue ();
 				step = params[ H_STEP_RAW_PARAM].getValue ();
 				link = params[ H_LINK_RAW_PARAM].getValue ();
-				configParam ( LOW_PARAM,  LOW_MIN_RAW,   LOW_MAX_RAW,   DEFAULT_LOW_RAW, "Lower Bound");
-				configParam (HIGH_PARAM, HIGH_MIN_RAW,  HIGH_MAX_RAW,  DEFAULT_HIGH_RAW, "Upper Bound");
-				configParam (STEP_PARAM, STEP_MIN_RAW,  STEP_MAX_RAW,  DEFAULT_STEP_RAW, "Step");
+				reConfigParam ( LOW_PARAM,  LOW_MIN_RAW,   LOW_MAX_RAW,   DEFAULT_LOW_RAW, "Lower Bound");
+				reConfigParam (HIGH_PARAM, HIGH_MIN_RAW,  HIGH_MAX_RAW,  DEFAULT_HIGH_RAW, "Upper Bound");
+				reConfigParam (STEP_PARAM, STEP_MIN_RAW,  STEP_MAX_RAW,  DEFAULT_STEP_RAW, "Step");
 				params[ LOW_PARAM].setValue (low);
 				params[HIGH_PARAM].setValue (high);
 				params[STEP_PARAM].setValue (step);
@@ -334,10 +346,9 @@ struct Fence : Module {
 				high = params[ H_HIGH_QTZ_PARAM].getValue ();
 				step = params[ H_STEP_QTZ_PARAM].getValue ();
 				link = params[ H_LINK_QTZ_PARAM].getValue ();
-
-				configParam ( LOW_PARAM,  LOW_MIN_QTZ,   LOW_MAX_QTZ,   DEFAULT_LOW_QTZ, "Lower Bound");
-				configParam (HIGH_PARAM, HIGH_MIN_QTZ,  HIGH_MAX_QTZ,  DEFAULT_HIGH_QTZ, "Upper Bound");
-				configParam (STEP_PARAM, STEP_MIN_QTZ,  STEP_MAX_QTZ,  DEFAULT_STEP_QTZ, "Step");
+				reConfigParam ( LOW_PARAM,  LOW_MIN_QTZ,   LOW_MAX_QTZ,   DEFAULT_LOW_QTZ, "Lower Bound");
+				reConfigParam (HIGH_PARAM, HIGH_MIN_QTZ,  HIGH_MAX_QTZ,  DEFAULT_HIGH_QTZ, "Upper Bound");
+				reConfigParam (STEP_PARAM, STEP_MIN_QTZ,  STEP_MAX_QTZ,  DEFAULT_STEP_QTZ, "Step");
 				params[ LOW_PARAM].setValue (low);
 				params[HIGH_PARAM].setValue (high);
 				params[STEP_PARAM].setValue (step);
@@ -349,9 +360,9 @@ struct Fence : Module {
 				high = params[H_HIGH_SHPR_PARAM].getValue ();
 				step = params[H_STEP_SHPR_PARAM].getValue ();
 				link = params[H_LINK_SHPR_PARAM].getValue ();
-				configParam ( LOW_PARAM,  LOW_MIN_SHPR,  LOW_MAX_SHPR,  DEFAULT_LOW_SHPR, "Lower Bound");
-				configParam (HIGH_PARAM, HIGH_MIN_SHPR, HIGH_MAX_SHPR, DEFAULT_HIGH_SHPR, "Upper Bound");
-				configParam (STEP_PARAM, STEP_MIN_SHPR, STEP_MAX_SHPR, DEFAULT_STEP_SHPR, "Step");
+				reConfigParam ( LOW_PARAM,  LOW_MIN_SHPR,  LOW_MAX_SHPR,  DEFAULT_LOW_SHPR, "Lower Bound");
+				reConfigParam (HIGH_PARAM, HIGH_MIN_SHPR, HIGH_MAX_SHPR, DEFAULT_HIGH_SHPR, "Upper Bound");
+				reConfigParam (STEP_PARAM, STEP_MIN_SHPR, STEP_MAX_SHPR, DEFAULT_STEP_SHPR, "Step");
 				params[ LOW_PARAM].setValue (low);
 				params[HIGH_PARAM].setValue (high);
 				params[STEP_PARAM].setValue (step);
