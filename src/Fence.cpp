@@ -819,6 +819,25 @@ struct Fence : Module {
 	}
 
 	//
+	// Check Effective Range to make sure low < high
+	//
+	unsigned long checkEffectiveRange (unsigned long changeBits) {
+		if (effectiveLow >= effectiveHigh - PRECISION) {
+			float minLow = getMinLow ();
+			if (effectiveLow <= minLow) {
+				effectiveLow = minLow;
+				effectiveHigh = getMinHigh ();
+				changeBits |= (CHG_EFF_LOW | CHG_EFF_HIGH);
+			}
+			else {
+				effectiveLow = effectiveHigh - PRECISION;
+				changeBits |= CHG_EFF_LOW;
+			}
+		}
+		return changeBits;
+	}
+
+	//
 	// Method to determine new effective high value	
 	//
 	unsigned long determineEffectiveHigh (unsigned long changeBits) {
@@ -954,9 +973,10 @@ struct Fence : Module {
 		if (changeBits & CHG_MODE)
 			setMode (mode);
 
-		changeBits = determineEffectiveLow  (changeBits);
+		changeBits = determineEffectiveLow (changeBits);
 		changeBits = determineEffectiveHigh (changeBits);
 		changeBits = determineEffectiveStep (changeBits);
+		changeBits = checkEffectiveRange (changeBits);
 
 		//
 		// Set linkDelta if link is switched on

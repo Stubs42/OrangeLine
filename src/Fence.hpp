@@ -16,25 +16,28 @@
 //
 // Value Ranges
 //
+#define SEMITONE       (1.f / 12.f)
+#define PRECISION       0.001f
+
 #define LOW_MIN_RAW   -10.f
-#define LOW_MAX_RAW    10.f
-#define HIGH_MIN_RAW  -10.f
+#define LOW_MAX_RAW   (10.f - PRECISION)
+#define HIGH_MIN_RAW (-10.f + PRECISION)
 #define HIGH_MAX_RAW   10.f
-#define STEP_MIN_RAW    0.001f
+#define STEP_MIN_RAW    PRECISION
 #define STEP_MAX_RAW   10.f
 
 #define LOW_MIN_QTZ   -10.f
-#define LOW_MAX_QTZ    10.f
-#define HIGH_MIN_QTZ  -10.f
+#define LOW_MAX_QTZ    10.f - SEMITONE
+#define HIGH_MIN_QTZ  -10.f + SEMITONE
 #define HIGH_MAX_QTZ   10.f
 #define STEP_MIN_QTZ    0.f
-#define STEP_MAX_QTZ   ((1.f / 12.f) * 11.f)
+#define STEP_MAX_QTZ   (SEMITONE * 11.f)
 
 #define LOW_MIN_SHPR   -5.f
-#define LOW_MAX_SHPR    5.f
-#define HIGH_MIN_SHPR  -5.f
+#define LOW_MAX_SHPR   (5.f - PRECISION)
+#define HIGH_MIN_SHPR (-5.f + PRECISION)
 #define HIGH_MAX_SHPR   5.f
-#define STEP_MIN_SHPR   0.001f
+#define STEP_MIN_SHPR   PRECISION
 #define STEP_MAX_SHPR  10.f
 
 //
