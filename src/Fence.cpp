@@ -319,7 +319,6 @@ struct Fence : Module {
 		pq->maxValue = maxValue;
 		pq->defaultValue = defaultValue;
 		pq->label = pLabel;
-		// pq->reset();
 	}
 
 	//
@@ -1138,6 +1137,7 @@ struct VOctWidget : TransparentWidget {
 		else {
 			if (mode == MODE_QTZ) {
 				if (type == TYPE_VOCT) {
+					cv = Fence::quantize(cv);
 					float octave = floor (cv);
 					int note = int(round ((cv - octave) * 12)) % 12;
 					sprintf (pStr, " %c%c%2.0f", notes[note], sharps[note], octave + 4);
