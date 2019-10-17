@@ -392,15 +392,15 @@ struct Fence : Module {
 	//
 	// Method to initialize the module when added to a patch
 	// Currently does nothing maybe remove later
-	//
-	unsigned long initNew (unsigned long changeBits) {
-		if (params[H_INITIALIZED_PARAM].getValue () == 1.f) 
-			// already initialized, nothing to do
-			return changeBits;
-
-		params[H_INITIALIZED_PARAM].setValue (1.f);
-		return changeBits;
-	}
+	// 
+	// unsigned long initNew (unsigned long changeBits) {
+	// 	if (params[H_INITIALIZED_PARAM].getValue () == 1.f) 
+	// 		// already initialized, nothing to do
+	// 		return changeBits;
+	// 
+	// 	params[H_INITIALIZED_PARAM].setValue (1.f);
+	// 	return changeBits;
+	// }
 
 	//
 	// Method to initialize the module when loading a patch
@@ -819,25 +819,6 @@ struct Fence : Module {
 	}
 
 	//
-	// Check Effective Range to make sure low < high
-	//
-	unsigned long checkEffectiveRange (unsigned long changeBits) {
-		if (effectiveLow >= effectiveHigh - PRECISION) {
-			float minLow = getMinLow ();
-			if (effectiveLow <= minLow) {
-				effectiveLow = minLow;
-				effectiveHigh = getMinHigh ();
-				changeBits |= (CHG_EFF_LOW | CHG_EFF_HIGH);
-			}
-			else {
-				effectiveLow = effectiveHigh - PRECISION;
-				changeBits |= CHG_EFF_LOW;
-			}
-		}
-		return changeBits;
-	}
-
-	//
 	// Method to determine new effective high value	
 	//
 	unsigned long determineEffectiveHigh (unsigned long changeBits) {
@@ -861,6 +842,25 @@ struct Fence : Module {
 			if (effectiveHigh != oldEffectiveHigh) {
 				oldEffectiveHigh = effectiveHigh;
 				changeBits |= CHG_EFF_HIGH;
+			}
+		}
+		return changeBits;
+	}
+
+	//
+	// Check Effective Range to make sure low < high
+	//
+	unsigned long checkEffectiveRange (unsigned long changeBits) {
+		if (effectiveLow > effectiveHigh - PRECISION) {
+			float minLow = getMinLow ();
+			if (effectiveLow <= minLow) {
+				effectiveLow = minLow;
+				effectiveHigh = getMinHigh ();
+				changeBits |= (CHG_EFF_LOW | CHG_EFF_HIGH);
+			}
+			else {
+				effectiveLow = effectiveHigh - PRECISION;
+				changeBits |= CHG_EFF_LOW;
 			}
 		}
 		return changeBits;
@@ -913,11 +913,11 @@ struct Fence : Module {
 	}
 
 	unsigned long forceLowLeHigh (unsigned long changeBits) {
-		if (changeBits & CHG_LOW && low > high)
-			changeBits |= processHigh (low, true);
+		if (changeBits & CHG_LOW && low > high - PRECISION)
+			changeBits |= processHigh (low + PRECISION, true);
 
-		if (changeBits & CHG_HIGH && low > high)
-			changeBits |= processLow (high, true);
+		if (changeBits & CHG_HIGH && high < low + PRECISION)
+			changeBits |= processLow (high - PRECISION, true);
 
 		return changeBits;
 	}
@@ -963,7 +963,7 @@ struct Fence : Module {
 
 		sampleTime = 1.0 / (double)(APP->engine->getSampleRate ());
 
-		changeBits = initNew (changeBits);
+		// changeBits = initNew (changeBits);
 		changeBits = postLoad (changeBits);
 		changeBits = checkUserInteraction (changeBits);
 		changeBits = checkInputs (changeBits);
