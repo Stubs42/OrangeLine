@@ -928,7 +928,7 @@ struct Fence : Module {
 		// in QTZ mode step knob is a positive offset to the stepCv in
 		// in RAW and SHPR mode it is used as an attenuator
 		//
-		if (CHG_STEP | CHG_MODE | CHG_STEP_CV) {
+		if (changeBits & (CHG_STEP | CHG_MODE | CHG_STEP_CV)) {
 			effectiveStep = step;
 			if (inputs[STEP_INPUT].isConnected ()) {
 				switch (int(mode)) {
