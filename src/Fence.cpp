@@ -868,16 +868,18 @@ struct Fence : Module {
 	// Check Effective Range to make sure low < high
 	//
 	unsigned long checkEffectiveRange (unsigned long changeBits) {
-		if (effectiveLow > effectiveHigh - PRECISION) {
-			float minLow = getMinLow ();
-			if (effectiveLow <= minLow) {
-				effectiveLow = minLow;
-				effectiveHigh = getMinHigh ();
-				changeBits |= (CHG_EFF_LOW | CHG_EFF_HIGH);
-			}
-			else {
-				effectiveLow = effectiveHigh - PRECISION;
-				changeBits |= CHG_EFF_LOW;
+		if (changeBits & (CHG_EFF_LOW | CHG_EFF_HIGH)) {
+			if (effectiveLow > effectiveHigh - PRECISION) {
+				float minLow = getMinLow ();
+				if (effectiveLow <= minLow) {
+					effectiveLow = minLow;
+					effectiveHigh = getMinHigh ();
+					changeBits |= (CHG_EFF_LOW | CHG_EFF_HIGH);
+				}
+				else {
+					effectiveLow = effectiveHigh - PRECISION;
+					changeBits |= CHG_EFF_LOW;
+				}
 			}
 		}
 		return changeBits;
@@ -1045,11 +1047,13 @@ struct Fence : Module {
 				absRange = effectiveHigh - effectiveLow;
 				if (absRange < 0)
 					absRange *= -1.f;
+				/*
 				if (absRange < 2 * STEP_MIN_SHPR) {
 					absRange = 2 * STEP_MIN_SHPR;
 					effectiveLow  -= STEP_MIN_SHPR;
 					effectiveHigh += STEP_MIN_SHPR;
 				}
+				*/
 				if (realStep > absRange)
 					realStep = absRange;
 			}
