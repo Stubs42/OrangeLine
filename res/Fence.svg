@@ -226,11 +226,11 @@
      borderopacity="1.0"
      inkscape:pageopacity="0.0"
      inkscape:pageshadow="2"
-     inkscape:zoom="1.4142136"
-     inkscape:cx="-28.295043"
-     inkscape:cy="256.92773"
+     inkscape:zoom="2.0000001"
+     inkscape:cx="-106.90641"
+     inkscape:cy="265.32524"
      inkscape:document-units="mm"
-     inkscape:current-layer="g5105"
+     inkscape:current-layer="text4563-5-0"
      showgrid="false"
      units="in"
      inkscape:snap-bbox="true"
@@ -238,9 +238,9 @@
      inkscape:snap-bbox-midpoints="true"
      showguides="false"
      inkscape:guide-bbox="true"
-     inkscape:window-width="1548"
-     inkscape:window-height="982"
-     inkscape:window-x="2332"
+     inkscape:window-width="2315"
+     inkscape:window-height="1137"
+     inkscape:window-x="1565"
      inkscape:window-y="185"
      inkscape:window-maximized="0"
      inkscape:snap-text-baseline="false"
@@ -599,11 +599,6 @@
          d="M 24.081321,63.130331 V 62.75051 h 1.564246 v 0.379821 h -0.559656 v 1.877405 h -0.455786 v -1.877405 z"
          style="font-style:normal;font-variant:normal;font-weight:bold;font-stretch:normal;font-size:3.17499995px;font-family:'Roboto Condensed';-inkscape-font-specification:'Roboto Condensed, Bold';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-feature-settings:normal;text-align:start;writing-mode:lr-tb;text-anchor:start;fill:#ff6600;fill-opacity:1;stroke-width:0.26458332"
          id="path6066"
-         inkscape:connector-curvature="0" />
-      <path
-         d="m 25.523094,64.784494 q 0,-0.10387 0.06821,-0.172082 0.06976,-0.06976 0.187585,-0.06976 0.116272,0 0.184485,0.06976 0.06976,0.06821 0.06976,0.172082 0,0.102319 -0.06976,0.172083 -0.06821,0.06821 -0.184485,0.06821 -0.117822,0 -0.187585,-0.06821 -0.06821,-0.06976 -0.06821,-0.172083 z"
-         style="font-style:normal;font-variant:normal;font-weight:bold;font-stretch:normal;font-size:3.17499995px;font-family:'Roboto Condensed';-inkscape-font-specification:'Roboto Condensed, Bold';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-feature-settings:normal;text-align:start;writing-mode:lr-tb;text-anchor:start;fill:#ff6600;fill-opacity:1;stroke-width:0.26458332"
-         id="path6068"
          inkscape:connector-curvature="0" />
     </g>
     <g
