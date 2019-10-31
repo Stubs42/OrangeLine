@@ -553,33 +553,17 @@ struct Fence : Module {
 		effectiveLow  = getStateParam ( LOW_PARAM);
 		effectiveHigh = getStateParam (HIGH_PARAM);
 
-		if (link != LINK_CENTER_INT) {
-			if (getInputConnected (LOW_INPUT))
-				effectiveLow += getStateInput (LOW_INPUT);
-			else
-				if ((link == LINK_RANGE_INT) && getInputConnected (HIGH_INPUT)) {
-					effectiveLow += getStateInput (HIGH_INPUT);
-				}
-			if (getInputConnected (HIGH_INPUT))
-				effectiveHigh += getStateInput (HIGH_INPUT);
-			else
-				if ((link == LINK_RANGE_INT) && getInputConnected (LOW_INPUT)) {
-					effectiveHigh += getStateInput (LOW_INPUT);
-				}
-		}
-		else {
-			effectiveLow = clamp (effectiveLow, 0, maxLow);
-			if (getInputConnected (LOW_INPUT))
-				// left knob is attenuator if low cv in is connected
-				effectiveLow = getStateInput (LOW_INPUT) * (effectiveLow / maxLow);
-			if (getInputConnected (HIGH_INPUT))
-				effectiveHigh += getStateInput (HIGH_INPUT);
+		if (getInputConnected (LOW_INPUT))
+			effectiveLow += getStateInput (LOW_INPUT);
+
+		if (getInputConnected (HIGH_INPUT))
+			effectiveHigh += getStateInput (HIGH_INPUT);
+		
+		if (link == LINK_CENTER_INT) {
 			float spread = effectiveLow;
 			effectiveLow  = effectiveHigh - spread;
 			effectiveHigh = effectiveHigh + spread;
 		}
-		if (effectiveLow + maxHigh - maxLow > effectiveHigh)
-			effectiveHigh = effectiveLow + maxHigh - maxLow;
 
 		effectiveLow  = clamp (effectiveLow,  minLow,  maxLow);
 		effectiveHigh = clamp (effectiveHigh, minHigh, maxHigh);
