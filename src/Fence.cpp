@@ -321,18 +321,12 @@ struct Fence : Module {
 		*/
 
 		/*
-			Check for Input Trigger
-			When trigger in is not connected we work like we would get a trigger for each process call
-		*/
-		bool gotInTrg = true;
-		if (getInputConnected (TRG_INPUT))
-			gotInTrg = changeInput (TRG_INPUT); 
-		/*
 			Check whether we have to do anything at all
 		*/
-		if (gotInTrg && (changeInput (  CV_INPUT) || changeInput ( LOW_INPUT) || changeInput (HIGH_INPUT) || changeInput (STEP_INPUT) ||
-						 changeParam ( LOW_PARAM) || changeParam (HIGH_PARAM) || changeParam (STEP_PARAM) || changeJson  ( MODE_JSON))) {
-
+		if ((!getInputConnected (TRG_INPUT) && (changeInput (  CV_INPUT) || changeInput ( LOW_INPUT) || changeInput (HIGH_INPUT) || changeInput (STEP_INPUT) ||
+						                       changeParam ( LOW_PARAM) || changeParam (HIGH_PARAM) || changeParam (STEP_PARAM) || changeJson  ( MODE_JSON))) ||
+			changeInput (TRG_INPUT)
+		) {
 			cvOut = getStateInput(CV_INPUT);
 
 			if (mode == MODE_QTZ_INT)
