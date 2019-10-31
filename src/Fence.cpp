@@ -757,7 +757,7 @@ struct VOctWidget : TransparentWidget {
 				if (type == TYPE_VOCT) {
 					int octave = octave (cv);
 					int note   = note (cv);
-					if (int(sizeof(str)) <= snprintf (pStr, sizeof(str), " %c%c%d", notes[note], sharps[note], octave + 4))
+					if (int(sizeof(str)) <= snprintf (pStr, sizeof(str), " %c%c%2d", notes[note], sharps[note], octave + 4))
 						fprintf (stderr, "OrangeLine:cv2Str():Unxpected format overflow\n");
 				}
 				if (type == TYPE_STEP) {
