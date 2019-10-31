@@ -1,41 +1,93 @@
 /*
- * Fence.hpp
- *
- * Author: Dieter Stubler
- */
-#include "plugin.hpp"
+	Fence.hpp
+ 	
+	Author: Dieter Stubler
+
+Copyright (C) 2019 Dieter Stubler
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
+*/
+#include "OrangeLine.hpp"
 
 #define AUDIO_VOLTAGE  5.f
 
-#define MODE_MIN       0.f
-#define MODE_RAW       0.f
-#define MODE_QTZ       1.f
-#define MODE_SHPR      2.f
-#define MODE_MAX       2.f
+#define MODE_MIN        0.f
+#define MODE_RAW        0.f
+#define MODE_RAW_INT    0
+#define MODE_QTZ        1.f
+#define MODE_QTZ_INT    1
+#define MODE_SHPR       2.f
+#define MODE_SHPR_INT   2
+#define MODE_MAX        2.f
+
+#define LINK_NONE       0.f
+#define LINK_NONE_INT   0
+#define LINK_RANGE      1.f
+#define LINK_RANGE_INT  1
+#define LINK_CENTER     2.f
+#define LINK_CENTER_INT 2
+
+#define LINK_COLOR_NONE   0x000000
+#define LINK_COLOR_RANGE  0x00ff00
+#define LINK_COLOR_CENTER 0x0000ff
 
 //
 // Value Ranges
 //
+#define SEMITONE       (1.f / 12.f)
+
 #define LOW_MIN_RAW   -10.f
 #define LOW_MAX_RAW    10.f
 #define HIGH_MIN_RAW  -10.f
 #define HIGH_MAX_RAW   10.f
-#define STEP_MIN_RAW    0.001f
+#define STEP_MIN_RAW    0.f
 #define STEP_MAX_RAW   10.f
+#define MIN_RANGE_RAW   0.f
 
 #define LOW_MIN_QTZ   -10.f
-#define LOW_MAX_QTZ    10.f
-#define HIGH_MIN_QTZ  -10.f
+#define LOW_MAX_QTZ    10.f 
+#define HIGH_MIN_QTZ  -10.f 
 #define HIGH_MAX_QTZ   10.f
 #define STEP_MIN_QTZ    0.f
-#define STEP_MAX_QTZ   ((1.f / 12.f) * 11.f)
+#define STEP_MAX_QTZ   (SEMITONE * 11.f)
+#define MIN_RANGE_QTZ   0.f
 
-#define LOW_MIN_SHPR   -5.f
-#define LOW_MAX_SHPR    5.f
-#define HIGH_MIN_SHPR  -5.f
-#define HIGH_MAX_SHPR   5.f
-#define STEP_MIN_SHPR   0.001f
+#define LOW_MIN_SHPR  -AUDIO_VOLTAGE
+#define LOW_MAX_SHPR   AUDIO_VOLTAGE
+#define HIGH_MIN_SHPR -AUDIO_VOLTAGE
+#define HIGH_MAX_SHPR  AUDIO_VOLTAGE
+#define STEP_MIN_SHPR   0.0001f
 #define STEP_MAX_SHPR  10.f
+#define MIN_RANGE_SHPR  0.1f
+
+#define PRECISION       0.0000000001f
+#define KNOB_FAKE_DELTA 0.0001f
+#define KNOB_FAKE_STEPS 5000
+
+
+//
+//	Dynamic Labels
+//
+#define LABEL_LOW_LINK_NONE    "Low"
+#define LABEL_HIGH_LINK_NONE   "High"
+#define LABEL_STEP_LINK_NONE   "Step"
+#define LABEL_LOW_LINK_RANGE   "Low"
+#define LABEL_HIGH_LINK_RANGE  "High"
+#define LABEL_STEP_LINK_RANGE  "Step"
+#define LABEL_LOW_LINK_CENTER  "Spread"
+#define LABEL_HIGH_LINK_CENTER "Center"
+#define LABEL_STEP_LINK_CENTER "Step"
 
 //
 // Defaults
@@ -43,7 +95,7 @@
 
 //
 // DEFAULT_QTZ and DEFAULT_SHPR are mutally exclusive !
-// If DEFAULT_QTZ and/or DEFAULT_SHPR are changed change initial param config in Fence.cpp also!
+// If DEFAULT_QTZ and/or DEFAULT_SHPR are changed, change initial param config in Fence.cpp also!
 //
 #define DEFAULT_MODE      MODE_QTZ
 #define DEFAULT_QTZ       (DEFAULT_MODE == MODE_QTZ)
@@ -62,45 +114,95 @@
 
 #define DEFAULT_LOW_SHPR  -AUDIO_VOLTAGE
 #define DEFAULT_HIGH_SHPR  AUDIO_VOLTAGE
-#define DEFAULT_LINK_SHPR   0.f
-#define DEFAULT_STEP_SHPR  STEP_MIN_SHPR
+#define DEFAULT_LINK_SHPR  0.f
+#define DEFAULT_STEP_SHPR  0.f
 
 // VOctWidget Types
 #define TYPE_VOCT 1
 #define TYPE_STEP 2
 
 //
-// Change bits
+// Virtual Parameter Ids stored using Json
 //
-#define CHG_LOW          0x1
-#define CHG_HIGH         0x2
-#define CHG_STEP         0x4
-#define CHG_MODE         0x8
-#define CHG_LOW_CV      0x10
-#define CHG_HIGH_CV     0x20
-#define CHG_STEP_CV     0x40
-#define CHG_TRG         0x80
-#define CHG_EFF_LOW    0x100
-#define CHG_EFF_HIGH   0x200
-#define CHG_LINK       0x400
-#define CHG_EFF_STEP   0x800
-#define CHG_CV        0x1000
+enum jsonIds {
+	//
+	// Parameters not bound to any user interface component to save internal module state
+	//
+	MODE_JSON,			//	Mode qtz/shpr/raw
+	
+	LOW_RAW_JSON,		// 	knob values for min/max/step and link setting for raw mode (quantize and shpr off)
+	HIGH_RAW_JSON,
+	LINK_RAW_JSON,
+	STEP_RAW_JSON,
+		
+	LOW_QTZ_JSON,		// knob values for min/max/step and link setting for qtz mode (quantize on and shpr off)
+	HIGH_QTZ_JSON,
+	LINK_QTZ_JSON,
+	STEP_QTZ_JSON,
 
-#define CHG_ALL   0xFFFFFFFF
+	LOW_SHPR_JSON,		// knob values for min/max/step and link setting for shpr mode (quantize off and shpr on)
+	HIGH_SHPR_JSON,
+	LINK_SHPR_JSON,
+	STEP_SHPR_JSON,
 
-struct Trigger : dsp::SchmittTrigger {
-	bool process(float value) {
-		if (state) {
-			if (value <= 0.1f) {
-				state = false;
-			}
-		}
-		else {
-			if (value >= 1.0f) {
-				state = true;
-				return true;
-			}
-		}
-		return false;
-	}
+	LOWCLAMPED_JSON,
+	HIGHCLAMPED_JSON,
+
+	LINK_JSON,
+	LINK_DELTA_JSON,
+
+	NUM_JSONS
+};
+
+//
+// Parameter Ids
+//
+enum ParamIds {
+	//
+	// Paramater for user interface components
+	//
+	LOW_PARAM,				// Range Low Knob
+	HIGH_PARAM,				// Range High Knob
+	LINK_PARAM,				// Range Link Button
+	QTZ_PARAM,				// Quantize Button
+	SHPR_PARAM,				// Shpr Button (Audio Mode)
+	STEP_PARAM,				// Step Knob
+		
+	NUM_PARAMS
+};
+
+//
+// Input Ids
+//
+enum InputIds {
+	LOW_INPUT,				// Range Low CV Input
+	HIGH_INPUT,				// Range High CV Input
+	STEP_INPUT,				// Step CV Input
+	TRG_INPUT,				// Trigger Input
+	CV_INPUT,				// Cv In to process
+
+	NUM_INPUTS
+};
+
+//
+// Output Ids
+//
+enum OutputIds {
+	TRG_OUTPUT,				// Trigger output for signaling Cv Out changes
+	CV_OUTPUT,				// Cv Out
+
+	NUM_OUTPUTS
+};
+
+//
+// Ligh Ids
+//
+enum LightIds {
+	QTZ_LIGHT,				// Light indicating quantized mode
+	SHPR_LIGHT,				// Light indicating shpr (Audio mode)
+	LINK_LIGHT_RGB,			// Light indicating range min/max link mode
+	LINK_LIGHT__G,
+	LINK_LIGHT___B,
+
+	NUM_LIGHTS
 };
