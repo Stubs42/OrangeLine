@@ -45,6 +45,8 @@ bool  OL_inputConnected [NUM_INPUTS];	//	flags to remember connected inputs
 char  *OL_jsonLabel     [NUM_JSONS];	//	lables of json state properties
 dsp::SchmittTrigger *OL_inStateTrigger  [NUM_TRIGGERS];	//	trigger objects for param (buttons) and inputs (triggers)
 dsp::PulseGenerator *OL_outStateTrigger [NUM_OUTPUTS];	//	pulse generator objects for outputs (triggers)
+bool OL_isGate [NUM_OUTPUTS];
+bool OL_wasTriggered [NUM_OUTPUTS];
 double OL_sampleTime;
 bool OL_initialized = false;
 
@@ -85,6 +87,8 @@ inline void initializeInstance () {
 	memset (         OL_state,   0.f, sizeof (OL_state));			//	Initialize state values
 	memset ( OL_inStateChange, false, sizeof (OL_inStateChange));	//	Initialize incoming state changes
 	memset (OL_outStateChange, false, sizeof (OL_outStateChange));	//	Initialize outgoing state changes
+	memset (        OL_isGate, false, sizeof (OL_isGate));			//	Initialize trg outputs to TRIGGER = false (GATE = true)
+	memset (  OL_wasTriggered, false, sizeof (OL_wasTriggered));	//	Initialize trg outputs to TRIGGER = false (GATE = true)
 	/*
 		Now we call moduleReset () to ensure that a valid json state is created before this constructor
 		returns.
@@ -354,8 +358,16 @@ inline void reflectChanges () {
 			Pulse generators of active Trigger outputs have to be processed independently of changes in current process() run
 		*/
 		if (getStateTypeOutput (outputIdx) == STATE_TYPE_TRIGGER && getStateOutput (outputIdx) > 0.f) {
-			setStateOutput (outputIdx, ((dsp::PulseGenerator*)(OL_outStateTrigger[outputIdx]))->process ((float)OL_sampleTime) ? 10.0f : 0.0f);
-			outputs[outputIdx].setVoltage (getStateOutput (outputIdx));
+			bool trgActive = ((dsp::PulseGenerator*)(OL_outStateTrigger[outputIdx]))->process ((float)OL_sampleTime);
+			if (trgActive) {
+				setStateOutput (outputIdx, 10.f);
+				OL_wasTriggered[outputIdx] = true;
+			}
+			else 
+				setStateOutput (outputIdx, 0.f);
+			if (OL_isGate[outputIdx] && OL_wasTriggered[outputIdx])
+				trgActive = !trgActive;
+			outputs[outputIdx].setVoltage (trgActive ? 10.f : 0.f);
 		}
 	}
 	/*
@@ -363,7 +375,7 @@ inline void reflectChanges () {
 	*/
 	for (int stateIdx = stateIdxLight (0), lightIdx = 0; stateIdx <= maxStateIdxLight; stateIdx ++, lightIdx++) {
 		if (!OL_initialized || changeLight (lightIdx)) {
-			lights[lightIdx].value = getStateLight (lightIdx);
+			lights[lightIdx].value = getStateLight (lightIdx) / 255.f;
 		}
 	}
 }
@@ -390,7 +402,6 @@ json_t *dataToJson () override {
 	Restore json state values after loading a preset or (re)loading a patch
 */
 void dataFromJson (json_t *rootJ) override {
-	// printf ("dataFromJson ()\n");
 	json_t *pJson;
 	for (int jsonIdx = 0; jsonIdx < NUM_JSONS; jsonIdx ++)
 		if ((pJson = json_object_get (rootJ, OL_jsonLabel[jsonIdx])) != nullptr)

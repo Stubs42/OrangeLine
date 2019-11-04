@@ -79,14 +79,15 @@ struct Fence : Module {
 	*/
 	void moduleInitStateTypes () {
 		setStateTypeParam  (    LINK_PARAM, STATE_TYPE_TRIGGER);
-		setStateTypeParam  (     QTZ_PARAM, STATE_TYPE_TRIGGER);
-		setStateTypeParam  (    SHPR_PARAM, STATE_TYPE_TRIGGER);
+		setStateTypeParam  (    MODE_PARAM, STATE_TYPE_TRIGGER);
+		setStateTypeParam  (    GATE_PARAM, STATE_TYPE_TRIGGER);
 
 		setStateTypeInput  (     TRG_INPUT, STATE_TYPE_TRIGGER);
 
 		setStateTypeOutput (    TRG_OUTPUT, STATE_TYPE_TRIGGER);
 
 		setStateTypeLight  (LINK_LIGHT_RGB, LIGHT_TYPE_RGB    );  
+		setStateTypeLight  (MODE_LIGHT_RGB, LIGHT_TYPE_RGB    );  
 	}
 
 	/**
@@ -122,6 +123,7 @@ struct Fence : Module {
 
 		setJsonLabel (       LINK_JSON, "link");
 		setJsonLabel ( LINK_DELTA_JSON, "linkDelta");
+		setJsonLabel (       GATE_JSON, "gate");
 
 		#pragma GCC diagnostic pop
 	}
@@ -134,8 +136,8 @@ struct Fence : Module {
 		configParam (         HIGH_PARAM,  getMinHigh (), getMaxHigh (), getDefaultHigh (), getHighLabel ());
 		configParam (         STEP_PARAM,  getMinStep (), getMaxStep (), getDefaultStep (), getStepLabel ());
 		configParam (         LINK_PARAM,            0.f,           1.f,               0.f, "Toggle Link");
-		configParam (          QTZ_PARAM,            0.f,           1.f,               0.f, "Toggle Quantize On/Off");
-		configParam (         SHPR_PARAM,            0.f,           1.f,               0.f, "Toggle Shpr On/Off");
+		configParam (         MODE_PARAM,            0.f,           1.f,               0.f, "Toggle Mode");
+		configParam (         GATE_PARAM,            0.f,           1.f,               0.f, "Toggle Trg/Gate");
 	}
 
 	/**
@@ -175,6 +177,8 @@ struct Fence : Module {
 
 		setStateJson ( LOWCLAMPED_JSON,                0.f);
 		setStateJson (HIGHCLAMPED_JSON,                0.f);
+
+		setStateJson (       GATE_JSON,                0.f);
 
 		setStateJson (       LINK_JSON, getForMode (DEFAULT_LINK_RAW, DEFAULT_LINK_QTZ, DEFAULT_LINK_SHPR));
 
@@ -267,6 +271,17 @@ struct Fence : Module {
 		}
 		return LINK_COLOR_NONE; // just for savety
 	}
+	/**
+		Function to get the color for mode
+	*/
+	inline int getModeColor (float link) {
+		switch (int(mode)) {
+			case 0: return MODE_COLOR_RAW;
+			case 1: return MODE_COLOR_QTZ;
+			case 2: return MODE_COLOR_SHPR;
+		}
+		return MODE_COLOR_RAW; // just for savety
+	}
 	/*
 		Methods to get labels dependent from link
 	*/
@@ -284,11 +299,6 @@ struct Fence : Module {
 	*/
 	inline void moduleProcess (const ProcessArgs &args) {
 
-		float cvOut = oldCvOut;
-		float processLow  = clamp (effectiveLow, minLow, maxHigh - minRange);
-		float processHigh = effectiveHigh >= processLow + minRange ? effectiveHigh : processLow + minRange;
-		float processStep = effectiveStep < minStep ? minStep : effectiveStep;
-
 		//
 		//	Undo knob fakes
 		//
@@ -301,13 +311,13 @@ struct Fence : Module {
 			knobFakeResetCnt --;
 		}
 
-		if (changeJson (MODE_JSON)) {	//	Recalculate cached values on mode change
+		if (changeJson (MODE_JSON))	//	Recalculate cached values on mode change
 			initializeForMode ();
-		}
 
 		if (changeJson (LINK_JSON)) {	//	Set linkDelta if link is switched on
-			if (link == LINK_RANGE_INT)
+			if (link == LINK_RANGE_INT) {
 				setStateJson (LINK_DELTA_JSON, getStateParam (HIGH_PARAM) - getStateParam (LOW_PARAM));
+			}
 			setStateJson (LOWCLAMPED_JSON, 0.f);
 			setStateJson (HIGHCLAMPED_JSON, 0.f);
 		}
@@ -315,11 +325,9 @@ struct Fence : Module {
 		processRangeKnobs ();
 		determineEffectiveRange ();
 		determineEffectiveStep ();
-
 		/*
 			Process cvIn
 		*/
-
 		/*
 			Check whether we have to do anything at all
 		*/
@@ -327,7 +335,10 @@ struct Fence : Module {
 						                       changeParam ( LOW_PARAM) || changeParam (HIGH_PARAM) || changeParam (STEP_PARAM) || changeJson  ( MODE_JSON))) ||
 			changeInput (TRG_INPUT)
 		) {
-			cvOut = getStateInput(CV_INPUT);
+			float cvOut = getStateInput(CV_INPUT);
+			float processLow  = clamp (effectiveLow, minLow, maxHigh - minRange);
+			float processHigh = effectiveHigh >= processLow + minRange ? effectiveHigh : processLow + minRange;
+			float processStep = effectiveStep < minStep ? minStep : effectiveStep;
 
 			if (mode == MODE_QTZ_INT)
 				cvOut = quantize (getStateInput (CV_INPUT));
@@ -409,24 +420,19 @@ struct Fence : Module {
 	*/
 	inline void moduleProcessState () {
 
-		if (inChangeParam (QTZ_PARAM)) {	//	User clicked on qtz button
-			if (getStateJson (MODE_JSON) != MODE_QTZ)
-				setStateJson (MODE_JSON, MODE_QTZ);
-			else {
-				setStateJson (MODE_JSON, MODE_RAW);
-			}
-		}
-
-		if (inChangeParam (SHPR_PARAM)) {	//	User clicked on shpr button
-			if (getStateJson (MODE_JSON) != MODE_SHPR)
-				setStateJson (MODE_JSON, MODE_SHPR);
-			else {
-				setStateJson (MODE_JSON, MODE_RAW);
-			}
-		}
+		if (inChangeParam (MODE_PARAM))	//	User clicked on mode button
+			setStateJson (MODE_JSON, float((int(getStateJson (MODE_JSON)) + 1) % 3));
 
 		if (inChangeParam (LINK_PARAM))	//	User clicked on link button
 			setStateJson (LINK_JSON, float((int(getStateJson (LINK_JSON)) + 1) % 3));
+
+		if (inChangeParam (GATE_PARAM)) {	//	User clicked on tr/gt button
+			if (getStateJson (GATE_JSON) == 0.f)
+				setStateJson (GATE_JSON, 1.f);
+			else {
+				setStateJson (GATE_JSON, 0.f);
+			}
+		}
 
 		if (changeJson (MODE_JSON)) {	//	Mode has changed. Restore low, high, step and link for new mode
 			//
@@ -465,11 +471,17 @@ struct Fence : Module {
 				setForMode (getStateJson  ( LINK_JSON), LINK_RAW_JSON, LINK_QTZ_JSON, LINK_SHPR_JSON);
 		}
 		/*
-			Set member variables to be used in moduleProcess()  and moduleReflectChanges () later on
+			Set member variables to be used in moduleProcess() and moduleReflectChanges () later on
 		*/
 		link = int(getStateJson (LINK_JSON));
 		mode = int(getStateJson (MODE_JSON));
-
+		/*
+			Check gate button
+		*/
+		if (getStateJson (GATE_JSON) > 0.f)
+			isGate (TRG_OUTPUT) = true;
+		else
+			isGate (TRG_OUTPUT) = false;
 	}
 	
 	/**
@@ -490,30 +502,28 @@ struct Fence : Module {
 			/*
 				Check for clamped state
 			*/
-			if (changeParam (LOW_PARAM) && getStateJson (LOWCLAMPED_JSON) > 0.f) {
+			if (inChangeParam (LOW_PARAM) && getStateJson (LOWCLAMPED_JSON) > 0.f) {
 				setStateJson (LOWCLAMPED_JSON, 0.f);
 				setStateJson (LINK_DELTA_JSON, high - low);
 			}
-			if (changeParam (HIGH_PARAM) && getStateJson (HIGHCLAMPED_JSON) > 0.f) {
+			if (inChangeParam (HIGH_PARAM) && getStateJson (HIGHCLAMPED_JSON) > 0.f) {
 				setStateJson (HIGHCLAMPED_JSON, 0.f);
 				setStateJson (LINK_DELTA_JSON, high - low);
 			}
 			/*
 				Move high knob if user moved low knob and vice versa
 			*/ 
-			if (changeParam (HIGH_PARAM)) {
+			if (inChangeParam (HIGH_PARAM)) {
 				low = clamp (high - getStateJson (LINK_DELTA_JSON), minLow, maxLow);	
-				if (low != high - getStateJson (LINK_DELTA_JSON)) {
+				if (low != high - getStateJson (LINK_DELTA_JSON))
 					setStateJson (LOWCLAMPED_JSON, 1.f);
-				}
 				setStateParam (LOW_PARAM, low);
 				change = true;
 			}
-			if (changeParam (LOW_PARAM)) {
+			if (inChangeParam (LOW_PARAM)) {
 				high = clamp (low + getStateJson (LINK_DELTA_JSON), minHigh, maxHigh);
-				if (high != low + getStateJson (LINK_DELTA_JSON)) {
+				if (high != low + getStateJson (LINK_DELTA_JSON))
 					setStateJson (HIGHCLAMPED_JSON, 1.f);
-				}
 				setStateParam (HIGH_PARAM, high);
 				change = true;
 			}
@@ -522,14 +532,15 @@ struct Fence : Module {
 			Ensure that high is not lower than low for link mode != center
 		*/
 		if (link != LINK_CENTER_INT && high < low) {
-			if (changeParam (LOW_PARAM)) {
+			if (inChangeParam (LOW_PARAM)) {
 				setStateParam (HIGH_PARAM, low);
+				change = true;
 			}
 			else 
-				if (changeParam (HIGH_PARAM)) {
+				if (inChangeParam (HIGH_PARAM)) {
 					setStateParam (LOW_PARAM,  high);
+					change = true;
 				}
-			change = true;
 		}
 		/*
 			Save changes for mode
@@ -629,6 +640,8 @@ struct Fence : Module {
 						float low = getStateParam (LOW_PARAM);
 						setStateParam (HIGH_PARAM, getStateParam (HIGH_PARAM) +      low);
 						setStateParam ( LOW_PARAM, getStateParam (HIGH_PARAM) -  2 * low);
+						setForMode (getStateParam ( LOW_PARAM),  LOW_RAW_JSON,  LOW_QTZ_JSON,  LOW_SHPR_JSON);
+						setForMode (getStateParam (HIGH_PARAM), HIGH_RAW_JSON, HIGH_QTZ_JSON, HIGH_SHPR_JSON);
 					}
 					break;
 				case LINK_CENTER_INT:
@@ -655,6 +668,8 @@ struct Fence : Module {
 					if (changeJson (LINK_JSON) && !changeJson (MODE_JSON) && link == LINK_CENTER_INT) {
 						setStateParam ( LOW_PARAM, (getStateParam (HIGH_PARAM) - getStateParam (LOW_PARAM)) / 2.f);
 						setStateParam (HIGH_PARAM,  getStateParam (HIGH_PARAM) - getStateParam (LOW_PARAM));
+						setForMode (getStateParam ( LOW_PARAM),  LOW_RAW_JSON,  LOW_QTZ_JSON,  LOW_SHPR_JSON);
+						setForMode (getStateParam (HIGH_PARAM), HIGH_RAW_JSON, HIGH_QTZ_JSON, HIGH_SHPR_JSON);
 					}
 					break;
 			}
@@ -667,21 +682,12 @@ struct Fence : Module {
 			knobFake = true;
 		}
 		/*
-			Set mode lights
+			Setlights
 		*/
-		if (!initialized || changeJson (MODE_JSON)) {
-			float qtzValue  = 0.f;
-			float shprValue = 0.f;
+		if (!initialized || changeJson (MODE_JSON))
+			setRgbLight (MODE_LIGHT_RGB, getModeColor (mode));
 
-			if (mode == MODE_QTZ_INT)
-				qtzValue    = 1.f;
-
-			if (mode == MODE_SHPR_INT)
-				shprValue   = 1.f;
-
-			setStateLight( QTZ_LIGHT, qtzValue);
-			setStateLight(SHPR_LIGHT, shprValue);
-		}
+		setStateLight (GATE_LIGHT, getStateJson (GATE_JSON) * 255.f);
 	}
 };
 
@@ -741,10 +747,13 @@ struct VOctWidget : TransparentWidget {
 				if (type == TYPE_STEP) {
 					int semis = note(cv);
 					sprintf (pStr, "%2d ST", semis);
+					if (int(sizeof(str)) <= snprintf (pStr, sizeof(str), "%2d ST", semis))
+						fprintf (stderr, "OrangeLine:cv2Str():Unxpected format overflow\n");
 				}
 			}
 			else {
-				sprintf (pStr, "% *.3f", 7, cv);
+				if (int(sizeof(str)) <= snprintf (pStr, sizeof(str), "% *.3f", 7, cv))
+					fprintf (stderr, "OrangeLine:cv2Str():Unxpected format overflow\n");
 			}
 		}
 		return pStr;
@@ -805,14 +814,14 @@ struct FenceWidget : ModuleWidget {
 		addParam (createParamCentered<RoundBlackKnob>		(mm2px (Vec (17.246 + 5,    128.5 - 92.970 - 5)),    module, HIGH_PARAM));
 		addParam (createParamCentered<RoundBlackKnob>		(mm2px (Vec ( 3.276 + 5,    128.5 - 57.568 - 5)),    module, STEP_PARAM));
 
-		float *pLowValue  = (module != NULL ? &(module->effectiveLow)  : NULL);
-		float *pHighValue = (module != NULL ? &(module->effectiveHigh) : NULL);
-		float *pStepValue = (module != NULL ? &(module->effectiveStep) : NULL);
+		float *pLowValue  = (module != nullptr ? &(module->effectiveLow)  : nullptr);
+		float *pHighValue = (module != nullptr ? &(module->effectiveHigh) : nullptr);
+		float *pStepValue = (module != nullptr ? &(module->effectiveStep) : nullptr);
 
-		float *pMode      = (module != NULL ? &(module->getStateJson (MODE_JSON)) : NULL);
+		float *pMode      = (module != nullptr ? &(module->getStateJson (MODE_JSON)) : nullptr);
 
 		float mode;
-		if (pMode != NULL)
+		if (pMode != nullptr)
 			mode = *pMode;
 		else
 		    mode = DEFAULT_MODE;
@@ -828,11 +837,11 @@ struct FenceWidget : ModuleWidget {
 		addParam (createParamCentered<LEDButton>		(mm2px (Vec (12.858 + 2.38, 128.5 - 88.900 - 2.38)), module, LINK_PARAM));
  		addChild (createLightCentered<LargeLight<RedGreenBlueLight>>	(mm2px (Vec (12.858 + 2.38, 128.5 - 88.900 - 2.38)), module, LINK_LIGHT_RGB));
 		
-		addParam (createParamCentered<LEDButton>		(mm2px (Vec (20.638 + 2.38, 128.5 - 56.525 - 2.38)), module, QTZ_PARAM));
- 		addChild (createLightCentered<LargeLight<GreenLight>>	(mm2px (Vec (20.638 + 2.38, 128.5 - 56.525 - 2.38)), module, QTZ_LIGHT));
+		addParam (createParamCentered<LEDButton>		(mm2px (Vec (20.638 + 2.38, 128.5 - 56.525 - 2.38)), module, MODE_PARAM));
+ 		addChild (createLightCentered<LargeLight<RedGreenBlueLight>>	(mm2px (Vec (20.638 + 2.38, 128.5 - 56.525 - 2.38)), module, MODE_LIGHT_RGB));
 		
-		addParam (createParamCentered<LEDButton>		(mm2px (Vec (20.638 + 2.38, 128.5 - 48.577 - 2.38)), module, SHPR_PARAM));
- 		addChild (createLightCentered<LargeLight<GreenLight>>	(mm2px (Vec (20.638 + 2.38, 128.5 - 48.577 - 2.38)), module, SHPR_LIGHT));
+		addParam (createParamCentered<LEDButton>		(mm2px (Vec (20.638 + 2.38, 128.5 - 48.577 - 2.38)), module, GATE_PARAM));
+ 		addChild (createLightCentered<LargeLight<YellowLight>>	(mm2px (Vec (20.638 + 2.38, 128.5 - 48.577 - 2.38)), module, GATE_LIGHT));
 
 		addInput (createInputCentered<PJ301MPort>		(mm2px (Vec ( 4.049 + 4.2 , 128.5 - 82.947 - 4.2)),  module, LOW_INPUT));
 		addInput (createInputCentered<PJ301MPort>		(mm2px (Vec (18.019 + 4.2 , 128.5 - 82.947 - 4.2)),  module, HIGH_INPUT));
