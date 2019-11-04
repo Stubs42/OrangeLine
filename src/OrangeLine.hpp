@@ -78,6 +78,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define maxStateIdxOutput			(stateIdxLight  (0) - 1)
 #define maxStateIdxLight			(NUM_STATES - 1)
 
+#define isGate(i)                   OL_isGate[i]
 #define getInputConnected(i)		OL_inputConnected[i]
 #define initialized					OL_initialized
 

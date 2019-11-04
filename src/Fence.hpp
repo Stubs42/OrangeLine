@@ -42,6 +42,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define LINK_COLOR_RANGE  0x00ff00
 #define LINK_COLOR_CENTER 0x0000ff
 
+#define MODE_COLOR_RAW    0x000000
+#define MODE_COLOR_QTZ    0x00ff00
+#define MODE_COLOR_SHPR   0xff0000
+
 //
 // Value Ranges
 //
@@ -51,9 +55,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define LOW_MAX_RAW    10.f
 #define HIGH_MIN_RAW  -10.f
 #define HIGH_MAX_RAW   10.f
-#define STEP_MIN_RAW    0.f
+#define STEP_MIN_RAW    0.0001f
 #define STEP_MAX_RAW   10.f
-#define MIN_RANGE_RAW   0.f
+#define MIN_RANGE_RAW   0.1f
 
 #define LOW_MIN_QTZ   -10.f
 #define LOW_MAX_QTZ    10.f 
@@ -74,7 +78,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define PRECISION       0.0000000001f
 #define KNOB_FAKE_DELTA 0.0001f
 #define KNOB_FAKE_STEPS 5000
-
 
 //
 //	Dynamic Labels
@@ -151,6 +154,8 @@ enum jsonIds {
 	LINK_JSON,
 	LINK_DELTA_JSON,
 
+	GATE_JSON,
+
 	NUM_JSONS
 };
 
@@ -164,8 +169,8 @@ enum ParamIds {
 	LOW_PARAM,				// Range Low Knob
 	HIGH_PARAM,				// Range High Knob
 	LINK_PARAM,				// Range Link Button
-	QTZ_PARAM,				// Quantize Button
-	SHPR_PARAM,				// Shpr Button (Audio Mode)
+	MODE_PARAM,				// Quantize Button
+	GATE_PARAM,				// Shpr Button (Audio Mode)
 	STEP_PARAM,				// Step Knob
 		
 	NUM_PARAMS
@@ -198,8 +203,10 @@ enum OutputIds {
 // Ligh Ids
 //
 enum LightIds {
-	QTZ_LIGHT,				// Light indicating quantized mode
-	SHPR_LIGHT,				// Light indicating shpr (Audio mode)
+	MODE_LIGHT_RGB,			// Light indicating quantized mode
+	MODE_LIGHT__G_,
+	MODE_LIGHT___B,
+	GATE_LIGHT,				// Light indicating trigger or gate mode
 	LINK_LIGHT_RGB,			// Light indicating range min/max link mode
 	LINK_LIGHT__G,
 	LINK_LIGHT___B,
