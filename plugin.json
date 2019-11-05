@@ -23,6 +23,15 @@
         "Distortion",
         "WaveShaper"
       ]
+    },
+    {
+      "slug": "Swing",
+      "name": "Swing",
+      "description": "Micro Timing Sequencer",
+      "tags": [
+        "Sequencer",
+        "Clock"
+      ]
     }
   ]
 }

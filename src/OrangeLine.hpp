@@ -21,10 +21,13 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
+
 #ifndef ORANGE_LINE_HPP
 #define ORANGE_LINE_HPP
 
 #include "plugin.hpp"
+
+#define ORANGE						nvgRGB(255, 102, 0)
 
 #define STATE_TYPE_VALUE   0
 #define STATE_TYPE_VOLTAGE 0
@@ -98,5 +101,55 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 	ParamQuantity *pq = paramQuantities[paramId]; \
 	pq->defaultValue = defaultVal; \
 }
+
+// ********************************************************************************************************************************
+/**
+	Widgets
+*/
+
+/**
+	Widget to display cvOct values as floats or notes
+*/
+struct NumberWidget : TransparentWidget {
+
+	std::shared_ptr<Font> pFont;
+
+    Module     *module = nullptr;
+	float      *pValue = nullptr;
+ 	const char *format = nullptr;
+	char       *buffer = nullptr;
+	int         length = 0;
+	float       defaultValue = 0.f;
+
+    static NumberWidget* create (Vec pos, Module *module, float *pValue, float defaultValue, const char *format, char *buffer, int length) {
+        NumberWidget *w = new NumberWidget();
+
+		w->pFont    = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
+        w->box.pos  = pos;
+        w->box.size = mm2px (Vec (4 * length, 7));
+        w->module   = module;
+        w->pValue   = pValue;
+        w->format   = format;
+        w->buffer   = buffer;
+        w->length   = length;
+
+        return w;
+    }
+	/**
+		Constructor
+	*/
+	NumberWidget () {
+	}
+
+	void draw (const DrawArgs &drawArgs) override {
+		nvgFontFaceId (drawArgs.vg, pFont->handle);
+		nvgFontSize (drawArgs.vg, 18);
+		nvgFillColor (drawArgs.vg, ORANGE);
+        float value = pValue != nullptr ? *pValue : defaultValue;
+        snprintf (buffer, length + 1, format, value);
+        buffer[length] = '\0';
+		nvgText (drawArgs.vg, 0, 0, buffer, nullptr);
+	}
+};
 
 #endif
