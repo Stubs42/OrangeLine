@@ -24,7 +24,7 @@ Note that this may in a result in a CV OUT larger than the upper limit.
 
 In quantized mode (green light), CV IN and STEP are quantized to semi tone voltages so CV OUT is quantized too. In quantized mode, STEP is working in a special way. Fence will first use a fixed step of 1V (1 octave). If the resulting cv is higher than the upper range limit, it uses STEP to determine an alternative note (alt = CV - 1 + STEP). If alt is in range or high < alt < CV, alt will be sent to CV OUT. This way you can allow Fence for example to replace a note by its 5th (STEP = 7 ST) or minor third (STEP = 3 ST) if those would fit in range. A STEP of 0 disables alternative notes and is fine in most use cases.
 
-In shaper mode (orange light) Fence processes CV IN as an audio signal [-5:5]V, applying the described algorythm to the audio signal. CV OUT in SHPR mode is centered and scaled to [-5:5]V.
+In shaper mode (red light) Fence processes CV IN as an audio signal [-5:5]V, applying the described algorythm to the audio signal. CV OUT in SHPR mode is centered and scaled to [-5:5]V.
 
 When the mode light is off, Fence is working in raw mode processing signals between -10 and 10 V. All voltages are used as they are without any conversion. Still output is clamped to [-10:10]V.
 
