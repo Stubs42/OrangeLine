@@ -31,3 +31,26 @@ If QNT and SHPR are off, Fence is working in raw mode processing signals between
 Fence will send a TRG OUT whenever cv out is changing.
 
 If TRG IN is connected, Fence will not work continously but more like a S&H when a trigger in is detected.
+
+## Swing [Beta]
+
+<p align="center"><img src="res/SwingImage.svg"></p>
+
+### Short Description
+
+Swing is a micro timing sequencer generating a micro timed clock to implement custom micro timing the easy way.
+
+DIV controls how many beats are created for one clock in trg. 
+LEN controls how many of the 16 timing settings will be applied before looping back to the first one.
+Default setup is DIV 4 and LEN 16 which is fine for 16 16th of a 4/4 bar. For a simple swing LEN 2 is sufficient. You only have to dial in the first 2 knobs in this case.
+AMT controls how much the timing knobs will influence the timing. AMT = 0% switches micro timing off.
+The 16 timing knobs allow to setup the timing for each beat.
+RST, BPM and CLK have to be connected to your clock. Swing will not work without BPM and Clock connected !
+Start with setting up Clocked and connect the CLK and BPM to swing. With DIV 4 Swing will output a micro timed 16th clk.
+tCLK (timed clock) will output the micro timed clock.
+eCLK (early clock) will output a trg the eraliest time tCLK can appear. Use eCLK to run sequencers delivering values used when tCLK hits.
+I recommend to always do a S&H of all values needed for a step when tCLK arrives to avoid note tails.
+PHS and CMP are output to allow for further timing like humanization (a module using this will come!).
+
+
+
