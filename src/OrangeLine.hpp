@@ -39,6 +39,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define NUM_STATES					(NUM_JSONS + NUM_PARAMS + NUM_INPUTS + NUM_OUTPUTS + NUM_LIGHTS)
 #define NUM_TRIGGERS				(NUM_PARAMS + NUM_INPUTS)
 
+#define PRECISION       0.0000000001f
+
 #define stateIdxJson(i)				(i)
 #define stateIdxParam(i)			(NUM_JSONS + (i))
 #define stateIdxInput(i)			(NUM_JSONS + NUM_PARAMS + (i))
@@ -111,6 +113,12 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 	ParamQuantity *pq = paramQuantities[paramId]; \
 	pq->defaultValue = defaultVal; \
 }
+
+#define N 624
+#define M 397
+#define MATRIX_A 0x9908b0dfUL   /* constant vector a */
+#define UPPER_MASK 0x80000000UL /* most significant w-r bits */
+#define LOWER_MASK 0x7fffffffUL /* least significant r bits */
 
 // ********************************************************************************************************************************
 /**

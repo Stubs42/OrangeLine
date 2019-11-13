@@ -21,6 +21,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <string>
 #include <stdio.h>
 #include <limits.h>
+#include <sys/time.h>
 
 #include "Mother.hpp"
 
@@ -45,10 +46,18 @@ struct Mother : Module {
 	const char *scaleKeys[SCALE_KEYS]  = { "2212221", "2122212", "1222122",  "2221221", "2212212",    "2122122",   "1221222" };
 	const char *scaleNames[SCALE_KEYS] = { "Major",   "Dorian",  "Phrygian", "Lydian",  "Myxolodian", "nat.Minor", "Locrian" };
 
-	int   effectiveRoot  = 0;
-	int   effectiveScale = 0;
-	float effectiveScaleDisplay = 0.f;
-	int   effectiveChild = 0;
+	int   	effectiveRoot  = 0;
+	int   	effectiveScale = 0;
+	float 	effectiveScaleDisplay = 0.f;
+	int   	effectiveChild = 0;
+	int   	jsonOnOffBaseIdx = ONOFF_JSON;
+	int   	jsonWeightBaseIdx = WEIGHT_JSON;
+	float  	pCvOut[NUM_NOTES];
+	float	pProb[NUM_NOTES];
+	int		pCnt = 0;
+	float	pTotal = 0;
+
+	float oldCvOut = 0;
 
 	#include "MotherJsonLabels.hpp"
 
@@ -105,7 +114,7 @@ struct Mother : Module {
 		configParam (    CHLD_PARAM,  0.f, 11.f, 0.f, "Child Scale" , "", 0.f, 1.f / 12.f, 0.f);
 		setCustomChangeMaskParam (CHLD_PARAM, CHG_CHLD);
 		configParam (FATE_AMT_PARAM,  0.f,  6.f, 0.f, "Amount"      , "", 0.f, 1.f, 0.f);
-		configParam (FATE_SHP_PARAM, -3.f,  4.f, 0.f, "Shape"       , "", 0.f, 1.f, 0.f);
+		configParam (FATE_SHP_PARAM,  0.f,  1.f, 0.f, "Shape"       , "", 0.f, 1.f, 0.f);
 
 		for (int i = NUM_NOTES - 1; i >= 0; i--) {
     		configParam (WEIGHT_PARAM + i,  0.f, 1.f, 0.5f, "Weight",      "", 0.f, 1.f, 0.f);
@@ -116,6 +125,7 @@ struct Mother : Module {
 		setCustomChangeMaskInput ( SCL_INPUT, CHG_SCL);
 		setCustomChangeMaskInput (CHLD_INPUT, CHG_CHLD);
 		setCustomChangeMaskInput (ROOT_INPUT, CHG_ROOT);
+		isGate (GATE_OUTPUT) = true;
 	}
 
 	/**
@@ -149,6 +159,10 @@ struct Mother : Module {
 		for (int i = WEIGHT_JSON; i <= WEIGHT_JSON_LAST; i ++) {
 			setStateJson (i, 0.5f);
 		}
+		struct timeval tp;
+		gettimeofday(&tp, NULL);
+		unsigned long int seed = tp.tv_sec * 1000 + tp.tv_usec / 1000;
+		init_genrand (seed);
 	}
 
 // ********************************************************************************************************************************
@@ -199,23 +213,106 @@ struct Mother : Module {
 		}
 	}
 
-/*
-	inline int getValidChild () {
-		int scale = effectiveScale;
-		int child = effectiveChild;
-		while (child > 0) {
-			if (getStateJson (ONOFF_JSON + scale * NUM_NOTES + child) > 0.f)
-				break;
-			child --;			
-		}
-		return child;
-	}
-*/
 	/**
 		Module specific process method called from process () in OrangeLineCommon.hpp
 	*/
 	inline void moduleProcess (const ProcessArgs &args) {
+
 		checkTmpHead ();
+
+		bool rndConnected = getInputConnected (RND_INPUT);
+		if (rndConnected)
+			init_genrand (int(round (getStateInput (RND_INPUT) * 100000)));
+
+		bool trgConnected = getInputConnected (TRG_INPUT);
+		bool triggered = false;
+		float cvOut;
+		float cvIn;
+		float semiAmt = getStateParam (FATE_AMT_PARAM) / 12;
+		float shp = getStateParam (FATE_SHP_PARAM);
+		float d ;
+		float weight = 0;
+		int	noteIdx;
+		float rnd;
+
+		if (changeInput (TRG_INPUT) && trgConnected) {
+			if (!getInputConnected (CV_INPUT)) {
+				setStateInput (CV_INPUT, (genrand_real () * 20.f) - 10.f);
+			}
+			triggered = true;
+		}
+
+		if (triggered || (!trgConnected && changeInput (CV_INPUT))) {
+			pCnt = 0;
+			pTotal = 0.f;
+			cvIn  = getStateInput (CV_INPUT);
+			cvOut = quantize (cvIn);
+			int note = note(cvOut);
+			noteIdx = (note - effectiveChild + NUM_NOTES) % NUM_NOTES;
+			//  printf ("note in = %s, noteIdx = %d, getStateJson () -> %f\n", notes[note], noteIdx, getStateJson (jsonOnOffBaseIdx + note));
+			if (getStateJson (jsonOnOffBaseIdx + note) > 0.f && semiAmt > 0.f) {
+				d = abs (cvIn - cvOut);
+				pCvOut[pCnt] = cvOut;
+				weight = getStateParam (WEIGHT_PARAM + noteIdx);	//	getStateJson (jsonWeightBaseIdx + noteIdx);
+				if (round(weight * 100) == 50.f && effectiveChild > 0) {
+					weight = getMotherWeight (noteIdx);
+				}
+				if (weight > 0) {
+					weight *= ((shp == 1.f) ? 1.f : 1.f - (d * (1 - shp)) / semiAmt);
+					pProb[pCnt] = weight;
+					pTotal += weight;
+					pCnt ++;
+				}
+			}
+			if (getStateJson (jsonOnOffBaseIdx + note) == 0.f || semiAmt > 0.f) {
+				float step = -SEMITONE;
+				if (cvIn > cvOut)
+					step = SEMITONE;
+				for (int i = 0; i < NUM_NOTES; i++) {
+					cvOut += step;
+					note = note (cvOut);
+					noteIdx = (note - effectiveChild + NUM_NOTES) % NUM_NOTES;
+					if (getStateJson (jsonOnOffBaseIdx + note) > 0.f) {
+						if (semiAmt == 0.f)
+							break;
+						d = abs (cvIn - cvOut);
+						if (d > semiAmt)
+							break;
+						pCvOut[pCnt] = cvOut;
+						weight = getStateParam (WEIGHT_PARAM + noteIdx);
+						if (round(weight * 100.f) == 50.f && effectiveChild > 0) {
+							weight = getMotherWeight (noteIdx);
+						}
+						if (weight > 0) {
+							weight *= ((shp == 1.f) ? 1.f : 1.f - (d * (1 - shp)) / semiAmt);
+							pProb[pCnt] = weight;
+							pTotal += weight;
+							pCnt ++;
+						}
+					}
+					step = step > 0.f ? -step - SEMITONE : -step + SEMITONE;
+				}
+			}
+
+			if (pCnt > 0) {
+				float sum = 0.f;
+				rnd = genrand_real () * pTotal;
+				for (int i = 0; i < pCnt; i++) {
+					sum += pProb[i];
+					if (sum >= rnd) {
+						cvOut = pCvOut[i];
+						break;
+					}
+				}
+			}
+
+			if (abs (cvOut - oldCvOut) > PRECISION) {
+				setStateOutput (GATE_OUTPUT, 10.f);
+			}
+			setStateOutput (CV_OUTPUT, cvOut);
+			oldCvOut = cvOut;
+		}
+
 	}
 
 	/**
@@ -228,7 +325,6 @@ struct Mother : Module {
 		This method should not do dsp or other logic processing.
 	*/
 	inline void moduleProcessState () {
-//		printf ("moduleProcessState (): getStateInput ( SCL_INPUT) = %f\n", getStateInput ( SCL_INPUT));
 		effectiveScale = (int (getStateParam ( SCL_PARAM)) - 1 + note (getStateInput ( SCL_INPUT))) % NUM_NOTES;
 		effectiveScaleDisplay = float(effectiveScale + 1);
 		effectiveChild = (int (getStateParam (CHLD_PARAM))     + note (getStateInput (CHLD_INPUT))) % NUM_NOTES;
@@ -239,7 +335,7 @@ struct Mother : Module {
 		}
 		effectiveRoot  = (int (getStateParam (ROOT_PARAM))     + note (getStateInput (ROOT_INPUT))) % NUM_NOTES;
 
-		int jsonBaseIdx = ONOFF_JSON + effectiveScale * NUM_NOTES;
+		int jsonOnOffBaseIdx = ONOFF_JSON + effectiveScale * NUM_NOTES;
 		int jsonIdx;
 		float f;
 
@@ -247,7 +343,7 @@ struct Mother : Module {
 			if (effectiveChild == 0) {
 				for (int paramIdx = ONOFF_PARAM, i = 0; paramIdx <= ONOFF_PARAM_LAST; paramIdx ++, i++) {
 					if (inChangeParam (paramIdx) && paramIdx - ONOFF_PARAM != 0) {
-						jsonIdx = jsonBaseIdx + (i + effectiveChild) % NUM_NOTES;
+						jsonIdx = jsonOnOffBaseIdx + (i + effectiveChild) % NUM_NOTES;
 						f = getStateJson (jsonIdx);
 						if (f == 0.f)
 							f = 1.f;
@@ -259,14 +355,13 @@ struct Mother : Module {
 			}
 		}
 
-		jsonBaseIdx = WEIGHT_JSON + effectiveScale * NUM_CHLD * NUM_NOTES + effectiveChild * NUM_NOTES;
+		jsonWeightBaseIdx = WEIGHT_JSON + effectiveScale * NUM_CHLD * NUM_NOTES + effectiveChild * NUM_NOTES;
 		if (customChangeBits & CHG_WEIGHT) {
 			float weight;
 			int pct;
-			int jsonOnOffBaseIdx = ONOFF_JSON + effectiveScale * NUM_NOTES;
 			for (int paramIdx = WEIGHT_PARAM, i = 0; paramIdx <= WEIGHT_PARAM_LAST; paramIdx ++, i++) {
 				if (inChangeParam (paramIdx) && initialized) {
-					jsonIdx = jsonBaseIdx + i;
+					jsonIdx = jsonWeightBaseIdx + i;
 					weight = getStateParam (paramIdx);
 					setStateJson (jsonIdx, weight);
 					pct = int(round (weight * 100.f));
@@ -284,7 +379,7 @@ struct Mother : Module {
 		}
 		if (customChangeBits & (CHG_SCL | CHG_CHLD)) {
 			for (int paramIdx = WEIGHT_PARAM, i = 0; paramIdx <= WEIGHT_PARAM_LAST; paramIdx ++, i++) {
-				jsonIdx = jsonBaseIdx + i;
+				jsonIdx = jsonWeightBaseIdx + i;
 				setStateParam (paramIdx, getStateJson (jsonIdx));
 			}
 		}
@@ -341,7 +436,7 @@ struct Mother : Module {
 		Non standard reflect processing results to user interface components and outputs
 	*/
 	inline void moduleReflectChanges () {
-		if ((customChangeBits & (CHG_ONOFF | CHG_SCL | CHG_CHLD)) || !initialized) 	
+		if ((customChangeBits & (CHG_ONOFF | CHG_SCL | CHG_CHLD)) || !initialized) 
 			setHeadScale ();
 
 		if ((customChangeBits & (CHG_SCL | CHG_CHLD | CHG_ROOT)) || !initialized) {
@@ -400,7 +495,7 @@ struct MotherWidget : ModuleWidget {
    		addParam (knob);
 
         knob = createParamCentered<RoundSmallBlackKnob> (mm2px (Vec (24.098 + 4, 128.5 - 99.822 - 4)), module, FATE_SHP_PARAM);
-        knob->snap = true;
+        // knob->snap = true;
    		addParam (knob);
 
 		for (int i = 0; i < NUM_NOTES; i++) {

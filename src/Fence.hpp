@@ -75,7 +75,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define STEP_MAX_SHPR  10.f
 #define MIN_RANGE_SHPR  0.1f
 
-#define PRECISION       0.0000000001f
 #define KNOB_FAKE_DELTA 0.0001f
 #define KNOB_FAKE_STEPS 5000
 
