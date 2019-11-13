@@ -81,6 +81,16 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define maxStateIdxOutput			(stateIdxLight  (0) - 1)
 #define maxStateIdxLight			(NUM_STATES - 1)
 
+#define getCustomChangeMask(i)		OL_customChangeMask[i]
+#define getCustomChangeMaskParam(i)	getCustomChangeMask(i)
+#define getCustomChangeMaskInput(i)	getCustomChangeMask(NUM_PARAMS + (i))
+
+#define setCustomChangeMask(i, v)	(OL_customChangeMask[i] = (v))
+#define setCustomChangeMaskParam(i, v)	setCustomChangeMask((i), (v))
+#define setCustomChangeMaskInput(i, v)	setCustomChangeMask(NUM_PARAMS + (i), (v))
+
+#define customChangeBits			OL_customChangeBits
+
 #define isGate(i)                   OL_isGate[i]
 #define getInputConnected(i)		OL_inputConnected[i]
 #define initialized					OL_initialized
@@ -149,6 +159,47 @@ struct NumberWidget : TransparentWidget {
         snprintf (buffer, length + 1, format, value);
         buffer[length] = '\0';
 		nvgText (drawArgs.vg, 0, 0, buffer, nullptr);
+	}
+};
+
+/**
+	Widget to display cvOct values as floats or notes
+*/
+struct TextWidget : TransparentWidget {
+
+	std::shared_ptr<Font> pFont;
+
+    Module     *module = nullptr;
+	const char *text   = nullptr;
+	int         length = 0;
+	const char *defaultText = nullptr;
+
+    static TextWidget* create (Vec pos, Module *module, const char *text, const char * defaultText, int length) {
+        TextWidget *w = new TextWidget();
+
+		w->pFont    = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
+        w->box.pos  = pos;
+        w->box.size = mm2px (Vec (4 * length, 7));
+        w->module   = module;
+        w->text     = text;
+        w->defaultText  = defaultText;
+        w->length   = length;
+
+        return w;
+    }
+
+	/**
+		Constructor
+	*/
+	TextWidget () {
+	}
+
+	void draw (const DrawArgs &drawArgs) override {
+		nvgFontFaceId (drawArgs.vg, pFont->handle);
+		nvgFontSize (drawArgs.vg, 18);
+		nvgFillColor (drawArgs.vg, ORANGE);
+        const char* str = (text != nullptr ? text : defaultText);
+		nvgText (drawArgs.vg, 0, 0, str, nullptr);
 	}
 };
 

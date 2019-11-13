@@ -43,6 +43,8 @@ bool  OL_inStateChange  [NUM_STATES];	//	flags to control processing for incomin
 bool  OL_outStateChange [NUM_STATES];	//	flags to control reflection for outgoing state changes
 bool  OL_inputConnected [NUM_INPUTS];	//	flags to remember connected inputs
 char  *OL_jsonLabel     [NUM_JSONS];	//	lables of json state properties
+unsigned long OL_customChangeMask[NUM_PARAMS + NUM_INPUTS];	// bitmask to speed up change detection in process
+unsigned long OL_customChangeBits = 0;		// change bits set based on OL_customChangeMasks
 dsp::SchmittTrigger *OL_inStateTrigger  [NUM_TRIGGERS];	//	trigger objects for param (buttons) and inputs (triggers)
 dsp::PulseGenerator *OL_outStateTrigger [NUM_OUTPUTS];	//	pulse generator objects for outputs (triggers)
 bool OL_isGate [NUM_OUTPUTS];
@@ -84,11 +86,12 @@ inline void initializeInstance () {
 	moduleInitStateTypes ();	//	Method to overwrite defaults by module specific settings 
 	allocateTriggers();			//	Allocate triggers and pulse generators for trigger I/O
 	moduleInitJsonConfig ();	//	Initialize json configuration like setting the json labels for json state attributes
-	memset (         OL_state,   0.f, sizeof (OL_state));			//	Initialize state values
-	memset ( OL_inStateChange, false, sizeof (OL_inStateChange));	//	Initialize incoming state changes
-	memset (OL_outStateChange, false, sizeof (OL_outStateChange));	//	Initialize outgoing state changes
-	memset (        OL_isGate, false, sizeof (OL_isGate));			//	Initialize trg outputs to TRIGGER = false (GATE = true)
-	memset (  OL_wasTriggered, false, sizeof (OL_wasTriggered));	//	Initialize trg outputs to TRIGGER = false (GATE = true)
+	memset (           OL_state,   0.f, sizeof (OL_state));			//	Initialize state values
+	memset (   OL_inStateChange, false, sizeof (OL_inStateChange));	//	Initialize incoming state changes
+	memset (  OL_outStateChange, false, sizeof (OL_outStateChange));	//	Initialize outgoing state changes
+	memset (          OL_isGate, false, sizeof (OL_isGate));			//	Initialize trg outputs to TRIGGER = false (GATE = true)
+	memset (    OL_wasTriggered, false, sizeof (OL_wasTriggered));	//	Initialize trg outputs to TRIGGER = false (GATE = true)
+	memset (OL_customChangeMask, 0,     sizeof (OL_customChangeMask));	// Initialie customChangeMasks to 0s
 	/*
 		Now we call moduleReset () to ensure that a valid json state is created before this constructor
 		returns.
@@ -255,6 +258,7 @@ inline void initialize () {
 	Check all params and inputs, write their values to state and set state changes accordingly
 */
 inline void processParamsAndInputs () {
+	OL_customChangeBits = 0;
 	/*
 		Process Params
 	*/
@@ -275,11 +279,15 @@ inline void processParamsAndInputs () {
 
 				this will not work because it looks like we get a new SchmittTigger instance for every call...
 			*/
-			if (((dsp::SchmittTrigger*)OL_inStateTrigger[paramIdx])->process (OL_state[stateIdx]))
+			if (((dsp::SchmittTrigger*)OL_inStateTrigger[paramIdx])->process (OL_state[stateIdx])) {
 				OL_inStateChange[stateIdx] = true;
+				OL_customChangeBits |= getCustomChangeMaskParam (paramIdx);
+			}
 		}
 		else {
 			setInStateParam (paramIdx, params[paramIdx].getValue ());
+			if (inChangeParam (paramIdx))
+				OL_customChangeBits |= getCustomChangeMaskParam (paramIdx);
 		}
 	}
 	/*
@@ -298,6 +306,7 @@ inline void processParamsAndInputs () {
 		}
 		else {
 			OL_inputConnected[inputIdx] = false;
+			setStateInput (inputIdx, 0.f);
 			continue;	// not connected, so no processing of a value neccessary
 		}            
 		if (getStateTypeInput (inputIdx) == STATE_TYPE_TRIGGER) {
@@ -316,11 +325,15 @@ inline void processParamsAndInputs () {
 
 				this will not work because it looks like we get a new SchmittTigger instance for every call...
 			*/
-			if (((dsp::SchmittTrigger*)OL_inStateTrigger[NUM_PARAMS + inputIdx])->process (OL_state[stateIdx]))
+			if (((dsp::SchmittTrigger*)OL_inStateTrigger[NUM_PARAMS + inputIdx])->process (OL_state[stateIdx])) {
 				OL_inStateChange[stateIdx] = true;
+				OL_customChangeBits |= getCustomChangeMaskInput (inputIdx);
+			}
 		}
-		else 
+		else { 
 			setStateInput (inputIdx, inputs[inputIdx].getVoltage ());
+			OL_customChangeBits |= getCustomChangeMaskInput (inputIdx);
+		}
 	}
 }
 

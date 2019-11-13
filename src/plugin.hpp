@@ -10,4 +10,5 @@ extern Plugin *pluginInstance;
 // Declare each Model, defined in each module source file
 extern Model *modelFence;
 extern Model *modelSwing;
+extern Model *modelMother;
 
