@@ -63,12 +63,12 @@ You can set up the notes available for the mother and its daughter scales with t
 The root (lowest note) has to be always on for a mother scale, so this button is disabled.
 Note on/off only can be changed for the mother scale when CHLD is set to 0. If CHLD is not 0, note on/off buttons are disabled.
 Mother will detect known scales automatically and shows its name in the header.
-You can setup up to 12 mother scales and select them using the SCL cv.
+You can setup up to 12 mother scales and select them using the SCL CV input or knob.
 SCL, CHLD and ROOT inputs use quantized semiton values, so sending a C will select mother scale 1.
 For each mother scale, you can set up probability weights for each note of each daughter scale.
 CHLD 0 selects the mother scale itsself. CHLD N shifts note on/off and weights by position.
 ROOT selects the root note of the mother scale.
-Weights for daughter scales (CHLD > 0) have two special values. 50% tells Mother to use the weight of the mother scale at the same position. So if mother scale with root C has weight 100% on C (position 1 in mother scale), the daughter scale will use a weight of 100% for D (position 1 in daughter scale) of 100% if the weight of position 1 of the daughter scale is set to 50%. Blue lights indicate that weight for this note is 50% and the mother weight is used. A weight of 100% has a special meaning too (Grab). When processing of FATE hits a note with weight 100% it uses this note without further probability processing.
+Weights for daughter scales (CHLD > 0) have two special values. 50% tells Mother to use the weight of the mother scale at the same position. So if mother scale with root C has weight 100% on C (position 1 in mother scale), the daughter scale will use a weight of 100% for D (position 1 in daughter scale) if the weight of position 1 of the daughter scale is set to 50%. Blue lights indicate that weight for this note is 50% and the mother weight is used. A weight of 100% has a special meaning too (Grab). When processing of FATE hits a note with weight 100% it uses this note without further probability processing. The note light will turn red if Grab is active for that note (weight 100%).
 FATE allows mother to choose notes by probability. If SPAN is 0 no probability processing is done and Mother works like a normal quantizer. With SPAN > 0 Mother will use neighbour notes and its weight to select one of them. The RND input allows to feed a seed to the internal random generator to get repeatable patterns. The internal random generator is reset to the seed at every process cycle. So you should change RND input for each trigger you send to Mother.
 If TRG is connected Mother will only process CV in when a trigger is received. If TRG is not connected Mother will process on each (quantized) change of CV in. On change of CV out a gate is produced on the GATE output.
 POW will output the weight of the selected note.
