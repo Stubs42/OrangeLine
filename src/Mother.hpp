@@ -33,7 +33,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define CHG_CHLD    (1 << 3)
 #define CHG_ROOT    (1 << 4)
 
-#define SCALE_KEYS  7
 //
 // Defaults
 //

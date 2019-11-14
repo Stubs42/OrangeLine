@@ -43,9 +43,6 @@ struct Mother : Module {
 	const char *notes[NUM_NOTES] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
 	const char *interval = "0123456789ABO";
 	
-	const char *scaleKeys[SCALE_KEYS]  = { "2212221", "2122212", "1222122",  "2221221", "2212212",    "2122122",   "1221222" };
-	const char *scaleNames[SCALE_KEYS] = { "Major",   "Dorian",  "Phrygian", "Lydian",  "Myxolodian", "nat.Minor", "Locrian" };
-
 	int   	effectiveRoot  = 0;
 	int   	effectiveScale = 0;
 	float 	effectiveScaleDisplay = 0.f;
@@ -61,6 +58,7 @@ struct Mother : Module {
 	float oldCvOut = 0;
 
 	#include "MotherJsonLabels.hpp"
+	#include "MotherScales.hpp"
 
 // ********************************************************************************************************************************
 /*
@@ -235,6 +233,8 @@ struct Mother : Module {
 		float weight = 0;
 		int	noteIdx;
 		float rnd;
+		bool grab = false;
+		float roundedWeight;
 
 		if (changeInput (TRG_INPUT) && trgConnected) {
 			if (!getInputConnected (CV_INPUT)) {
@@ -250,22 +250,27 @@ struct Mother : Module {
 			cvOut = quantize (cvIn);
 			int note = note(cvOut);
 			noteIdx = (note - effectiveChild + NUM_NOTES) % NUM_NOTES;
-			//  printf ("note in = %s, noteIdx = %d, getStateJson () -> %f\n", notes[note], noteIdx, getStateJson (jsonOnOffBaseIdx + note));
 			if (getStateJson (jsonOnOffBaseIdx + note) > 0.f && semiAmt > 0.f) {
 				d = abs (cvIn - cvOut);
 				pCvOut[pCnt] = cvOut;
-				weight = getStateParam (WEIGHT_PARAM + noteIdx);	//	getStateJson (jsonWeightBaseIdx + noteIdx);
-				if (round(weight * 100) == 50.f && effectiveChild > 0) {
+				weight = getStateParam (WEIGHT_PARAM + noteIdx);
+				roundedWeight = round(weight * 100);
+				if (roundedWeight == 50.f && effectiveChild > 0) {
 					weight = motherWeights[noteIdx];
 				}
-				if (weight > 0) {
-					weight *= ((shp == 1.f) ? 1.f : 1.f - (d * (1 - shp)) / semiAmt);
-					pProb[pCnt] = weight;
-					pTotal += weight;
-					pCnt ++;
+				if (roundedWeight == 100.f) {
+					grab = true;
+				}
+				else {
+					if (weight > 0) {
+						weight *= ((shp == 1.f) ? 1.f : 1.f - (d * (1 - shp)) / semiAmt);
+						pProb[pCnt] = weight;
+						pTotal += weight;
+						pCnt ++;
+					}
 				}
 			}
-			if (getStateJson (jsonOnOffBaseIdx + note) == 0.f || semiAmt > 0.f) {
+			if ((getStateJson (jsonOnOffBaseIdx + note) == 0.f || semiAmt > 0.f) && !grab) {
 				float step = -SEMITONE;
 				if (cvIn > cvOut)
 					step = SEMITONE;
@@ -281,8 +286,13 @@ struct Mother : Module {
 							break;
 						pCvOut[pCnt] = cvOut;
 						weight = getStateParam (WEIGHT_PARAM + noteIdx);
-						if (round(weight * 100.f) == 50.f && effectiveChild > 0) {
+						roundedWeight = round(weight * 100);
+						if (roundedWeight == 50.f && effectiveChild > 0) {
 							weight = motherWeights[noteIdx];
+						}
+						if (roundedWeight == 100.f) {
+							grab = true;
+							break;
 						}
 						if (weight > 0) {
 							weight *= ((shp == 1.f) ? 1.f : 1.f - (d * (1 - shp)) / semiAmt);
@@ -295,7 +305,7 @@ struct Mother : Module {
 				}
 			}
 
-			if (pCnt > 0) {
+			if (pCnt > 0 && !grab) {
 				float sum = 0.f;
 				rnd = genrand_real () * pTotal;
 				for (int i = 0; i < pCnt; i++) {
@@ -387,9 +397,6 @@ struct Mother : Module {
 		}
 	}
 
-	/*
-		THIS IS EXPENSIVE -> TUNING: parameters, caching, linking, ...
-	*/
 	void updateMotherWeights () {
 		int onOffJsonBaseIdx = ONOFF_JSON + effectiveScale * NUM_NOTES;
 		int steps;
@@ -412,7 +419,6 @@ struct Mother : Module {
 						break;
 				}
 			}
-
 			motherWeights[i] = getStateJson (WEIGHT_JSON + effectiveScale * NUM_CHLD * NUM_NOTES + motherIdx);
 		}
 	}

@@ -1,7 +1,7 @@
 /*
 	MotherJsonLabels.hpp
  
-	Code for the OrangeLine module Swing
+	Code for the OrangeLine module Mother
 
 Copyright (C) 2019 Dieter Stubler
 
