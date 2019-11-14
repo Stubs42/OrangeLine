@@ -176,7 +176,7 @@ inline void initializeInstance () {
 	memset (  OL_outStateChange, false, sizeof (OL_outStateChange));	//	Initialize outgoing state changes
 	memset (          OL_isGate, false, sizeof (OL_isGate));			//	Initialize trg outputs to TRIGGER = false (GATE = true)
 	memset (    OL_wasTriggered, false, sizeof (OL_wasTriggered));	//	Initialize trg outputs to TRIGGER = false (GATE = true)
-	memset (OL_customChangeMask, 0,     sizeof (OL_customChangeMask));	// Initialie customChangeMasks to 0s
+	memset (OL_customChangeMask, 0L,     sizeof (OL_customChangeMask));	// Initialie customChangeMasks to 0s
 	/*
 		Now we call moduleReset () to ensure that a valid json state is created before this constructor
 		returns.
@@ -393,7 +393,8 @@ inline void processParamsAndInputs () {
 			if (OL_inputConnected[inputIdx]) {
 				OL_inputConnected[inputIdx] = false;
 				setStateInput (inputIdx, 0.f);
-				OL_customChangeBits |= getCustomChangeMaskInput (inputIdx);
+				if (changeInput(inputIdx))
+					OL_customChangeBits |= getCustomChangeMaskInput (inputIdx);
 			}
 			continue;	// not connected, so no processing of a value neccessary
 		}            
@@ -420,7 +421,8 @@ inline void processParamsAndInputs () {
 		}
 		else { 
 			setStateInput (inputIdx, inputs[inputIdx].getVoltage ());
-			OL_customChangeBits |= getCustomChangeMaskInput (inputIdx);
+			if (changeInput(inputIdx))
+				OL_customChangeBits |= getCustomChangeMaskInput (inputIdx);
 		}
 	}
 }
