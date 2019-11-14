@@ -52,6 +52,7 @@ struct Mother : Module {
 	int   	effectiveChild = 0;
 	int   	jsonOnOffBaseIdx = ONOFF_JSON;
 	int   	jsonWeightBaseIdx = WEIGHT_JSON;
+	float	motherWeights[NUM_NOTES];
 	float  	pCvOut[NUM_NOTES];
 	float	pProb[NUM_NOTES];
 	int		pCnt = 0;
@@ -159,6 +160,7 @@ struct Mother : Module {
 		for (int i = WEIGHT_JSON; i <= WEIGHT_JSON_LAST; i ++) {
 			setStateJson (i, 0.5f);
 		}
+		updateMotherWeights ();
 		struct timeval tp;
 		gettimeofday(&tp, NULL);
 		unsigned long int seed = tp.tv_sec * 1000 + tp.tv_usec / 1000;
@@ -217,7 +219,6 @@ struct Mother : Module {
 		Module specific process method called from process () in OrangeLineCommon.hpp
 	*/
 	inline void moduleProcess (const ProcessArgs &args) {
-
 		checkTmpHead ();
 
 		bool rndConnected = getInputConnected (RND_INPUT);
@@ -255,7 +256,7 @@ struct Mother : Module {
 				pCvOut[pCnt] = cvOut;
 				weight = getStateParam (WEIGHT_PARAM + noteIdx);	//	getStateJson (jsonWeightBaseIdx + noteIdx);
 				if (round(weight * 100) == 50.f && effectiveChild > 0) {
-					weight = getMotherWeight (noteIdx);
+					weight = motherWeights[noteIdx];
 				}
 				if (weight > 0) {
 					weight *= ((shp == 1.f) ? 1.f : 1.f - (d * (1 - shp)) / semiAmt);
@@ -281,7 +282,7 @@ struct Mother : Module {
 						pCvOut[pCnt] = cvOut;
 						weight = getStateParam (WEIGHT_PARAM + noteIdx);
 						if (round(weight * 100.f) == 50.f && effectiveChild > 0) {
-							weight = getMotherWeight (noteIdx);
+							weight = motherWeights[noteIdx];
 						}
 						if (weight > 0) {
 							weight *= ((shp == 1.f) ? 1.f : 1.f - (d * (1 - shp)) / semiAmt);
@@ -382,32 +383,38 @@ struct Mother : Module {
 				jsonIdx = jsonWeightBaseIdx + i;
 				setStateParam (paramIdx, getStateJson (jsonIdx));
 			}
+			updateMotherWeights ();
 		}
 	}
+
 	/*
 		THIS IS EXPENSIVE -> TUNING: parameters, caching, linking, ...
 	*/
-	float getMotherWeight (int childIdx) {
+	void updateMotherWeights () {
 		int onOffJsonBaseIdx = ONOFF_JSON + effectiveScale * NUM_NOTES;
-		int steps = 0;
-
-		while (childIdx > 0) {
-			if (getStateJson (onOffJsonBaseIdx + (childIdx + effectiveChild) % NUM_NOTES) > 0.f) {
-				steps++;
-			}
-			childIdx--;
-		}
-
+		int steps;
 		int motherIdx;
-		for (motherIdx = 0; motherIdx < NUM_NOTES; motherIdx ++) {
-			if (getStateJson (onOffJsonBaseIdx + motherIdx) > 0.f) {
-				steps --;
-				if (steps < 0)
-					break;
-			}
-		}
+		int childIdx;
+		for (int i = 0; i < NUM_NOTES; i++) {
+			childIdx = i;
 
-		return getStateJson (WEIGHT_JSON + effectiveScale * NUM_CHLD * NUM_NOTES + motherIdx);
+			steps = 0;
+			while (childIdx > 0) {
+				if (getStateJson (onOffJsonBaseIdx + (childIdx + effectiveChild) % NUM_NOTES) > 0.f) {
+					steps++;
+				}
+				childIdx--;
+			}
+			for (motherIdx = 0; motherIdx < NUM_NOTES; motherIdx ++) {
+				if (getStateJson (onOffJsonBaseIdx + motherIdx) > 0.f) {
+					steps --;
+					if (steps < 0)
+						break;
+				}
+			}
+
+			motherWeights[i] = getStateJson (WEIGHT_JSON + effectiveScale * NUM_CHLD * NUM_NOTES + motherIdx);
+		}
 	}
 
 	inline void setNoteLight (int lightIdx, float state) {
@@ -418,7 +425,7 @@ struct Mother : Module {
 			float weight = getStateParam (WEIGHT_PARAM + lightIdx);
 			if (round(weight * 100) == 50.f && effectiveChild > 0) {
 				g = 0;
-				b = int(getMotherWeight (lightIdx) * 223.f + 32.f);
+				b = int(motherWeights[lightIdx] * 223.f + 32.f);
 			}
 			else {
 				g = int(weight * 223.f + 32.f);
