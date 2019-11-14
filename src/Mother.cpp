@@ -220,9 +220,6 @@ struct Mother : Module {
 		checkTmpHead ();
 
 		bool rndConnected = getInputConnected (RND_INPUT);
-		if (rndConnected)
-			init_genrand (int(round (getStateInput (RND_INPUT) * 100000)));
-
 		bool trgConnected = getInputConnected (TRG_INPUT);
 		bool triggered = false;
 		float cvOut;
@@ -244,6 +241,9 @@ struct Mother : Module {
 		}
 
 		if (triggered || (!trgConnected && changeInput (CV_INPUT))) {
+			if (rndConnected)
+				init_genrand (int(round (getStateInput (RND_INPUT) * 100000)));
+
 			pCnt = 0;
 			pTotal = 0.f;
 			cvIn  = getStateInput (CV_INPUT);
