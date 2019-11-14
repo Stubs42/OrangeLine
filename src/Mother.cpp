@@ -321,6 +321,17 @@ struct Mother : Module {
 				setStateOutput (GATE_OUTPUT, 10.f);
 			}
 			setStateOutput (CV_OUTPUT, cvOut);
+
+			if (oldCvOut != cvOut || customChangeBits & (CHG_CHLD | CHG_ROOT | CHG_WEIGHT | CHG_SCL)) {
+				note = note (cvOut);
+				noteIdx = (note - effectiveChild + NUM_NOTES) % NUM_NOTES;
+				weight = getStateParam (WEIGHT_PARAM + noteIdx);
+				roundedWeight = round(weight * 100);
+				if (roundedWeight == 50.f && effectiveChild > 0)
+					weight = motherWeights[noteIdx];
+				setStateOutput (POW_OUTPUT, weight);
+			}
+
 			oldCvOut = cvOut;
 		}
 
