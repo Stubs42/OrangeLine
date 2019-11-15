@@ -37,6 +37,8 @@ struct Mother : Module {
 	char headDisplayText[13] = "    INIT";
 	char tmpHeadText[13] = "????????????";
 	int tmpHeadCounter = -1;
+	int reflectCounter = -1;
+	int reflectFateCounter = -1;
 	char rootText[3];
 	char childText[3];
 
@@ -52,8 +54,13 @@ struct Mother : Module {
 	float	motherWeights[NUM_NOTES];
 	float  	pCvOut[NUM_NOTES];
 	float	pProb[NUM_NOTES];
+	bool	pMother[NUM_NOTES];
+	float	pNoteIdx[NUM_NOTES];
+	int		noteIdx;
+	int		noteIdxIn;
 	int		pCnt = 0;
 	float	pTotal = 0;
+	bool	triggered = false;
 
 	float oldCvOut = 0;
 
@@ -217,25 +224,25 @@ struct Mother : Module {
 		Module specific process method called from process () in OrangeLineCommon.hpp
 	*/
 	inline void moduleProcess (const ProcessArgs &args) {
+		if (reflectCounter >= 0)
+			reflectCounter --;
+		if (reflectFateCounter >= 0)
+			reflectFateCounter --;
+
 		checkTmpHead ();
 
 		bool rndConnected = getInputConnected (RND_INPUT);
-		if (rndConnected)
-			init_genrand (int(round (getStateInput (RND_INPUT) * 100000)));
-
 		bool trgConnected = getInputConnected (TRG_INPUT);
-		bool triggered = false;
+		triggered = false;
 		float cvOut;
 		float cvIn;
 		float semiAmt = getStateParam (FATE_AMT_PARAM) / 12;
 		float shp = getStateParam (FATE_SHP_PARAM);
 		float d ;
 		float weight = 0;
-		int	noteIdx;
 		float rnd;
 		bool grab = false;
-		float roundedWeight;
-
+		bool fromMother = false;
 		if (changeInput (TRG_INPUT) && trgConnected) {
 			if (!getInputConnected (CV_INPUT)) {
 				setStateInput (CV_INPUT, (genrand_real () * 20.f) - 10.f);
@@ -244,27 +251,39 @@ struct Mother : Module {
 		}
 
 		if (triggered || (!trgConnected && changeInput (CV_INPUT))) {
+			reflectCounter = REFLECT_DURATION;
+			if (rndConnected)
+				init_genrand (int(round (getStateInput (RND_INPUT) * 100000)));
+
 			pCnt = 0;
 			pTotal = 0.f;
-			cvIn  = getStateInput (CV_INPUT);
+			cvIn  = getStateInput (CV_INPUT) - effectiveRoot;
 			cvOut = quantize (cvIn);
 			int note = note(cvOut);
 			noteIdx = (note - effectiveChild + NUM_NOTES) % NUM_NOTES;
+			noteIdxIn = (note (cvIn) - effectiveChild + NUM_NOTES) % NUM_NOTES;
 			if (getStateJson (jsonOnOffBaseIdx + note) > 0.f && semiAmt > 0.f) {
 				d = abs (cvIn - cvOut);
 				pCvOut[pCnt] = cvOut;
 				weight = getStateParam (WEIGHT_PARAM + noteIdx);
-				roundedWeight = round(weight * 100);
-				if (roundedWeight == 50.f && effectiveChild > 0) {
+				if (weight == 0.5f && effectiveChild > 0) {
+					fromMother = true;
 					weight = motherWeights[noteIdx];
 				}
-				if (roundedWeight == 100.f) {
+				if (weight == 1.f) {
+					pProb[0] = 1.f;
+					pNoteIdx[0] = noteIdx;
+					pMother[0] = fromMother;
+					pTotal =  1.f;
+					pCnt = 1;
 					grab = true;
 				}
 				else {
 					if (weight > 0) {
 						weight *= ((shp == 1.f) ? 1.f : 1.f - (d * (1 - shp)) / semiAmt);
 						pProb[pCnt] = weight;
+						pNoteIdx[pCnt] = noteIdx;
+						pMother[pCnt] = fromMother;
 						pTotal += weight;
 						pCnt ++;
 					}
@@ -286,17 +305,24 @@ struct Mother : Module {
 							break;
 						pCvOut[pCnt] = cvOut;
 						weight = getStateParam (WEIGHT_PARAM + noteIdx);
-						roundedWeight = round(weight * 100);
-						if (roundedWeight == 50.f && effectiveChild > 0) {
+						if (weight == 0.5f && effectiveChild > 0) {
+							fromMother = true;
 							weight = motherWeights[noteIdx];
 						}
-						if (roundedWeight == 100.f) {
+						if (weight == 1.f) {
+							pProb[0] = 1.f;
+							pNoteIdx[0] = noteIdx;
+							pMother[0] = fromMother;
+							pTotal =  1.f;
+							pCnt = 1;
 							grab = true;
 							break;
 						}
 						if (weight > 0) {
 							weight *= ((shp == 1.f) ? 1.f : 1.f - (d * (1 - shp)) / semiAmt);
 							pProb[pCnt] = weight;
+							pNoteIdx[pCnt] = noteIdx;
+							pMother[pCnt] = fromMother;
 							pTotal += weight;
 							pCnt ++;
 						}
@@ -316,22 +342,28 @@ struct Mother : Module {
 					}
 				}
 			}
+			if (pCnt == 0) {
+				pCvOut[0] = cvOut;
+				pProb[0] = weight;
+				pNoteIdx[0] = noteIdx;
+				pTotal = weight;
+				pCnt = 1;
+			}
 
 			if (abs (cvOut - oldCvOut) > PRECISION) {
 				setStateOutput (GATE_OUTPUT, 10.f);
 			}
-			setStateOutput (CV_OUTPUT, cvOut);
 
 			if (oldCvOut != cvOut || customChangeBits & (CHG_CHLD | CHG_ROOT | CHG_WEIGHT | CHG_SCL)) {
 				note = note (cvOut);
 				noteIdx = (note - effectiveChild + NUM_NOTES) % NUM_NOTES;
 				weight = getStateParam (WEIGHT_PARAM + noteIdx);
-				roundedWeight = round(weight * 100);
-				if (roundedWeight == 50.f && effectiveChild > 0)
+				if (weight == 0.5f && effectiveChild > 0)
 					weight = motherWeights[noteIdx];
 				setStateOutput (POW_OUTPUT, weight);
 			}
-
+			cvOut += float(effectiveRoot) / 12.f;
+			setStateOutput (CV_OUTPUT, cvOut);
 			oldCvOut = cvOut;
 		}
 
@@ -347,15 +379,19 @@ struct Mother : Module {
 		This method should not do dsp or other logic processing.
 	*/
 	inline void moduleProcessState () {
-		effectiveScale = (int (getStateParam ( SCL_PARAM)) - 1 + note (getStateInput ( SCL_INPUT))) % NUM_NOTES;
+		effectiveScale = (int(getStateParam (SCL_PARAM)) - 1 + note (getStateInput (SCL_INPUT))) % NUM_NOTES;
 		effectiveScaleDisplay = float(effectiveScale + 1);
-		effectiveChild = (int (getStateParam (CHLD_PARAM))     + note (getStateInput (CHLD_INPUT))) % NUM_NOTES;
+		effectiveChild = (int(getStateParam (CHLD_PARAM)) + note (getStateInput (CHLD_INPUT))) % NUM_NOTES;
+		/*
+			quantize down to next lower active note if effectiveChild is not in scale
+		*/
 		while (effectiveChild > 0) {
 			if (getStateJson (ONOFF_JSON + effectiveScale * NUM_NOTES + effectiveChild) > 0.f)
 				break;
 			effectiveChild --;			
 		}
-		effectiveRoot  = (int (getStateParam (ROOT_PARAM))     + note (getStateInput (ROOT_INPUT))) % NUM_NOTES;
+
+		effectiveRoot  = (int(getStateParam (ROOT_PARAM)) + note (getStateInput (ROOT_INPUT))) % NUM_NOTES;
 
 		int jsonOnOffBaseIdx = ONOFF_JSON + effectiveScale * NUM_NOTES;
 		int jsonIdx;
@@ -406,6 +442,9 @@ struct Mother : Module {
 			}
 			updateMotherWeights ();
 		}
+		if (inChangeParam (FATE_AMT_PARAM) || inChangeParam (FATE_SHP_PARAM)) {
+			reflectFateCounter = REFLECT_FATE_DURATION;
+		}
 	}
 
 	void updateMotherWeights () {
@@ -437,21 +476,79 @@ struct Mother : Module {
 	inline void setNoteLight (int lightIdx, float state) {
 
 		int color = 0x000000;
-		if (state > 0.f) {
-			int g, b;
-			float weight = getStateParam (WEIGHT_PARAM + lightIdx);
-			if (round(weight * 100) == 50.f && effectiveChild > 0) {
-				g = 0;
-				b = int(motherWeights[lightIdx] * 223.f + 32.f);
-			}
-			else {
-				g = int(weight * 223.f + 32.f);
-				b = 0;
-			}
-			color = (g << 8) + b;
+		float weight;
+		float motherWeight;
+		float reflectWeight = 0;
+		if (reflectFateCounter > 0 && false) {
+			// TODO: Display Fate Distribution
 		}
 		else {
-			color = 0x000000;
+			if (state > 0.f || (reflectCounter > 0 && noteIdxIn == lightIdx)) {
+				weight = getStateParam (WEIGHT_PARAM + lightIdx);
+				int r = 0, g = 0, b = 0;
+				if (reflectCounter > 0) {
+					if (noteIdxIn == lightIdx) {
+							g = 4;
+							b = 4;
+							r = 4;
+					}
+					else {
+						int i;
+						for (i = 0; i < pCnt; i++) {
+							if (pNoteIdx[i] == lightIdx) {
+								reflectWeight = pProb[i];
+								break;
+							}
+						}
+						if (reflectWeight == 1.f) {
+							if (weight == 1.f)
+								r = 255;
+							else if (pMother[i]) {
+								b = 64;
+								r = 196;
+							}
+						}
+						else {
+							if (pMother[i])
+								b = int(reflectWeight * 255.f);
+							else
+								g = int(reflectWeight * 255.f);
+						}
+					}
+					if (noteIdx == lightIdx) {
+						r = 255;
+						g = 255;
+						b = 255;
+					}
+				}
+				else {
+					if (weight == 0.5f && effectiveChild > 0) {
+						r = 0;
+						g = 0;
+						motherWeight = motherWeights[lightIdx];
+						if (motherWeight == 1.f) {
+							r = 196;
+							b = 64;
+						}
+						else
+							b = int(motherWeight * 223.f + 32.f);
+					}
+					else if (weight == 1.f) {
+						r = 255;
+						g = 0;
+						b = 0;
+					}
+					else {
+						r = 0;
+						g = int(weight * 223.f + 32.f);
+						b = 0;
+					}
+				}
+				color = (r << 16) + (g << 8) + b;
+			}
+			else {
+				color = 0x000000;
+			}
 		}
 		setRgbLight (NOTE_LIGHT_01_RGB + 3 * lightIdx, color);
 	}	
@@ -469,7 +566,7 @@ struct Mother : Module {
 		if ((customChangeBits & CHG_ROOT) || !initialized) {
 			strcpy ( rootText, notes[effectiveRoot]);
 		}
-		if ((customChangeBits & (CHG_WEIGHT | CHG_ONOFF | CHG_SCL | CHG_CHLD)) || !initialized) {
+		if (triggered || (customChangeBits & (CHG_WEIGHT | CHG_ONOFF | CHG_SCL | CHG_CHLD)) || !initialized || reflectCounter >= 0 || reflectFateCounter >= 0) {
 			int start = ONOFF_JSON + effectiveScale * NUM_NOTES;
 			int lightIdx;
 			for (int jsonIdx = start; jsonIdx < start + NUM_NOTES; jsonIdx ++) {

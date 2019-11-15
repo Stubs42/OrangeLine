@@ -25,7 +25,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define NUM_CHLD    NUM_NOTES
 #define SEMITONE    (1.f / 12.f)
 
-#define TMP_HEAD_DURATION   88200 * 2
+#define SECOND                  44100
+#define TMP_HEAD_DURATION       1 * SECOND
+#define REFLECT_DURATION        1 * SECOND
+#define REFLECT_FATE_DURATION   1 * SECOND
 
 #define CHG_ONOFF   1
 #define CHG_WEIGHT  (1 << 1)
