@@ -257,7 +257,7 @@ struct Mother : Module {
 
 			pCnt = 0;
 			pTotal = 0.f;
-			cvIn  = getStateInput (CV_INPUT);
+			cvIn  = getStateInput (CV_INPUT) - effectiveRoot;
 			cvOut = quantize (cvIn);
 			int note = note(cvOut);
 			noteIdx = (note - effectiveChild + NUM_NOTES) % NUM_NOTES;
@@ -353,7 +353,6 @@ struct Mother : Module {
 			if (abs (cvOut - oldCvOut) > PRECISION) {
 				setStateOutput (GATE_OUTPUT, 10.f);
 			}
-			setStateOutput (CV_OUTPUT, cvOut);
 
 			if (oldCvOut != cvOut || customChangeBits & (CHG_CHLD | CHG_ROOT | CHG_WEIGHT | CHG_SCL)) {
 				note = note (cvOut);
@@ -363,7 +362,8 @@ struct Mother : Module {
 					weight = motherWeights[noteIdx];
 				setStateOutput (POW_OUTPUT, weight);
 			}
-
+			cvOut += float(effectiveRoot) / 12.f;
+			setStateOutput (CV_OUTPUT, cvOut);
 			oldCvOut = cvOut;
 		}
 
@@ -379,15 +379,19 @@ struct Mother : Module {
 		This method should not do dsp or other logic processing.
 	*/
 	inline void moduleProcessState () {
-		effectiveScale = (int (getStateParam ( SCL_PARAM)) - 1 + note (getStateInput ( SCL_INPUT))) % NUM_NOTES;
+		effectiveScale = (int(getStateParam (SCL_PARAM)) - 1 + note (getStateInput (SCL_INPUT))) % NUM_NOTES;
 		effectiveScaleDisplay = float(effectiveScale + 1);
-		effectiveChild = (int (getStateParam (CHLD_PARAM))     + note (getStateInput (CHLD_INPUT))) % NUM_NOTES;
+		effectiveChild = (int(getStateParam (CHLD_PARAM)) + note (getStateInput (CHLD_INPUT))) % NUM_NOTES;
+		/*
+			quantize down to next lower active note if effectiveChild is not in scale
+		*/
 		while (effectiveChild > 0) {
 			if (getStateJson (ONOFF_JSON + effectiveScale * NUM_NOTES + effectiveChild) > 0.f)
 				break;
 			effectiveChild --;			
 		}
-		effectiveRoot  = (int (getStateParam (ROOT_PARAM))     + note (getStateInput (ROOT_INPUT))) % NUM_NOTES;
+
+		effectiveRoot  = (int(getStateParam (ROOT_PARAM)) + note (getStateInput (ROOT_INPUT))) % NUM_NOTES;
 
 		int jsonOnOffBaseIdx = ONOFF_JSON + effectiveScale * NUM_NOTES;
 		int jsonIdx;
