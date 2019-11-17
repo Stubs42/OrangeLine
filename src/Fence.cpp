@@ -372,18 +372,14 @@ struct Fence : Module {
 			if (mode == MODE_QTZ_INT && cvOut > processHigh) {
 				/*
 					We didn't find the same note in our range
-					Now we check whether cvIn + processStep would match
-					This may change in the future maybe relative to cv/in, low, center, high ???
+					Now we check whether processLow + processStep would match
+					if not effectiveLoe is used
 				*/
-				float altCv = cvOut - 1 + processStep;
+				float altCv = processLow + processStep;
 				if (altCv >= processLow && altCv <= processHigh)
 					cvOut = altCv;
 				else
-					/*
-						Alternative note does note match also, we use altCv anyway if altCv is vetter than cvOut
-					*/ 
-					if (getStateInput (CV_INPUT) > processHigh && altCv > processHigh && altCv < getStateInput (CV_INPUT))
-						cvOut = altCv;
+					cvOut = processLow;
 			}
 
 			/*
