@@ -439,7 +439,7 @@ struct Mother : Module {
 						if (weight == 0.5f && effectiveChild > 0)
 							weight = motherWeights[noteIdx];
 						OL_statePoly[NUM_INPUTS * POLY_CHANNELS + powOutPolyIdx] = weight;
-						OL_outStateChangePoly[cvOutPolyIdx] = true;
+						OL_outStateChangePoly[powOutPolyIdx] = true;
 					}
 					if (OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cvOutPolyIdx] != cvOut) {
 						OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cvOutPolyIdx]  = cvOut;
