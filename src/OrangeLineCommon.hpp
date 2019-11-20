@@ -405,8 +405,10 @@ inline void initialize () {
 		memset (OL_inStateChange,     false, sizeof( OL_inStateChange));
 		memset (OL_inStateChangePoly, false, sizeof( OL_inStateChangePoly));
 	}
-	else
+	else {
 		moduleInitialize ();
+		styleChanged = true;
+	}
 	
 	//	We set OL_initialized to true at the end of process () 
 	//	to give other methods the information that we are just initializing
