@@ -135,7 +135,7 @@ struct Mother : Module {
 		configParam (    CHLD_PARAM,  0.f, 11.f, 0.f, "Child Scale" , "", 0.f, 1.f / 12.f, 0.f);
 		setCustomChangeMaskParam (CHLD_PARAM, CHG_CHLD);
 		configParam (FATE_AMT_PARAM,  0.f,  6.f, 0.f, "Amount"      , "", 0.f, 1.f, 0.f);
-		configParam (FATE_SHP_PARAM,  0.f,  1.f, 0.f, "Shape"       , "", 0.f, 1.f, 0.f);
+		configParam (FATE_SHP_PARAM,  0.f,  1.f, 0.5f, "Shape"       , "", 0.f, 1.f, 0.f);
 
 		for (int i = NUM_NOTES - 1; i >= 0; i--) {
     		configParam (WEIGHT_PARAM + i,  0.f, 1.f, 0.5f, "Weight",      "", 0.f, 1.f, 0.f);
@@ -321,6 +321,8 @@ struct Mother : Module {
 							fromMother = true;
 							weight = motherWeights[noteIdx];
 						}
+						else
+							fromMother = false;
 						if (weight == 1.f) {
 							pProb[0] = 1.f;
 							pNoteIdx[0] = noteIdx;
@@ -330,14 +332,11 @@ struct Mother : Module {
 							grab = true;
 						}
 						else {
-							if (weight > 0) {
-								weight *= ((shp == 1.f) ? 1.f : 1.f - (d * (1 - shp)) / semiAmt);
-								pProb[pCnt] = weight;
-								pNoteIdx[pCnt] = noteIdx;
-								pMother[pCnt] = fromMother;
-								pTotal += weight;
-								pCnt ++;
-							}
+							pProb[pCnt] = weight;
+							pNoteIdx[pCnt] = noteIdx;
+							pMother[pCnt] = fromMother;
+							pTotal += weight;
+							pCnt ++;
 						}
 					}
 					if ((getStateJson (jsonOnOffBaseIdx + note) == 0.f || semiAmt > 0.f) && !grab) {
@@ -360,6 +359,8 @@ struct Mother : Module {
 									fromMother = true;
 									weight = motherWeights[noteIdx];
 								}
+								else
+									fromMother = false;
 								if (weight == 1.f) {
 									pProb[0] = 1.f;
 									pNoteIdx[0] = noteIdx;
@@ -370,7 +371,29 @@ struct Mother : Module {
 									break;
 								}
 								if (weight > 0) {
-									weight *= ((shp == 1.f) ? 1.f : 1.f - (d * (1 - shp)) / semiAmt);
+									//
+									// New polynomial style:
+									// 
+									//	Ronald supposed:
+									// 		f(x) = 1 - (x/s)**n
+									//
+									//	Python test:
+									//		def weight(dist, span, shape):
+									//    		if shape < 0.5:
+									//        		shape *= 2
+									//    		else:
+									//        		shape = (shape - 0.5) * 20
+									//    	return 1.0 - (float(dist)/float(span))**shape
+									//
+									if (shp < 1) {
+										float f = (1.f - pow ((d - SEMITONE) / semiAmt, shp < 0.5 ? shp * 2.f : 1.f + (shp - 0.5) * 20));
+										weight *= f;
+									}
+									//
+									// Old linear style (faster but not as fancy) elts keep it for now if performance is needed:
+									//	weight *= ((shp == 1.f) ? 1.f : 1.f - (d * (1 - shp)) / semiAmt);
+									//
+
 									pProb[pCnt] = weight;
 									pNoteIdx[pCnt] = noteIdx;
 									pMother[pCnt] = fromMother;
@@ -388,6 +411,7 @@ struct Mother : Module {
 							sum += pProb[i];
 							if (sum >= rnd) {
 								cvOut = pCvOut[i];
+								noteIdx = pNoteIdx[i];
 								break;
 							}
 						}
@@ -396,6 +420,7 @@ struct Mother : Module {
 						pCvOut[0] = cvOut;
 						pProb[0] = weight;
 						pNoteIdx[0] = noteIdx;
+						pMother[0] = fromMother;
 						pTotal = weight;
 						pCnt = 1;
 					}
@@ -414,6 +439,7 @@ struct Mother : Module {
 						if (weight == 0.5f && effectiveChild > 0)
 							weight = motherWeights[noteIdx];
 						OL_statePoly[NUM_INPUTS * POLY_CHANNELS + powOutPolyIdx] = weight;
+						OL_outStateChangePoly[cvOutPolyIdx] = true;
 					}
 					if (OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cvOutPolyIdx] != cvOut) {
 						OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cvOutPolyIdx]  = cvOut;
@@ -545,9 +571,9 @@ struct Mother : Module {
 					int r = 0, g = 0, b = 0;
 					if (reflectCounter > 0) {
 						if (noteIdxIn == lightIdx) {
-								g = 4;
-								b = 4;
-								r = 4;
+								g = 32;
+								b = 32;
+								r = 32;
 						}
 						else {
 							int i;
