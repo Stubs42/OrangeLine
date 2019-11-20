@@ -11,7 +11,7 @@ After collecting feedback from the community and doing the polishing of GUI and 
 When a module has reached its stable state, the [Beta] mark will disappear.
 Modules not marked as beta will maintained in a backward compatible way if possible.
 
-## Fence [Beta]
+## Fence
 
 <p align="center"><img src="res/FenceWork.svg"></p>
 
@@ -22,7 +22,7 @@ The main function of Fence is to take a CV IN and send it to CV OUT, limited to 
 This logically works by first substracting a defined STEP value from CV IN as long as the CV is larger than the upper limit of the range. Second, the STEP value is added to the CV as long it is smaller than the lower limit of the range.
 Note that this may in a result in a CV OUT larger than the upper limit.
 
-In quantized mode (green light), CV IN and STEP are quantized to semi tone voltages so CV OUT is quantized too. In quantized mode, STEP is working in a special way. Fence will first use a fixed step of 1V (1 octave). If the resulting cv is higher than the upper range limit, it uses STEP to determine an alternative note (alt = CV - 1 + STEP). If alt is in range or high < alt < CV, alt will be sent to CV OUT. This way you can allow Fence for example to replace a note by its 5th (STEP = 7 ST) or minor third (STEP = 3 ST) if those would fit in range. A STEP of 0 disables alternative notes and is fine in most use cases.
+In quantized mode (green light), CV IN and STEP are quantized to semi tone voltages so CV OUT is quantized too. In quantized mode, STEP is working in a special way. Fence will first use a fixed step of 1V (1 octave). If the resulting cv is higher than the upper range limit, it uses STEP as alternative note.
 
 In shaper mode (red light) Fence processes CV IN as an audio signal [-5:5]V, applying the described algorythm to the audio signal. CV OUT in SHPR mode is centered and scaled to [-5:5]V.
 
