@@ -20,8 +20,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 #include "OrangeLine.hpp"
 
-#define NUM_POLYS	1   // 0 produces lots of compiler warnings
-
 #define NUM_NOTES   12
 #define NUM_SCALES  12
 #define NUM_CHLD    NUM_NOTES
@@ -37,6 +35,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define CHG_SCL     (1 << 2)
 #define CHG_CHLD    (1 << 3)
 #define CHG_ROOT    (1 << 4)
+
+#define CHG_CV_IN   (1 << 5)
+#define CHG_TRG_IN  (1 << 6)
 
 //
 // Defaults

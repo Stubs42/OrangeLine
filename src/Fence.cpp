@@ -88,9 +88,9 @@ struct Fence : Module {
 		which is called from constructor
 	*/
 	void moduleInitStateTypes () {
-		setStateTypeParam  (LINK_PARAM, STATE_TYPE_TRIGGER);
-		setStateTypeParam  (MODE_PARAM, STATE_TYPE_TRIGGER);
-		setStateTypeParam  (GATE_PARAM, STATE_TYPE_TRIGGER);
+		setStateTypeParam (LINK_PARAM, STATE_TYPE_TRIGGER);
+		setStateTypeParam (MODE_PARAM, STATE_TYPE_TRIGGER);
+		setStateTypeParam (GATE_PARAM, STATE_TYPE_TRIGGER);
 
 		setStateTypeInput        (TRG_INPUT, STATE_TYPE_TRIGGER);
 		setCustomChangeMaskInput (CV_INPUT, CHG_CV_IN);
@@ -104,8 +104,8 @@ struct Fence : Module {
 
 		setOutPoly (CV_OUTPUT, true);
 
-		setStateTypeLight  (LINK_LIGHT_RGB, LIGHT_TYPE_RGB    );  
-		setStateTypeLight  (MODE_LIGHT_RGB, LIGHT_TYPE_RGB    );  
+		setStateTypeLight (LINK_LIGHT_RGB, LIGHT_TYPE_RGB    );  
+		setStateTypeLight (MODE_LIGHT_RGB, LIGHT_TYPE_RGB    );  
 	}
 
 	/**
@@ -212,8 +212,6 @@ struct Fence : Module {
 		}
 		else
 			setStateJson ( LINK_DELTA_JSON, 0.f);
-
-		styleChanged = true;
 	}
 
 // ********************************************************************************************************************************
@@ -433,7 +431,6 @@ struct Fence : Module {
 						*/
 						float dLow  = processLow - (cvOut - 1.f);
 						float dHigh = cvOut - processHigh;
-						// printf ("dLow = %f, dHigh = %f, cvOut = %f, processHigh + PRECISION = %f\n", dLow, dHigh, cvOut, processHigh + PRECISION);
 						int altNote = note (processStep);
 						if (dLow > dHigh)
 							while (note (cvOut) != altNote)

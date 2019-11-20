@@ -61,8 +61,12 @@ struct Mother : Module {
 	int		pCnt = 0;
 	float	pTotal = 0;
 	bool	triggered = false;
-
-	float oldCvOut = 0;
+	int 	cvChannels = 0;
+	int		trgChannels = 0;
+	int		rndChannels = 0;
+	int		channels = 0;
+	float   oldCvOut[POLY_CHANNELS];	//	Old value of cvOut to detect changes for triggering trgOut
+	float   oldCvIn [POLY_CHANNELS];	//	Old value of cvOut to detect changes of quantized input
 
 	#include "MotherJsonLabels.hpp"
 	#include "MotherScales.hpp"
@@ -85,12 +89,23 @@ struct Mother : Module {
 		which is called from constructor
 	*/
 	void moduleInitStateTypes () {
-		for (int i = ONOFF_PARAM; i <= ONOFF_PARAM_LAST; i ++) {
+		for (int i = ONOFF_PARAM; i <= ONOFF_PARAM_LAST; i ++)
 	     	setStateTypeParam  (i, STATE_TYPE_TRIGGER);
-		}
      	setStateTypeInput  (TRG_INPUT, STATE_TYPE_TRIGGER);
-    
+
+		setCustomChangeMaskInput (TRG_INPUT, CHG_TRG_IN);
+		setInPoly                (TRG_INPUT, true);
+
+		setCustomChangeMaskInput (CV_INPUT, CHG_CV_IN);
+		setInPoly          (CV_INPUT, true);
+
+		setInPoly          (RND_INPUT, true);
+
      	setStateTypeOutput (GATE_OUTPUT, STATE_TYPE_TRIGGER);
+		setOutPoly         (GATE_OUTPUT, true);
+
+		setOutPoly         (CV_OUTPUT, true);
+		setOutPoly         (POW_OUTPUT, true);
 	}
 
 	/**
@@ -146,6 +161,9 @@ struct Mother : Module {
 		memset (rootText , 0, sizeof (rootText));
 		memset (childText, 0, sizeof (childText));
 
+		memset (oldCvOut, 0.f, sizeof (oldCvOut));
+		memset ( oldCvIn, 0.f, sizeof ( oldCvIn));
+
 		strcpy (childText, notes[int(round (getStateParam (CHLD_PARAM)))]);
 		strcpy ( rootText, notes[int(round (getStateParam (ROOT_PARAM)))]);
 
@@ -162,9 +180,9 @@ struct Mother : Module {
 			else
 				setStateJson (i, 0.f);
 		}
-		for (int i = WEIGHT_JSON; i <= WEIGHT_JSON_LAST; i ++) {
+		for (int i = WEIGHT_JSON; i <= WEIGHT_JSON_LAST; i ++)
 			setStateJson (i, 0.5f);
-		}
+
 		updateMotherWeights ();
 		struct timeval tp;
 		gettimeofday(&tp, NULL);
@@ -175,11 +193,6 @@ struct Mother : Module {
 // ********************************************************************************************************************************
 /*
 	Module specific utility methods
-*/
-
-// ********************************************************************************************************************************
-/*
-	Methods called directly or indirectly called from process () in OrangeLineCommon.hpp
 */
 	void setHeadScale () {
 		int bufIdx = 0;
@@ -220,12 +233,17 @@ struct Mother : Module {
 		}
 	}
 
+// ********************************************************************************************************************************
+/*
+	Methods called directly or indirectly called from process () in OrangeLineCommon.hpp
+*/
 	/**
 		Module specific process method called from process () in OrangeLineCommon.hpp
 	*/
 	inline void moduleProcess (const ProcessArgs &args) {
 		if (reflectCounter >= 0)
 			reflectCounter --;
+
 		if (reflectFateCounter >= 0)
 			reflectFateCounter --;
 
@@ -261,66 +279,42 @@ struct Mother : Module {
 		float rnd;
 		bool grab = false;
 		bool fromMother = false;
-		if (changeInput (TRG_INPUT) && trgConnected) {
-			if (!getInputConnected (CV_INPUT)) {
-				setStateInput (CV_INPUT, (genrand_real () * 20.f) - 10.f);
-			}
-			triggered = true;
-		}
 
-		if (triggered || (!trgConnected && changeInput (CV_INPUT))) {
-			reflectCounter = REFLECT_DURATION;
-			if (rndConnected)
-				init_genrand (int(round (getStateInput (RND_INPUT) * 100000)));
+		if ((customChangeBits & CHG_TRG_IN) || (!trgConnected && (customChangeBits & CHG_CV_IN))) {
+			cvChannels = inputs[CV_INPUT].getChannels ();
+			trgChannels = inputs[TRG_INPUT].getChannels ();
+			rndChannels = inputs[RND_INPUT].getChannels ();
+			channels = cvChannels > trgChannels ? cvChannels : trgChannels;
+			setOutPolyChannels (CV_OUTPUT, channels);
+			setOutPolyChannels (GATE_OUTPUT, channels);
+			setOutPolyChannels (POW_OUTPUT, channels);
+			for (int channel = 0; channel < channels; channel++) {
+				int cvInPolyIdx   =    CV_INPUT * POLY_CHANNELS + channel;
+				int trgInPolyIdx  =   TRG_INPUT * POLY_CHANNELS + channel;
+				int rndInPolyIdx  =   RND_INPUT * POLY_CHANNELS + channel;
+				int trgOutPolyIdx = GATE_OUTPUT * POLY_CHANNELS + channel;
+				int cvOutPolyIdx  =   CV_OUTPUT * POLY_CHANNELS + channel;
+				int powOutPolyIdx =  POW_OUTPUT * POLY_CHANNELS + channel;
 
-			pCnt = 0;
-			pTotal = 0.f;
-			cvIn  = getStateInput (CV_INPUT) - effectiveRoot;
-			cvOut = quantize (cvIn);
-			int note = note(cvOut);
-			noteIdx = (note - effectiveChild + NUM_NOTES) % NUM_NOTES;
-			noteIdxIn = (note (cvIn) - effectiveChild + NUM_NOTES) % NUM_NOTES;
-			if (getStateJson (jsonOnOffBaseIdx + note) > 0.f && semiAmt > 0.f) {
-				d = abs (cvIn - cvOut);
-				pCvOut[pCnt] = cvOut;
-				weight = getStateParam (WEIGHT_PARAM + noteIdx);
-				if (weight == 0.5f && effectiveChild > 0) {
-					fromMother = true;
-					weight = motherWeights[noteIdx];
-				}
-				if (weight == 1.f) {
-					pProb[0] = 1.f;
-					pNoteIdx[0] = noteIdx;
-					pMother[0] = fromMother;
-					pTotal =  1.f;
-					pCnt = 1;
-					grab = true;
-				}
-				else {
-					if (weight > 0) {
-						weight *= ((shp == 1.f) ? 1.f : 1.f - (d * (1 - shp)) / semiAmt);
-						pProb[pCnt] = weight;
-						pNoteIdx[pCnt] = noteIdx;
-						pMother[pCnt] = fromMother;
-						pTotal += weight;
-						pCnt ++;
-					}
-				}
-			}
-			if ((getStateJson (jsonOnOffBaseIdx + note) == 0.f || semiAmt > 0.f) && !grab) {
-				float step = -SEMITONE;
-				if (cvIn > cvOut)
-					step = SEMITONE;
-				for (int i = 0; i < NUM_NOTES; i++) {
-					cvOut += step;
-					note = note (cvOut);
+				if ((!trgConnected && OL_inStateChangePoly[cvInPolyIdx]) || OL_inStateChangePoly[trgInPolyIdx]) {
+					reflectCounter = REFLECT_DURATION;
+					if (rndConnected && channel <= rndChannels)
+						init_genrand (int(round (OL_statePoly[rndInPolyIdx] * 100000)));
+					
+					pCnt = 0;
+					pTotal = 0.f;
+
+					if (OL_inStateChangePoly[trgInPolyIdx] && (!getInputConnected (CV_INPUT) || channel > cvChannels))
+						cvIn = genrand_real () * 20.f - 10.f;
+					else
+						cvIn = OL_statePoly[cvInPolyIdx] - (float(effectiveRoot) / 12.f);
+
+					cvOut = quantize (cvIn);
+					int note = note(cvOut);
 					noteIdx = (note - effectiveChild + NUM_NOTES) % NUM_NOTES;
-					if (getStateJson (jsonOnOffBaseIdx + note) > 0.f) {
-						if (semiAmt == 0.f)
-							break;
+					noteIdxIn = (note (cvIn) - effectiveChild + NUM_NOTES) % NUM_NOTES;
+					if (getStateJson (jsonOnOffBaseIdx + note) > 0.f && semiAmt > 0.f) {
 						d = abs (cvIn - cvOut);
-						if (d > semiAmt)
-							break;
 						pCvOut[pCnt] = cvOut;
 						weight = getStateParam (WEIGHT_PARAM + noteIdx);
 						if (weight == 0.5f && effectiveChild > 0) {
@@ -331,60 +325,104 @@ struct Mother : Module {
 							pProb[0] = 1.f;
 							pNoteIdx[0] = noteIdx;
 							pMother[0] = fromMother;
-							pTotal =  1.f;
+							pTotal = 1.f;
 							pCnt = 1;
 							grab = true;
-							break;
 						}
-						if (weight > 0) {
-							weight *= ((shp == 1.f) ? 1.f : 1.f - (d * (1 - shp)) / semiAmt);
-							pProb[pCnt] = weight;
-							pNoteIdx[pCnt] = noteIdx;
-							pMother[pCnt] = fromMother;
-							pTotal += weight;
-							pCnt ++;
+						else {
+							if (weight > 0) {
+								weight *= ((shp == 1.f) ? 1.f : 1.f - (d * (1 - shp)) / semiAmt);
+								pProb[pCnt] = weight;
+								pNoteIdx[pCnt] = noteIdx;
+								pMother[pCnt] = fromMother;
+								pTotal += weight;
+								pCnt ++;
+							}
 						}
 					}
-					step = step > 0.f ? -step - SEMITONE : -step + SEMITONE;
-				}
-			}
-
-			if (pCnt > 0 && !grab) {
-				float sum = 0.f;
-				rnd = genrand_real () * pTotal;
-				for (int i = 0; i < pCnt; i++) {
-					sum += pProb[i];
-					if (sum >= rnd) {
-						cvOut = pCvOut[i];
-						break;
+					if ((getStateJson (jsonOnOffBaseIdx + note) == 0.f || semiAmt > 0.f) && !grab) {
+						float step = -SEMITONE;
+						if (cvIn > cvOut)
+							step = SEMITONE;
+						for (int i = 0; i < NUM_NOTES; i++) {
+							cvOut += step;
+							note = note (cvOut);
+							noteIdx = (note - effectiveChild + NUM_NOTES) % NUM_NOTES;
+							if (getStateJson (jsonOnOffBaseIdx + note) > 0.f) {
+								if (semiAmt == 0.f)
+									break;
+								d = abs (cvIn - cvOut);
+								if (d > semiAmt)
+									break;
+								pCvOut[pCnt] = cvOut;
+								weight = getStateParam (WEIGHT_PARAM + noteIdx);
+								if (weight == 0.5f && effectiveChild > 0) {
+									fromMother = true;
+									weight = motherWeights[noteIdx];
+								}
+								if (weight == 1.f) {
+									pProb[0] = 1.f;
+									pNoteIdx[0] = noteIdx;
+									pMother[0] = fromMother;
+									pTotal =  1.f;
+									pCnt = 1;
+									grab = true;
+									break;
+								}
+								if (weight > 0) {
+									weight *= ((shp == 1.f) ? 1.f : 1.f - (d * (1 - shp)) / semiAmt);
+									pProb[pCnt] = weight;
+									pNoteIdx[pCnt] = noteIdx;
+									pMother[pCnt] = fromMother;
+									pTotal += weight;
+									pCnt ++;
+								}
+							}
+							step = step > 0.f ? -step - SEMITONE : -step + SEMITONE;
+						}
 					}
+					if (pCnt > 0 && !grab) {
+						float sum = 0.f;
+						rnd = genrand_real () * pTotal;
+						for (int i = 0; i < pCnt; i++) {
+							sum += pProb[i];
+							if (sum >= rnd) {
+								cvOut = pCvOut[i];
+								break;
+							}
+						}
+					}
+					if (pCnt == 0) {
+						pCvOut[0] = cvOut;
+						pProb[0] = weight;
+						pNoteIdx[0] = noteIdx;
+						pTotal = weight;
+						pCnt = 1;
+					}
+
+					cvOut += (float(effectiveRoot) / 12.f);
+					cvOut = quantize (cvOut);
+
+					if (abs (cvOut - oldCvOut[channel]) > PRECISION) {
+						if (OL_statePoly[NUM_INPUTS * POLY_CHANNELS + trgOutPolyIdx] != 10.f) {
+							OL_statePoly[NUM_INPUTS * POLY_CHANNELS + trgOutPolyIdx] = 10.f;
+							OL_outStateChangePoly[trgOutPolyIdx] = true;
+						}
+						note = note (cvOut);
+						noteIdx = (note - effectiveChild + NUM_NOTES) % NUM_NOTES;
+						weight = getStateParam (WEIGHT_PARAM + noteIdx);
+						if (weight == 0.5f && effectiveChild > 0)
+							weight = motherWeights[noteIdx];
+						OL_statePoly[NUM_INPUTS * POLY_CHANNELS + powOutPolyIdx] = weight;
+					}
+					if (OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cvOutPolyIdx] != cvOut) {
+						OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cvOutPolyIdx]  = cvOut;
+						OL_outStateChangePoly[cvOutPolyIdx] = true;
+					}
+					oldCvOut[channel] = cvOut;
 				}
 			}
-			if (pCnt == 0) {
-				pCvOut[0] = cvOut;
-				pProb[0] = weight;
-				pNoteIdx[0] = noteIdx;
-				pTotal = weight;
-				pCnt = 1;
-			}
-
-			if (abs (cvOut - oldCvOut) > PRECISION) {
-				setStateOutput (GATE_OUTPUT, 10.f);
-			}
-
-			if (oldCvOut != cvOut || customChangeBits & (CHG_CHLD | CHG_ROOT | CHG_WEIGHT | CHG_SCL)) {
-				note = note (cvOut);
-				noteIdx = (note - effectiveChild + NUM_NOTES) % NUM_NOTES;
-				weight = getStateParam (WEIGHT_PARAM + noteIdx);
-				if (weight == 0.5f && effectiveChild > 0)
-					weight = motherWeights[noteIdx];
-				setStateOutput (POW_OUTPUT, weight);
-			}
-			cvOut += float(effectiveRoot) / 12.f;
-			setStateOutput (CV_OUTPUT, cvOut);
-			oldCvOut = cvOut;
 		}
-
 	}
 
 	/**
@@ -501,45 +539,78 @@ struct Mother : Module {
 			// TODO: Display Fate Distribution
 		}
 		else {
-			if (state > 0.f || (reflectCounter > 0 && noteIdxIn == lightIdx)) {
-				weight = getStateParam (WEIGHT_PARAM + lightIdx);
-				int r = 0, g = 0, b = 0;
-				if (reflectCounter > 0) {
-					if (noteIdxIn == lightIdx) {
-							g = 4;
-							b = 4;
-							r = 4;
-					}
-					else {
-						int i;
-						for (i = 0; i < pCnt; i++) {
-							if (pNoteIdx[i] == lightIdx) {
-								reflectWeight = pProb[i];
-								break;
-							}
-						}
-						if (reflectWeight == 1.f) {
-							if (weight == 1.f)
-								r = 255;
-							else if (pMother[i]) {
-								b = 64;
-								r = 196;
-							}
+			if (channels == 1) {
+				if (state > 0.f || (reflectCounter > 0 && noteIdxIn == lightIdx)) {
+					weight = getStateParam (WEIGHT_PARAM + lightIdx);
+					int r = 0, g = 0, b = 0;
+					if (reflectCounter > 0) {
+						if (noteIdxIn == lightIdx) {
+								g = 4;
+								b = 4;
+								r = 4;
 						}
 						else {
-							if (pMother[i])
-								b = int(reflectWeight * 255.f);
-							else
-								g = int(reflectWeight * 255.f);
+							int i;
+							for (i = 0; i < pCnt; i++) {
+								if (pNoteIdx[i] == lightIdx) {
+									reflectWeight = pProb[i];
+									break;
+								}
+							}
+							if (reflectWeight == 1.f) {
+								if (weight == 1.f)
+									r = 255;
+								else if (pMother[i]) {
+									b = 64;
+									r = 196;
+								}
+							}
+							else {
+								if (pMother[i])
+									b = int(reflectWeight * 255.f);
+								else
+									g = int(reflectWeight * 255.f);
+							}
+						}
+						if (noteIdx == lightIdx) {
+							r = 255;
+							g = 255;
+							b = 255;
 						}
 					}
-					if (noteIdx == lightIdx) {
-						r = 255;
-						g = 255;
-						b = 255;
+					else {
+						if (weight == 0.5f && effectiveChild > 0) {
+							r = 0;
+							g = 0;
+							motherWeight = motherWeights[lightIdx];
+							if (motherWeight == 1.f) {
+								r = 196;
+								b = 64;
+							}
+							else
+								b = int(motherWeight * 223.f + 32.f);
+						}
+						else if (weight == 1.f) {
+							r = 255;
+							g = 0;
+							b = 0;
+						}
+						else {
+							r = 0;
+							g = int(weight * 223.f + 32.f);
+							b = 0;
+						}
 					}
+					color = (r << 16) + (g << 8) + b;
 				}
 				else {
+					color = 0x000000;
+				}
+			}
+			else {
+				if (state > 0.f) {
+					weight = getStateParam (WEIGHT_PARAM + lightIdx);
+					int r = 0, g = 0, b = 0;
 					if (weight == 0.5f && effectiveChild > 0) {
 						r = 0;
 						g = 0;
@@ -561,11 +632,11 @@ struct Mother : Module {
 						g = int(weight * 223.f + 32.f);
 						b = 0;
 					}
+					color = (r << 16) + (g << 8) + b;
 				}
-				color = (r << 16) + (g << 8) + b;
-			}
-			else {
-				color = 0x000000;
+				else {
+					color = 0x000000;
+				}
 			}
 		}
 		setRgbLight (NOTE_LIGHT_01_RGB + 3 * lightIdx, color);

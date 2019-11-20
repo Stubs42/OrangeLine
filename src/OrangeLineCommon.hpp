@@ -648,5 +648,6 @@ void dataFromJson (json_t *rootJ) override {
 */
 void onReset () override {
 	moduleReset ();
+	styleChanged = true;
 	OL_initialized = false;	//	Request initialize
 }
