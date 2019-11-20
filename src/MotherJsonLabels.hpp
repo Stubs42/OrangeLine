@@ -20,7 +20,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 	#pragma GCC diagnostic push 
 	#pragma GCC diagnostic ignored "-Wwrite-strings"
-	char *jsonLabel[NUM_SCALES * NUM_NOTES + NUM_SCALES * NUM_CHLD * NUM_NOTES] = {
+	char *jsonLabel[NUM_JSONS] = {
+		"style",
 		/*
 			Python gen:
 			

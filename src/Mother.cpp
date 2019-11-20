@@ -1,7 +1,7 @@
 /*
 	Mother.cpp
  
-	Code for the OrangeLine module Swing
+	Code for the OrangeLine module Mother
 
 Copyright (C) 2019 Dieter Stubler
 
@@ -230,6 +230,24 @@ struct Mother : Module {
 			reflectFateCounter --;
 
 		checkTmpHead ();
+
+		if (styleChanged) {
+			switch (int(getStateJson(STYLE_JSON))) {
+				case STYLE_ORANGE:
+					brightPanel->visible = false;
+					darkPanel->visible = false;
+					break;
+				case STYLE_BRIGHT:
+					brightPanel->visible = true;
+					darkPanel->visible = false;
+					break;
+				case STYLE_DARK:
+					brightPanel->visible = false;
+					darkPanel->visible = true;
+					break;
+			}
+			styleChanged = false;
+		}
 
 		bool rndConnected = getInputConnected (RND_INPUT);
 		bool trgConnected = getInputConnected (TRG_INPUT);
@@ -599,6 +617,20 @@ struct MotherWidget : ModuleWidget {
         setModule (module);
 		setPanel (APP->window->loadSvg(asset::plugin (pluginInstance, "res/Mother.svg")));
 
+		if (module) {
+			SvgPanel *brightPanel = new SvgPanel();
+			brightPanel->setBackground(APP->window->loadSvg(asset::plugin(pluginInstance, "res/MotherBright.svg")));
+			brightPanel->visible = false;
+			
+			module->brightPanel = brightPanel;
+			addChild(brightPanel);
+			SvgPanel *darkPanel = new SvgPanel();
+			darkPanel->setBackground(APP->window->loadSvg(asset::plugin(pluginInstance, "res/MotherDark.svg")));
+			darkPanel->visible = false;
+			module->darkPanel = darkPanel;
+			addChild(darkPanel);
+		}
+
 		knob = createParamCentered<RoundSmallBlackKnob> (mm2px (Vec (24.098 + 4, 128.5 - 41.724 - 4)), module, ROOT_PARAM);
         knob->snap = true;
    		addParam (knob);
@@ -645,21 +677,70 @@ struct MotherWidget : ModuleWidget {
 
 		text = (module != nullptr ? module->headDisplayText : nullptr);
         headWidget = TextWidget::create (mm2px (Vec(3.183 - 0.25 - 0.35, 128.5 - 115.271)), module, text, "Major", 2);
+		headWidget->pStyle = (module == nullptr ? nullptr : &(module->OL_state[STYLE_JSON]));
         addChild (headWidget);
 
 		text = (module != nullptr ? module->rootText : nullptr);
         rootWidget = TextWidget::create (mm2px (Vec(24.996 - 0.25, 128.5 - 52.406)), module, text, "C", 2);
+		rootWidget->pStyle = (module == nullptr ? nullptr : &(module->OL_state[STYLE_JSON]));
         addChild (rootWidget);
 
 		float *pvalue  = (module != nullptr ? &(module->effectiveScaleDisplay) : nullptr);
         scaleWidget = NumberWidget::create (mm2px (Vec(12.931 - 0.25, 128.5 - 86.537)), module, pvalue, 1.f, "%2.0f", scaleBuffer, 2);
+		scaleWidget->pStyle = (module == nullptr ? nullptr : &(module->OL_state[STYLE_JSON]));
+
         addChild (scaleWidget);
 
 		text = (module != nullptr ? module->childText : nullptr);
         childWidget = TextWidget::create (mm2px (Vec(26.742 - 0.25, 128.5 - 86.537)), module, text, "C", 2);
+		childWidget->pStyle = (module == nullptr ? nullptr : &(module->OL_state[STYLE_JSON]));
         addChild (childWidget);
-
 	}
+
+
+	struct MotherStyleItem : MenuItem {
+		Mother *module;
+		int style;
+		void onAction(const event::Action &e) override {
+			module->OL_setOutState(STYLE_JSON, float(style));
+			module->styleChanged = true;
+		}
+		void step() override {
+			if (module)
+				rightText = (module != nullptr && module->OL_state[STYLE_JSON] == style) ? "✔" : "";
+		}
+	};
+
+	void appendContextMenu(Menu *menu) override {
+		MenuLabel *spacerLabel = new MenuLabel();
+		menu->addChild(spacerLabel);
+
+		Mother *module = dynamic_cast<Mother*>(this->module);
+		assert(module);
+
+		MenuLabel *styleLabel = new MenuLabel();
+		styleLabel->text = "Style";
+		menu->addChild(styleLabel);
+
+		MotherStyleItem *style1Item = new MotherStyleItem();
+		style1Item->text = "Orange";// 
+		style1Item->module = module;
+		style1Item->style= STYLE_ORANGE;
+		menu->addChild(style1Item);
+
+		MotherStyleItem *style2Item = new MotherStyleItem();
+		style2Item->text = "Bright";// 
+		style2Item->module = module;
+		style2Item->style= STYLE_BRIGHT;
+		menu->addChild(style2Item);
+			
+		MotherStyleItem *style3Item = new MotherStyleItem();
+		style3Item->text = "Dark";// 
+		style3Item->module = module;
+		style3Item->style= STYLE_DARK;
+		menu->addChild(style3Item);
+	}
+
 
 };
 

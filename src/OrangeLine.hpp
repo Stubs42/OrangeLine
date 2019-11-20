@@ -27,11 +27,18 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "plugin.hpp"
 
-#define ORANGE						nvgRGB(255, 102, 0)
+#define ORANGE			nvgRGB(255, 102, 0)
+#define WHITE			nvgRGB(255, 255, 255)
+
+#define STYLE_ORANGE	0
+#define STYLE_BRIGHT	1
+#define STYLE_DARK		2
 
 #define STATE_TYPE_VALUE   0
 #define STATE_TYPE_VOLTAGE 0
 #define STATE_TYPE_TRIGGER 1
+
+#define POLY_CHANNELS	  16
 
 #define LIGHT_TYPE_SINGLE  0
 #define LIGHT_TYPE_RGB     1
@@ -39,7 +46,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define NUM_STATES					(NUM_JSONS + NUM_PARAMS + NUM_INPUTS + NUM_OUTPUTS + NUM_LIGHTS)
 #define NUM_TRIGGERS				(NUM_PARAMS + NUM_INPUTS)
 
-#define PRECISION       0.0000000001f
+//#define PRECISION       0.0000000001f
+#define PRECISION       0.000001f
 
 #define stateIdxJson(i)				(i)
 #define stateIdxParam(i)			(NUM_JSONS + (i))
@@ -91,6 +99,14 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define setCustomChangeMaskParam(i, v)	setCustomChangeMask((i), (v))
 #define setCustomChangeMaskInput(i, v)	setCustomChangeMask(NUM_PARAMS + (i), (v))
 
+#define setInPoly(i, v)				(OL_isPoly[i] = (v))
+#define setOutPoly(i, v)			(OL_isPoly[NUM_INPUTS + i] = (v))
+#define getInPoly(i)				OL_isPoly[i]
+#define getOutPoly(i)				OL_isPoly[NUM_INPUTS + i]
+
+#define setOutPolyChannels(i, v)	(OL_polyChannels[i] = (v))
+#define getOutPolyChannels(i)		OL_polyChannels[i]
+
 #define customChangeBits			OL_customChangeBits
 
 #define isGate(i)                   OL_isGate[i]
@@ -138,6 +154,7 @@ struct NumberWidget : TransparentWidget {
 	char       *buffer = nullptr;
 	int         length = 0;
 	float       defaultValue = 0.f;
+	float	   *pStyle = nullptr;
 
     static NumberWidget* create (Vec pos, Module *module, float *pValue, float defaultValue, const char *format, char *buffer, int length) {
         NumberWidget *w = new NumberWidget();
@@ -162,7 +179,7 @@ struct NumberWidget : TransparentWidget {
 	void draw (const DrawArgs &drawArgs) override {
 		nvgFontFaceId (drawArgs.vg, pFont->handle);
 		nvgFontSize (drawArgs.vg, 18);
-		nvgFillColor (drawArgs.vg, ORANGE);
+		nvgFillColor (drawArgs.vg, (pStyle == nullptr || *pStyle == STYLE_ORANGE) ? ORANGE : WHITE);
         float value = pValue != nullptr ? *pValue : defaultValue;
         snprintf (buffer, length + 1, format, value);
         buffer[length] = '\0';
@@ -181,6 +198,7 @@ struct TextWidget : TransparentWidget {
 	const char *text   = nullptr;
 	int         length = 0;
 	const char *defaultText = nullptr;
+	float	   *pStyle = nullptr;
 
     static TextWidget* create (Vec pos, Module *module, const char *text, const char * defaultText, int length) {
         TextWidget *w = new TextWidget();
@@ -205,7 +223,7 @@ struct TextWidget : TransparentWidget {
 	void draw (const DrawArgs &drawArgs) override {
 		nvgFontFaceId (drawArgs.vg, pFont->handle);
 		nvgFontSize (drawArgs.vg, 18);
-		nvgFillColor (drawArgs.vg, ORANGE);
+		nvgFillColor (drawArgs.vg, (pStyle == nullptr || *pStyle == STYLE_ORANGE) ? ORANGE : WHITE);
         const char* str = (text != nullptr ? text : defaultText);
 		nvgText (drawArgs.vg, 0, 0, str, nullptr);
 	}

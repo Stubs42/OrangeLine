@@ -78,7 +78,8 @@ struct Swing : Module {
 		//
 		// Config internal Parameters not bound to a user interface object
 		//
-		// setJsonLabel (       MODE_JSON, "mode");
+
+		setJsonLabel (      STYLE_JSON, "style");
 
 		#pragma GCC diagnostic pop
 	}
@@ -112,6 +113,8 @@ struct Swing : Module {
 		Currently called twice when add a module to patch ...
 	*/
 	void moduleReset () {
+		setStateJson (      STYLE_JSON,                0.f);
+		styleChanged = true;
 	}
 
 // ********************************************************************************************************************************
@@ -128,6 +131,23 @@ struct Swing : Module {
 		Module specific process method called from process () in OrangeLineCommon.hpp
 	*/
 	inline void moduleProcess (const ProcessArgs &args) {
+		if (styleChanged) {
+			switch (int(getStateJson(STYLE_JSON))) {
+				case STYLE_ORANGE:
+					brightPanel->visible = false;
+					darkPanel->visible = false;
+					break;
+				case STYLE_BRIGHT:
+					brightPanel->visible = true;
+					darkPanel->visible = false;
+					break;
+				case STYLE_DARK:
+					brightPanel->visible = false;
+					darkPanel->visible = true;
+					break;
+			}
+			styleChanged = false;
+		}
 
         if (getInputConnected (BPM_INPUT)) {
             if (changeInput (BPM_INPUT) || changeParam (DIV_PARAM) || phaseStep == 0.f)
@@ -218,6 +238,20 @@ struct SwingWidget : ModuleWidget {
         setModule (module);
 		setPanel (APP->window->loadSvg(asset::plugin (pluginInstance, "res/Swing.svg")));
 
+		if (module) {
+			SvgPanel *brightPanel = new SvgPanel();
+			brightPanel->setBackground(APP->window->loadSvg(asset::plugin(pluginInstance, "res/SwingBright.svg")));
+			brightPanel->visible = false;
+			module->brightPanel = brightPanel;
+			addChild(brightPanel);
+			SvgPanel *darkPanel = new SvgPanel();
+			darkPanel->setBackground(APP->window->loadSvg(asset::plugin(pluginInstance, "res/SwingDark.svg")));
+			darkPanel->visible = false;
+			module->darkPanel = darkPanel;
+			addChild(darkPanel);
+		}
+
+
 		addInput (createInputCentered<PJ301MPort>		(mm2px (Vec ( 3.89  + 4.2 , 128.5 - 10.559 - 4.2)),  module, CLK_INPUT));
 		addInput (createInputCentered<PJ301MPort>		(mm2px (Vec ( 3.89  + 4.2 , 128.5 - 20.242 - 4.2)),  module, BPM_INPUT));
 		addInput (createInputCentered<PJ301MPort>		(mm2px (Vec ( 3.89  + 4.2 , 128.5 - 29.926 - 4.2)),  module, RST_INPUT));
@@ -234,6 +268,7 @@ struct SwingWidget : ModuleWidget {
 
         pValue  = (module != nullptr ? &(module->getStateParam (DIV_PARAM)) : nullptr);
         numberWidget = NumberWidget::create (mm2px (Vec(3.65, 128.5 - 110.35)), module, pValue, 0.f, "%2.0f", divBuffer, 2);
+		numberWidget->pStyle = (module == nullptr ? nullptr : &(module->OL_state[STYLE_JSON]));
         addChild (numberWidget);
 
         knob = createParamCentered<RoundSmallBlackKnob>		(mm2px (Vec (34.576 + 4,    128.5 - 99.019 - 4)),    module, LEN_PARAM);
@@ -242,6 +277,7 @@ struct SwingWidget : ModuleWidget {
 
         pValue  = (module != nullptr ? &(module->getStateParam (LEN_PARAM)) : nullptr);
         numberWidget = NumberWidget::create (mm2px (Vec(35.2, 128.5 - 110.35)), module, pValue, 0.f, "%2.0f", lenBuffer, 2);
+		numberWidget->pStyle = (module == nullptr ? nullptr : &(module->OL_state[STYLE_JSON]));
         addChild (numberWidget);
 
         addParam (createParamCentered<RoundLargeBlackKnob>		(mm2px (Vec (16.51 + 6.35,    128.5 - 102.553 - 6.35)),    module, AMT_PARAM));
@@ -251,7 +287,50 @@ struct SwingWidget : ModuleWidget {
             int y = i / 4;
             Vec pos = Vec (3.169 + 4 + x * (13.621 - 3.169), 128.5 - 85.535 - 4 + y * (13.621 - 3.169));
             addParam (createParamCentered<RoundSmallBlackKnob> (mm2px (pos), module, TIM_PARAM_01 +  i));
-        }
+		}
+	}
+
+	struct SwingStyleItem : MenuItem {
+		Swing *module;
+		int style;
+		void onAction(const event::Action &e) override {
+			module->OL_setOutState(STYLE_JSON, float(style));
+			module->styleChanged = true;
+		}
+		void step() override {
+			if (module)
+				rightText = (module != nullptr && module->OL_state[STYLE_JSON] == style) ? "✔" : "";
+		}
+	};
+
+	void appendContextMenu(Menu *menu) override {
+		MenuLabel *spacerLabel = new MenuLabel();
+		menu->addChild(spacerLabel);
+
+		Swing *module = dynamic_cast<Swing*>(this->module);
+		assert(module);
+
+		MenuLabel *styleLabel = new MenuLabel();
+		styleLabel->text = "Style";
+		menu->addChild(styleLabel);
+
+		SwingStyleItem *style1Item = new SwingStyleItem();
+		style1Item->text = "Orange";// 
+		style1Item->module = module;
+		style1Item->style= STYLE_ORANGE;
+		menu->addChild(style1Item);
+
+		SwingStyleItem *style2Item = new SwingStyleItem();
+		style2Item->text = "Bright";// 
+		style2Item->module = module;
+		style2Item->style= STYLE_BRIGHT;
+		menu->addChild(style2Item);
+			
+		SwingStyleItem *style3Item = new SwingStyleItem();
+		style3Item->text = "Dark";// 
+		style3Item->module = module;
+		style3Item->style= STYLE_DARK;
+		menu->addChild(style3Item);
 	}
 };
 

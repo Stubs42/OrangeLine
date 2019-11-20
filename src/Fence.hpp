@@ -20,6 +20,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 #include "OrangeLine.hpp"
 
+// Number of poly inputs and outputs
+// #define NUM_POLYS	4
+
 #define AUDIO_VOLTAGE  5.f
 
 #define MODE_MIN        0.f
@@ -46,6 +49,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define MODE_COLOR_QTZ    0x00ff00
 #define MODE_COLOR_SHPR   0xff0000
 
+#define CHG_CV_IN		1
+#define CHG_TRG_IN		(1 << 1)
 //
 // Value Ranges
 //
@@ -154,6 +159,7 @@ enum jsonIds {
 	LINK_DELTA_JSON,
 
 	GATE_JSON,
+	STYLE_JSON,
 
 	NUM_JSONS
 };
@@ -182,7 +188,7 @@ enum InputIds {
 	LOW_INPUT,				// Range Low CV Input
 	HIGH_INPUT,				// Range High CV Input
 	STEP_INPUT,				// Step CV Input
-	TRG_INPUT,				// Trigger Input
+	TRG_INPUT,				// Trigger Input	
 	CV_INPUT,				// Cv In to process
 
 	NUM_INPUTS

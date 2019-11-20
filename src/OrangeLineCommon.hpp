@@ -48,9 +48,28 @@ unsigned long OL_customChangeBits = 0;		// change bits set based on OL_customCha
 dsp::SchmittTrigger *OL_inStateTrigger  [NUM_TRIGGERS];	//	trigger objects for param (buttons) and inputs (triggers)
 dsp::PulseGenerator *OL_outStateTrigger [NUM_OUTPUTS];	//	pulse generator objects for outputs (triggers)
 bool OL_isGate [NUM_OUTPUTS];
-bool OL_wasTriggered [NUM_OUTPUTS];
+bool OL_wasTriggered [NUM_OUTPUTS];		// remember whether we triggered once at all only set when triggerd but never reset
+bool OL_isPoly[NUM_INPUTS + NUM_OUTPUTS];
+int  OL_polyChannels[NUM_OUTPUTS];
+
+/*
+	Poly data
+*/
+dsp::SchmittTrigger *OL_inStateTriggerPoly  [NUM_INPUTS * POLY_CHANNELS];	//	trigger objects for param (buttons) and inputs (triggers)
+dsp::PulseGenerator *OL_outStateTriggerPoly [NUM_OUTPUTS * POLY_CHANNELS];	//	pulse generator objects for outputs (triggers)
+float OL_statePoly          [(NUM_INPUTS + NUM_OUTPUTS) * POLY_CHANNELS];	//	state values
+bool  OL_inStateChangePoly  [NUM_INPUTS * POLY_CHANNELS];	//	flags to control processing for incoming state changes
+bool  OL_outStateChangePoly [NUM_OUTPUTS * POLY_CHANNELS];	//	flags to control reflection for outgoing state changes
+bool  OL_wasTriggeredPoly   [NUM_OUTPUTS * POLY_CHANNELS];	// remember whether we triggered once at all only set when triggerd but never reset
+
+
 double OL_sampleTime;
-bool OL_initialized = false;
+bool   OL_initialized = false;
+
+bool   styleChanged = true;
+
+SvgPanel *brightPanel;
+SvgPanel *darkPanel;
 
 /*
 	Got random implementation from Frozen Wastland Seeds of Change
@@ -167,16 +186,24 @@ float normal_number() {
 	and allocates dsp::SchmittTrigger and dsp::PulsGenerator() objects as needed afterwards.
 */
 inline void initializeInstance () {
+	memset (          OL_isPoly, false, sizeof (OL_isPoly));	// Must be before initStateTypes ()!
+	memset (OL_customChangeMask,    0L, sizeof (OL_customChangeMask));	// Initialie customChangeMasks to 0s
+
 	initStateTypes ();			//	Initialize state types to defaults
 	moduleInitStateTypes ();	//	Method to overwrite defaults by module specific settings 
 	allocateTriggers();			//	Allocate triggers and pulse generators for trigger I/O
 	moduleInitJsonConfig ();	//	Initialize json configuration like setting the json labels for json state attributes
-	memset (           OL_state,   0.f, sizeof (OL_state));			//	Initialize state values
-	memset (   OL_inStateChange, false, sizeof (OL_inStateChange));	//	Initialize incoming state changes
-	memset (  OL_outStateChange, false, sizeof (OL_outStateChange));	//	Initialize outgoing state changes
-	memset (          OL_isGate, false, sizeof (OL_isGate));			//	Initialize trg outputs to TRIGGER = false (GATE = true)
-	memset (    OL_wasTriggered, false, sizeof (OL_wasTriggered));	//	Initialize trg outputs to TRIGGER = false (GATE = true)
-	memset (OL_customChangeMask, 0L,     sizeof (OL_customChangeMask));	// Initialie customChangeMasks to 0s
+	memset (           OL_state,   0.f, sizeof (OL_state));				// Initialize state values
+	memset (   OL_inStateChange, false, sizeof (OL_inStateChange));		// Initialize incoming state changes
+	memset (  OL_outStateChange, false, sizeof (OL_outStateChange));	// Initialize outgoing state changes
+	memset (          OL_isGate, false, sizeof (OL_isGate));			// Initialize trg outputs to TRIGGER = false (GATE = true)
+	memset (    OL_wasTriggered, false, sizeof (OL_wasTriggered));		// Initialize trg outputs to TRIGGER = false (GATE = true)
+	memset (    OL_polyChannels,     0, sizeof (OL_polyChannels));		// Initialize number of poly channels for outputs
+
+	memset (          OL_statePoly,   0.f, sizeof (OL_statePoly));
+	memset (  OL_inStateChangePoly, false, sizeof (OL_inStateChangePoly));
+	memset ( OL_outStateChangePoly, false, sizeof (OL_outStateChangePoly));
+	memset (   OL_wasTriggeredPoly, false, sizeof (OL_wasTriggeredPoly));
 	/*
 		Now we call moduleReset () to ensure that a valid json state is created before this constructor
 		returns.
@@ -216,16 +243,36 @@ inline void allocateTriggers () {
 			OL_inStateTrigger[paramIdx] = nullptr;
 	}
 	for (int inputIdx = 0; inputIdx < NUM_INPUTS; inputIdx++) {
-		if (getStateTypeInput (inputIdx) == STATE_TYPE_TRIGGER)
-			OL_inStateTrigger[NUM_PARAMS + inputIdx] = new dsp::SchmittTrigger();
-		else
-			OL_inStateTrigger[NUM_PARAMS + inputIdx] = nullptr;
+		if (getInPoly(inputIdx)) {
+			for (int poly = 0; poly < POLY_CHANNELS; poly++) {
+				if (getStateTypeInput (inputIdx) == STATE_TYPE_TRIGGER)
+					OL_inStateTriggerPoly[inputIdx * POLY_CHANNELS + poly] = new dsp::SchmittTrigger();
+				else
+					OL_inStateTriggerPoly[inputIdx * POLY_CHANNELS + poly] = nullptr;
+			}
+		}
+		else {
+			if (getStateTypeInput (inputIdx) == STATE_TYPE_TRIGGER)
+				OL_inStateTrigger[NUM_PARAMS + inputIdx] = new dsp::SchmittTrigger();
+			else
+				OL_inStateTrigger[NUM_PARAMS + inputIdx] = nullptr;
+		}
 	}
 	for (int outputIdx = 0; outputIdx < NUM_OUTPUTS; outputIdx++) {
-		if (getStateTypeOutput (outputIdx) == STATE_TYPE_TRIGGER)
-			OL_outStateTrigger[outputIdx] = new dsp::PulseGenerator();
-		else
-			OL_outStateTrigger[outputIdx] = nullptr;
+		if (getOutPoly(outputIdx)) {
+			for (int poly = 0; poly < POLY_CHANNELS; poly++) {
+				if (getStateTypeOutput (outputIdx) == STATE_TYPE_TRIGGER)
+					OL_outStateTriggerPoly[outputIdx * POLY_CHANNELS + poly] = new dsp::PulseGenerator();
+				else
+					OL_outStateTriggerPoly[outputIdx * POLY_CHANNELS + poly] = nullptr;
+			}
+		}
+		else {
+			if (getStateTypeOutput (outputIdx) == STATE_TYPE_TRIGGER)
+				OL_outStateTrigger[outputIdx] = new dsp::PulseGenerator();
+			else
+				OL_outStateTrigger[outputIdx] = nullptr;
+		}
 	}
 }
 
@@ -273,7 +320,15 @@ inline void OL_setInState (int stateIdx, float value) {
 		OL_outStateChange[stateIdx] = OL_inStateChange[stateIdx] = true;
 	}
 }
-
+/*
+inline void OL_setInStatePoly (int stateIdx, int channel, float value) {
+	int idx = stateIdx + channel * NUM_POLYS;
+	if (OL_statePoly[idx] != value) {
+		OL_statePoly[idx] = value;
+		OL_outStateChangePoly[idx] = OL_inStateChangePoly[idx] = true;
+	}
+}
+*/
 /**
 	Method to set the outgoing state of params
 	output state change is flagged
@@ -283,6 +338,22 @@ inline void OL_setOutState (int stateIdx, float value) {
 		OL_state[stateIdx]  = value;
 		OL_outStateChange[stateIdx] = true;
 	}
+}
+/*
+inline void OL_setOutStatePoly (int stateIdx, int channel, float value) {
+	int idx = stateIdx + channel * NUM_POLYS;
+	if (OL_statePoly[idx] != value) {
+		OL_statePoly[idx] = value;
+		OL_outStateChangePoly[idx] = true;
+	}
+}
+*/
+
+/**
+	Method to configure json labels
+*/
+inline NVGcolor getTextColor () {
+	return (OL_state[STYLE_JSON] == STYLE_ORANGE ? ORANGE : WHITE);
 }
 
 // ********************************************************************************************************************************
@@ -328,9 +399,12 @@ void process (const ProcessArgs &args) override {
 	OL_initialized to false to request initialize ().
 */
 inline void initialize () {
-	memset (OL_outStateChange,  false, sizeof(OL_outStateChange));
-	if (OL_initialized)
-		memset (OL_inStateChange,   false, sizeof( OL_inStateChange));
+	memset (OL_outStateChange,     false, sizeof(OL_outStateChange));
+	memset (OL_outStateChangePoly, false, sizeof(OL_outStateChangePoly));
+	if (OL_initialized) {
+		memset (OL_inStateChange,     false, sizeof( OL_inStateChange));
+		memset (OL_inStateChangePoly, false, sizeof( OL_inStateChangePoly));
+	}
 	else
 		moduleInitialize ();
 	
@@ -378,6 +452,7 @@ inline void processParamsAndInputs () {
 	/*
 		Process Inputs
 	*/
+	int channels = 0;
 	for (int stateIdx = stateIdxInput (0), inputIdx = 0; stateIdx <= maxStateIdxInput; stateIdx++, inputIdx ++) {
 		/*
 			TUNING: 
@@ -398,31 +473,55 @@ inline void processParamsAndInputs () {
 			}
 			continue;	// not connected, so no processing of a value neccessary
 		}            
-		if (getStateTypeInput (inputIdx) == STATE_TYPE_TRIGGER) {
-			/*
-				For triggers we do not use setInStateInput (), 
-				because we only want to set OL_inStateChange if we got triggered
-			*/
-			OL_state[stateIdx] = inputs[inputIdx].getVoltage ();
-			/*
-				Processing triggers from trigger inputs
-			
-				Big pit I fell in first!
-				If you write the line below this comment as:
-
-//			if (((dsp::SchmittTrigger)(*OL_inStateTrigger[i])).process(value))
-
-				this will not work because it looks like we get a new SchmittTigger instance for every call...
-			*/
-			if (((dsp::SchmittTrigger*)OL_inStateTrigger[NUM_PARAMS + inputIdx])->process (OL_state[stateIdx])) {
-				OL_inStateChange[stateIdx] = true;
-				OL_customChangeBits |= getCustomChangeMaskInput (inputIdx);
+		if (getInPoly(inputIdx)) {
+			channels = inputs[inputIdx].getChannels();
+			int channel;
+			for (channel = 0; channel < channels; channel ++) {
+				int idx = inputIdx * POLY_CHANNELS + channel;
+				if (getStateTypeInput (inputIdx) == STATE_TYPE_TRIGGER) {
+					OL_statePoly[idx] = inputs[inputIdx].getVoltage (channel);
+					if (((dsp::SchmittTrigger*)OL_inStateTriggerPoly[idx])->process (OL_statePoly[idx])) {
+						OL_inStateChangePoly[idx] = true;
+						OL_customChangeBits |= getCustomChangeMaskInput (inputIdx);
+					}
+				}
+				else {
+					float value = inputs[inputIdx].getVoltage (channel);
+					if (OL_statePoly[idx] != value) {
+						OL_statePoly[idx] = value;
+						OL_inStateChangePoly[idx] = true;
+						OL_customChangeBits |= getCustomChangeMaskInput (inputIdx);
+					}
+				}
 			}
 		}
-		else { 
-			setStateInput (inputIdx, inputs[inputIdx].getVoltage ());
-			if (changeInput(inputIdx))
-				OL_customChangeBits |= getCustomChangeMaskInput (inputIdx);
+		else {
+			if (getStateTypeInput (inputIdx) == STATE_TYPE_TRIGGER) {
+				/*
+					For triggers we do not use setInStateInput (), 
+					because we only want to set OL_inStateChange if we got triggered
+				*/
+				OL_state[stateIdx] = inputs[inputIdx].getVoltage ();
+				/*
+					Processing triggers from trigger inputs
+				
+					Big pit I fell in first!
+					If you write the line below this comment as:
+
+	//			if (((dsp::SchmittTrigger)(*OL_inStateTrigger[i])).process(value))
+
+					this will not work because it looks like we get a new SchmittTigger instance for every call...
+				*/
+				if (((dsp::SchmittTrigger*)OL_inStateTrigger[NUM_PARAMS + inputIdx])->process (OL_state[stateIdx])) {
+					OL_inStateChange[stateIdx] = true;
+					OL_customChangeBits |= getCustomChangeMaskInput (inputIdx);
+				}
+			}
+			else { 
+				setStateInput (inputIdx, inputs[inputIdx].getVoltage ());
+				if (changeInput(inputIdx))
+					OL_customChangeBits |= getCustomChangeMaskInput (inputIdx);
+			}
 		}
 	}
 }
@@ -450,27 +549,58 @@ inline void reflectChanges () {
 		Process Outputs
 	*/
 	for (int stateIdx = stateIdxOutput (0), outputIdx = 0; stateIdx <= maxStateIdxOutput; stateIdx++, outputIdx++) {
-  		if (changeOutput (outputIdx)) {
- 			if (getStateTypeOutput (outputIdx) == STATE_TYPE_VOLTAGE) {
-				outputs[outputIdx].setVoltage (getStateOutput (outputIdx));    
-			 }
-			else	// OL_stateType[stateIdx] == STATE_TYPE_TRIGGER
-				((dsp::PulseGenerator*)(OL_outStateTrigger[outputIdx]))->trigger (0.001f);
-		}
-		/*
-			Pulse generators of active Trigger outputs have to be processed independently of changes in current process() run
-		*/
-		if (getStateTypeOutput (outputIdx) == STATE_TYPE_TRIGGER && getStateOutput (outputIdx) > 0.f) {
-			bool trgActive = ((dsp::PulseGenerator*)(OL_outStateTrigger[outputIdx]))->process ((float)OL_sampleTime);
-			if (trgActive) {
-				setStateOutput (outputIdx, 10.f);
-				OL_wasTriggered[outputIdx] = true;
+		if (getOutPoly (outputIdx)) {
+			int channel;
+			for (channel = 0; channel < getOutPolyChannels (outputIdx); channel++) {
+				int cvOutPolyIdx = outputIdx * POLY_CHANNELS + channel;
+				if (OL_outStateChangePoly [cvOutPolyIdx]) {
+					if (getStateTypeOutput (outputIdx) == STATE_TYPE_VOLTAGE) {
+						outputs[outputIdx].setVoltage (OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cvOutPolyIdx], channel);    
+					}
+					else	// OL_stateType[stateIdx + channel] == STATE_TYPE_TRIGGER
+						((dsp::PulseGenerator*)(OL_outStateTriggerPoly[cvOutPolyIdx]))->trigger (0.001f);
+				}
+				/*
+					Pulse generators of active Trigger outputs have to be processed independently of changes in current process() run
+				*/
+				if (getStateTypeOutput (outputIdx) == STATE_TYPE_TRIGGER && OL_statePoly [NUM_INPUTS * POLY_CHANNELS + cvOutPolyIdx] > 0.f) {
+					bool trgActive = ((dsp::PulseGenerator*)(OL_outStateTriggerPoly[cvOutPolyIdx]))->process ((float)OL_sampleTime);
+					if (trgActive) {
+						OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cvOutPolyIdx] = 10.f;
+						OL_wasTriggeredPoly[cvOutPolyIdx] = true;
+					}
+					else 
+						OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cvOutPolyIdx] = 0.f;
+					if (OL_isGate[outputIdx] && OL_wasTriggeredPoly[cvOutPolyIdx])
+						trgActive = !trgActive;
+					outputs[outputIdx].setVoltage (trgActive ? 10.f : 0.f, channel);
+				}
 			}
-			else 
-				setStateOutput (outputIdx, 0.f);
-			if (OL_isGate[outputIdx] && OL_wasTriggered[outputIdx])
-				trgActive = !trgActive;
-			outputs[outputIdx].setVoltage (trgActive ? 10.f : 0.f);
+			outputs[outputIdx].setChannels(channel);
+		}
+		else {
+			if (changeOutput (outputIdx)) {
+				if (getStateTypeOutput (outputIdx) == STATE_TYPE_VOLTAGE) {
+					outputs[outputIdx].setVoltage (getStateOutput (outputIdx));    
+				}
+				else	// OL_stateType[stateIdx] == STATE_TYPE_TRIGGER
+					((dsp::PulseGenerator*)(OL_outStateTrigger[outputIdx]))->trigger (0.001f);
+			}
+			/*
+				Pulse generators of active Trigger outputs have to be processed independently of changes in current process() run
+			*/
+			if (getStateTypeOutput (outputIdx) == STATE_TYPE_TRIGGER && getStateOutput (outputIdx) > 0.f) {
+				bool trgActive = ((dsp::PulseGenerator*)(OL_outStateTrigger[outputIdx]))->process ((float)OL_sampleTime);
+				if (trgActive) {
+					setStateOutput (outputIdx, 10.f);
+					OL_wasTriggered[outputIdx] = true;
+				}
+				else 
+					setStateOutput (outputIdx, 0.f);
+				if (OL_isGate[outputIdx] && OL_wasTriggered[outputIdx])
+					trgActive = !trgActive;
+				outputs[outputIdx].setVoltage (trgActive ? 10.f : 0.f);
+			}
 		}
 	}
 	/*

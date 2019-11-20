@@ -47,7 +47,8 @@ struct Fence : Module {
     float effectiveHigh = 0.f;
     float oldEffectiveHigh = effectiveHigh;
 	float effectiveStep = 0.f;
-	float oldCvOut = 0.f;	//	Old value of cvOut to detect changes for triggering trgOut
+	float oldCvOut[POLY_CHANNELS];	//	Old value of cvOut to detect changes for triggering trgOut
+	float oldCvIn[POLY_CHANNELS];	//	Old value of cvOut to detect changes of quantized input
 	/*
 		Hack for Making knobs display correctly
 		When rescaling a knob and the value does not change, the knob will not be redrawn
@@ -57,9 +58,18 @@ struct Fence : Module {
 	bool knobFake = false;
 	int  knobFakeResetCnt = -1;
 
+
 	int link = LINK_NONE_INT;
 	int mode = MODE_RAW_INT;
 
+	float processLow = 0.f;
+	float processHigh = 0.f;
+	float processStep = 0.f;
+	float cvOut = 0.f;
+
+	/*
+		Variables used speed up processing
+	*/
 // ********************************************************************************************************************************
 /*
 	Initialization
@@ -78,13 +88,21 @@ struct Fence : Module {
 		which is called from constructor
 	*/
 	void moduleInitStateTypes () {
-		setStateTypeParam  (    LINK_PARAM, STATE_TYPE_TRIGGER);
-		setStateTypeParam  (    MODE_PARAM, STATE_TYPE_TRIGGER);
-		setStateTypeParam  (    GATE_PARAM, STATE_TYPE_TRIGGER);
+		setStateTypeParam  (LINK_PARAM, STATE_TYPE_TRIGGER);
+		setStateTypeParam  (MODE_PARAM, STATE_TYPE_TRIGGER);
+		setStateTypeParam  (GATE_PARAM, STATE_TYPE_TRIGGER);
 
-		setStateTypeInput  (     TRG_INPUT, STATE_TYPE_TRIGGER);
+		setStateTypeInput        (TRG_INPUT, STATE_TYPE_TRIGGER);
+		setCustomChangeMaskInput (CV_INPUT, CHG_CV_IN);
+		setInPoly                (TRG_INPUT, true);
 
-		setStateTypeOutput (    TRG_OUTPUT, STATE_TYPE_TRIGGER);
+		setStateTypeOutput (TRG_OUTPUT, STATE_TYPE_TRIGGER);
+		setOutPoly         (TRG_OUTPUT, true);
+
+		setCustomChangeMaskInput (TRG_INPUT, CHG_TRG_IN);
+		setInPoly                (CV_INPUT, true);
+
+		setOutPoly (CV_OUTPUT, true);
 
 		setStateTypeLight  (LINK_LIGHT_RGB, LIGHT_TYPE_RGB    );  
 		setStateTypeLight  (MODE_LIGHT_RGB, LIGHT_TYPE_RGB    );  
@@ -124,6 +142,7 @@ struct Fence : Module {
 		setJsonLabel (       LINK_JSON, "link");
 		setJsonLabel ( LINK_DELTA_JSON, "linkDelta");
 		setJsonLabel (       GATE_JSON, "gate");
+		setJsonLabel (      STYLE_JSON, "style");
 
 		#pragma GCC diagnostic pop
 	}
@@ -150,6 +169,8 @@ struct Fence : Module {
 	*/
 	inline void moduleInitialize () {
 		initializeForMode ();
+		memset (oldCvOut, 0.f, sizeof (oldCvOut));
+		memset ( oldCvIn, 0.f, sizeof ( oldCvIn));
 	}
 
 	/**
@@ -180,6 +201,8 @@ struct Fence : Module {
 
 		setStateJson (       GATE_JSON,                0.f);
 
+		setStateJson (      STYLE_JSON,                0.f);
+
 		setStateJson (       LINK_JSON, getForMode (DEFAULT_LINK_RAW, DEFAULT_LINK_QTZ, DEFAULT_LINK_SHPR));
 
 		if (getStateJson (LINK_JSON) == LINK_RANGE) {
@@ -189,6 +212,8 @@ struct Fence : Module {
 		}
 		else
 			setStateJson ( LINK_DELTA_JSON, 0.f);
+
+		styleChanged = true;
 	}
 
 // ********************************************************************************************************************************
@@ -298,6 +323,23 @@ struct Fence : Module {
 		Module specific process method called from process () in OrangeLineCommon.hpp
 	*/
 	inline void moduleProcess (const ProcessArgs &args) {
+		if (styleChanged) {
+			switch (int(getStateJson(STYLE_JSON))) {
+				case STYLE_ORANGE:
+					brightPanel->visible = false;
+					darkPanel->visible = false;
+					break;
+				case STYLE_BRIGHT:
+					brightPanel->visible = true;
+					darkPanel->visible = false;
+					break;
+				case STYLE_DARK:
+					brightPanel->visible = false;
+					darkPanel->visible = true;
+					break;
+			}
+			styleChanged = false;
+		}
 
 		//
 		//	Undo knob fakes
@@ -322,86 +364,113 @@ struct Fence : Module {
 			setStateJson (HIGHCLAMPED_JSON, 0.f);
 		}
 
-		processRangeKnobs ();
-		determineEffectiveRange ();
-		determineEffectiveStep ();
 		/*
 			Process cvIn
 		*/
 		/*
 			Check whether we have to do anything at all
 		*/
-		if ((!getInputConnected (TRG_INPUT) && (changeInput (  CV_INPUT) || changeInput ( LOW_INPUT) || changeInput (HIGH_INPUT) || changeInput (STEP_INPUT) ||
-						                       changeParam ( LOW_PARAM) || changeParam (HIGH_PARAM) || changeParam (STEP_PARAM) || changeJson  ( MODE_JSON))) ||
-			changeInput (TRG_INPUT)
-		) {
-			float cvOut = getStateInput(CV_INPUT);
-			float processLow  = clamp (effectiveLow, minLow, maxHigh - minRange);
-			float processHigh = effectiveHigh >= processLow + minRange ? effectiveHigh : processLow + minRange;
-			float processStep = effectiveStep < minStep ? minStep : effectiveStep;
+		bool run = 	customChangeBits & (CHG_CV_IN | CHG_TRG_IN);
+		bool change =	changeInput ( LOW_INPUT) || changeInput (HIGH_INPUT) || changeInput (STEP_INPUT) ||
+						changeParam ( LOW_PARAM) || changeParam (HIGH_PARAM) || changeParam (STEP_PARAM) || 
+						changeJson  ( MODE_JSON) || !initialized;
+		if (change) {
+			processRangeKnobs ();
+			determineEffectiveRange ();
+			determineEffectiveStep ();
+			processLow  = clamp (effectiveLow, minLow, maxHigh - minRange);
+			processHigh = effectiveHigh >= processLow + minRange ? effectiveHigh : processLow + minRange;
+			processStep = effectiveStep < minStep ? minStep : effectiveStep;
+		}
+		
+		bool inConnected = getInputConnected (CV_INPUT);
+		if (inConnected & (run || change)) {
+			int channels = inputs[CV_INPUT].getChannels();
+			setOutPolyChannels(CV_OUTPUT, channels);
+			setOutPolyChannels(TRG_OUTPUT, channels);
+			bool trgConnected = getInputConnected (TRG_INPUT); 
+			for (int channel = 0; channel < channels; channel++) {
+				int cvInPolyIdx = CV_INPUT * POLY_CHANNELS + channel;
+				int trgInPolyIdx = TRG_INPUT * POLY_CHANNELS + channel;
+				int trgOutPolyIdx = TRG_OUTPUT * POLY_CHANNELS + channel;
+				int cvOutPolyIdx = CV_OUTPUT * POLY_CHANNELS + channel;
 
-			if (mode == MODE_QTZ_INT)
-				cvOut = quantize (getStateInput (CV_INPUT));
-
-			if (cvOut > processHigh) {
-				if (mode == MODE_QTZ_INT) {
-					cvOut -= floor (cvOut - processHigh);
-					if (cvOut > processHigh)
-						cvOut -= 1.;
+				if ((!trgConnected && OL_inStateChangePoly[cvInPolyIdx]) || OL_inStateChangePoly[trgInPolyIdx] || change) {
+					cvOut = OL_statePoly[cvInPolyIdx];
+					if (mode == MODE_QTZ_INT)
+						cvOut = quantize (cvOut);
+					if (cvOut == oldCvIn[channel] && !OL_inStateChangePoly[trgInPolyIdx] && !change)
+						continue;
+					oldCvIn[channel]  = cvOut;
+					if (cvOut > processHigh) {
+						if (mode == MODE_QTZ_INT) {
+							cvOut -= floor (cvOut - processHigh);
+							if (cvOut > processHigh + PRECISION)
+								cvOut -= 1.f;
+						}
+						else {
+							cvOut -= floor ((cvOut - processHigh) / processStep) * processStep;
+							if (cvOut > processHigh + PRECISION)
+								cvOut -= processStep;
+						}
+					}
+					if (cvOut < processLow - PRECISION) {
+						if (mode == MODE_QTZ_INT) {
+							cvOut += floor (processLow - cvOut);
+							if (cvOut < processLow - PRECISION)
+								cvOut += 1.f;
+						}
+						else {
+							cvOut += floor ((processLow - cvOut) / processStep) * processStep;
+							if (cvOut < processLow - PRECISION)
+								cvOut += processStep;
+						}
+					}
+					if (mode == MODE_QTZ_INT && cvOut > processHigh + PRECISION) {
+						/*
+							We didn't find the same note in our range
+							We use note(processStep) as alternative note
+						*/
+						float dLow  = processLow - (cvOut - 1.f);
+						float dHigh = cvOut - processHigh;
+						// printf ("dLow = %f, dHigh = %f, cvOut = %f, processHigh + PRECISION = %f\n", dLow, dHigh, cvOut, processHigh + PRECISION);
+						int altNote = note (processStep);
+						if (dLow > dHigh)
+							while (note (cvOut) != altNote)
+								cvOut -= SEMITONE;
+						else {
+							cvOut -= 1.f;
+							while (note (cvOut) != altNote)
+								cvOut += SEMITONE;
+						}
+					}
+					/*
+						In audio mode we rescale the output so that range is mapped to -5, +5V
+					*/
+					if (mode == MODE_SHPR_INT) {
+						float range = processHigh - processLow;
+						cvOut -=  processHigh - range / 2.f;	//	Move cvOut relatively to the center of the range representing 0V
+						cvOut *= 2 * AUDIO_VOLTAGE / range;		//	Scale range
+					}
+					/*
+						Set cvOut and trigger if changed
+					*/
+					if (mode == MODE_QTZ_INT)
+						cvOut = quantize (cvOut);
+					cvOut = clamp (cvOut, minLow, maxHigh);
+					if (abs (cvOut - oldCvOut[channel]) > PRECISION) {
+						if (OL_statePoly[NUM_INPUTS * POLY_CHANNELS + trgOutPolyIdx] != 10.f) {
+							OL_statePoly[NUM_INPUTS * POLY_CHANNELS + trgOutPolyIdx] = 10.f;
+							OL_outStateChangePoly[trgOutPolyIdx] = true;
+						}
+					}
+					if (OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cvOutPolyIdx] != cvOut) {
+						OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cvOutPolyIdx] = cvOut;
+						OL_outStateChangePoly[cvOutPolyIdx] = true;
+					}
+					oldCvOut[channel] = cvOut;
 				}
-				else {
-					cvOut -= floor ((cvOut - processHigh) / processStep) * processStep;
-					if (cvOut > processHigh)
-						cvOut -= processStep;
-				}
 			}
-
-			if (cvOut < processLow) {
-				if (mode == MODE_QTZ_INT) {
-					cvOut += floor (processLow - cvOut);
-					if (cvOut < processLow)
-						cvOut += 1.;
-				}
-				else {
-					cvOut += floor ((processLow - cvOut) / processStep) * processStep;
-					if (cvOut < processLow)
-						cvOut += processStep;
-				}
-			}
-
-			if (mode == MODE_QTZ_INT && cvOut > processHigh) {
-				/*
-					We didn't find the same note in our range
-					Now we check whether processLow + processStep would match
-					if not effectiveLoe is used
-				*/
-				float altCv = processLow + processStep;
-				if (altCv >= processLow && altCv <= processHigh)
-					cvOut = altCv;
-				else
-					cvOut = processLow;
-			}
-
-			/*
-				In audio mode we rescale the output so that range is mapped to -5, +5V
-			*/
-			if (mode == MODE_SHPR_INT) {
-				float range = processHigh - processLow;
-				cvOut -=  processHigh - range / 2.f;	//	Move cvOut relatively to the center of the range representing 0V
-				cvOut *= 2 * AUDIO_VOLTAGE / range;		//	Scale range
-			}
-
-			/*
-				Set cvOut and trigger if changed
-			*/
-			if (mode == MODE_QTZ_INT)
-				cvOut = quantize (cvOut);
-			cvOut = clamp (cvOut, minLow, maxHigh);
-			if (abs (cvOut - oldCvOut) > PRECISION) {
-				setStateOutput (TRG_OUTPUT, 10.f);
-			}
-			setStateOutput (CV_OUTPUT, cvOut);
-			oldCvOut = cvOut;
 		}
 	}
 
@@ -564,6 +633,10 @@ struct Fence : Module {
 			float spread = effectiveLow;
 			effectiveLow  = effectiveHigh - spread;
 			effectiveHigh = effectiveHigh + spread;
+		}
+		if (mode == MODE_QTZ_INT) {
+			effectiveLow = quantize (effectiveLow);
+			effectiveHigh = quantize (effectiveHigh);
 		}
 
 		effectiveLow  = clamp (effectiveLow,  minLow,  maxLow);
@@ -734,16 +807,14 @@ struct VOctWidget : TransparentWidget {
 		}
 		else {
 			if (mode == MODE_QTZ_INT) {
+				int note = note (cv);
 				if (type == TYPE_VOCT) {
 					int octave = octave (cv);
-					int note   = note (cv);
 					if (int(sizeof(str)) <= snprintf (pStr, sizeof(str), " %c%c%2d", notes[note], sharps[note], octave + 4))
 						fprintf (stderr, "OrangeLine:cv2Str():Unxpected format overflow\n");
 				}
 				if (type == TYPE_STEP) {
-					int semis = note(cv);
-					sprintf (pStr, "%2d ST", semis);
-					if (int(sizeof(str)) <= snprintf (pStr, sizeof(str), "%2d ST", semis))
+					if (int(sizeof(str)) <= snprintf (pStr, sizeof(str), "  %c%c", notes[note], sharps[note]))
 						fprintf (stderr, "OrangeLine:cv2Str():Unxpected format overflow\n");
 				}
 			}
@@ -763,10 +834,9 @@ struct VOctWidget : TransparentWidget {
 			module->knobFake = false;
 			module->knobFakeResetCnt = KNOB_FAKE_STEPS;
 		}
-
 		nvgFontFaceId (drawArgs.vg, pFont->handle);
 		nvgFontSize (drawArgs.vg, 18);
-		nvgFillColor (drawArgs.vg, nvgRGB(255, 102, 0));	//	Orange
+		nvgFillColor (drawArgs.vg, (module != nullptr ? module->getTextColor () : ORANGE));
 
 		float value = pValue != NULL ? *pValue : defaultValue;
 		float mode  = pMode  != NULL ? *pMode  : DEFAULT_MODE;
@@ -805,6 +875,19 @@ struct FenceWidget : ModuleWidget {
 
 		setModule (module);
 		setPanel (APP->window->loadSvg(asset::plugin (pluginInstance, "res/Fence.svg")));
+
+		if (module) {
+			SvgPanel *brightPanel = new SvgPanel();
+			brightPanel->setBackground(APP->window->loadSvg(asset::plugin(pluginInstance, "res/FenceBright.svg")));
+			brightPanel->visible = false;
+			module->brightPanel = brightPanel;
+			addChild(brightPanel);
+			SvgPanel *darkPanel = new SvgPanel();
+			darkPanel->setBackground(APP->window->loadSvg(asset::plugin(pluginInstance, "res/FenceDark.svg")));
+			darkPanel->visible = false;
+			module->darkPanel = darkPanel;
+			addChild(darkPanel);
+		}
 
 		addParam (createParamCentered<RoundBlackKnob>		(mm2px (Vec ( 3.276 + 5,    128.5 - 92.970 - 5)),    module, LOW_PARAM));
 		addParam (createParamCentered<RoundBlackKnob>		(mm2px (Vec (17.246 + 5,    128.5 - 92.970 - 5)),    module, HIGH_PARAM));
@@ -847,6 +930,49 @@ struct FenceWidget : ModuleWidget {
 
 		addOutput (createOutputCentered<PJ301MPort>		(mm2px (Vec (18.02  + 4.2 , 128.5 - 29.609 - 4.2)),  module, TRG_OUTPUT));
 		addOutput (createOutputCentered<PJ301MPort>		(mm2px (Vec (18.02  + 4.2 , 128.5 - 11.829 - 4.2)),  module, CV_OUTPUT));
+	}
+
+	struct FenceStyleItem : MenuItem {
+		Fence *module;
+		int style;
+		void onAction(const event::Action &e) override {
+			module->OL_setOutState(STYLE_JSON, float(style));
+			module->styleChanged = true;
+		}
+		void step() override {
+			if (module)
+				rightText = (module->OL_state[STYLE_JSON] == style) ? "✔" : "";
+		}
+	};
+
+	void appendContextMenu(Menu *menu) override {
+		MenuLabel *spacerLabel = new MenuLabel();
+		menu->addChild(spacerLabel);
+
+		Fence *module = dynamic_cast<Fence*>(this->module);
+		assert(module);
+
+		MenuLabel *styleLabel = new MenuLabel();
+		styleLabel->text = "Style";
+		menu->addChild(styleLabel);
+
+		FenceStyleItem *style1Item = new FenceStyleItem();
+		style1Item->text = "Orange";// 
+		style1Item->module = module;
+		style1Item->style= STYLE_ORANGE;
+		menu->addChild(style1Item);
+
+		FenceStyleItem *style2Item = new FenceStyleItem();
+		style2Item->text = "Bright";// 
+		style2Item->module = module;
+		style2Item->style= STYLE_BRIGHT;
+		menu->addChild(style2Item);
+			
+		FenceStyleItem *style3Item = new FenceStyleItem();
+		style3Item->text = "Dark";// 
+		style3Item->module = module;
+		style3Item->style= STYLE_DARK;
+		menu->addChild(style3Item);
 	}
 };
 
