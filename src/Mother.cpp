@@ -486,7 +486,8 @@ struct Mother : Module {
 		float f;
 
 		bool didSelectScale = false;
-		float selectedNotes[NUM_NOTES] ;
+		float selectedNotes[NUM_NOTES];
+		selectedNotes[0] = 1.f;
 		if (scaleSelected >= 0) {
 			// Scale selected from right click menu
 			int noteIdx = 1;
