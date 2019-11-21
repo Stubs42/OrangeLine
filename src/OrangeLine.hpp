@@ -49,6 +49,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 //#define PRECISION       0.0000000001f
 #define PRECISION       0.000001f
 
+#define MAX_TEXT_SIZE  64
+#define TEXT_SCROLL_DELAY   11025
+#define TEXT_SCROLL_PRE_DELAY   TEXT_SCROLL_DELAY * 8
+
 #define stateIdxJson(i)				(i)
 #define stateIdxParam(i)			(NUM_JSONS + (i))
 #define stateIdxInput(i)			(NUM_JSONS + NUM_PARAMS + (i))
@@ -197,10 +201,13 @@ struct TextWidget : TransparentWidget {
     Module     *module = nullptr;
 	const char *text   = nullptr;
 	int         length = 0;
+	int	        scrollPos = 0;
+	int        *pTimer;
 	const char *defaultText = nullptr;
 	float	   *pStyle = nullptr;
+	bool		reset = false;
 
-    static TextWidget* create (Vec pos, Module *module, const char *text, const char * defaultText, int length) {
+    static TextWidget* create (Vec pos, Module *module, const char *text, const char * defaultText, int length, int *pTimer) {
         TextWidget *w = new TextWidget();
 
 		w->pFont    = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
@@ -210,6 +217,7 @@ struct TextWidget : TransparentWidget {
         w->text     = text;
         w->defaultText  = defaultText;
         w->length   = length;
+		w->pTimer   = pTimer;
 
         return w;
     }
@@ -221,11 +229,44 @@ struct TextWidget : TransparentWidget {
 	}
 
 	void draw (const DrawArgs &drawArgs) override {
+		const char *delimiter = " - ";
+		char buf[MAX_TEXT_SIZE * 2 + 1 + 3 /* delimiter length */];
+        const char* str = (text != nullptr ? text : defaultText);
+		int len = strlen(str);
+		if (len > MAX_TEXT_SIZE)
+			len = MAX_TEXT_SIZE;
 		nvgFontFaceId (drawArgs.vg, pFont->handle);
 		nvgFontSize (drawArgs.vg, 18);
 		nvgFillColor (drawArgs.vg, (pStyle == nullptr || *pStyle == STYLE_ORANGE) ? ORANGE : WHITE);
-        const char* str = (text != nullptr ? text : defaultText);
-		nvgText (drawArgs.vg, 0, 0, str, nullptr);
+
+		if (len <= length) {
+			nvgText (drawArgs.vg, 0, 0, str, nullptr);
+		}
+		else {
+			if (pTimer != nullptr && len > length) {
+				if (*pTimer <= 0) {
+					*pTimer = TEXT_SCROLL_DELAY;
+					scrollPos = (scrollPos + 1) % (len + 3);
+				}
+				else {
+					if (*pTimer > TEXT_SCROLL_DELAY) {
+						if (!reset) {
+							reset = true;
+							scrollPos = 0;
+						}
+					}
+					else {
+						reset = false;
+					}
+				}
+			}
+			strncpy (buf, str, len);
+			strcpy (buf + len, delimiter);
+			strncpy (buf + len + 3 /* delimiter length */, str, len);
+			buf[MAX_TEXT_SIZE * 2 + 3] = '\0';
+			buf[scrollPos + length] = '\0';
+			nvgText (drawArgs.vg, 0, 0, buf + scrollPos, nullptr);
+		}
 	}
 };
 

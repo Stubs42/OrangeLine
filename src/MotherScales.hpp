@@ -30,11 +30,11 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
         "222222",       "32232"
     };
 	const char *scaleNames[SCALE_KEYS] = {
-        "Major",        "Dorian",       "Phrygian",     "Lydian",       "Myxolodian",   "nat. Minor",   "Locrian",
+        "Major",        "Dorian",       "Phrygian",     "Lydian",       "Myxolodian",   "Aeolian - natural Minor",   "Locrian",
         "Acoustic",     "Altered",      "Augmented",    "Bebop dom.",   "Blues",        "Chromatic",    "",
-        "Enigmatic",    "Flamenco",     "Gypsy",        "Half dim.",    "harm. Major",  "harm. Minor",  "Hirajoshi",
-        "Hungarian",    "Miyako-bushi", "Insen",        "Iwato",        "Lydian aug.",  "Bebob maj.",   "Locrian maj.",
-        "Penta Major",  "mel. Minor",   "Penta Minor",  "Neapol. maj.", "Neapol. min.", "Octatonic 1",  "Octatonic 2",
-        "Persian",      "Phryg. dom.",  "Prometheus",   "Harmonics",    "Tritone",      "Tritone 2S",   "Ukr. Dorian",
+        "Enigmatic",    "Flamenco",     "Gypsy",        "Half diminished",    "harmonic Major",  "harmonic Minor",  "Hirajoshi",
+        "Hungarian",    "Miyako-bushi", "Insen",        "Iwato",        "Lydian augmented",  "Bebob Major",   "Locrian Major",
+        "Pentatonic Major",  "melodic Minor",   "Pentatonic Minor",  "Neapoliltan Major", "Neapolitan Minor", "Octatonic 1",  "Octatonic 2",
+        "Persian",      "Phrygian dominant",  "Prometheus",   "Harmonics",    "Tritone",      "Tritone 2S",   "Ukrainian Dorian",
         "Wholetone",    "Yo"
     };

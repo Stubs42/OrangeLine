@@ -33,8 +33,8 @@ struct Mother : Module {
 	/*
 		Module member variables
 	*/
-	char headText[13] = "  headText";
-	char headDisplayText[13] = "    INIT";
+	char headText[MAX_TEXT_SIZE + 1] = "  headText";
+	char headDisplayText[MAX_TEXT_SIZE + 1] = "    INIT";
 	char tmpHeadText[13] = "????????????";
 	int tmpHeadCounter = -1;
 	int reflectCounter = -1;
@@ -67,6 +67,7 @@ struct Mother : Module {
 	int		channels = 0;
 	float   oldCvOut[POLY_CHANNELS];	//	Old value of cvOut to detect changes for triggering trgOut
 	float   oldCvIn [POLY_CHANNELS];	//	Old value of cvOut to detect changes of quantized input
+	int	  	headScrollTimer = 0;
 
 	#include "MotherJsonLabels.hpp"
 	#include "MotherScales.hpp"
@@ -196,7 +197,7 @@ struct Mother : Module {
 */
 	void setHeadScale () {
 		int bufIdx = 0;
-		char buf[NUM_NOTES + 1];
+		char buf[MAX_TEXT_SIZE + 1];
 		buf[0] = '\0';
 		int start = ONOFF_JSON + effectiveScale * NUM_NOTES + 1;
 		int lightIdx;
@@ -217,6 +218,7 @@ struct Mother : Module {
 		}
 		strcpy (headText, buf);
 		strcpy (headDisplayText, buf);
+		headScrollTimer = TEXT_SCROLL_PRE_DELAY;
 	}
 
 	inline void setTmpHead (char *tmpHead) {
@@ -699,6 +701,8 @@ struct Mother : Module {
 				setNoteLight (lightIdx, getStateJson (jsonIdx));
 			}
 		}
+		if (headScrollTimer > 0)
+			headScrollTimer --;
 	}
 };
 
@@ -783,12 +787,12 @@ struct MotherWidget : ModuleWidget {
 		const char *text;
 
 		text = (module != nullptr ? module->headDisplayText : nullptr);
-        headWidget = TextWidget::create (mm2px (Vec(3.183 - 0.25 - 0.35, 128.5 - 115.271)), module, text, "Major", 2);
+        headWidget = TextWidget::create (mm2px (Vec(3.183 - 0.25 - 0.35, 128.5 - 115.271)), module, text, "Major", 12, (module ? &(module->headScrollTimer) : nullptr));
 		headWidget->pStyle = (module == nullptr ? nullptr : &(module->OL_state[STYLE_JSON]));
         addChild (headWidget);
 
 		text = (module != nullptr ? module->rootText : nullptr);
-        rootWidget = TextWidget::create (mm2px (Vec(24.996 - 0.25, 128.5 - 52.406)), module, text, "C", 2);
+        rootWidget = TextWidget::create (mm2px (Vec(24.996 - 0.25, 128.5 - 52.406)), module, text, "C", 2, nullptr);
 		rootWidget->pStyle = (module == nullptr ? nullptr : &(module->OL_state[STYLE_JSON]));
         addChild (rootWidget);
 
@@ -799,7 +803,7 @@ struct MotherWidget : ModuleWidget {
         addChild (scaleWidget);
 
 		text = (module != nullptr ? module->childText : nullptr);
-        childWidget = TextWidget::create (mm2px (Vec(26.742 - 0.25, 128.5 - 86.537)), module, text, "C", 2);
+        childWidget = TextWidget::create (mm2px (Vec(26.742 - 0.25, 128.5 - 86.537)), module, text, "C", 2, nullptr);
 		childWidget->pStyle = (module == nullptr ? nullptr : &(module->OL_state[STYLE_JSON]));
         addChild (childWidget);
 	}
