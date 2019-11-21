@@ -347,7 +347,8 @@ struct Mother : Module {
 							cvOut += step;
 							note = note (cvOut);
 							noteIdx = (note - effectiveChild + NUM_NOTES) % NUM_NOTES;
-							if (getStateJson (jsonOnOffBaseIdx + note) > 0.f) {
+//							if (getStateJson (jsonOnOffBaseIdx + note) > 0.f) {
+							if (getStateJson (jsonOnOffBaseIdx + noteIdx) > 0.f) {
 								if (semiAmt == 0.f)
 									break;
 								d = abs (cvIn - cvOut);
@@ -506,13 +507,13 @@ struct Mother : Module {
 					setStateJson (jsonIdx, weight);
 					pct = int(round (weight * 100.f));
 					if (getStateJson (jsonOnOffBaseIdx + (i + effectiveChild) % NUM_NOTES) == 0.f)
-						snprintf(tmpHeadText, sizeof(tmpHeadText), "Wgt.:%02d: n/a", paramIdx - WEIGHT_PARAM + 1);
+						snprintf(tmpHeadText, sizeof(tmpHeadText), "Wgt. %02d  n/a", paramIdx - WEIGHT_PARAM + 1);
 					else if (pct == 50 && getStateParam (CHLD_PARAM) > 0.f)
-						snprintf(tmpHeadText, sizeof(tmpHeadText), "Wgt.:%02d: DNA", paramIdx - WEIGHT_PARAM + 1);
+						snprintf(tmpHeadText, sizeof(tmpHeadText), "Wgt. %02d  DNA", paramIdx - WEIGHT_PARAM + 1);
 					else if (pct == 100)
-						snprintf(tmpHeadText, sizeof(tmpHeadText), "Wgt.:%02d:GRAB", paramIdx - WEIGHT_PARAM + 1);
+						snprintf(tmpHeadText, sizeof(tmpHeadText), "Wgt. %02d GRAB", paramIdx - WEIGHT_PARAM + 1);
 					else 
-						snprintf(tmpHeadText, sizeof(tmpHeadText), "Wgt.:%02d:%3d%%", paramIdx - WEIGHT_PARAM + 1, pct);
+						snprintf(tmpHeadText, sizeof(tmpHeadText), "Wgt. %02d %3d%%", paramIdx - WEIGHT_PARAM + 1, pct);
 					setTmpHead (tmpHeadText);
 				}
 			}
