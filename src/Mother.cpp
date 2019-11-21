@@ -577,9 +577,9 @@ struct Mother : Module {
 			// TODO: Display Fate Distribution
 		}
 		else {
+			weight = getStateParam (WEIGHT_PARAM + lightIdx);
 			if (channels == 1) {
 				if (state > 0.f || (reflectCounter > 0 && noteIdxIn == lightIdx)) {
-					weight = getStateParam (WEIGHT_PARAM + lightIdx);
 					int r = 0, g = 0, b = 0;
 					if (reflectCounter > 0) {
 						if (noteIdxIn == lightIdx) {
@@ -647,28 +647,44 @@ struct Mother : Module {
 			}
 			else {
 				if (state > 0.f) {
-					weight = getStateParam (WEIGHT_PARAM + lightIdx);
 					int r = 0, g = 0, b = 0;
-					if (weight == 0.5f && effectiveChild > 0) {
-						r = 0;
-						g = 0;
-						motherWeight = motherWeights[lightIdx];
-						if (motherWeight == 1.f) {
-							r = 196;
-							b = 64;
+					bool hit = false;
+					if (reflectCounter > 0) {
+						for (int channel = 0; channel < channels; channel++) {
+							int note = note (oldCvOut[channel]);
+							noteIdx = (note - effectiveChild + NUM_NOTES) % NUM_NOTES;
+//								printf ("noteidx = %d, lightIdx = %d\n", noteIdx, lightIdx);
+							if (noteIdx == lightIdx) {
+								r = 255;
+								g = 255;
+								b = 255;
+								hit = true;
+								break;
+							}
 						}
-						else
-							b = int(motherWeight * 223.f + 32.f);
-					}
-					else if (weight == 1.f) {
-						r = 255;
-						g = 0;
-						b = 0;
-					}
-					else {
-						r = 0;
-						g = int(weight * 223.f + 32.f);
-						b = 0;
+						if (!hit) {
+							if (weight == 0.5f && effectiveChild > 0) {
+								r = 0;
+								g = 0;
+								motherWeight = motherWeights[lightIdx];
+								if (motherWeight == 1.f) {
+									r = 196;
+									b = 64;
+								}
+								else
+									b = int(motherWeight * 223.f + 32.f);
+							}
+							else if (weight == 1.f) {
+								r = 255;
+								g = 0;
+								b = 0;
+							}
+							else {
+								r = 0;
+								g = int(weight * 223.f + 32.f);
+								b = 0;
+							}
+						}
 					}
 					color = (r << 16) + (g << 8) + b;
 				}
