@@ -304,7 +304,7 @@ struct Mother : Module {
 					pCnt = 0;
 					pTotal = 0.f;
 
-					if (OL_inStateChangePoly[trgInPolyIdx] && (!getInputConnected (CV_INPUT) || channel > cvChannels))
+					if (OL_inStateChangePoly[trgInPolyIdx] && (!getInputConnected (CV_INPUT) || channel >= cvChannels))
 						cvIn = genrand_real () * 20.f - 10.f;
 					else
 						cvIn = OL_statePoly[cvInPolyIdx] - (float(effectiveRoot) / 12.f);
@@ -313,7 +313,11 @@ struct Mother : Module {
 					int note = note(cvOut);
 					noteIdx = (note - effectiveChild + NUM_NOTES) % NUM_NOTES;
 					noteIdxIn = (note (cvIn) - effectiveChild + NUM_NOTES) % NUM_NOTES;
+
+//printf ("cvIn = %f, cvOut[quantized] = %f, note = %d, noteIdx = %d, noteIdxIn = %d\n", cvIn, cvOut, note, noteIdx, noteIdxIn);
+
 					if (getStateJson (jsonOnOffBaseIdx + note) > 0.f && semiAmt > 0.f) {
+//printf ("getStateJson (jsonOnOffBaseIdx + noteIdx) = %f, semiAmt = %f\n", getStateJson (jsonOnOffBaseIdx + noteIdx), semiAmt);
 						d = abs (cvIn - cvOut);
 						pCvOut[pCnt] = cvOut;
 						weight = getStateParam (WEIGHT_PARAM + noteIdx);
@@ -340,6 +344,7 @@ struct Mother : Module {
 						}
 					}
 					if ((getStateJson (jsonOnOffBaseIdx + note) == 0.f || semiAmt > 0.f) && !grab) {
+//printf ("getStateJson (jsonOnOffBaseIdx + noteIdx) = %f, semiAmt = %f, grab = %d\n", getStateJson (jsonOnOffBaseIdx + noteIdx), semiAmt, grab);
 						float step = -SEMITONE;
 						if (cvIn > cvOut)
 							step = SEMITONE;
@@ -347,8 +352,9 @@ struct Mother : Module {
 							cvOut += step;
 							note = note (cvOut);
 							noteIdx = (note - effectiveChild + NUM_NOTES) % NUM_NOTES;
-//							if (getStateJson (jsonOnOffBaseIdx + note) > 0.f) {
-							if (getStateJson (jsonOnOffBaseIdx + noteIdx) > 0.f) {
+//printf ("\tcvOut = %f, note = %d, noteIdx = %d\n", cvOut, note, noteIdx);
+							if (getStateJson (jsonOnOffBaseIdx + note) > 0.f) {
+//printf ("\t\tgetStateJson (jsonOnOffBaseIdx + noteIdx) = %f\n", getStateJson (jsonOnOffBaseIdx + noteIdx));
 								if (semiAmt == 0.f)
 									break;
 								d = abs (cvIn - cvOut);
@@ -402,6 +408,9 @@ struct Mother : Module {
 									pCnt ++;
 								}
 							}
+//else
+//printf ("\t\tgetStateJson (jsonOnOffBaseIdx + noteIdx) = %f\n", getStateJson (jsonOnOffBaseIdx + noteIdx));
+
 							step = step > 0.f ? -step - SEMITONE : -step + SEMITONE;
 						}
 					}
