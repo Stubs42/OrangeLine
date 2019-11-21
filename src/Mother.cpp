@@ -69,6 +69,9 @@ struct Mother : Module {
 	float   oldCvIn [POLY_CHANNELS];	//	Old value of cvOut to detect changes of quantized input
 	int	  	headScrollTimer = 0;
 
+	bool	headClick;
+	int		scaleSelected = -1;
+		
 	#include "MotherJsonLabels.hpp"
 	#include "MotherScales.hpp"
 
@@ -268,7 +271,7 @@ struct Mother : Module {
 			}
 			styleChanged = false;
 		}
-
+		
 		bool rndConnected = getInputConnected (RND_INPUT);
 		bool trgConnected = getInputConnected (TRG_INPUT);
 		triggered = false;
@@ -315,11 +318,7 @@ struct Mother : Module {
 					int note = note(cvOut);
 					noteIdx = (note - effectiveChild + NUM_NOTES) % NUM_NOTES;
 					noteIdxIn = (note (cvIn) - effectiveChild + NUM_NOTES) % NUM_NOTES;
-
-//printf ("cvIn = %f, cvOut[quantized] = %f, note = %d, noteIdx = %d, noteIdxIn = %d\n", cvIn, cvOut, note, noteIdx, noteIdxIn);
-
 					if (getStateJson (jsonOnOffBaseIdx + note) > 0.f && semiAmt > 0.f) {
-//printf ("getStateJson (jsonOnOffBaseIdx + noteIdx) = %f, semiAmt = %f\n", getStateJson (jsonOnOffBaseIdx + noteIdx), semiAmt);
 						d = abs (cvIn - cvOut);
 						pCvOut[pCnt] = cvOut;
 						weight = getStateParam (WEIGHT_PARAM + noteIdx);
@@ -346,7 +345,6 @@ struct Mother : Module {
 						}
 					}
 					if ((getStateJson (jsonOnOffBaseIdx + note) == 0.f || semiAmt > 0.f) && !grab) {
-//printf ("getStateJson (jsonOnOffBaseIdx + noteIdx) = %f, semiAmt = %f, grab = %d\n", getStateJson (jsonOnOffBaseIdx + noteIdx), semiAmt, grab);
 						float step = -SEMITONE;
 						if (cvIn > cvOut)
 							step = SEMITONE;
@@ -354,9 +352,7 @@ struct Mother : Module {
 							cvOut += step;
 							note = note (cvOut);
 							noteIdx = (note - effectiveChild + NUM_NOTES) % NUM_NOTES;
-//printf ("\tcvOut = %f, note = %d, noteIdx = %d\n", cvOut, note, noteIdx);
 							if (getStateJson (jsonOnOffBaseIdx + note) > 0.f) {
-//printf ("\t\tgetStateJson (jsonOnOffBaseIdx + noteIdx) = %f\n", getStateJson (jsonOnOffBaseIdx + noteIdx));
 								if (semiAmt == 0.f)
 									break;
 								d = abs (cvIn - cvOut);
@@ -410,9 +406,6 @@ struct Mother : Module {
 									pCnt ++;
 								}
 							}
-//else
-//printf ("\t\tgetStateJson (jsonOnOffBaseIdx + noteIdx) = %f\n", getStateJson (jsonOnOffBaseIdx + noteIdx));
-
 							step = step > 0.f ? -step - SEMITONE : -step + SEMITONE;
 						}
 					}
@@ -473,6 +466,7 @@ struct Mother : Module {
 		This method should not do dsp or other logic processing.
 	*/
 	inline void moduleProcessState () {
+
 		effectiveScale = (int(getStateParam (SCL_PARAM)) - 1 + note (getStateInput (SCL_INPUT))) % NUM_NOTES;
 		effectiveScaleDisplay = float(effectiveScale + 1);
 		effectiveChild = (int(getStateParam (CHLD_PARAM)) + note (getStateInput (CHLD_INPUT))) % NUM_NOTES;
@@ -491,20 +485,48 @@ struct Mother : Module {
 		int jsonIdx;
 		float f;
 
+		bool didSelectScale = false;
+		float selectedNotes[NUM_NOTES] ;
+		if (scaleSelected >= 0) {
+			// Scale selected from right click menu
+			int noteIdx = 1;
+			int interval;
+			for (const char *p = scaleKeys[scaleSelected]; *p != '\0'; p++) {
+				interval = *p - '0' - 1;
+				while (interval--)
+					if (noteIdx < NUM_NOTES) {
+						selectedNotes[noteIdx] = 0.f;
+						noteIdx++;
+					}
+				if (noteIdx < NUM_NOTES) {
+					selectedNotes[noteIdx] = 1.f;
+					noteIdx++;
+				}
+			}
+			didSelectScale = true;
+			scaleSelected = -1;
+			customChangeBits |= CHG_ONOFF;
+		}
+
 		if (customChangeBits & CHG_ONOFF) {
 			if (effectiveChild == 0) {
 				for (int paramIdx = ONOFF_PARAM, i = 0; paramIdx <= ONOFF_PARAM_LAST; paramIdx ++, i++) {
-					if (inChangeParam (paramIdx) && paramIdx - ONOFF_PARAM != 0) {
-						jsonIdx = jsonOnOffBaseIdx + (i + effectiveChild) % NUM_NOTES;
-						f = getStateJson (jsonIdx);
-						if (f == 0.f)
-							f = 1.f;
-						else
-							f = 0.f;
+					if ((inChangeParam (paramIdx) && paramIdx - ONOFF_PARAM != 0) || didSelectScale) {
+						jsonIdx = jsonOnOffBaseIdx + i;
+						if (didSelectScale)
+							f = selectedNotes[i];
+						else {
+							f = getStateJson (jsonIdx);
+							if (f == 0.f)
+								f = 1.f;
+							else
+								f = 0.f;
+						}
 						setStateJson (jsonIdx, f);
 					}
 				}
 			}
+			didSelectScale = false;
 		}
 
 		jsonWeightBaseIdx = WEIGHT_JSON + effectiveScale * NUM_CHLD * NUM_NOTES + effectiveChild * NUM_NOTES;
@@ -653,7 +675,6 @@ struct Mother : Module {
 						for (int channel = 0; channel < channels; channel++) {
 							int note = note (oldCvOut[channel]);
 							noteIdx = (note - effectiveChild + NUM_NOTES) % NUM_NOTES;
-//								printf ("noteidx = %d, lightIdx = %d\n", noteIdx, lightIdx);
 							if (noteIdx == lightIdx) {
 								r = 255;
 								g = 255;
@@ -662,28 +683,28 @@ struct Mother : Module {
 								break;
 							}
 						}
-						if (!hit) {
-							if (weight == 0.5f && effectiveChild > 0) {
-								r = 0;
-								g = 0;
-								motherWeight = motherWeights[lightIdx];
-								if (motherWeight == 1.f) {
-									r = 196;
-									b = 64;
-								}
-								else
-									b = int(motherWeight * 223.f + 32.f);
+					}
+					if (!hit) {
+						if (weight == 0.5f && effectiveChild > 0) {
+							r = 0;
+							g = 0;
+							motherWeight = motherWeights[lightIdx];
+							if (motherWeight == 1.f) {
+								r = 196;
+								b = 64;
 							}
-							else if (weight == 1.f) {
-								r = 255;
-								g = 0;
-								b = 0;
-							}
-							else {
-								r = 0;
-								g = int(weight * 223.f + 32.f);
-								b = 0;
-							}
+							else
+								b = int(motherWeight * 223.f + 32.f);
+						}
+						else if (weight == 1.f) {
+							r = 255;
+							g = 0;
+							b = 0;
+						}
+						else {
+							r = 0;
+							g = int(weight * 223.f + 32.f);
+							b = 0;
 						}
 					}
 					color = (r << 16) + (g << 8) + b;
@@ -824,6 +845,34 @@ struct MotherWidget : ModuleWidget {
         addChild (childWidget);
 	}
 
+	struct MotherScalesItem : MenuItem {
+		Mother *module;
+		
+		struct MotherScaleItem : MenuItem {
+			Mother *module;
+			int scaleIdx = 0;
+
+			void onAction(const event::Action &e) override {
+				module->scaleSelected = scaleIdx;
+			}
+		};
+
+		Menu *createChildMenu() override {
+			Menu *menu = new Menu;
+			MotherScaleItem *scaleItem;
+			for (int scale = 0; scale < SCALE_KEYS; scale++) {
+				
+				scaleItem = new MotherScaleItem ();
+				scaleItem->module = module;
+				scaleItem->scaleIdx = scale;
+				scaleItem->text = module->scaleNames[scale];
+				scaleItem->rightText = module->scaleKeys[scale];
+
+				menu->addChild(scaleItem);
+			}
+			return menu;
+		}
+	};
 
 	struct MotherStyleItem : MenuItem {
 		Mother *module;
@@ -839,36 +888,53 @@ struct MotherWidget : ModuleWidget {
 	};
 
 	void appendContextMenu(Menu *menu) override {
-		MenuLabel *spacerLabel = new MenuLabel();
-		menu->addChild(spacerLabel);
+		if (module) {
+			MenuLabel *spacerLabel = new MenuLabel();
+			menu->addChild(spacerLabel);
 
-		Mother *module = dynamic_cast<Mother*>(this->module);
-		assert(module);
+			Mother *module = dynamic_cast<Mother*>(this->module);
+			assert(module);
 
-		MenuLabel *styleLabel = new MenuLabel();
-		styleLabel->text = "Style";
-		menu->addChild(styleLabel);
+			MenuLabel *styleLabel = new MenuLabel();
+			styleLabel->text = "Mother";
+			menu->addChild(styleLabel);
 
-		MotherStyleItem *style1Item = new MotherStyleItem();
-		style1Item->text = "Orange";// 
-		style1Item->module = module;
-		style1Item->style= STYLE_ORANGE;
-		menu->addChild(style1Item);
+			MotherScalesItem *motherScalesItem = new MotherScalesItem();
+			motherScalesItem->module = module;		
+			motherScalesItem->text = "Scales";
+			motherScalesItem->rightText = RIGHT_ARROW;
+			menu->addChild(motherScalesItem);
 
-		MotherStyleItem *style2Item = new MotherStyleItem();
-		style2Item->text = "Bright";// 
-		style2Item->module = module;
-		style2Item->style= STYLE_BRIGHT;
-		menu->addChild(style2Item);
+			spacerLabel = new MenuLabel();
+			menu->addChild(spacerLabel);
+
+			styleLabel = new MenuLabel();
+			styleLabel->text = "Style";
+			menu->addChild(styleLabel);
+
+			MotherStyleItem *style1Item = new MotherStyleItem();
+			style1Item->text = "Orange";// 
+			style1Item->module = module;
+			style1Item->style= STYLE_ORANGE;
+			menu->addChild(style1Item);
+
+			MotherStyleItem *style2Item = new MotherStyleItem();
+			style2Item->text = "Bright";// 
+			style2Item->module = module;
+			style2Item->style= STYLE_BRIGHT;
+			menu->addChild(style2Item);
+				
+			MotherStyleItem *style3Item = new MotherStyleItem();
+			style3Item->text = "Dark";// 
+			style3Item->module = module;
+			style3Item->style= STYLE_DARK;
+			menu->addChild(style3Item);
+
+			spacerLabel = new MenuLabel();
+			menu->addChild(spacerLabel);
 			
-		MotherStyleItem *style3Item = new MotherStyleItem();
-		style3Item->text = "Dark";// 
-		style3Item->module = module;
-		style3Item->style= STYLE_DARK;
-		menu->addChild(style3Item);
+		}
 	}
-
-
 };
 
 Model *modelMother = createModel<Mother, MotherWidget> ("Mother");

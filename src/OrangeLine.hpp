@@ -50,8 +50,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define PRECISION       0.000001f
 
 #define MAX_TEXT_SIZE  64
-#define TEXT_SCROLL_DELAY   11025
-#define TEXT_SCROLL_PRE_DELAY   TEXT_SCROLL_DELAY * 8
+#define TEXT_SCROLL_DELAY   22050
+#define TEXT_SCROLL_PRE_DELAY   TEXT_SCROLL_DELAY * 4
 
 #define stateIdxJson(i)				(i)
 #define stateIdxParam(i)			(NUM_JSONS + (i))
@@ -212,6 +212,7 @@ struct TextWidget : TransparentWidget {
 
 		w->pFont    = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
         w->box.pos  = pos;
+        w->box.pos.y  -= mm2px (5);
         w->box.size = mm2px (Vec (4 * length, 7));
         w->module   = module;
         w->text     = text;
@@ -240,7 +241,7 @@ struct TextWidget : TransparentWidget {
 		nvgFillColor (drawArgs.vg, (pStyle == nullptr || *pStyle == STYLE_ORANGE) ? ORANGE : WHITE);
 
 		if (len <= length) {
-			nvgText (drawArgs.vg, 0, 0, str, nullptr);
+			nvgText (drawArgs.vg, 0, mm2px (5), str, nullptr);
 		}
 		else {
 			if (pTimer != nullptr && len > length) {
@@ -265,7 +266,7 @@ struct TextWidget : TransparentWidget {
 			strncpy (buf + len + 3 /* delimiter length */, str, len);
 			buf[MAX_TEXT_SIZE * 2 + 3] = '\0';
 			buf[scrollPos + length] = '\0';
-			nvgText (drawArgs.vg, 0, 0, buf + scrollPos, nullptr);
+			nvgText (drawArgs.vg, 0, mm2px (5), buf + scrollPos, nullptr);
 		}
 	}
 };
