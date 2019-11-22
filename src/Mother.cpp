@@ -275,12 +275,12 @@ struct Mother : Module {
 		bool rndConnected = getInputConnected (RND_INPUT);
 		bool trgConnected = getInputConnected (TRG_INPUT);
 		triggered = false;
-		float cvOut;
+		float cvOut = 0.f;
 		float cvIn;
 		float semiAmt = getStateParam (FATE_AMT_PARAM) / 12;
 		float shp = getStateParam (FATE_SHP_PARAM);
-		float d ;
-		float weight = 0;
+		float d;
+		float weight;
 		float rnd;
 		bool grab = false;
 		bool fromMother = false;
@@ -294,6 +294,8 @@ struct Mother : Module {
 			setOutPolyChannels (GATE_OUTPUT, channels);
 			setOutPolyChannels (POW_OUTPUT, channels);
 			for (int channel = 0; channel < channels; channel++) {
+				weight = 0;
+				grab = false;
 				int cvInPolyIdx   =    CV_INPUT * POLY_CHANNELS + channel;
 				int trgInPolyIdx  =   TRG_INPUT * POLY_CHANNELS + channel;
 				int rndInPolyIdx  =   RND_INPUT * POLY_CHANNELS + channel;
@@ -313,7 +315,6 @@ struct Mother : Module {
 						cvIn = genrand_real () * 20.f - 10.f;
 					else
 						cvIn = OL_statePoly[cvInPolyIdx] - (float(effectiveRoot) / 12.f);
-
 					cvOut = quantize (cvIn);
 					int note = note(cvOut);
 					noteIdx = (note - effectiveChild + NUM_NOTES) % NUM_NOTES;
@@ -443,7 +444,7 @@ struct Mother : Module {
 						weight = getStateParam (WEIGHT_PARAM + noteIdx);
 						if (weight == 0.5f && effectiveChild > 0)
 							weight = motherWeights[noteIdx];
-						OL_statePoly[NUM_INPUTS * POLY_CHANNELS + powOutPolyIdx] = weight;
+						OL_statePoly[NUM_INPUTS * POLY_CHANNELS + powOutPolyIdx] = weight * 10.f;
 						OL_outStateChangePoly[powOutPolyIdx] = true;
 					}
 					if (OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cvOutPolyIdx] != cvOut) {
