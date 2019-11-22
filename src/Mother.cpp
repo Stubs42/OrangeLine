@@ -33,7 +33,8 @@ struct Mother : Module {
 	/*
 		Module member variables
 	*/
-	char headText[MAX_TEXT_SIZE + 1] = "  headText";
+	char headText[MAX_TEXT_SIZE + 1] = GREETING;
+
 	char headDisplayText[MAX_TEXT_SIZE + 1] = "    INIT";
 	char tmpHeadText[13] = "????????????";
 	int tmpHeadCounter = -1;
@@ -192,6 +193,8 @@ struct Mother : Module {
 		gettimeofday(&tp, NULL);
 		unsigned long int seed = tp.tv_sec * 1000 + tp.tv_usec / 1000;
 		init_genrand (seed);
+		strcpy (headText, GREETING);
+		strcpy (headDisplayText, GREETING);
 	}
 
 // ********************************************************************************************************************************
@@ -224,7 +227,7 @@ struct Mother : Module {
 		headScrollTimer = TEXT_SCROLL_PRE_DELAY;
 	}
 
-	inline void setTmpHead (char *tmpHead) {
+	inline void setTmpHead (const char *tmpHead) {
 		strcpy (headDisplayText, tmpHead);
 		tmpHeadCounter = TMP_HEAD_DURATION;
 	}
@@ -532,11 +535,11 @@ struct Mother : Module {
 		}
 
 		jsonWeightBaseIdx = WEIGHT_JSON + effectiveScale * NUM_CHLD * NUM_NOTES + effectiveChild * NUM_NOTES;
-		if (customChangeBits & CHG_WEIGHT) {
+		if (customChangeBits & CHG_WEIGHT && initialized) {
 			float weight;
 			int pct;
 			for (int paramIdx = WEIGHT_PARAM, i = 0; paramIdx <= WEIGHT_PARAM_LAST; paramIdx ++, i++) {
-				if (inChangeParam (paramIdx) && initialized) {
+				if (inChangeParam (paramIdx)) {
 					jsonIdx = jsonWeightBaseIdx + i;
 					weight = getStateParam (paramIdx);
 					setStateJson (jsonIdx, weight);
@@ -738,7 +741,8 @@ struct Mother : Module {
 		Non standard reflect processing results to user interface components and outputs
 	*/
 	inline void moduleReflectChanges () {
-		if ((customChangeBits & (CHG_ONOFF | CHG_SCL | CHG_CHLD)) || !initialized) 
+//		if ((customChangeBits & (CHG_ONOFF | CHG_SCL | CHG_CHLD)) || !initialized)
+		if ((customChangeBits & (CHG_ONOFF | CHG_SCL | CHG_CHLD)) && initialized)
 			setHeadScale ();
 
 		if ((customChangeBits & (CHG_SCL | CHG_CHLD | CHG_ROOT)) || !initialized) {

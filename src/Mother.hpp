@@ -20,6 +20,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 #include "OrangeLine.hpp"
 
+#define GREETING    "Hey Gals !!!"
 #define NUM_NOTES   12
 #define NUM_SCALES  12
 #define NUM_CHLD    NUM_NOTES
