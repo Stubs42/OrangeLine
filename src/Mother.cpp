@@ -392,7 +392,7 @@ struct Mother : Module {
 									//    	return 1.0 - (float(dist)/float(span))**shape
 									//
 									if (shp < 1) {
-										float f = (1.f - pow ((d - SEMITONE) / semiAmt, shp < 0.5 ? shp * 2.f : 1.f + (shp - 0.5) * 20));
+										float f = (1.f - pow (abs (d - SEMITONE) / semiAmt, shp < 0.5 ? shp * 2.f : 1.f + (shp - 0.5) * 20));
 										weight *= f;
 									}
 									//
@@ -560,7 +560,7 @@ struct Mother : Module {
 			}
 			updateMotherWeights ();
 		}
-		if (inChangeParam (FATE_AMT_PARAM) || inChangeParam (FATE_SHP_PARAM)) {
+		if ((inChangeParam (FATE_AMT_PARAM) || inChangeParam (FATE_SHP_PARAM))  && initialized) {
 			reflectFateCounter = REFLECT_FATE_DURATION;
 		}
 	}
@@ -597,8 +597,24 @@ struct Mother : Module {
 		float weight;
 		float motherWeight;
 		float reflectWeight = 0;
-		if (reflectFateCounter > 0 && false) {
-			// TODO: Display Fate Distribution
+		int r = 0, g = 0, b = 0;
+
+		if (reflectFateCounter > 0) {
+			float semiAmt = getStateParam (FATE_AMT_PARAM) / 12;
+			float shp = getStateParam (FATE_SHP_PARAM);
+			float d;
+			if (lightIdx < NUM_NOTES / 2)
+				d = abs (5.5f / 12.f - lightIdx / 12.f);
+			else
+				d = abs (lightIdx / 12.f - 5.5f / 12.f);
+			if (d > semiAmt)
+				weight = 0;
+			else
+				weight = (1.f - pow (abs (d - SEMITONE) / semiAmt, shp < 0.5 ? shp * 2.f : 1.f + (shp - 0.5) * 20));
+			r = 0;
+			g = int(weight * 255.f);
+			b = 0;
+			color = (r << 16) + (g << 8) + b;
 		}
 		else {
 			weight = getStateParam (WEIGHT_PARAM + lightIdx);
@@ -671,7 +687,6 @@ struct Mother : Module {
 			}
 			else {
 				if (state > 0.f) {
-					int r = 0, g = 0, b = 0;
 					bool hit = false;
 					if (reflectCounter > 0) {
 						for (int channel = 0; channel < channels; channel++) {
