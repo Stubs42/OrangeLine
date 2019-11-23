@@ -489,6 +489,7 @@ inline void processParamsAndInputs () {
 				}
 				else {
 					float value = inputs[inputIdx].getVoltage (channel);
+					if (value == INFINITY || value == NAN) value = 0.f;
 					if (OL_statePoly[idx] != value) {
 						OL_statePoly[idx] = value;
 						OL_inStateChangePoly[idx] = true;
@@ -520,7 +521,9 @@ inline void processParamsAndInputs () {
 				}
 			}
 			else { 
-				setStateInput (inputIdx, inputs[inputIdx].getVoltage ());
+				float value = inputs[inputIdx].getVoltage ();
+				if (value == INFINITY || value == -INFINITY || isnan(value)) value = 0.f;
+				setStateInput (inputIdx, value);
 				if (changeInput(inputIdx))
 					OL_customChangeBits |= getCustomChangeMaskInput (inputIdx);
 			}
