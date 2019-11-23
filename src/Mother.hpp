@@ -27,9 +27,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define SEMITONE    (1.f / 12.f)
 
 #define SECOND                  44100
-#define TMP_HEAD_DURATION       2 * SECOND
-#define REFLECT_DURATION        2 * SECOND
-#define REFLECT_FATE_DURATION   2 * SECOND
+#define TMP_HEAD_DURATION       4 * SECOND
+#define REFLECT_DURATION        4 * SECOND
+#define REFLECT_FATE_DURATION   4 * SECOND
+#define GREETING_DURATION      20 * SECOND
 
 #define CHG_ONOFF   1
 #define CHG_WEIGHT  (1 << 1)

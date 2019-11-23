@@ -193,8 +193,6 @@ struct Mother : Module {
 		gettimeofday(&tp, NULL);
 		unsigned long int seed = tp.tv_sec * 1000 + tp.tv_usec / 1000;
 		init_genrand (seed);
-		strcpy (headText, GREETING);
-		strcpy (headDisplayText, GREETING);
 	}
 
 // ********************************************************************************************************************************
@@ -395,7 +393,7 @@ struct Mother : Module {
 									//    	return 1.0 - (float(dist)/float(span))**shape
 									//
 									if (shp < 1) {
-										float f = (1.f - pow (abs (d - SEMITONE) / semiAmt, shp < 0.5 ? shp * 2.f : 1.f + (shp - 0.5) * 20));
+										float f = (1.f - pow (d / semiAmt, shp < 0.5 ? shp * 2.f : 1.f + (shp - 0.5) * 20));
 										weight *= f;
 									}
 									//
@@ -607,13 +605,15 @@ struct Mother : Module {
 			float shp = getStateParam (FATE_SHP_PARAM);
 			float d;
 			if (lightIdx < NUM_NOTES / 2)
-				d = abs (5.5f / 12.f - lightIdx / 12.f);
+				d = abs ((5.5f - lightIdx) / 12.f);
 			else
-				d = abs (lightIdx / 12.f - 5.5f / 12.f);
+				d = abs ((lightIdx - 5.5f) / 12.f);
 			if (d > semiAmt)
 				weight = 0;
-			else
-				weight = (1.f - pow (abs (d - SEMITONE) / semiAmt, shp < 0.5 ? shp * 2.f : 1.f + (shp - 0.5) * 20));
+			else {
+//				weight = (1.f - pow (abs (d - SEMITONE) / semiAmt, shp < 0.5 ? shp * 2.f : 1.f + (shp - 0.5) * 20));
+				weight = (1.f - pow (d / semiAmt, shp < 0.5 ? shp * 2.f : 1.f + (shp - 0.5) * 20));
+			}
 			r = 0;
 			g = int(weight * 255.f);
 			b = 0;
@@ -744,6 +744,13 @@ struct Mother : Module {
 //		if ((customChangeBits & (CHG_ONOFF | CHG_SCL | CHG_CHLD)) || !initialized)
 		if ((customChangeBits & (CHG_ONOFF | CHG_SCL | CHG_CHLD)) && initialized)
 			setHeadScale ();
+		else {
+			if (!initialized) {
+				setHeadScale ();
+				strcpy (headDisplayText, GREETING);
+				tmpHeadCounter = GREETING_DURATION;
+			}
+		}
 
 		if ((customChangeBits & (CHG_SCL | CHG_CHLD | CHG_ROOT)) || !initialized) {
 			strcpy (childText, notes[(effectiveChild + effectiveRoot) % NUM_NOTES]);
