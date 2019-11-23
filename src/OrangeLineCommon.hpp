@@ -522,7 +522,8 @@ inline void processParamsAndInputs () {
 			}
 			else { 
 				float value = inputs[inputIdx].getVoltage ();
-				if (value == INFINITY || value == -INFINITY || value != value /* is nsn chaeck */) value = 0.f;
+				// if (value == INFINITY || value == -INFINITY || value != value /* is nsn chaeck */) value = 0.f;
+				if (!std::isfinite(value)) value = 0.f;
 				setStateInput (inputIdx, value);
 				if (changeInput(inputIdx))
 					OL_customChangeBits |= getCustomChangeMaskInput (inputIdx);
