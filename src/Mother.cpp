@@ -65,6 +65,7 @@ struct Mother : Module {
 	int 	cvChannels = 0;
 	int		trgChannels = 0;
 	int		rndChannels = 0;
+	int		autoChannels = 0;
 	int		channels = 0;
 	float   oldCvOut[POLY_CHANNELS];	//	Old value of cvOut to detect changes for triggering trgOut
 	float   oldCvIn [POLY_CHANNELS];	//	Old value of cvOut to detect changes of quantized input
@@ -193,6 +194,8 @@ struct Mother : Module {
 		gettimeofday(&tp, NULL);
 		unsigned long int seed = tp.tv_sec * 1000 + tp.tv_usec / 1000;
 		init_genrand (seed);
+		setStateJson (AUTO_CHANNELS_JSON, 1.f);
+
 	}
 
 // ********************************************************************************************************************************
@@ -285,12 +288,16 @@ struct Mother : Module {
 		float rnd;
 		bool grab = false;
 		bool fromMother = false;
+		bool lastWasTrigger = false;
 
 		if ((customChangeBits & CHG_TRG_IN) || (!trgConnected && (customChangeBits & CHG_CV_IN))) {
 			cvChannels = inputs[CV_INPUT].getChannels ();
 			trgChannels = inputs[TRG_INPUT].getChannels ();
 			rndChannels = inputs[RND_INPUT].getChannels ();
+			autoChannels = int(getStateJson(AUTO_CHANNELS_JSON));
 			channels = cvChannels > trgChannels ? cvChannels : trgChannels;
+			if (trgConnected && autoChannels > channels)
+				channels = autoChannels;
 			setOutPolyChannels (CV_OUTPUT, channels);
 			setOutPolyChannels (GATE_OUTPUT, channels);
 			setOutPolyChannels (POW_OUTPUT, channels);
@@ -304,15 +311,18 @@ struct Mother : Module {
 				int cvOutPolyIdx  =   CV_OUTPUT * POLY_CHANNELS + channel;
 				int powOutPolyIdx =  POW_OUTPUT * POLY_CHANNELS + channel;
 
-				if ((!trgConnected && OL_inStateChangePoly[cvInPolyIdx]) || OL_inStateChangePoly[trgInPolyIdx]) {
+				if ((!trgConnected && OL_inStateChangePoly[cvInPolyIdx]) || OL_inStateChangePoly[trgInPolyIdx] || (channel >= trgChannels && lastWasTrigger)) {
+					if (channel < trgChannels)
+						lastWasTrigger = OL_inStateChangePoly[trgInPolyIdx];
+
 					reflectCounter = REFLECT_DURATION;
-					if (rndConnected && channel <= rndChannels)
+					if (rndConnected && channel < rndChannels)
 						init_genrand (int(round (OL_statePoly[rndInPolyIdx] * 100000)));
-					
+
 					pCnt = 0;
 					pTotal = 0.f;
 
-					if (OL_inStateChangePoly[trgInPolyIdx] && (!getInputConnected (CV_INPUT) || channel >= cvChannels))
+					if ((OL_inStateChangePoly[trgInPolyIdx] || lastWasTrigger) && (!getInputConnected (CV_INPUT) || channel >= cvChannels))
 						cvIn = genrand_real () * 20.f - 10.f;
 					else
 						cvIn = OL_statePoly[cvInPolyIdx] - (float(effectiveRoot) / 12.f);
@@ -902,6 +912,38 @@ struct MotherWidget : ModuleWidget {
 		}
 	};
 
+	struct AutoChannelsItem : MenuItem {
+		Mother *module;
+		
+		struct AutoChannelItem : MenuItem {
+			Mother *module;
+			int channels;
+			void onAction(const event::Action &e) override {
+				module->OL_setOutState(AUTO_CHANNELS_JSON, float(channels));
+			}
+			void step() override {
+				if (module)
+					rightText = (module != nullptr && module->OL_state[AUTO_CHANNELS_JSON] == channels) ? "✔" : "";
+			}
+		};
+
+		Menu *createChildMenu() override {
+			Menu *menu = new Menu;
+			AutoChannelItem *autoChannelItem;
+			for (int channel = 0; channel < 16; channel++) {
+				
+				autoChannelItem = new AutoChannelItem ();
+				autoChannelItem->module = module;
+				autoChannelItem->channels = channel + 1;
+				autoChannelItem->text = module->channelNumbers[channel];
+				autoChannelItem->setSize (Vec(50, 20));
+
+				menu->addChild(autoChannelItem);
+			}
+			return menu;
+		}
+	};
+
 	struct MotherStyleItem : MenuItem {
 		Mother *module;
 		int style;
@@ -932,6 +974,19 @@ struct MotherWidget : ModuleWidget {
 			motherScalesItem->text = "Scales";
 			motherScalesItem->rightText = RIGHT_ARROW;
 			menu->addChild(motherScalesItem);
+
+			spacerLabel = new MenuLabel();
+			menu->addChild(spacerLabel);
+
+			MenuLabel *polyphonyLabel = new MenuLabel();
+			polyphonyLabel->text = "Polyphony";
+			menu->addChild(polyphonyLabel);
+
+			AutoChannelsItem *autoChannelsItem = new AutoChannelsItem();
+			autoChannelsItem->module = module;		
+			autoChannelsItem->text = "Auto Channels";
+			autoChannelsItem->rightText = RIGHT_ARROW;
+			menu->addChild(autoChannelsItem);
 
 			spacerLabel = new MenuLabel();
 			menu->addChild(spacerLabel);

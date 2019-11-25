@@ -53,6 +53,7 @@ enum jsonIds {
 	// Parameters not bound to any user interface component to save internal module state
 	//
     STYLE_JSON,
+    AUTO_CHANNELS_JSON,
     ONOFF_JSON,
     ONOFF_JSON_LAST = ONOFF_JSON + (NUM_SCALES * NUM_NOTES) - 1,
     WEIGHT_JSON,
