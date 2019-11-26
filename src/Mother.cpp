@@ -493,7 +493,7 @@ struct Mother : Module {
 
 		effectiveRoot  = (int(getStateParam (ROOT_PARAM)) + note (getStateInput (ROOT_INPUT))) % NUM_NOTES;
 
-		int jsonOnOffBaseIdx = ONOFF_JSON + effectiveScale * NUM_NOTES;
+		jsonOnOffBaseIdx = ONOFF_JSON + effectiveScale * NUM_NOTES;
 		int jsonIdx;
 		float f;
 
