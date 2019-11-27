@@ -63,9 +63,17 @@ FATE allows mother to choose notes by probability. If SPAN is 0 no probability p
 If TRG is connected Mother will only process CV in when a trigger is received. If TRG is not connected Mother will process on each (quantized) change of CV in. On change of CV out a gate is produced on the GATE output.
 POW will output the weight of the selected note.
 
-Example setup:
+### Example setup:
 
 Initialize Mother. Setup a mother major scale. Set weights for c,e,g to 100% and the other weights to 0. Leave the child scales weight at 50%. Set SPAN to max and trigger Mother using a clock. Mother will doodle on a C major chord. No sending a D to the CHLD input will make Mother play the notes of a D minor chord.
+
+### Polyphony
+
+Mother accepts polyphonic inputs for cvIn, random and triggers and produces polyphonic cvOut, gate and pow outputs.
+The number of channels on output is the maximum of number of channels on the trigger or cvIn inputs and the auto channel number which can be setup in the right click menu.
+When processing a channel it uses the according input channels for processing.
+If number of cvIn channels is smaller than the number of output channels, Mother generates a random cvIn for the missing channels to process. If the number of trigger in channels is smaller than the number of output channels, the last trigger in channel will be and used as trigger in for the missing channels. If the number of random in channels is smaller than the number of output channels, Mother will continue using the random number generator seeded by the last random in channel for the missing channels.
+So if setting Auto Channels to for example 4 in the right click menu and just connect a monophonic trigger at trg in, Mother will produce 4 different out channels on each trigger in using a randomly seeded random generator to randomize the 4 cvIns to process.
 
 Have fun
 
