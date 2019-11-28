@@ -72,7 +72,7 @@ Initialize Mother. Setup a mother major scale. Set weights for c,e,g to 100% and
 Mother accepts polyphonic inputs for cvIn, random and triggers and produces polyphonic cvOut, gate and pow outputs.
 The number of channels on output is the maximum of number of channels on the trigger or cvIn inputs and the auto channel number which can be setup in the right click menu.
 When processing a channel it uses the according input channels for processing.
-If number of cvIn channels is smaller than the number of output channels, Mother generates a random cvIn for the missing channels to process. If the number of trigger in channels is smaller than the number of output channels, the last trigger in channel will be and used as trigger in for the missing channels. If the number of random in channels is smaller than the number of output channels, Mother will continue using the random number generator seeded by the last random in channel for the missing channels.
+If number of cvIn channels is smaller than the number of output channels, Mother generates a random cvIn for the missing channels to process. If the number of trigger in channels is smaller than the number of output channels, the last trigger in channel will be used as trigger in for the missing channels. If the number of random in channels is smaller than the number of output channels, Mother will continue using the random number generator seeded by the last random in channel for the missing channels.
 So if setting Auto Channels to for example 4 in the right click menu and just connect a monophonic trigger at trg in, Mother will produce 4 different out channels on each trigger in using a randomly seeded random generator to randomize the 4 cvIns to process.
 
 Have fun
