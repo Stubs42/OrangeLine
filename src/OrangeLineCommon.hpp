@@ -324,15 +324,6 @@ inline void OL_setInState (int stateIdx, float value) {
 		OL_outStateChange[stateIdx] = OL_inStateChange[stateIdx] = true;
 	}
 }
-/*
-inline void OL_setInStatePoly (int stateIdx, int channel, float value) {
-	int idx = stateIdx + channel * NUM_POLYS;
-	if (OL_statePoly[idx] != value) {
-		OL_statePoly[idx] = value;
-		OL_outStateChangePoly[idx] = OL_inStateChangePoly[idx] = true;
-	}
-}
-*/
 /**
 	Method to set the outgoing state of params
 	output state change is flagged
@@ -343,16 +334,6 @@ inline void OL_setOutState (int stateIdx, float value) {
 		OL_outStateChange[stateIdx] = true;
 	}
 }
-/*
-inline void OL_setOutStatePoly (int stateIdx, int channel, float value) {
-	int idx = stateIdx + channel * NUM_POLYS;
-	if (OL_statePoly[idx] != value) {
-		OL_statePoly[idx] = value;
-		OL_outStateChangePoly[idx] = true;
-	}
-}
-*/
-
 /**
 	Method to configure json labels
 */
