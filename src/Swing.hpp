@@ -30,9 +30,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define MIN_CMP      -9.5f
 #define MAX_CMP       9.5f
 
-// will be param later on i think
 #define CLOCK_MULT  getStateParam (DIV_PARAM)
 
+#define FIRST_TCLK_DELAY 44
 //
 // Defaults
 //
