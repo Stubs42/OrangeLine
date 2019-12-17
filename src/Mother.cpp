@@ -464,6 +464,8 @@ struct Mother : Module {
 					}
 					oldCvOut[channel] = cvOut;
 				}
+				else
+					lastWasTrigger = false;
 			}
 		}
 	}
