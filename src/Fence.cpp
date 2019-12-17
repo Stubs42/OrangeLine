@@ -67,6 +67,8 @@ struct Fence : Module {
 	float processStep = 0.f;
 	float cvOut = 0.f;
 
+	int   trgChannels = 0;
+
 	/*
 		Variables used speed up processing
 	*/
@@ -339,6 +341,8 @@ struct Fence : Module {
 			styleChanged = false;
 		}
 
+		bool lastWasTrigger = false;
+		
 		//
 		//	Undo knob fakes
 		//
@@ -384,6 +388,7 @@ struct Fence : Module {
 		bool inConnected = getInputConnected (CV_INPUT);
 		if (inConnected & (run || change)) {
 			int channels = inputs[CV_INPUT].getChannels();
+			trgChannels = inputs[TRG_INPUT].getChannels ();
 			setOutPolyChannels(CV_OUTPUT, channels);
 			setOutPolyChannels(TRG_OUTPUT, channels);
 			bool trgConnected = getInputConnected (TRG_INPUT); 
@@ -393,12 +398,15 @@ struct Fence : Module {
 				int trgOutPolyIdx = TRG_OUTPUT * POLY_CHANNELS + channel;
 				int cvOutPolyIdx = CV_OUTPUT * POLY_CHANNELS + channel;
 
-				if ((!trgConnected && OL_inStateChangePoly[cvInPolyIdx]) || OL_inStateChangePoly[trgInPolyIdx] || change) {
+				if ((!trgConnected && OL_inStateChangePoly[cvInPolyIdx]) || OL_inStateChangePoly[trgInPolyIdx] || (channel >= trgChannels  &&  lastWasTrigger) || change) {
 					cvOut = OL_statePoly[cvInPolyIdx];
+					if (channel < trgChannels) {
+						lastWasTrigger = OL_inStateChangePoly[trgInPolyIdx];
+					}
 					if (mode == MODE_QTZ_INT)
 						cvOut = quantize (cvOut);
-					if (cvOut == oldCvIn[channel] && !OL_inStateChangePoly[trgInPolyIdx] && !change)
-						continue;
+					if (cvOut == oldCvIn[channel] && !(OL_inStateChangePoly[trgInPolyIdx] || lastWasTrigger) && !change)
+						continue;				
 					oldCvIn[channel]  = cvOut;
 					if (cvOut > processHigh) {
 						if (mode == MODE_QTZ_INT) {
@@ -467,6 +475,8 @@ struct Fence : Module {
 					}
 					oldCvOut[channel] = cvOut;
 				}
+				else
+					lastWasTrigger = false;				
 			}
 		}
 	}
