@@ -331,7 +331,7 @@ struct Mother : Module {
 					noteIdx = (note - effectiveChild + NUM_NOTES) % NUM_NOTES;
 					noteIdxIn = (note (cvIn) - effectiveChild + NUM_NOTES) % NUM_NOTES;
 					if (getStateJson (jsonOnOffBaseIdx + note) > 0.f && semiAmt > 0.f) {
-						d = abs (cvIn - cvOut);
+						d = fabs (cvIn - cvOut);
 						pCvOut[pCnt] = cvOut;
 						weight = getStateParam (WEIGHT_PARAM + noteIdx);
 						if (weight == 0.5f && effectiveChild > 0) {
@@ -367,7 +367,7 @@ struct Mother : Module {
 							if (getStateJson (jsonOnOffBaseIdx + note) > 0.f) {
 								if (semiAmt == 0.f)
 									break;
-								d = abs (cvIn - cvOut);
+								d = fabs (cvIn - cvOut);
 								if (d > semiAmt)
 									break;
 								pCvOut[pCnt] = cvOut;
@@ -402,8 +402,8 @@ struct Mother : Module {
 									//        		shape = (shape - 0.5) * 20
 									//    	return 1.0 - (float(dist)/float(span))**shape
 									//
-									if (shp < 1) {
-										float f = (1.f - pow (d / semiAmt, shp < 0.5 ? shp * 2.f : 1.f + (shp - 0.5) * 20));
+									if (shp < 1.f) {
+										float f = (1.f - pow (d / semiAmt, shp < 0.5f ? shp * 2.f : 1.f + (shp - 0.5f) * 20.f));
 										weight *= f;
 									}
 									//
@@ -445,7 +445,7 @@ struct Mother : Module {
 					cvOut += (float(effectiveRoot) / 12.f);
 					cvOut = quantize (cvOut);
 
-					if (abs (cvOut - oldCvOut[channel]) > PRECISION) {
+					if (fabs (cvOut - oldCvOut[channel]) > PRECISION) {
 						if (OL_statePoly[NUM_INPUTS * POLY_CHANNELS + trgOutPolyIdx] != 10.f) {
 							OL_statePoly[NUM_INPUTS * POLY_CHANNELS + trgOutPolyIdx] = 10.f;
 							OL_outStateChangePoly[trgOutPolyIdx] = true;
@@ -613,18 +613,17 @@ struct Mother : Module {
 		int r = 0, g = 0, b = 0;
 
 		if (reflectFateCounter > 0) {
-			float semiAmt = getStateParam (FATE_AMT_PARAM) / 12;
+			float semiAmt = getStateParam (FATE_AMT_PARAM) / 12.f;
 			float shp = getStateParam (FATE_SHP_PARAM);
 			float d;
 			if (lightIdx < NUM_NOTES / 2)
-				d = abs ((5.5f - lightIdx) / 12.f);
+				d = fabs ((5.5f - lightIdx) / 12.f);
 			else
-				d = abs ((lightIdx - 5.5f) / 12.f);
+				d = fabs ((lightIdx - 5.5f) / 12.f);
 			if (d > semiAmt)
-				weight = 0;
+				weight = 0.f;
 			else {
-//				weight = (1.f - pow (abs (d - SEMITONE) / semiAmt, shp < 0.5 ? shp * 2.f : 1.f + (shp - 0.5) * 20));
-				weight = (1.f - pow (d / semiAmt, shp < 0.5 ? shp * 2.f : 1.f + (shp - 0.5) * 20));
+				weight = (1.f - pow (d / semiAmt, shp < 0.5f ? shp * 2.f : 1.f + (shp - 0.5f) * 20.f));
 			}
 			r = 0;
 			g = int(weight * 255.f);
@@ -917,7 +916,7 @@ struct MotherWidget : ModuleWidget {
 			if (module != nullptr && module->effectiveChild == 0)
 				MenuItem::onEnter(e);
 		}
-		
+
 		void step() override {
 			if (module && module->effectiveChild == 0)
 				disabled = false;

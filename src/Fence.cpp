@@ -463,7 +463,7 @@ struct Fence : Module {
 					if (mode == MODE_QTZ_INT)
 						cvOut = quantize (cvOut);
 					cvOut = clamp (cvOut, minLow, maxHigh);
-					if (abs (cvOut - oldCvOut[channel]) > PRECISION) {
+					if (fabs (cvOut - oldCvOut[channel]) > PRECISION) {
 						if (OL_statePoly[NUM_INPUTS * POLY_CHANNELS + trgOutPolyIdx] != 10.f) {
 							OL_statePoly[NUM_INPUTS * POLY_CHANNELS + trgOutPolyIdx] = 10.f;
 							OL_outStateChangePoly[trgOutPolyIdx] = true;
