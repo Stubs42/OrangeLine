@@ -912,6 +912,18 @@ struct MotherWidget : ModuleWidget {
 			}
 			return menu;
 		}
+
+		void onEnter (const event::Enter &  e) override	 {
+			if (module != nullptr && module->effectiveChild == 0)
+				MenuItem::onEnter(e);
+		}
+		
+		void step() override {
+			if (module && module->effectiveChild == 0)
+				disabled = false;
+			else
+				disabled = true;
+		}
 	};
 
 	struct AutoChannelsItem : MenuItem {
