@@ -21,6 +21,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 	#pragma GCC diagnostic push 
 	#pragma GCC diagnostic ignored "-Wwrite-strings"
 	char *jsonLabel[NUM_JSONS] = {
+ 		"disableVisualization",
 		"style",
 		"autoChannels",
 		/*

@@ -52,6 +52,7 @@ enum jsonIds {
 	//
 	// Parameters not bound to any user interface component to save internal module state
 	//
+    VISUALIZATION_DISABLED_JSON,
     STYLE_JSON,
     AUTO_CHANNELS_JSON,
     ONOFF_JSON,

@@ -46,33 +46,35 @@ struct Mother : Module {
 	const char *notes[NUM_NOTES] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
 	const char *interval = "0123456789ABO";
 	
-	int   	effectiveRoot  = 0;
-	int   	effectiveScale = 0;
-	float 	effectiveScaleDisplay = 0.f;
-	int   	effectiveChild = 0;
-	int   	jsonOnOffBaseIdx = ONOFF_JSON;
-	int   	jsonWeightBaseIdx = WEIGHT_JSON;
+	int	effectiveRoot  = 0;
+	int	effectiveScale = 0;
+	float	effectiveScaleDisplay = 0.f;
+	int	effectiveChild = 0;
+	int	jsonOnOffBaseIdx = ONOFF_JSON;
+	int	jsonWeightBaseIdx = WEIGHT_JSON;
 	float	motherWeights[NUM_NOTES];
-	float  	pCvOut[NUM_NOTES];
+	float	pCvOut[NUM_NOTES];
 	float	pProb[NUM_NOTES];
 	bool	pMother[NUM_NOTES];
 	float	pNoteIdx[NUM_NOTES];
-	int		noteIdx;
-	int		noteIdxIn;
-	int		pCnt = 0;
+	int	noteIdx;
+	int	noteIdxIn;
+	int	pCnt = 0;
 	float	pTotal = 0;
 	bool	triggered = false;
 	int 	cvChannels = 0;
-	int		trgChannels = 0;
-	int		rndChannels = 0;
-	int		autoChannels = 0;
-	int		channels = 0;
-	float   oldCvOut[POLY_CHANNELS];	//	Old value of cvOut to detect changes for triggering trgOut
-	float   oldCvIn [POLY_CHANNELS];	//	Old value of cvOut to detect changes of quantized input
-	int	  	headScrollTimer = 0;
+	int	trgChannels = 0;
+	int	rndChannels = 0;
+	int	autoChannels = 0;
+	int	channels = 0;
+	float	oldCvOut[POLY_CHANNELS];	//	Old value of cvOut to detect changes for triggering trgOut
+	float	oldCvIn [POLY_CHANNELS];	//	Old value of cvOut to detect changes of quantized input
+	int	headScrollTimer = 0;
 
 	bool	headClick;
-	int		scaleSelected = -1;
+	int	scaleSelected = -1;
+
+	bool	visualizationDisabledChanged = false;
 		
 	#include "MotherJsonLabels.hpp"
 	#include "MotherScales.hpp"
@@ -195,6 +197,7 @@ struct Mother : Module {
 		unsigned long int seed = tp.tv_sec * 1000 + tp.tv_usec / 1000;
 		init_genrand (seed);
 		setStateJson (AUTO_CHANNELS_JSON, 1.f);
+		setStateJson (VISUALIZATION_DISABLED_JSON, 0.f);
 
 	}
 
@@ -250,7 +253,7 @@ struct Mother : Module {
 		Module specific process method called from process () in OrangeLineCommon.hpp
 	*/
 	inline void moduleProcess (const ProcessArgs &args) {
-		if (reflectCounter >= 0)
+		if (reflectCounter >= 0 )
 			reflectCounter --;
 
 		if (reflectFateCounter >= 0)
@@ -633,9 +636,9 @@ struct Mother : Module {
 		else {
 			weight = getStateParam (WEIGHT_PARAM + lightIdx);
 			if (channels == 1) {
-				if (state > 0.f || (reflectCounter > 0 && noteIdxIn == lightIdx)) {
+				if (state > 0.f || (reflectCounter > 0 && getStateJson(VISUALIZATION_DISABLED_JSON) == 0.f && noteIdxIn == lightIdx)) {
 					int r = 0, g = 0, b = 0;
-					if (reflectCounter > 0) {
+					if (reflectCounter > 0 && getStateJson(VISUALIZATION_DISABLED_JSON) == 0.f) {
 						if (noteIdxIn == lightIdx) {
 								g = 32;
 								b = 32;
@@ -702,7 +705,7 @@ struct Mother : Module {
 			else {
 				if (state > 0.f) {
 					bool hit = false;
-					if (reflectCounter > 0) {
+					if (reflectCounter > 0 && getStateJson(VISUALIZATION_DISABLED_JSON) == 0.f) {
 						for (int channel = 0; channel < channels; channel++) {
 							int note = note (oldCvOut[channel]);
 							noteIdx = (note - effectiveChild + NUM_NOTES) % NUM_NOTES;
@@ -769,7 +772,9 @@ struct Mother : Module {
 		if ((customChangeBits & CHG_ROOT) || !initialized) {
 			strcpy ( rootText, notes[effectiveRoot]);
 		}
-		if (triggered || (customChangeBits & (CHG_WEIGHT | CHG_ONOFF | CHG_SCL | CHG_CHLD)) || !initialized || reflectCounter >= 0 || reflectFateCounter >= 0) {
+		if (triggered || (customChangeBits & (CHG_WEIGHT | CHG_ONOFF | CHG_SCL | CHG_CHLD)) || !initialized ||
+		    (reflectCounter >= 0 && getStateJson(VISUALIZATION_DISABLED_JSON) == 0.f) || reflectFateCounter >= 0 || visualizationDisabledChanged) {
+			visualizationDisabledChanged = false;
 			int start = ONOFF_JSON + effectiveScale * NUM_NOTES;
 			int lightIdx;
 			for (int jsonIdx = start; jsonIdx < start + NUM_NOTES; jsonIdx ++) {
@@ -970,6 +975,21 @@ struct MotherWidget : ModuleWidget {
 		}
 	};
 
+	struct MotherDisableVisualizationItem : MenuItem {
+		Mother *module;
+		void onAction(const event::Action &e) override {
+			if (module->OL_state[VISUALIZATION_DISABLED_JSON] == 0.f)
+				module->OL_setOutState(VISUALIZATION_DISABLED_JSON, 1.f);
+			else
+				module->OL_setOutState(VISUALIZATION_DISABLED_JSON, 0.f);
+			module->visualizationDisabledChanged = true;
+		}
+		void step() override {
+			if (module)
+				rightText = (module != nullptr && module->OL_state[VISUALIZATION_DISABLED_JSON] == 1.0f) ? "✔" : "";
+		}
+	};
+
 	void appendContextMenu(Menu *menu) override {
 		if (module) {
 			MenuLabel *spacerLabel = new MenuLabel();
@@ -981,6 +1001,11 @@ struct MotherWidget : ModuleWidget {
 			MenuLabel *styleLabel = new MenuLabel();
 			styleLabel->text = "Mother";
 			menu->addChild(styleLabel);
+
+			MotherDisableVisualizationItem *motherDisableVisualizationItem = new MotherDisableVisualizationItem();
+			motherDisableVisualizationItem->module = module;		
+			motherDisableVisualizationItem->text = "Disable Visualization";
+			menu->addChild(motherDisableVisualizationItem);
 
 			MotherScalesItem *motherScalesItem = new MotherScalesItem();
 			motherScalesItem->module = module;		
