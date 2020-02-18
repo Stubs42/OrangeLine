@@ -145,12 +145,15 @@ struct Mother : Module {
 		configParam (FATE_AMT_PARAM,  0.f,  6.f, 0.f, "Amount"      , "", 0.f, 1.f, 0.f);
 		configParam (FATE_SHP_PARAM,  0.f,  1.f, 0.5f, "Shape"       , "", 0.f, 1.f, 0.f);
 
+		char buffer[64];
 		for (int i = NUM_NOTES - 1; i >= 0; i--) {
-    		configParam (WEIGHT_PARAM + i,  0.f, 1.f, 0.5f, "Weight",      "", 0.f, 1.f, 0.f);
-			setCustomChangeMaskParam (WEIGHT_PARAM + i, CHG_WEIGHT);
-    		configParam ( ONOFF_PARAM + i,  0.f, 1.f, 0.f,  "Note On/Off", "", 0.f, 1.f, 0.f);
-			setCustomChangeMaskParam ( ONOFF_PARAM + i, CHG_ONOFF);
-        }
+			sprintf (buffer, "Weight %d", i + 1);
+	    		configParam (WEIGHT_PARAM + i,  0.f, 1.f, 0.5f, buffer, "", 0.f, 1.f, 0.f);
+				setCustomChangeMaskParam (WEIGHT_PARAM + i, CHG_WEIGHT);
+			sprintf (buffer, "Note On/Off %d", i + 1);
+	    		configParam ( ONOFF_PARAM + i,  0.f, 1.f, 0.f,  buffer, "", 0.f, 1.f, 0.f);
+				setCustomChangeMaskParam ( ONOFF_PARAM + i, CHG_ONOFF);
+		}
 		setCustomChangeMaskInput ( SCL_INPUT, CHG_SCL);
 		setCustomChangeMaskInput (CHLD_INPUT, CHG_CHLD);
 		setCustomChangeMaskInput (ROOT_INPUT, CHG_ROOT);
