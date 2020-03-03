@@ -98,8 +98,8 @@ struct Mother : Module {
 	*/
 	void moduleInitStateTypes () {
 		for (int i = ONOFF_PARAM; i <= ONOFF_PARAM_LAST; i ++)
-	     	setStateTypeParam  (i, STATE_TYPE_TRIGGER);
-     	setStateTypeInput  (TRG_INPUT, STATE_TYPE_TRIGGER);
+			setStateTypeParam  (i, STATE_TYPE_TRIGGER);
+     		setStateTypeInput  (TRG_INPUT, STATE_TYPE_TRIGGER);
 
 		setCustomChangeMaskInput (TRG_INPUT, CHG_TRG_IN);
 		setInPoly                (TRG_INPUT, true);
@@ -109,7 +109,7 @@ struct Mother : Module {
 
 		setInPoly          (RND_INPUT, true);
 
-     	setStateTypeOutput (GATE_OUTPUT, STATE_TYPE_TRIGGER);
+     		setStateTypeOutput (GATE_OUTPUT, STATE_TYPE_TRIGGER);
 		setOutPoly         (GATE_OUTPUT, true);
 
 		setOutPoly         (CV_OUTPUT, true);
@@ -149,10 +149,10 @@ struct Mother : Module {
 		for (int i = NUM_NOTES - 1; i >= 0; i--) {
 			sprintf (buffer, "Weight %d", i + 1);
 	    		configParam (WEIGHT_PARAM + i,  0.f, 1.f, 0.5f, buffer, "", 0.f, 1.f, 0.f);
-				setCustomChangeMaskParam (WEIGHT_PARAM + i, CHG_WEIGHT);
+			setCustomChangeMaskParam (WEIGHT_PARAM + i, CHG_WEIGHT);
 			sprintf (buffer, "Note On/Off %d", i + 1);
 	    		configParam ( ONOFF_PARAM + i,  0.f, 1.f, 0.f,  buffer, "", 0.f, 1.f, 0.f);
-				setCustomChangeMaskParam ( ONOFF_PARAM + i, CHG_ONOFF);
+			setCustomChangeMaskParam ( ONOFF_PARAM + i, CHG_ONOFF);
 		}
 		setCustomChangeMaskInput ( SCL_INPUT, CHG_SCL);
 		setCustomChangeMaskInput (CHLD_INPUT, CHG_CHLD);
@@ -201,7 +201,9 @@ struct Mother : Module {
 		init_genrand (seed);
 		setStateJson (AUTO_CHANNELS_JSON, 1.f);
 		setStateJson (VISUALIZATION_DISABLED_JSON, 0.f);
-
+		setStateJson (DNA_DISABLED_JSON, 0.f);
+		setStateJson (GRAB_DISABLED_JSON, 0.f);
+		setStateJson (ROOT_BASED_DISPLAY_JSON, 0.f);
 	}
 
 // ********************************************************************************************************************************
@@ -334,19 +336,25 @@ struct Mother : Module {
 						cvIn = OL_statePoly[cvInPolyIdx] - (float(effectiveRoot) / 12.f);
 					cvOut = quantize (cvIn);
 					int note = note(cvOut);
-					noteIdx = (note - effectiveChild + NUM_NOTES) % NUM_NOTES;
-					noteIdxIn = (note (cvIn) - effectiveChild + NUM_NOTES) % NUM_NOTES;
+					if (getStateJson(ROOT_BASED_DISPLAY_JSON) == 0.f) {
+						noteIdx = (note - effectiveChild + NUM_NOTES) % NUM_NOTES;
+						noteIdxIn = (note (cvIn) - effectiveChild + NUM_NOTES) % NUM_NOTES;
+					}
+					else {
+						noteIdx = note;
+						noteIdxIn = note (cvIn);
+					}
 					if (getStateJson (jsonOnOffBaseIdx + note) > 0.f && semiAmt > 0.f) {
 						d = fabs (cvIn - cvOut);
 						pCvOut[pCnt] = cvOut;
 						weight = getStateParam (WEIGHT_PARAM + noteIdx);
-						if (weight == 0.5f && effectiveChild > 0) {
+						if (weight == 0.5f && effectiveChild > 0 && getStateJson (DNA_DISABLED_JSON) == 0.f) {
 							fromMother = true;
 							weight = motherWeights[noteIdx];
 						}
 						else
 							fromMother = false;
-						if (weight == 1.f) {
+						if (weight == 1.f && getStateJson (GRAB_DISABLED_JSON) == 0.f) {
 							pProb[0] = 1.f;
 							pNoteIdx[0] = noteIdx;
 							pMother[0] = fromMother;
@@ -369,7 +377,10 @@ struct Mother : Module {
 						for (int i = 0; i < NUM_NOTES; i++) {
 							cvOut += step;
 							note = note (cvOut);
-							noteIdx = (note - effectiveChild + NUM_NOTES) % NUM_NOTES;
+							if (getStateJson(ROOT_BASED_DISPLAY_JSON) == 0.f)
+								noteIdx = (note - effectiveChild + NUM_NOTES) % NUM_NOTES;
+							else
+								noteIdx = note;
 							if (getStateJson (jsonOnOffBaseIdx + note) > 0.f) {
 								if (semiAmt == 0.f)
 									break;
@@ -378,13 +389,13 @@ struct Mother : Module {
 									break;
 								pCvOut[pCnt] = cvOut;
 								weight = getStateParam (WEIGHT_PARAM + noteIdx);
-								if (weight == 0.5f && effectiveChild > 0) {
+								if (weight == 0.5f && effectiveChild > 0 && getStateJson (DNA_DISABLED_JSON) == 0.f) {
 									fromMother = true;
 									weight = motherWeights[noteIdx];
 								}
 								else
 									fromMother = false;
-								if (weight == 1.f) {
+								if (weight == 1.f && getStateJson (GRAB_DISABLED_JSON) == 0.f) {
 									pProb[0] = 1.f;
 									pNoteIdx[0] = noteIdx;
 									pMother[0] = fromMother;
@@ -457,9 +468,12 @@ struct Mother : Module {
 							OL_outStateChangePoly[trgOutPolyIdx] = true;
 						}
 						note = note (cvOut);
-						noteIdx = (note - effectiveChild + NUM_NOTES) % NUM_NOTES;
+						if (getStateJson(ROOT_BASED_DISPLAY_JSON) == 0.f)
+							noteIdx = (note - effectiveChild + NUM_NOTES) % NUM_NOTES;
+						else
+							noteIdx = note;
 						weight = getStateParam (WEIGHT_PARAM + noteIdx);
-						if (weight == 0.5f && effectiveChild > 0)
+						if (weight == 0.5f && effectiveChild > 0 && getStateJson (DNA_DISABLED_JSON) == 0.f)
 							weight = motherWeights[noteIdx];
 						OL_statePoly[NUM_INPUTS * POLY_CHANNELS + powOutPolyIdx] = weight * 10.f;
 						OL_outStateChangePoly[powOutPolyIdx] = true;
@@ -486,7 +500,6 @@ struct Mother : Module {
 		This method should not do dsp or other logic processing.
 	*/
 	inline void moduleProcessState () {
-
 		effectiveScale = (int(getStateParam (SCL_PARAM)) - 1 + note (getStateInput (SCL_INPUT))) % NUM_NOTES;
 		effectiveScaleDisplay = float(effectiveScale + 1);
 		effectiveChild = (int(getStateParam (CHLD_PARAM)) + note (getStateInput (CHLD_INPUT))) % NUM_NOTES;
@@ -549,8 +562,10 @@ struct Mother : Module {
 			}
 			didSelectScale = false;
 		}
-
-		jsonWeightBaseIdx = WEIGHT_JSON + effectiveScale * NUM_CHLD * NUM_NOTES + effectiveChild * NUM_NOTES;
+		if (getStateJson(ROOT_BASED_DISPLAY_JSON) == 0.f) // TODO: Check This !!!
+			jsonWeightBaseIdx = WEIGHT_JSON + effectiveScale * NUM_CHLD * NUM_NOTES + effectiveChild * NUM_NOTES;
+		else
+			jsonWeightBaseIdx = WEIGHT_JSON + effectiveScale * NUM_CHLD * NUM_NOTES + effectiveChild * NUM_NOTES;
 		if (customChangeBits & CHG_WEIGHT && initialized) {
 			float weight;
 			int pct;
@@ -562,9 +577,9 @@ struct Mother : Module {
 					pct = int(round (weight * 100.f));
 					if (getStateJson (jsonOnOffBaseIdx + (i + effectiveChild) % NUM_NOTES) == 0.f)
 						snprintf(tmpHeadText, sizeof(tmpHeadText), "Wgt. %02d  n/a", paramIdx - WEIGHT_PARAM + 1);
-					else if (pct == 50 && getStateParam (CHLD_PARAM) > 0.f)
+					else if (pct == 50 && getStateParam (CHLD_PARAM) > 0.f && getStateJson (DNA_DISABLED_JSON) == 0.f)
 						snprintf(tmpHeadText, sizeof(tmpHeadText), "Wgt. %02d  DNA", paramIdx - WEIGHT_PARAM + 1);
-					else if (pct == 100)
+					else if (pct == 100 && getStateJson (GRAB_DISABLED_JSON) == 0.f)
 						snprintf(tmpHeadText, sizeof(tmpHeadText), "Wgt. %02d GRAB", paramIdx - WEIGHT_PARAM + 1);
 					else 
 						snprintf(tmpHeadText, sizeof(tmpHeadText), "Wgt. %02d %3d%%", paramIdx - WEIGHT_PARAM + 1, pct);
@@ -655,7 +670,7 @@ struct Mother : Module {
 									break;
 								}
 							}
-							if (reflectWeight == 1.f) {
+							if (reflectWeight == 1.f && getStateJson (GRAB_DISABLED_JSON) == 0.f) {
 								if (weight == 1.f)
 									r = 255;
 								else if (pMother[i]) {
@@ -677,18 +692,18 @@ struct Mother : Module {
 						}
 					}
 					else {
-						if (weight == 0.5f && effectiveChild > 0) {
+						if (weight == 0.5f && effectiveChild > 0 && getStateJson (DNA_DISABLED_JSON) == 0.f) {
 							r = 0;
 							g = 0;
 							motherWeight = motherWeights[lightIdx];
-							if (motherWeight == 1.f) {
+							if (motherWeight == 1.f && getStateJson (GRAB_DISABLED_JSON) == 0.f) {
 								r = 196;
 								b = 64;
 							}
 							else
 								b = int(motherWeight * 223.f + 32.f);
 						}
-						else if (weight == 1.f) {
+						else if (weight == 1.f && getStateJson (GRAB_DISABLED_JSON) == 0.f) {
 							r = 255;
 							g = 0;
 							b = 0;
@@ -711,7 +726,12 @@ struct Mother : Module {
 					if (reflectCounter > 0 && getStateJson(VISUALIZATION_DISABLED_JSON) == 0.f) {
 						for (int channel = 0; channel < channels; channel++) {
 							int note = note (oldCvOut[channel]);
-							noteIdx = (note - effectiveChild + NUM_NOTES) % NUM_NOTES;
+							if (getStateJson(ROOT_BASED_DISPLAY_JSON) == 0.f) {
+								noteIdx = (note - effectiveChild + NUM_NOTES) % NUM_NOTES;
+							}
+							else {
+								noteIdx = note;
+							}
 							if (noteIdx == lightIdx) {
 								r = 255;
 								g = 255;
@@ -722,7 +742,7 @@ struct Mother : Module {
 						}
 					}
 					if (!hit) {
-						if (weight == 0.5f && effectiveChild > 0) {
+						if (weight == 0.5f && effectiveChild > 0 && getStateJson (DNA_DISABLED_JSON) == 0.f) {
 							r = 0;
 							g = 0;
 							motherWeight = motherWeights[lightIdx];
@@ -733,7 +753,7 @@ struct Mother : Module {
 							else
 								b = int(motherWeight * 223.f + 32.f);
 						}
-						else if (weight == 1.f) {
+						else if (weight == 1.f && getStateJson (GRAB_DISABLED_JSON) == 0.f) {
 							r = 255;
 							g = 0;
 							b = 0;
@@ -758,7 +778,6 @@ struct Mother : Module {
 		Non standard reflect processing results to user interface components and outputs
 	*/
 	inline void moduleReflectChanges () {
-//		if ((customChangeBits & (CHG_ONOFF | CHG_SCL | CHG_CHLD)) || !initialized)
 		if ((customChangeBits & (CHG_ONOFF | CHG_SCL | CHG_CHLD)) && initialized)
 			setHeadScale ();
 		else {
@@ -770,7 +789,7 @@ struct Mother : Module {
 		}
 
 		if ((customChangeBits & (CHG_SCL | CHG_CHLD | CHG_ROOT)) || !initialized) {
-			strcpy (childText, notes[(effectiveChild + effectiveRoot) % NUM_NOTES]);
+				strcpy (childText, notes[(effectiveChild + effectiveRoot) % NUM_NOTES]);
 		}
 		if ((customChangeBits & CHG_ROOT) || !initialized) {
 			strcpy ( rootText, notes[effectiveRoot]);
@@ -781,7 +800,10 @@ struct Mother : Module {
 			int start = ONOFF_JSON + effectiveScale * NUM_NOTES;
 			int lightIdx;
 			for (int jsonIdx = start; jsonIdx < start + NUM_NOTES; jsonIdx ++) {
-				lightIdx = (jsonIdx - start - effectiveChild + NUM_NOTES) % NUM_NOTES;
+				if (getStateJson(ROOT_BASED_DISPLAY_JSON) == 0.f)
+					lightIdx = (jsonIdx - start - effectiveChild + NUM_NOTES) % NUM_NOTES;
+				else
+					lightIdx = (jsonIdx - start + NUM_NOTES) % NUM_NOTES;
 				setNoteLight (lightIdx, getStateJson (jsonIdx));
 			}
 		}
@@ -827,23 +849,22 @@ struct MotherWidget : ModuleWidget {
 		}
 
 		knob = createParamCentered<RoundSmallBlackKnob> (mm2px (Vec (24.098 + 4, 128.5 - 41.724 - 4)), module, ROOT_PARAM);
-        knob->snap = true;
+		knob->snap = true;
    		addParam (knob);
 
-        knob = createParamCentered<RoundSmallBlackKnob> (mm2px (Vec (12.034 + 4, 128.5 - 75.057 - 4)), module,  SCL_PARAM);
-        knob->snap = true;
+		knob = createParamCentered<RoundSmallBlackKnob> (mm2px (Vec (12.034 + 4, 128.5 - 75.057 - 4)), module,  SCL_PARAM);
+    		    knob->snap = true;
    		addParam (knob);
 
-        knob = createParamCentered<RoundSmallBlackKnob> (mm2px (Vec (25.686 + 4, 128.5 - 75.057 - 4)), module, CHLD_PARAM);
-        knob->snap = true;
+		knob = createParamCentered<RoundSmallBlackKnob> (mm2px (Vec (25.686 + 4, 128.5 - 75.057 - 4)), module, CHLD_PARAM);
+		knob->snap = true;
    		addParam (knob);
 
-        knob = createParamCentered<RoundSmallBlackKnob> (mm2px (Vec (13.621 + 4, 128.5 - 99.822 - 4)), module, FATE_AMT_PARAM);
-        knob->snap = true;
+		knob = createParamCentered<RoundSmallBlackKnob> (mm2px (Vec (13.621 + 4, 128.5 - 99.822 - 4)), module, FATE_AMT_PARAM);
+		knob->snap = true;
    		addParam (knob);
 
-        knob = createParamCentered<RoundSmallBlackKnob> (mm2px (Vec (24.098 + 4, 128.5 - 99.822 - 4)), module, FATE_SHP_PARAM);
-        // knob->snap = true;
+		knob = createParamCentered<RoundSmallBlackKnob> (mm2px (Vec (24.098 + 4, 128.5 - 99.822 - 4)), module, FATE_SHP_PARAM);
    		addParam (knob);
 
 		for (int i = 0; i < NUM_NOTES; i++) {
@@ -871,25 +892,25 @@ struct MotherWidget : ModuleWidget {
 		const char *text;
 
 		text = (module != nullptr ? module->headDisplayText : nullptr);
-        headWidget = TextWidget::create (mm2px (Vec(3.183 - 0.25 - 0.35, 128.5 - 115.271)), module, text, "Major", 12, (module ? &(module->headScrollTimer) : nullptr));
+		headWidget = TextWidget::create (mm2px (Vec(3.183 - 0.25 - 0.35, 128.5 - 115.271)), module, text, "Major", 12, (module ? &(module->headScrollTimer) : nullptr));
 		headWidget->pStyle = (module == nullptr ? nullptr : &(module->OL_state[STYLE_JSON]));
-        addChild (headWidget);
+		addChild (headWidget);
 
 		text = (module != nullptr ? module->rootText : nullptr);
-        rootWidget = TextWidget::create (mm2px (Vec(24.996 - 0.25, 128.5 - 52.406)), module, text, "C", 2, nullptr);
+		rootWidget = TextWidget::create (mm2px (Vec(24.996 - 0.25, 128.5 - 52.406)), module, text, "C", 2, nullptr);
 		rootWidget->pStyle = (module == nullptr ? nullptr : &(module->OL_state[STYLE_JSON]));
-        addChild (rootWidget);
+		addChild (rootWidget);
 
 		float *pvalue  = (module != nullptr ? &(module->effectiveScaleDisplay) : nullptr);
-        scaleWidget = NumberWidget::create (mm2px (Vec(12.931 - 0.25, 128.5 - 86.537)), module, pvalue, 1.f, "%2.0f", scaleBuffer, 2);
+		scaleWidget = NumberWidget::create (mm2px (Vec(12.931 - 0.25, 128.5 - 86.537)), module, pvalue, 1.f, "%2.0f", scaleBuffer, 2);
 		scaleWidget->pStyle = (module == nullptr ? nullptr : &(module->OL_state[STYLE_JSON]));
 
-        addChild (scaleWidget);
+		addChild (scaleWidget);
 
 		text = (module != nullptr ? module->childText : nullptr);
-        childWidget = TextWidget::create (mm2px (Vec(26.742 - 0.25, 128.5 - 86.537)), module, text, "C", 2, nullptr);
+		childWidget = TextWidget::create (mm2px (Vec(26.742 - 0.25, 128.5 - 86.537)), module, text, "C", 2, nullptr);
 		childWidget->pStyle = (module == nullptr ? nullptr : &(module->OL_state[STYLE_JSON]));
-        addChild (childWidget);
+		addChild (childWidget);
 	}
 
 	struct MotherScalesItem : MenuItem {
@@ -993,6 +1014,51 @@ struct MotherWidget : ModuleWidget {
 		}
 	};
 
+	struct MotherDisableDnaItem : MenuItem {
+		Mother *module;
+		void onAction(const event::Action &e) override {
+			if (module->OL_state[DNA_DISABLED_JSON] == 0.f)
+				module->OL_setOutState(DNA_DISABLED_JSON, 1.f);
+			else
+				module->OL_setOutState(DNA_DISABLED_JSON, 0.f);
+			module->visualizationDisabledChanged = true;
+		}
+		void step() override {
+			if (module)
+				rightText = (module != nullptr && module->OL_state[DNA_DISABLED_JSON] == 1.0f) ? "✔" : "";
+		}
+	};
+
+	struct MotherDisableGrabItem : MenuItem {
+		Mother *module;
+		void onAction(const event::Action &e) override {
+			if (module->OL_state[GRAB_DISABLED_JSON] == 0.f)
+				module->OL_setOutState(GRAB_DISABLED_JSON, 1.f);
+			else
+				module->OL_setOutState(GRAB_DISABLED_JSON, 0.f);
+			module->visualizationDisabledChanged = true;
+		}
+		void step() override {
+			if (module)
+				rightText = (module != nullptr && module->OL_state[GRAB_DISABLED_JSON] == 1.0f) ? "✔" : "";
+		}
+	};
+
+	struct MotherRootBasedDisplayItem : MenuItem {
+		Mother *module;
+		void onAction(const event::Action &e) override {
+			if (module->OL_state[ROOT_BASED_DISPLAY_JSON] == 0.f)
+				module->OL_setOutState(ROOT_BASED_DISPLAY_JSON, 1.f);
+			else
+				module->OL_setOutState(ROOT_BASED_DISPLAY_JSON, 0.f);
+			module->visualizationDisabledChanged = true;
+		}
+		void step() override {
+			if (module)
+				rightText = (module != nullptr && module->OL_state[ROOT_BASED_DISPLAY_JSON] == 1.0f) ? "✔" : "";
+		}
+	};
+
 	void appendContextMenu(Menu *menu) override {
 		if (module) {
 			MenuLabel *spacerLabel = new MenuLabel();
@@ -1001,20 +1067,42 @@ struct MotherWidget : ModuleWidget {
 			Mother *module = dynamic_cast<Mother*>(this->module);
 			assert(module);
 
-			MenuLabel *styleLabel = new MenuLabel();
-			styleLabel->text = "Mother";
-			menu->addChild(styleLabel);
-
-			MotherDisableVisualizationItem *motherDisableVisualizationItem = new MotherDisableVisualizationItem();
-			motherDisableVisualizationItem->module = module;		
-			motherDisableVisualizationItem->text = "Disable Visualization";
-			menu->addChild(motherDisableVisualizationItem);
+			MenuLabel *motherLabel = new MenuLabel();
+			motherLabel->text = "Mother";
+			menu->addChild(motherLabel);
 
 			MotherScalesItem *motherScalesItem = new MotherScalesItem();
 			motherScalesItem->module = module;		
 			motherScalesItem->text = "Scales";
 			motherScalesItem->rightText = RIGHT_ARROW;
 			menu->addChild(motherScalesItem);
+
+			spacerLabel = new MenuLabel();
+			menu->addChild(spacerLabel);
+
+			MenuLabel *behaviourLabel = new MenuLabel();
+			behaviourLabel->text = "Behaviour";
+			menu->addChild(behaviourLabel);
+
+			MotherDisableVisualizationItem *motherDisableVisualizationItem = new MotherDisableVisualizationItem();
+			motherDisableVisualizationItem->module = module;		
+			motherDisableVisualizationItem->text = "Disable Visualization";
+			menu->addChild(motherDisableVisualizationItem);
+
+			MotherDisableDnaItem *motherDisableDnaItem = new MotherDisableDnaItem();
+			motherDisableDnaItem->module = module;		
+			motherDisableDnaItem->text = "Disable DNA";
+			menu->addChild(motherDisableDnaItem);
+
+			MotherDisableGrabItem *motherDisableGrabItem = new MotherDisableGrabItem();
+			motherDisableGrabItem->module = module;		
+			motherDisableGrabItem->text = "Disable Grab";
+			menu->addChild(motherDisableGrabItem);
+
+			MotherRootBasedDisplayItem *motherRootBasedDisplayItem = new MotherRootBasedDisplayItem();
+			motherRootBasedDisplayItem->module = module;		
+			motherRootBasedDisplayItem->text = "Root Based Display";
+			menu->addChild(motherRootBasedDisplayItem);
 
 			spacerLabel = new MenuLabel();
 			menu->addChild(spacerLabel);
@@ -1032,7 +1120,7 @@ struct MotherWidget : ModuleWidget {
 			spacerLabel = new MenuLabel();
 			menu->addChild(spacerLabel);
 
-			styleLabel = new MenuLabel();
+			MenuLabel *styleLabel = new MenuLabel();
 			styleLabel->text = "Style";
 			menu->addChild(styleLabel);
 

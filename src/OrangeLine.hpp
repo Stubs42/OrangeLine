@@ -1,7 +1,7 @@
 /*
     OrangeLine.hpp
 
-    Include file containing all #defines for constants and macros
+	Include file containing all #defines for constants and macros
 	common to all OrangeLine moduls
 
 	Should not included in <module_name>.cpp because this is done in OrangeLineCommon.hpp
@@ -28,12 +28,12 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "plugin.hpp"
 
-#define ORANGE			nvgRGB(255, 102, 0)
-#define WHITE			nvgRGB(255, 255, 255)
+#define ORANGE		nvgRGB(255, 102, 0)
+#define WHITE		nvgRGB(255, 255, 255)
 
 #define STYLE_ORANGE	0
 #define STYLE_BRIGHT	1
-#define STYLE_DARK		2
+#define STYLE_DARK	2
 
 #define STATE_TYPE_VALUE   0
 #define STATE_TYPE_VOLTAGE 0
@@ -44,41 +44,40 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define LIGHT_TYPE_SINGLE  0
 #define LIGHT_TYPE_RGB     1
 
-#define NUM_STATES					(NUM_JSONS + NUM_PARAMS + NUM_INPUTS + NUM_OUTPUTS + NUM_LIGHTS)
-#define NUM_TRIGGERS				(NUM_PARAMS + NUM_INPUTS)
+#define NUM_STATES			(NUM_JSONS + NUM_PARAMS + NUM_INPUTS + NUM_OUTPUTS + NUM_LIGHTS)
+#define NUM_TRIGGERS			(NUM_PARAMS + NUM_INPUTS)
 
-//#define PRECISION       0.0000000001f
 #define PRECISION       0.000001f
 
 #define MAX_TEXT_SIZE  64
 #define TEXT_SCROLL_DELAY   22050
 #define TEXT_SCROLL_PRE_DELAY   TEXT_SCROLL_DELAY * 4
 
-#define stateIdxJson(i)				(i)
-#define stateIdxParam(i)			(NUM_JSONS + (i))
-#define stateIdxInput(i)			(NUM_JSONS + NUM_PARAMS + (i))
-#define stateIdxOutput(i)			(NUM_JSONS + NUM_PARAMS + NUM_INPUTS + (i))
-#define stateIdxLight(i)			(NUM_JSONS + NUM_PARAMS + NUM_INPUTS + NUM_OUTPUTS + (i))
+#define stateIdxJson(i)			(i)
+#define stateIdxParam(i)		(NUM_JSONS + (i))
+#define stateIdxInput(i)		(NUM_JSONS + NUM_PARAMS + (i))
+#define stateIdxOutput(i)		(NUM_JSONS + NUM_PARAMS + NUM_INPUTS + (i))
+#define stateIdxLight(i)		(NUM_JSONS + NUM_PARAMS + NUM_INPUTS + NUM_OUTPUTS + (i))
 
-#define changeJson(i)				OL_outStateChange[stateIdxJson   (i)]
-#define inChangeParam(i)			OL_inStateChange [stateIdxParam  (i)]
-#define changeParam(i)				OL_outStateChange[stateIdxParam  (i)]
-#define changeInput(i)				OL_inStateChange [stateIdxInput  (i)]
-#define changeOutput(i)				OL_outStateChange[stateIdxOutput (i)]
-#define changeLight(i)				OL_outStateChange[stateIdxLight  (i)]
+#define changeJson(i)			OL_outStateChange[stateIdxJson   (i)]
+#define inChangeParam(i)		OL_inStateChange [stateIdxParam  (i)]
+#define changeParam(i)			OL_outStateChange[stateIdxParam  (i)]
+#define changeInput(i)			OL_inStateChange [stateIdxInput  (i)]
+#define changeOutput(i)			OL_outStateChange[stateIdxOutput (i)]
+#define changeLight(i)			OL_outStateChange[stateIdxLight  (i)]
 
-#define getStateJson(i)   			OL_state[stateIdxJson   (i)]
-#define getStateParam(i)			OL_state[stateIdxParam  (i)]
-#define getStateInput(i)			OL_state[stateIdxInput  (i)]
-#define getStateOutput(i)			OL_state[stateIdxOutput (i)]
-#define getStateLight(i)			OL_state[stateIdxLight  (i)]
+#define getStateJson(i)			OL_state[stateIdxJson   (i)]
+#define getStateParam(i)		OL_state[stateIdxParam  (i)]
+#define getStateInput(i)		OL_state[stateIdxInput  (i)]
+#define getStateOutput(i)		OL_state[stateIdxOutput (i)]
+#define getStateLight(i)		OL_state[stateIdxLight  (i)]
 
-#define setStateJson(i, v)			OL_setOutState (stateIdxJson   (i), v)
+#define setStateJson(i, v)		OL_setOutState (stateIdxJson   (i), v)
 #define setInStateParam(i, v)		OL_setInState  (stateIdxParam  (i), v)
-#define setStateParam(i, v)			OL_setOutState (stateIdxParam  (i), v)
-#define setStateInput(i, v)			OL_setInState  (stateIdxInput  (i), v)
+#define setStateParam(i, v)		OL_setOutState (stateIdxParam  (i), v)
+#define setStateInput(i, v)		OL_setInState  (stateIdxInput  (i), v)
 #define setStateOutput(i, v)		OL_setOutState (stateIdxOutput (i), v)
-#define setStateLight(i, v)			OL_setOutState (stateIdxLight  (i), v) 
+#define setStateLight(i, v)		OL_setOutState (stateIdxLight  (i), v) 
 
 #define getStateTypeParam(i)		OL_stateType[stateIdxParam  (i)]
 #define getStateTypeInput(i)		OL_stateType[stateIdxInput  (i)]
@@ -90,11 +89,11 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define setStateTypeOutput(i, t)	(OL_stateType[stateIdxOutput (i)] = (t))
 #define setStateTypeLight(i, t)		(OL_stateType[stateIdxLight  (i)] = (t))
 
-#define maxStateIdxJson				(stateIdxParam  (0) - 1)
-#define maxStateIdxParam			(stateIdxInput  (0) - 1)
-#define maxStateIdxInput			(stateIdxOutput (0) - 1)
-#define maxStateIdxOutput			(stateIdxLight  (0) - 1)
-#define maxStateIdxLight			(NUM_STATES - 1)
+#define maxStateIdxJson			(stateIdxParam  (0) - 1)
+#define maxStateIdxParam		(stateIdxInput  (0) - 1)
+#define maxStateIdxInput		(stateIdxOutput (0) - 1)
+#define maxStateIdxOutput		(stateIdxLight  (0) - 1)
+#define maxStateIdxLight		(NUM_STATES - 1)
 
 #define getCustomChangeMask(i)		OL_customChangeMask[i]
 #define getCustomChangeMaskParam(i)	getCustomChangeMask(i)
@@ -104,23 +103,23 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define setCustomChangeMaskParam(i, v)	setCustomChangeMask((i), (v))
 #define setCustomChangeMaskInput(i, v)	setCustomChangeMask(NUM_PARAMS + (i), (v))
 
-#define setInPoly(i, v)				(OL_isPoly[i] = (v))
-#define setOutPoly(i, v)			(OL_isPoly[NUM_INPUTS + i] = (v))
-#define getInPoly(i)				OL_isPoly[i]
-#define getOutPoly(i)				OL_isPoly[NUM_INPUTS + i]
+#define setInPoly(i, v)			(OL_isPoly[i] = (v))
+#define setOutPoly(i, v)		(OL_isPoly[NUM_INPUTS + i] = (v))
+#define getInPoly(i)			OL_isPoly[i]
+#define getOutPoly(i)			OL_isPoly[NUM_INPUTS + i]
 
 #define setOutPolyChannels(i, v)	(OL_polyChannels[i] = (v))
 #define getOutPolyChannels(i)		OL_polyChannels[i]
 
-#define customChangeBits			OL_customChangeBits
+#define customChangeBits		OL_customChangeBits
 
-#define isGate(i)                   OL_isGate[i]
+#define isGate(i)			OL_isGate[i]
 #define getInputConnected(i)		OL_inputConnected[i]
-#define initialized					OL_initialized
+#define initialized			OL_initialized
 
-#define quantize(CV) 				(round (CV * 12.f) / 12.f)
-#define octave(CV)					int(floor (quantize (CV)))
-#define note(CV)					(int(round ((CV + 10) * 12)) % 12)
+#define quantize(CV)			(round (CV * 12.f) / 12.f)
+#define octave(CV)			int(floor (quantize (CV)))
+#define note(CV)			(int(round ((CV + 10) * 12)) % 12)
 
 #define reConfigParam(paramId, minVal, maxVal, defaultVal, pLabel) { \
 	ParamQuantity *pq = paramQuantities[paramId]; \
@@ -133,6 +132,11 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define reConfigParamDefault(paramId, defaultVal) { \
 	ParamQuantity *pq = paramQuantities[paramId]; \
 	pq->defaultValue = defaultVal; \
+}
+
+#define reConfigParamLabel(paramId, pLabel) { \
+	ParamQuantity *pq = paramQuantities[paramId]; \
+	pq->label = pLabel; \
 }
 
 #define N 624
@@ -153,7 +157,7 @@ struct NumberWidget : TransparentWidget {
 
 	std::shared_ptr<Font> pFont;
 
-    Module     *module = nullptr;
+	Module     *module = nullptr;
 	float      *pValue = nullptr;
  	const char *format = nullptr;
 	char       *buffer = nullptr;
@@ -161,20 +165,20 @@ struct NumberWidget : TransparentWidget {
 	float       defaultValue = 0.f;
 	float	   *pStyle = nullptr;
 
-    static NumberWidget* create (Vec pos, Module *module, float *pValue, float defaultValue, const char *format, char *buffer, int length) {
-        NumberWidget *w = new NumberWidget();
+	static NumberWidget* create (Vec pos, Module *module, float *pValue, float defaultValue, const char *format, char *buffer, int length) {
+		NumberWidget *w = new NumberWidget();
 
 		w->pFont    = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
-        w->box.pos  = pos;
-        w->box.size = mm2px (Vec (4 * length, 7));
-        w->module   = module;
-        w->pValue   = pValue;
-        w->format   = format;
-        w->buffer   = buffer;
-        w->length   = length;
+		w->box.pos  = pos;
+		w->box.size = mm2px (Vec (4 * length, 7));
+		w->module   = module;
+		w->pValue   = pValue;
+		w->format   = format;
+		w->buffer   = buffer;
+		w->length   = length;
 
-        return w;
-    }
+		return w;
+	}
 	/**
 		Constructor
 	*/
@@ -185,9 +189,9 @@ struct NumberWidget : TransparentWidget {
 		nvgFontFaceId (drawArgs.vg, pFont->handle);
 		nvgFontSize (drawArgs.vg, 18);
 		nvgFillColor (drawArgs.vg, (pStyle == nullptr || *pStyle == STYLE_ORANGE) ? ORANGE : WHITE);
-        float value = pValue != nullptr ? *pValue : defaultValue;
-        snprintf (buffer, length + 1, format, value);
-        buffer[length] = '\0';
+		float value = pValue != nullptr ? *pValue : defaultValue;
+		snprintf (buffer, length + 1, format, value);
+		buffer[length] = '\0';
 		nvgText (drawArgs.vg, 0, 0, buffer, nullptr);
 	}
 };
@@ -199,30 +203,30 @@ struct TextWidget : TransparentWidget {
 
 	std::shared_ptr<Font> pFont;
 
-    Module     *module = nullptr;
+	Module     *module = nullptr;
 	const char *text   = nullptr;
-	int         length = 0;
-	int	        scrollPos = 0;
-	int        *pTimer;
+	int	    length = 0;
+	int	    scrollPos = 0;
+	int	   *pTimer;
 	const char *defaultText = nullptr;
 	float	   *pStyle = nullptr;
-	bool		reset = false;
+	bool	    reset = false;
 
-    static TextWidget* create (Vec pos, Module *module, const char *text, const char * defaultText, int length, int *pTimer) {
-        TextWidget *w = new TextWidget();
+	static TextWidget* create (Vec pos, Module *module, const char *text, const char * defaultText, int length, int *pTimer) {
+		TextWidget *w = new TextWidget();
 
 		w->pFont    = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
-        w->box.pos  = pos;
-        w->box.pos.y  -= mm2px (5);
-        w->box.size = mm2px (Vec (4 * length, 7));
-        w->module   = module;
-        w->text     = text;
-        w->defaultText  = defaultText;
-        w->length   = length;
+		w->box.pos  = pos;
+		w->box.pos.y  -= mm2px (5);
+		w->box.size = mm2px (Vec (4 * length, 7));
+		w->module   = module;
+		w->text     = text;
+		w->defaultText  = defaultText;
+		w->length   = length;
 		w->pTimer   = pTimer;
 
-        return w;
-    }
+		return w;
+	}
 
 	/**
 		Constructor
@@ -233,7 +237,7 @@ struct TextWidget : TransparentWidget {
 	void draw (const DrawArgs &drawArgs) override {
 		const char *delimiter = " - ";
 		char buf[MAX_TEXT_SIZE * 2 + 1 + 3 /* delimiter length */];
-        const char* str = (text != nullptr ? text : defaultText);
+        	const char* str = (text != nullptr ? text : defaultText);
 		int len = strlen(str);
 		if (len > MAX_TEXT_SIZE)
 			len = MAX_TEXT_SIZE;
