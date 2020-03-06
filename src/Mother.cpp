@@ -75,6 +75,9 @@ struct Mother : Module {
 	int	scaleSelected = -1;
 
 	bool	visualizationDisabledChanged = false;
+	bool	rootBasedDisplayChanged = false;
+	bool	disableGrabChanged = false;
+	bool	disableDnaChanged = false;
 		
 	#include "MotherJsonLabels.hpp"
 	#include "MotherScales.hpp"
@@ -336,18 +339,15 @@ struct Mother : Module {
 						cvIn = OL_statePoly[cvInPolyIdx] - (float(effectiveRoot) / 12.f);
 					cvOut = quantize (cvIn);
 					int note = note(cvOut);
-					if (getStateJson(ROOT_BASED_DISPLAY_JSON) == 0.f) {
-						noteIdx = (note - effectiveChild + NUM_NOTES) % NUM_NOTES;
-						noteIdxIn = (note (cvIn) - effectiveChild + NUM_NOTES) % NUM_NOTES;
-					}
-					else {
-						noteIdx = note;
-						noteIdxIn = note (cvIn);
-					}
+					noteIdx = (note - effectiveChild + NUM_NOTES) % NUM_NOTES;
+					noteIdxIn = (note (cvIn) - effectiveChild + NUM_NOTES) % NUM_NOTES;
 					if (getStateJson (jsonOnOffBaseIdx + note) > 0.f && semiAmt > 0.f) {
 						d = fabs (cvIn - cvOut);
 						pCvOut[pCnt] = cvOut;
-						weight = getStateParam (WEIGHT_PARAM + noteIdx);
+						if (getStateJson(ROOT_BASED_DISPLAY_JSON) == 0.f)
+							weight = getStateParam (WEIGHT_PARAM + noteIdx);
+						else
+							weight = getStateParam (WEIGHT_PARAM + (noteIdx + effectiveChild) % NUM_NOTES);
 						if (weight == 0.5f && effectiveChild > 0 && getStateJson (DNA_DISABLED_JSON) == 0.f) {
 							fromMother = true;
 							weight = motherWeights[noteIdx];
@@ -377,10 +377,7 @@ struct Mother : Module {
 						for (int i = 0; i < NUM_NOTES; i++) {
 							cvOut += step;
 							note = note (cvOut);
-							if (getStateJson(ROOT_BASED_DISPLAY_JSON) == 0.f)
-								noteIdx = (note - effectiveChild + NUM_NOTES) % NUM_NOTES;
-							else
-								noteIdx = note;
+							noteIdx = (note - effectiveChild + NUM_NOTES) % NUM_NOTES;
 							if (getStateJson (jsonOnOffBaseIdx + note) > 0.f) {
 								if (semiAmt == 0.f)
 									break;
@@ -388,7 +385,10 @@ struct Mother : Module {
 								if (d > semiAmt)
 									break;
 								pCvOut[pCnt] = cvOut;
-								weight = getStateParam (WEIGHT_PARAM + noteIdx);
+								if (getStateJson(ROOT_BASED_DISPLAY_JSON) == 0.f)
+									weight = getStateParam (WEIGHT_PARAM + noteIdx);
+								else
+									weight = getStateParam (WEIGHT_PARAM + (noteIdx + effectiveChild) % NUM_NOTES);
 								if (weight == 0.5f && effectiveChild > 0 && getStateJson (DNA_DISABLED_JSON) == 0.f) {
 									fromMother = true;
 									weight = motherWeights[noteIdx];
@@ -468,11 +468,11 @@ struct Mother : Module {
 							OL_outStateChangePoly[trgOutPolyIdx] = true;
 						}
 						note = note (cvOut);
+						noteIdx = (note - effectiveChild + NUM_NOTES) % NUM_NOTES;
 						if (getStateJson(ROOT_BASED_DISPLAY_JSON) == 0.f)
-							noteIdx = (note - effectiveChild + NUM_NOTES) % NUM_NOTES;
+							weight = getStateParam (WEIGHT_PARAM + noteIdx);
 						else
-							noteIdx = note;
-						weight = getStateParam (WEIGHT_PARAM + noteIdx);
+							weight = getStateParam (WEIGHT_PARAM + (noteIdx + effectiveChild) % NUM_NOTES);
 						if (weight == 0.5f && effectiveChild > 0 && getStateJson (DNA_DISABLED_JSON) == 0.f)
 							weight = motherWeights[noteIdx];
 						OL_statePoly[NUM_INPUTS * POLY_CHANNELS + powOutPolyIdx] = weight * 10.f;
@@ -562,10 +562,7 @@ struct Mother : Module {
 			}
 			didSelectScale = false;
 		}
-		if (getStateJson(ROOT_BASED_DISPLAY_JSON) == 0.f) // TODO: Check This !!!
-			jsonWeightBaseIdx = WEIGHT_JSON + effectiveScale * NUM_CHLD * NUM_NOTES + effectiveChild * NUM_NOTES;
-		else
-			jsonWeightBaseIdx = WEIGHT_JSON + effectiveScale * NUM_CHLD * NUM_NOTES + effectiveChild * NUM_NOTES;
+		jsonWeightBaseIdx = WEIGHT_JSON + effectiveScale * NUM_CHLD * NUM_NOTES + effectiveChild * NUM_NOTES;
 		if (customChangeBits & CHG_WEIGHT && initialized) {
 			float weight;
 			int pct;
@@ -573,6 +570,10 @@ struct Mother : Module {
 				if (inChangeParam (paramIdx)) {
 					jsonIdx = jsonWeightBaseIdx + i;
 					weight = getStateParam (paramIdx);
+					if (getStateJson(ROOT_BASED_DISPLAY_JSON) == 0.f)
+						jsonIdx = jsonWeightBaseIdx + i;
+					else
+						jsonIdx = jsonWeightBaseIdx + ((i + NUM_NOTES - effectiveChild) % NUM_NOTES);
 					setStateJson (jsonIdx, weight);
 					pct = int(round (weight * 100.f));
 					if (getStateJson (jsonOnOffBaseIdx + (i + effectiveChild) % NUM_NOTES) == 0.f)
@@ -587,9 +588,12 @@ struct Mother : Module {
 				}
 			}
 		}
-		if (customChangeBits & (CHG_SCL | CHG_CHLD)) {
+		if (customChangeBits & (CHG_SCL | CHG_CHLD) || rootBasedDisplayChanged) {
 			for (int paramIdx = WEIGHT_PARAM, i = 0; paramIdx <= WEIGHT_PARAM_LAST; paramIdx ++, i++) {
-				jsonIdx = jsonWeightBaseIdx + i;
+				if (getStateJson(ROOT_BASED_DISPLAY_JSON) == 0.f)
+					jsonIdx = jsonWeightBaseIdx + i;
+				else
+					jsonIdx = jsonWeightBaseIdx + ((i + NUM_NOTES - effectiveChild) % NUM_NOTES);
 				setStateParam (paramIdx, getStateJson (jsonIdx));
 			}
 			updateMotherWeights ();
@@ -652,8 +656,12 @@ struct Mother : Module {
 			color = (r << 16) + (g << 8) + b;
 		}
 		else {
-			weight = getStateParam (WEIGHT_PARAM + lightIdx);
+			if (getStateJson(ROOT_BASED_DISPLAY_JSON) == 0.f)
+				weight = getStateParam (WEIGHT_PARAM + lightIdx);
+			else
+				weight = getStateParam (WEIGHT_PARAM + (lightIdx + effectiveChild) % NUM_NOTES);
 			if (channels == 1) {
+
 				if (state > 0.f || (reflectCounter > 0 && getStateJson(VISUALIZATION_DISABLED_JSON) == 0.f && noteIdxIn == lightIdx)) {
 					int r = 0, g = 0, b = 0;
 					if (reflectCounter > 0 && getStateJson(VISUALIZATION_DISABLED_JSON) == 0.f) {
@@ -726,12 +734,7 @@ struct Mother : Module {
 					if (reflectCounter > 0 && getStateJson(VISUALIZATION_DISABLED_JSON) == 0.f) {
 						for (int channel = 0; channel < channels; channel++) {
 							int note = note (oldCvOut[channel]);
-							if (getStateJson(ROOT_BASED_DISPLAY_JSON) == 0.f) {
-								noteIdx = (note - effectiveChild + NUM_NOTES) % NUM_NOTES;
-							}
-							else {
-								noteIdx = note;
-							}
+							noteIdx = (note - effectiveChild + NUM_NOTES) % NUM_NOTES;
 							if (noteIdx == lightIdx) {
 								r = 255;
 								g = 255;
@@ -746,7 +749,7 @@ struct Mother : Module {
 							r = 0;
 							g = 0;
 							motherWeight = motherWeights[lightIdx];
-							if (motherWeight == 1.f) {
+							if (motherWeight == 1.f && getStateJson (GRAB_DISABLED_JSON) == 0.f) {
 								r = 196;
 								b = 64;
 							}
@@ -771,6 +774,9 @@ struct Mother : Module {
 				}
 			}
 		}
+		if (getStateJson(ROOT_BASED_DISPLAY_JSON) == 1.f)
+			lightIdx = (lightIdx + effectiveChild) % NUM_NOTES;
+
 		setRgbLight (NOTE_LIGHT_01_RGB + 3 * lightIdx, color);
 	}	
 
@@ -787,7 +793,6 @@ struct Mother : Module {
 				tmpHeadCounter = GREETING_DURATION;
 			}
 		}
-
 		if ((customChangeBits & (CHG_SCL | CHG_CHLD | CHG_ROOT)) || !initialized) {
 				strcpy (childText, notes[(effectiveChild + effectiveRoot) % NUM_NOTES]);
 		}
@@ -795,15 +800,15 @@ struct Mother : Module {
 			strcpy ( rootText, notes[effectiveRoot]);
 		}
 		if (triggered || (customChangeBits & (CHG_WEIGHT | CHG_ONOFF | CHG_SCL | CHG_CHLD)) || !initialized ||
-		    (reflectCounter >= 0 && getStateJson(VISUALIZATION_DISABLED_JSON) == 0.f) || reflectFateCounter >= 0 || visualizationDisabledChanged) {
+		    (reflectCounter >= 0 && getStateJson(VISUALIZATION_DISABLED_JSON) == 0.f) || reflectFateCounter >= 0 || visualizationDisabledChanged || rootBasedDisplayChanged || disableGrabChanged || disableDnaChanged) {
+			rootBasedDisplayChanged = false;
 			visualizationDisabledChanged = false;
-			int start = ONOFF_JSON + effectiveScale * NUM_NOTES;
+			disableGrabChanged = false;
+			disableDnaChanged = false;
+			int jsonIdx = ONOFF_JSON + effectiveScale * NUM_NOTES;
 			int lightIdx;
-			for (int jsonIdx = start; jsonIdx < start + NUM_NOTES; jsonIdx ++) {
-				if (getStateJson(ROOT_BASED_DISPLAY_JSON) == 0.f)
-					lightIdx = (jsonIdx - start - effectiveChild + NUM_NOTES) % NUM_NOTES;
-				else
-					lightIdx = (jsonIdx - start + NUM_NOTES) % NUM_NOTES;
+			for (int idx = 0; idx < NUM_NOTES; idx ++, jsonIdx ++) {
+				lightIdx = (idx - effectiveChild + NUM_NOTES) % NUM_NOTES;
 				setNoteLight (lightIdx, getStateJson (jsonIdx));
 			}
 		}
@@ -1021,7 +1026,7 @@ struct MotherWidget : ModuleWidget {
 				module->OL_setOutState(DNA_DISABLED_JSON, 1.f);
 			else
 				module->OL_setOutState(DNA_DISABLED_JSON, 0.f);
-			module->visualizationDisabledChanged = true;
+			module->disableDnaChanged = true;
 		}
 		void step() override {
 			if (module)
@@ -1036,7 +1041,7 @@ struct MotherWidget : ModuleWidget {
 				module->OL_setOutState(GRAB_DISABLED_JSON, 1.f);
 			else
 				module->OL_setOutState(GRAB_DISABLED_JSON, 0.f);
-			module->visualizationDisabledChanged = true;
+			module->disableGrabChanged = true;
 		}
 		void step() override {
 			if (module)
@@ -1051,7 +1056,7 @@ struct MotherWidget : ModuleWidget {
 				module->OL_setOutState(ROOT_BASED_DISPLAY_JSON, 1.f);
 			else
 				module->OL_setOutState(ROOT_BASED_DISPLAY_JSON, 0.f);
-			module->visualizationDisabledChanged = true;
+			module->rootBasedDisplayChanged = true;
 		}
 		void step() override {
 			if (module)
