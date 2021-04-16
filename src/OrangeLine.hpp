@@ -49,6 +49,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #define PRECISION       0.000001f
 
+#define IDLESKIP	32
+
 #define MAX_TEXT_SIZE  64
 #define TEXT_SCROLL_DELAY   22050
 #define TEXT_SCROLL_PRE_DELAY   TEXT_SCROLL_DELAY * 4
@@ -107,6 +109,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define setOutPoly(i, v)		(OL_isPoly[NUM_INPUTS + i] = (v))
 #define getInPoly(i)			OL_isPoly[i]
 #define getOutPoly(i)			OL_isPoly[NUM_INPUTS + i]
+
+#define getIsHot(i)				OL_isHot[i]
+#define setIsHot(i, v)			(OL_isHot[i] = (v))
 
 #define setOutPolyChannels(i, v)	(OL_polyChannels[i] = (v))
 #define getOutPolyChannels(i)		OL_polyChannels[i]

@@ -318,7 +318,6 @@ struct Fence : Module {
 /*
 	Methods called directly or indirectly called from process () in OrangeLineCommon.hpp
 */
-
 	/**
 		Module specific process method called from process () in OrangeLineCommon.hpp
 	*/
