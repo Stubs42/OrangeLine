@@ -2,4 +2,4 @@ build/
 plugin.so
 dist/
 *.swp
-
+*.dll
