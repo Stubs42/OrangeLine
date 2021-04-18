@@ -106,7 +106,6 @@ struct Mother : Module {
 
 		setCustomChangeMaskInput (TRG_INPUT, CHG_TRG_IN);
 		setInPoly                (TRG_INPUT, true);
-		setIsHot                 (TRG_INPUT, true);
 
 		setCustomChangeMaskInput (CV_INPUT, CHG_CV_IN);
 		setInPoly                (CV_INPUT, true);

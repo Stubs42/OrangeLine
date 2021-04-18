@@ -3,28 +3,21 @@
  
 	Include file  member variables and methods common to all OrangeLine modules.
 	To be included inside the module definition <module_name>.cpp like this:
-
 		...
 		struct <module_name> : Module {
-
 			#include "OrangeLineCommon.hpp"
 		...
-
 	All methods starting with modulul.. like moduleInitStateTypes have to be implemented in
 	<module_name>.cpp
-
 Copyright (C) 2019 Dieter Stubler
-
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
 the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
-
 This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
-
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
@@ -33,7 +26,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 // ********************************************************************************************************************************
 /*
 	Common member variables of all OrangeLine modules
-
 	Never use OL_ member variables in module specific code like in <module_name>.cpp
 	Use macros defined in OrangeLine.hpp instead
 */
@@ -50,7 +42,6 @@ dsp::PulseGenerator *OL_outStateTrigger [NUM_OUTPUTS];	//	pulse generator object
 bool OL_isGate [NUM_OUTPUTS];
 bool OL_wasTriggered [NUM_OUTPUTS];		// remember whether we triggered once at all only set when triggerd but never reset
 bool OL_isPoly[NUM_INPUTS + NUM_OUTPUTS];
-bool OL_isHot[NUM_INPUTS];
 int  OL_polyChannels[NUM_OUTPUTS];
 
 /*
@@ -71,8 +62,6 @@ bool   styleChanged = true;
 
 SvgPanel *brightPanel;
 SvgPanel *darkPanel;
-
-int    idleSkipCnt = 0;
 
 const char *channelNumbers[16] = {
 	"1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16"
@@ -166,27 +155,20 @@ float normal_number() {
 // ********************************************************************************************************************************
 /*
 	Initialization
-
 	Constructor has to create a valid and consistent initial state to present to the dataToJson call
 	right after adding the module.
-
 	Now to cases:
-
 	1.	dataToJson is called first:	module added to the patch
 	2.	dataFromJson is called first: patch was (re)loaded or a preset was loaded
-
 	In both cases we may have to init non persistent state of the module after both actions.
-
 	This forces an initialize step at the beginning of process () which handles this 
 	before further processing
-
 	OL_initialized = false indicates that the module was just added to the patch or dataFromJson has been called
 	and has to be initialized
 */
 
 /**
 	Initialize  Modul State
-
 	Called from Constructor
 	Set all default types and collect values/Voltages where appropriate.
 	then calls module specific initStateTypes () method to set module specific types != defaults.
@@ -194,7 +176,6 @@ float normal_number() {
 */
 inline void initializeInstance () {
 	memset (          OL_isPoly, false, sizeof (OL_isPoly));	// Must be before initStateTypes ()!
-	memset (           OL_isHot, false, sizeof (OL_isHot));	    // Must be before initStateTypes ()!
 	memset (OL_customChangeMask,    0L, sizeof (OL_customChangeMask));	// Initialie customChangeMasks to 0s
 
 	initStateTypes ();			//	Initialize state types to defaults
@@ -355,38 +336,27 @@ inline NVGcolor getTextColor () {
 */
 void process (const ProcessArgs &args) override {
 	OL_sampleTime = 1.0 / (double)(APP->engine->getSampleRate ());
-	// printf("process idleSkipCnt = %d\n", idleSkipCnt);
 
-	initialize (true);	// initialize for hot inputs
-	if (processParamsAndInputs (true) || idleSkipCnt == 0) {	// process hot inputs and idleskip
-		initialize (false);	// initialize for hot inputs
-		processParamsAndInputs (false); // process all non hot inputs and paramameters
-		moduleProcessState ();
-		moduleProcess (args);
-		moduleReflectChanges ();
-		reflectChanges();
-	//	printf("noskip\n");
-	}
-	// else
-	//	printf("skip\n");
-	idleSkipCnt =  (idleSkipCnt + 1) % IDLESKIP; 
+	initialize ();
+	processParamsAndInputs ();
+	moduleProcessState ();
+	moduleProcess (args);
+	moduleReflectChanges ();
+	reflectChanges();
+
 	OL_initialized = true;
 }
 
 /**
   Initialize Module after:
-
 		adding the module to or 
 		(re)loading a patch or 
 		loading a preset or 
 		reset call (right click initialize)
-
 	Can and does assume that all params assotiated to ui components have
 	been set or initialized and json state is valid.
-
 	If already initialized, reset all state changes to false to prepare a clean
 	state to the following state processing.
-
 	If not yet initialized, moduleInitialize () is called and out state changes are
 	flagged to ensure that reflectChanges () updates the ui to reflect the new state. 
 	In state changes are not reset when moduleInitialize () is called because
@@ -394,30 +364,23 @@ void process (const ProcessArgs &args) override {
 	When loading a patch or a preset is loaded, the called to dataFromJson () will set
 	OL_initialized to false to request initialize ().
 */
-inline void initialize (bool hot) {
-	if (!hot) {
-		for (unsigned long i = stateIdxParam(0); i < NUM_STATES; i ++)
-			OL_outStateChange[i] = false;
-		for (int i = 0; i < NUM_OUTPUTS; i ++) {
-			int idx = i * POLY_CHANNELS;
-			if (getOutPoly(i))
-				for (int j = 0; j < POLY_CHANNELS; j++)
-					OL_outStateChangePoly[idx + j] = false;
-			else
-				OL_outStateChangePoly[idx] = false;
-		}
+
+inline void initialize () {
+	for (unsigned long i = stateIdxParam(0); i < NUM_STATES; i ++)
+		OL_outStateChange[i] = false;
+	for (int i = 0; i < NUM_OUTPUTS; i ++) {
+		int idx = i * POLY_CHANNELS;
+		if (getOutPoly(i))
+			for (int j = 0; j < POLY_CHANNELS; j++)
+				OL_outStateChangePoly[idx + j] = false;
+		else
+			OL_outStateChangePoly[idx] = false;
 	}
 	if (OL_initialized) {
-		if (hot) {
-			int idxInput = stateIdxInput(0);
-			for (int i = 0; i < NUM_INPUTS; i ++) 
-				OL_inStateChange[idxInput + i] = false;
-		} 
-		else
-			for (unsigned long i = stateIdxParam(0), idx = 0; i < NUM_STATES; i ++, idx++)
-				OL_inStateChange[i] = false;
+		int idxParam = stateIdxParam(0);
+		for (int i = 0; i < NUM_PARAMS + NUM_INPUTS; i ++) 
+			OL_inStateChange[idxParam + i] = false;
 		for (int i = 0; i < NUM_INPUTS; i ++) {
-			if (hot && !getIsHot(i)) continue;
 			int idx = i * POLY_CHANNELS;
 			if (getInPoly(i))
 				for (int j = 0; j < POLY_CHANNELS; j++)
@@ -438,41 +401,36 @@ inline void initialize (bool hot) {
 /**
 	Check all params and inputs, write their values to state and set state changes accordingly
 */
-inline bool processParamsAndInputs (bool hot) {
+inline void processParamsAndInputs () {
 	OL_customChangeBits = 0;
-	bool r = false;
+
 	/*
 		Process Params
 	*/
-	if (!hot) {	// do not process pramams when called to process hot inputs only
-		r = true;
-		for (int stateIdx = stateIdxParam (0), paramIdx = 0; stateIdx <= maxStateIdxParam; stateIdx++, paramIdx++) {
-			if (getStateTypeParam (paramIdx) == STATE_TYPE_TRIGGER) {
-				/*
-					For triggers we do not use setInStateParam (), 
-					because we only want to set OL_inStateChange if we got triggered
-				*/
-				OL_state[stateIdx] = params[paramIdx].getValue ();
-				/*
-					Processing triggers from buttons
-				
-					Big pit I fell in first!
-					If you write the line below this comment as:
-
-	//			if (((dsp::SchmittTrigger)(*OL_inStateTrigger[i])).process(value))
-
-					this will not work because it looks like we get a new SchmittTigger instance for every call...
-				*/
-				if (((dsp::SchmittTrigger*)OL_inStateTrigger[paramIdx])->process (OL_state[stateIdx])) {
-					OL_inStateChange[stateIdx] = true;
-					OL_customChangeBits |= getCustomChangeMaskParam (paramIdx);
-				}
+	for (int stateIdx = stateIdxParam (0), paramIdx = 0; stateIdx <= maxStateIdxParam; stateIdx++, paramIdx++) {
+		if (getStateTypeParam (paramIdx) == STATE_TYPE_TRIGGER) {
+			/*
+				For triggers we do not use setInStateParam (), 
+				because we only want to set OL_inStateChange if we got triggered
+			*/
+			OL_state[stateIdx] = params[paramIdx].getValue ();
+			/*
+				Processing triggers from buttons
+			
+				Big pit I fell in first!
+				If you write the line below this comment as:
+//			if (((dsp::SchmittTrigger)(*OL_inStateTrigger[i])).process(value))
+				this will not work because it looks like we get a new SchmittTigger instance for every call...
+			*/
+			if (((dsp::SchmittTrigger*)OL_inStateTrigger[paramIdx])->process (OL_state[stateIdx])) {
+				OL_inStateChange[stateIdx] = true;
+				OL_customChangeBits |= getCustomChangeMaskParam (paramIdx);
 			}
-			else {
-				setInStateParam (paramIdx, params[paramIdx].getValue ());
-				if (inChangeParam (paramIdx))
-					OL_customChangeBits |= getCustomChangeMaskParam (paramIdx);
-			}
+		}
+		else {
+			setInStateParam (paramIdx, params[paramIdx].getValue ());
+			if (inChangeParam (paramIdx))
+				OL_customChangeBits |= getCustomChangeMaskParam (paramIdx);
 		}
 	}
 	/*
@@ -480,8 +438,6 @@ inline bool processParamsAndInputs (bool hot) {
 	*/
 	int channels = 0;
 	for (int stateIdx = stateIdxInput (0), inputIdx = 0; stateIdx <= maxStateIdxInput; stateIdx++, inputIdx ++) {
-		if (hot && !getIsHot(inputIdx)) continue;	// check for hot inputs only if called with hot == true
-		if (!hot && getIsHot(inputIdx)) continue;	// skip already processed hot inputs
 		/*
 			TUNING: 
 				If isConnected() shows up to be an expensive call, 
@@ -511,7 +467,6 @@ inline bool processParamsAndInputs (bool hot) {
 					if (((dsp::SchmittTrigger*)OL_inStateTriggerPoly[idx])->process (OL_statePoly[idx])) {
 						OL_inStateChangePoly[idx] = true;
 						OL_customChangeBits |= getCustomChangeMaskInput (inputIdx);
-						r = true;
 					}
 				}
 				else {
@@ -521,7 +476,6 @@ inline bool processParamsAndInputs (bool hot) {
 						OL_statePoly[idx] = value;
 						OL_inStateChangePoly[idx] = true;
 						OL_customChangeBits |= getCustomChangeMaskInput (inputIdx);
-						r = true;
 					}
 				}
 			}
@@ -538,15 +492,12 @@ inline bool processParamsAndInputs (bool hot) {
 				
 					Big pit I fell in first!
 					If you write the line below this comment as:
-
 	//			if (((dsp::SchmittTrigger)(*OL_inStateTrigger[i])).process(value))
-
 					this will not work because it looks like we get a new SchmittTigger instance for every call...
 				*/
 				if (((dsp::SchmittTrigger*)OL_inStateTrigger[NUM_PARAMS + inputIdx])->process (OL_state[stateIdx])) {
 					OL_inStateChange[stateIdx] = true;
 					OL_customChangeBits |= getCustomChangeMaskInput (inputIdx);
-					r = true;
 				}
 			}
 			else { 
@@ -555,14 +506,11 @@ inline bool processParamsAndInputs (bool hot) {
 				if (!std::isfinite(value)) value = 0.f;
 				value = clamp(value, -10.f, 10.f);
 				setStateInput (inputIdx, value);
-				if (changeInput(inputIdx)) {
+				if (changeInput(inputIdx))
 					OL_customChangeBits |= getCustomChangeMaskInput (inputIdx);
-					r = true;
-				}
 			}
 		}
 	}
-	return r;
 }
 
 /**
