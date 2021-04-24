@@ -480,6 +480,13 @@ struct Fence : Module {
 		}
 	}
 
+	inline void moduleCustomInitialize () {
+		OL_outStateChange[stateIdxJson(MODE_JSON)] = false;
+		OL_outStateChange[stateIdxJson(LINK_JSON)] = false;
+		OL_inStateChange[stateIdxJson(MODE_JSON)] = false;
+		OL_inStateChange[stateIdxJson(LINK_JSON)] = false;
+	}
+
 	/**
 		Module specific input processing called from process () in OrangeLineCommon.hpp
 		right after generic processParamsAndInputs ()
@@ -491,21 +498,26 @@ struct Fence : Module {
 	*/
 	inline void moduleProcessState () {
 
-		if (inChangeParam (MODE_PARAM))	//	User clicked on mode button
+		if (inChangeParam (MODE_PARAM))	{ //	User clicked on mode button
 			setStateJson (MODE_JSON, float((int(getStateJson (MODE_JSON)) + 1) % 3));
+//			fprintf (stderr, "inChangeParam (MODE_PARAM)\n");
+		}
 
-		if (inChangeParam (LINK_PARAM))	//	User clicked on link button
+		if (inChangeParam (LINK_PARAM))	{ //	User clicked on link button
 			setStateJson (LINK_JSON, float((int(getStateJson (LINK_JSON)) + 1) % 3));
-
+//			fprintf (stderr, "inChangeParam (LINK_PARAM)\n");
+		}
 		if (inChangeParam (GATE_PARAM)) {	//	User clicked on tr/gt button
 			if (getStateJson (GATE_JSON) == 0.f)
 				setStateJson (GATE_JSON, 1.f);
 			else {
 				setStateJson (GATE_JSON, 0.f);
 			}
+//			fprintf (stderr, "inChangeParam (GATE_PARAM)\n");
 		}
 
 		if (changeJson (MODE_JSON)) {	//	Mode has changed. Restore low, high, step and link for new mode
+//			fprintf (stderr, "changeJson (MODE_JSON)\n");
 			//
 			switch (int(getStateJson (MODE_JSON))) {
 				case MODE_RAW_INT:

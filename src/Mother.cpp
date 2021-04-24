@@ -163,6 +163,9 @@ struct Mother : Module {
 		isGate (GATE_OUTPUT) = true;
 	}
 
+	inline void moduleCustomInitialize () {
+	}
+
 	/**
 		Method to initialize the module after loading a patch or a preset
 		Called from initialize () included from from OrangeLineCommon.hpp

@@ -110,8 +110,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define getInPoly(i)			OL_isPoly[i]
 #define getOutPoly(i)			OL_isPoly[NUM_INPUTS + i]
 
-#define getIsHot(i)				OL_isHot[i]
-#define setIsHot(i, v)			(OL_isHot[i] = (v))
+// #define getIsHot(i)				OL_isHot[i]
+// #define setIsHot(i, v)			(OL_isHot[i] = (v))
 
 #define setOutPolyChannels(i, v)	(OL_polyChannels[i] = (v))
 #define getOutPolyChannels(i)		OL_polyChannels[i]

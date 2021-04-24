@@ -364,8 +364,8 @@ void process (const ProcessArgs &args) override {
 	When loading a patch or a preset is loaded, the called to dataFromJson () will set
 	OL_initialized to false to request initialize ().
 */
-
 inline void initialize () {
+	moduleCustomInitialize();
 	for (unsigned long i = stateIdxParam(0); i < NUM_STATES; i ++)
 		OL_outStateChange[i] = false;
 	for (int i = 0; i < NUM_OUTPUTS; i ++) {
