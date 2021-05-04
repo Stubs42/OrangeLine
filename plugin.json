@@ -22,7 +22,8 @@
         "Utility",
         "Distortion",
         "WaveShaper",
-	"Polyphonic", "Poly"
+	      "Polyphonic", 
+        "Poly"
       ]
     },
     {
@@ -40,8 +41,18 @@
       "description": "Mode aware probability driven quantizer",
       "tags": [
         "Quantizer",
-	"Sequencer",
-	"Polyphonic", "Poly"
+	      "Sequencer",
+	      "Polyphonic", 
+        "Poly"
+      ]
+    },
+    {
+      "slug": "Phraseq",
+      "name": "Phraseq",
+      "description": "Utility to sequence phrases by sequencing a sequencer",
+      "tags": [
+	      "Sequencer",
+        "Utility"
       ]
     }
   ]
