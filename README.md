@@ -75,14 +75,6 @@ When processing a channel it uses the according input channels for processing.
 If number of cvIn channels is smaller than the number of output channels, Mother generates a random cvIn for the missing channels to process. If the number of trigger in channels is smaller than the number of output channels, the last trigger in channel will be used as trigger in for the missing channels. If the number of random in channels is smaller than the number of output channels, Mother will continue using the random number generator seeded by the last random in channel for the missing channels.
 So if setting Auto Channels to for example 4 in the right click menu and just connect a monophonic trigger at trg in, Mother will produce 4 different out channels on each trigger in using a randomly seeded random generator to randomize the 4 cvIns to process.
 
-## Phraseq
-
-<p align="center"><img src="res/PhraseqWork.svg"></p>
-
-### Short Description
-
-Phraseq 
-
 Have fun
 
 
