@@ -96,23 +96,33 @@ PTN: Pattern cv input to select master sequencer patterns (allows for nesting of
 #### Left Column
 
 RST: Master reset trigger output
+
 CLK: Clock trigger out (triggered when nex phrase infomations are needed)
+
 PTN: Master sequencer pattern cv output, copied from Top Row PTN input when master CLK out is sent.
+
 DLY: Number of samples to wait after master CLK out is sent before processig the master input cv
 
 PTN: Input for slave sequencer start pattern cv
+
 LEN: Input for the pattern length (cv = #clockticks/100)
+
 DUR: Input for phrase duration (cv = #clockticks/100)
 
 #### Right Column
 
 LEN: Knob to set number of stes of the slave sequencer used
+
 INC: Knob to set the voltage increment used to advance the slave seuqnecers next pattern
 
 SPH: Trigger output signaling the start of a new phrase
+
 SPA: Trigger output signalling the start of the pattern
+
 RST: Reset trigger output to connect to the slave sequencers reset input
+
 CLK: Clocktrigger output to connect to the slave sequencers reset input
+
 PTN: Pattern cv output to select the slave seuqnecers pattern
 
 ### Right Click Menu
