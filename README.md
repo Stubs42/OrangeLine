@@ -76,11 +76,11 @@ Initialize Mother. Setup a mother major scale. Set weights for c,e,g to 100% and
 
 Phraseq is a Phrase Sequencer but has for itself no sequencing capabilities. Instead, Phraseq uses one external sequencer (master) to provide informations on the sequence of phrases to feed another sequencer (slave). The slave sequencer has to have to ability to store multiple patterns (slave patterns) and to switch between them by providing a pattern cv input. Your patches will use the outputs of the slave sequencers channels.
 
-The master sequencer provides for each phrase three cv values. The starting patterns cv value, the length of the pattern (cv = #clockticks/100) and the duration the phrase should play (cv = #clockticks/100). If the duration is longer then the length, the pattern is repeated.
+The master sequencer provides three cv values for each phrase. The starting patterns cv value, the length of the pattern and the duration the phrase should play. If the duration is longer then the length, the pattern is repeated.
 
-The LENgth knob tells Phraseq the native number of steps the slave sequencer provides. If the length ofthe pattern give by the master sequencer is greater thn LEN, the slave sequencer is advanced to the next pattern by adding the value of the INCrement knob to the current slave pattern cv.
+The LENgth knob tells Phraseq the native number of steps the slave sequencer provides. If the length ofthe pattern given by the master sequencer is greater than LEN, the slave sequencer is advanced to the next pattern by adding the value of the INCrement knob to the current slave pattern cv.
 
-After a phrase is played (duration clockticks past) the master sequencer is clocked to provide the information on the next phrase to play. Since the master sequencer may need a number of samples to provide the cv outputs, the processing of the master sequencer inputs is delayed by the number of samples provided by the DLY knob.
+After a phrase is played (duration past) the master sequencer is clocked to provide the information on the next phrase to play. Since the master sequencer may need a number of samples to provide the cv outputs, the processing of the master sequencer inputs is delayed by the number of samples provided by the DLY knob.
 
 If the pattern length provided by the master is 0V, the length defauts to the value of the LEN knob. If the phrase duration provided by the master sequencer is 0V it defaults to the pattern length.
 
