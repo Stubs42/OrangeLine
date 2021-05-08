@@ -170,6 +170,8 @@ struct Fence : Module {
 		or a right click initialize (reset).
 	*/
 	inline void moduleInitialize () {
+		styleChanged = true;
+
 		initializeForMode ();
 		memset (oldCvOut, 0.f, sizeof (oldCvOut));
 		memset ( oldCvIn, 0.f, sizeof ( oldCvIn));
@@ -202,8 +204,6 @@ struct Fence : Module {
 		setStateJson (HIGHCLAMPED_JSON,                0.f);
 
 		setStateJson (       GATE_JSON,                0.f);
-
-		setStateJson (      STYLE_JSON,                0.f);
 
 		setStateJson (       LINK_JSON, getForMode (DEFAULT_LINK_RAW, DEFAULT_LINK_QTZ, DEFAULT_LINK_SHPR));
 

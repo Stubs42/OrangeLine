@@ -117,7 +117,6 @@ struct Swing : Module {
 		Currently called twice when add a module to patch ...
 	*/
 	void moduleReset () {
-		setStateJson (      STYLE_JSON,                0.f);
 		styleChanged = true;
 	}
 

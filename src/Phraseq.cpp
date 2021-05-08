@@ -32,12 +32,6 @@ struct Phraseq : Module {
 	/*
 		Module member variables
 	*/
-    int phraseLenCounter;
-    int phraseDurCounter;
-    int slaveLenCounter;
-    int masterDelayCounter;
-    float slavePattern;
-    bool reset;
 
 // ********************************************************************************************************************************
 /*
@@ -63,6 +57,8 @@ struct Phraseq : Module {
 		setStateTypeOutput (MASTER_RST_OUTPUT, STATE_TYPE_TRIGGER);
 		setStateTypeOutput (MASTER_CLK_OUTPUT, STATE_TYPE_TRIGGER);
 
+		setStateTypeOutput (SPH_OUTPUT, STATE_TYPE_TRIGGER);
+		setStateTypeOutput (SPA_OUTPUT, STATE_TYPE_TRIGGER);
 		setStateTypeOutput (SLAVE_RST_OUTPUT, STATE_TYPE_TRIGGER);
 		setStateTypeOutput (SLAVE_CLK_OUTPUT, STATE_TYPE_TRIGGER);
 	}
@@ -80,17 +76,37 @@ struct Phraseq : Module {
 		//
 
 		setJsonLabel (STYLE_JSON, "style");
+		setJsonLabel (RESET_JSON, "reset");
+		setJsonLabel (PHRASELENCOUNTER_JSON, "phraseLenCouter");
+		setJsonLabel (PHRASEDURCOUNTER_JSON, "phraseDurCounter");
+		setJsonLabel (SLAVELENCOUNTER_JSON, "slaveLenCounter");
+		setJsonLabel (SLAVEPATTERN_JSON, "slavePattern");
+		setJsonLabel (MASTERDELAYCOUNTER_JSON, "masterDelayCounter");
+		setJsonLabel (TROWAFIX_JSON, "trowaFix");
+		setJsonLabel (DIVCOUNTER_JSON, "divCounter");
 
 		#pragma GCC diagnostic pop
+
+		setStateJson (STYLE_JSON, float(STYLE_ORANGE));
+		setStateJson (RESET_JSON, 0.f);
+		setStateJson (PHRASELENCOUNTER_JSON, 0.f);
+		setStateJson (PHRASEDURCOUNTER_JSON, 0.f);
+		setStateJson (SLAVELENCOUNTER_JSON, 0.f);
+		setStateJson (SLAVEPATTERN_JSON, 0.f);
+		setStateJson (MASTERDELAYCOUNTER_JSON, 0.f);
+		setStateJson (TROWAFIX_JSON, 0.f);
+		setStateJson (DIVCOUNTER_JSON, 0.f);
 	}
 
 	/**
 		Initialize param configs
 	*/
 	inline void moduleParamConfig () {	
-		configParam (DLY_PARAM,  0.f, 32.f,  1.f, "Master Response Delay",          " Samples", 0.f, 1.f, 0.f);
-		configParam (LEN_PARAM,  2.f, 64.f, 16.f, "Slave Sequencer Pattern Length", " Steps",  0.f, 1.f, 0.f);
+		configParam (DIV_PARAM,  1.f, 256.f,  1.f, "Clock Division", "",  0.f, 1.f, 0.f);
+		configParam (DLY_PARAM,  0.f,  32.f,  1.f, "Master Response Delay", " Samples", 0.f, 1.f, 0.f);
+		configParam (LEN_PARAM,  2.f,  64.f, 16.f, "Slave Sequencer Pattern Length", " Steps",  0.f, 1.f, 0.f);
 		configParam (INC_PARAM,  MIN_INC, 10.f, DEFAULT_INC, "Next Slave Pattern Increment");
+		configParam (MASTER_PTN_PARAM, -10.f, 10.f,  0.f, "Master Input Pattern Offset", "",  0.f, 1.f, 0.f);
 	}
 
 	/**
@@ -102,13 +118,7 @@ struct Phraseq : Module {
 		or a right click initialize (reset).
 	*/
 	inline void moduleInitialize () {
-   		setStateJson (STYLE_JSON, 0.f);
 		styleChanged = true;
-        phraseLenCounter = 0;
-        phraseDurCounter = 0;
-        slaveLenCounter = 0;
-        masterDelayCounter = 0;
-        reset = false;
 	}
 
 	/**
@@ -116,7 +126,14 @@ struct Phraseq : Module {
 		Currently called twice when add a module to patch ...
 	*/
 	void moduleReset () {
-        setStateJson (STYLE_JSON, 0.f);
+		setStateJson (RESET_JSON, 0.f);
+		setStateJson (PHRASELENCOUNTER_JSON, 0.f);
+		setStateJson (PHRASEDURCOUNTER_JSON, 0.f);
+		setStateJson (SLAVELENCOUNTER_JSON, 0.f);
+		setStateJson (SLAVEPATTERN_JSON, 0.f);
+		setStateJson (MASTERDELAYCOUNTER_JSON, 0.f);
+		setStateJson (TROWAFIX_JSON, 0.f);
+		setStateJson (DIVCOUNTER_JSON, 0.f);
 	}
 
 // ********************************************************************************************************************************
@@ -133,97 +150,137 @@ struct Phraseq : Module {
 	*/
 	inline void moduleProcess (const ProcessArgs &args) {
 
+		int   phraseDurCounter   = int(getStateJson (PHRASEDURCOUNTER_JSON));
+		int   phraseLenCounter   = int(getStateJson (PHRASELENCOUNTER_JSON));
+		int   slaveLenCounter    = int(getStateJson (SLAVELENCOUNTER_JSON));
+		int   masterDelayCounter = int(getStateJson (MASTERDELAYCOUNTER_JSON));
+		float slavePattern       = getStateJson (SLAVEPATTERN_JSON);
+		int   divCounter         = getStateJson (DIVCOUNTER_JSON);
+		
+		if (styleChanged) {
+			switch (int(getStateJson(STYLE_JSON))) {
+				case STYLE_ORANGE:
+					brightPanel->visible = false;
+					darkPanel->visible = false;
+					break;
+				case STYLE_BRIGHT:
+					brightPanel->visible = true;
+					darkPanel->visible = false;
+					break;
+				case STYLE_DARK:
+					brightPanel->visible = false;
+					darkPanel->visible = true;
+					break;
+			}
+			styleChanged = false;
+		}
+
         if (masterDelayCounter > 0) {
-            masterDelayCounter--;
-            //DEBUG("masterDelayCounter = %d\n", masterDelayCounter);
+			masterDelayCounter--;
             if (masterDelayCounter == 0) {
-                //DEBUG("MasterDelayAction\n");
+				//DEBUG("masterDelay expired\n");
                 slavePattern = getStateInput(MASTER_PTN_INPUT);
+				if (getStateJson(TROWAFIX_JSON))
+					slavePattern = slavePattern + TROWFIX_PATTERN_OFFSET;
+				//DEBUG("slavePattern = %lf\n", slavePattern);
                 setStateOutput (SLAVE_PTN_OUTPUT, slavePattern);
                 setStateOutput (SLAVE_RST_OUTPUT, 1.0f);
                 setStateOutput (SLAVE_CLK_OUTPUT, 1.0f);
-                slaveLenCounter = getStateParam (LEN_PARAM) - 1;
-                phraseLenCounter = getStateInput (MASTER_LEN_INPUT) * 100 - 1;
+				setStateOutput (SPH_OUTPUT, 1.0f);
+				setStateOutput (SPA_OUTPUT, 1.0f);
+				slaveLenCounter  = getStateParam (LEN_PARAM) - 1;
+				phraseLenCounter = int(getStateInput (MASTER_LEN_INPUT) * 100.f) - 1;
 				if (phraseLenCounter < 0)
 					phraseLenCounter = slaveLenCounter;
-                phraseDurCounter = getStateInput (MASTER_DUR_INPUT) * 100 - 1;
+                phraseDurCounter = int(getStateInput (MASTER_DUR_INPUT) * 100.f) - 1;
 				if (phraseDurCounter < 0)
 					phraseDurCounter = phraseLenCounter;
-                //DEBUG("phraseDurCounter = %d\n", phraseDurCounter);
-                //DEBUG("slaveLenCounter  = %d\n", slaveLenCounter);
-                //DEBUG("phraseLenCounter = %d\n", phraseLenCounter);
             }
+			else {
+				//DEBUG("masterDelay still active\n");
+			}
         }
 
         if (changeInput (RST_INPUT)) {
-            reset = true;
-            //DEBUG( "Got Reset\n");
+			//DEBUG("RESET detected\n");
+            setStateJson (RESET_JSON, 1.f);
         }
 
         if (changeInput (CLK_INPUT)) {
-            if (reset) {
-                //DEBUG("Process Reset\n");
+            if (getStateJson (RESET_JSON) != 0.f) {
+				//DEBUG("RESET processing\n");
                 setStateOutput (MASTER_PTN_OUTPUT, getStateInput (PTN_INPUT));
                 setStateOutput (MASTER_RST_OUTPUT, 10.f);
                 phraseDurCounter = 0;
                 phraseLenCounter = 0;
-                slaveLenCounter = 0;
-                reset = false;
+				slaveLenCounter  = 0;
+				divCounter       = 0;
+	            setStateJson (RESET_JSON, 0.f);
             }
-            if (phraseDurCounter == 0) {
-                //DEBUG( "Next Phrase, delayed action\n");
-                setStateOutput (MASTER_CLK_OUTPUT, 10.f);
-                masterDelayCounter = getStateParam (DLY_PARAM);
-                if (masterDelayCounter == 0) {
-                    //DEBUG("MasterDelayAction\n");
-                    slavePattern = getStateInput(MASTER_PTN_INPUT);
-                    setStateOutput (SLAVE_PTN_OUTPUT, slavePattern);
-                    setStateOutput (SLAVE_RST_OUTPUT, 1.0f);
-                    setStateOutput (SLAVE_CLK_OUTPUT, 1.0f);
-                    slaveLenCounter = getStateParam (LEN_PARAM) - 1;
-                    phraseLenCounter = getStateInput (MASTER_LEN_INPUT) * 100 - 1;
-					if (phraseLenCounter < 0)
-						phraseLenCounter = slaveLenCounter;
-                    phraseDurCounter = getStateInput (MASTER_DUR_INPUT) * 100 - 1;
-					if (phraseDurCounter < 0)
-						phraseDurCounter = phraseLenCounter;
-                    //DEBUG("phraseDurCounter = %d\n", phraseDurCounter);
-                    //DEBUG("slaveLenCounter  = %d\n", slaveLenCounter);
-                    //DEBUG("phraseLenCounter = %d\n", phraseLenCounter);
-                }
-            }
-            else {
-                if (phraseLenCounter == 0) {
-                    //DEBUG( "Start Phrase\n");
-                    phraseLenCounter = getStateInput (MASTER_LEN_INPUT) * 100;
-                    slavePattern = getStateInput(MASTER_PTN_INPUT);
-                    //DEBUG("  slavePattern set to %lf\n", slavePattern);
-                    setStateOutput (SLAVE_PTN_OUTPUT, slavePattern);
-                    slaveLenCounter = getStateParam (LEN_PARAM);
-                    //DEBUG("  slaveLenCounter reset to %d\n", slaveLenCounter);
-                    setStateOutput (SLAVE_RST_OUTPUT, 1.0f);
-                    setStateOutput (SLAVE_CLK_OUTPUT, 1.0f);
-                }
-                else {
-                    if (slaveLenCounter == 0) {
-                        //DEBUG("Pattern Advance\n");
-                        slavePattern += getStateParam (INC_PARAM);
-                        //DEBUG("  slavePattern set to %lf\n", slavePattern);
-                        setStateOutput (SLAVE_RST_OUTPUT, 1.0f);
-                        setStateOutput (SLAVE_PTN_OUTPUT, slavePattern);
-                        slaveLenCounter = getStateParam (LEN_PARAM);
-                        //DEBUG("  slaveLenCounter reset to %d\n", slaveLenCounter);
-                    }
-                }
-                phraseLenCounter--;
-                slaveLenCounter--;
-                phraseDurCounter--;
-                //DEBUG("phraseDurCounter = %d\n", phraseDurCounter);
-                //DEBUG("slaveLenCounter  = %d\n", slaveLenCounter);
-                //DEBUG("phraseLenCounter = %d\n", phraseLenCounter);
-                setStateOutput (SLAVE_CLK_OUTPUT, 1.0f);
-            } 
-        }        
+			if (divCounter == 0) {
+				divCounter = int(getStateParam (DIV_PARAM));
+				//DEBUG("divCounter = %d\n", divCounter);
+				if (phraseDurCounter == 0) {
+					setStateOutput (MASTER_CLK_OUTPUT, 10.f);
+					masterDelayCounter = getStateParam (DLY_PARAM);
+					//DEBUG("Master clocked, masterDelayCounter = %d\n", masterDelayCounter);
+					if (masterDelayCounter == 0) {
+						//DEBUG("masterDelay expired\n");
+						slavePattern = getStateInput(MASTER_PTN_INPUT) + getStateParam(MASTER_PTN_PARAM) ;
+						if (getStateJson(TROWAFIX_JSON))
+							slavePattern = slavePattern + TROWFIX_PATTERN_OFFSET;
+						//DEBUG("slavePattern = %lf\n", slavePattern);
+						setStateOutput (SLAVE_PTN_OUTPUT, slavePattern);
+						setStateOutput (SLAVE_RST_OUTPUT, 1.0f);
+						setStateOutput (SLAVE_CLK_OUTPUT, 1.0f);
+						setStateOutput (SPH_OUTPUT, 1.0f);
+						setStateOutput (SPA_OUTPUT, 1.0f);
+						slaveLenCounter = getStateParam (LEN_PARAM) - 1;
+						phraseLenCounter = getStateInput (MASTER_LEN_INPUT) * 100 - 1;
+						if (phraseLenCounter < 0)
+							phraseLenCounter = slaveLenCounter;
+						phraseDurCounter = getStateInput (MASTER_DUR_INPUT) * 100 - 1;
+						if (phraseDurCounter < 0)
+							phraseDurCounter = phraseLenCounter;
+					}
+					else {
+						//DEBUG("masterDelay still active\n");
+					}
+				}
+				else {
+					if (phraseLenCounter == 0) {
+						phraseLenCounter = getStateInput (MASTER_LEN_INPUT) * 100;
+						slavePattern = getStateInput(MASTER_PTN_INPUT);
+						if (getStateJson(TROWAFIX_JSON))
+							slavePattern = slavePattern + TROWFIX_PATTERN_OFFSET;
+						setStateOutput (SLAVE_PTN_OUTPUT, slavePattern);
+						slaveLenCounter = getStateParam (LEN_PARAM);
+						setStateOutput (SLAVE_RST_OUTPUT, 1.0f);
+						setStateOutput (SLAVE_CLK_OUTPUT, 1.0f);
+						setStateOutput (SPA_OUTPUT, 1.0f);
+					}
+					else {
+						if (slaveLenCounter == 0) {
+							slavePattern += getStateParam (INC_PARAM);
+							setStateOutput (SLAVE_RST_OUTPUT, 1.0f);
+							setStateOutput (SLAVE_PTN_OUTPUT, slavePattern);
+							slaveLenCounter = getStateParam (LEN_PARAM);
+						}
+					}
+					phraseLenCounter--;
+					slaveLenCounter--;
+					phraseDurCounter--;
+					setStateOutput (SLAVE_CLK_OUTPUT, 1.0f);
+				}
+			}
+			divCounter --;
+        }
+		setStateJson (PHRASEDURCOUNTER_JSON,   float(phraseDurCounter));
+		setStateJson (PHRASELENCOUNTER_JSON,   float(phraseLenCounter));
+		setStateJson (SLAVELENCOUNTER_JSON,    float(slaveLenCounter));
+		setStateJson (MASTERDELAYCOUNTER_JSON, float(masterDelayCounter));
+		setStateJson (SLAVEPATTERN_JSON,       slavePattern);
+		setStateJson (DIVCOUNTER_JSON,         divCounter);
 	}
 
 	inline void moduleCustomInitialize () {
@@ -276,33 +333,37 @@ struct PhraseqWidget : ModuleWidget {
 			addChild(darkPanel);
 		}
 
-        RoundSmallBlackKnob *knob = createParamCentered<RoundSmallBlackKnob> (mm2px (Vec ( 3.779 + 4.0 , /* 128.5 - */ 70.931 + 4)),    module, DLY_PARAM);
+		addInput (createInputCentered<PJ301MPort>   (mm2px (Vec (  3.575 + 4.2 , /* 128.5 - */ 10.874 + 4.2)),  module, RST_INPUT));
+		addInput (createInputCentered<PJ301MPort>   (mm2px (Vec ( 13.810 + 4.2 , /* 128.5 - */ 10.874 + 4.2)),  module, CLK_INPUT));
+        RoundSmallBlackKnob *knob = createParamCentered<RoundSmallBlackKnob> (mm2px (Vec ( 23.933 + 4.0 , /* 128.5 - */ 11.081 + 4)),    module, DIV_PARAM);
         knob->snap = true;
    		addParam (knob);
-
-		addInput (createInputCentered<PJ301MPort>   (mm2px (Vec (  3.575 + 4.2 , /* 128.5 - */ 10.874 + 4.2)),  module, RST_INPUT));
-		addInput (createInputCentered<PJ301MPort>   (mm2px (Vec ( 18.656 + 4.2 , /* 128.5 - */ 10.874 + 4.2)),  module, CLK_INPUT));
 		addInput (createInputCentered<PJ301MPort>   (mm2px (Vec ( 33.736 + 4.2 , /* 128.5 - */ 10.874 + 4.2)),  module, PTN_INPUT));
 
         addOutput (createOutputCentered<PJ301MPort>	(mm2px (Vec (  3.575 + 4.2 , /* 128.5 - */ 31.355 + 4.2)),  module, MASTER_RST_OUTPUT));
         addOutput (createOutputCentered<PJ301MPort>	(mm2px (Vec (  3.575 + 4.2 , /* 128.5 - */ 41.011 + 4.2)),  module, MASTER_CLK_OUTPUT));
         addOutput (createOutputCentered<PJ301MPort>	(mm2px (Vec (  3.575 + 4.2 , /* 128.5 - */ 50.698 + 4.2)),  module, MASTER_PTN_OUTPUT));
-
+        knob = createParamCentered<RoundSmallBlackKnob> (mm2px (Vec ( 3.779 + 4.0 , /* 128.5 - */ 61.553 + 4)), module, DLY_PARAM);
+        knob->snap = true;
+   		addParam (knob);
+		addParam (createParamCentered<RoundSmallBlackKnob> (mm2px (Vec ( 3.805 + 4.0 , /* 128.5 - */ 80.937 + 4)),    module, MASTER_PTN_PARAM));
+        
         addInput (createInputCentered<PJ301MPort>   (mm2px (Vec (  3.575 + 4.2 , /* 128.5 - */ 90.409 + 4.2)),  module, MASTER_PTN_INPUT));
         addInput (createInputCentered<PJ301MPort>   (mm2px (Vec (  3.575 + 4.2 , /* 128.5 - */100.093 + 4.2)),  module, MASTER_LEN_INPUT));
         addInput (createInputCentered<PJ301MPort>   (mm2px (Vec (  3.575 + 4.2 , /* 128.5 - */109.777 + 4.2)),  module, MASTER_DUR_INPUT));
 		
-        knob = createParamCentered<RoundSmallBlackKnob> (mm2px (Vec (33.941 + 4.0 , /* 128.5 - */ 55.849 + 4)), module, LEN_PARAM);
+        knob = createParamCentered<RoundSmallBlackKnob> (mm2px (Vec (33.941 + 4.0 , /* 128.5 - */ 31.557 + 4)), module, LEN_PARAM);
         knob->snap = true;
    		addParam (knob);
 
-        addParam(createParamCentered<RoundSmallBlackKnob> (mm2px (Vec (33.941 + 4.0 , /* 128.5 - */ 70.931 + 4)), module, INC_PARAM));
+        addParam(createParamCentered<RoundSmallBlackKnob> (mm2px (Vec (33.941 + 4.0 , /* 128.5 - */ 50.932 + 4)), module, INC_PARAM));
 
+        addOutput (createOutputCentered<PJ301MPort>	(mm2px (Vec ( 33.737 + 4.2 , /* 128.5 - */ 71.041 + 4.2)),  module, SPH_OUTPUT));
+        addOutput (createOutputCentered<PJ301MPort>	(mm2px (Vec ( 33.737 + 4.2 , /* 128.5 - */ 80.741 + 4.2)),  module, SPA_OUTPUT));
         addOutput (createOutputCentered<PJ301MPort>	(mm2px (Vec ( 33.737 + 4.2 , /* 128.5 - */ 90.410 + 4.2)),  module, SLAVE_RST_OUTPUT));
         addOutput (createOutputCentered<PJ301MPort>	(mm2px (Vec ( 33.737 + 4.2 , /* 128.5 - */100.093 + 4.2)),  module, SLAVE_CLK_OUTPUT));
         addOutput (createOutputCentered<PJ301MPort>	(mm2px (Vec ( 33.737 + 4.2 , /* 128.5 - */109.777 + 4.2)),  module, SLAVE_PTN_OUTPUT));
 	}        
-
 
 	struct PhraseqStyleItem : MenuItem {
 		Phraseq *module;
@@ -314,6 +375,22 @@ struct PhraseqWidget : ModuleWidget {
 		void step() override {
 			if (module)
 				rightText = (module->OL_state[STYLE_JSON] == style) ? "✔" : "";
+		}
+	};
+
+	struct TrowaFixItem : MenuItem {
+		Phraseq *module;
+		void onAction(const event::Action &e) override {
+			float trowaFix = module->OL_state[TROWAFIX_JSON];
+			if (trowaFix != 0.f)
+				trowaFix = 0.f;
+			else
+				trowaFix = 1.f;
+			module->OL_setOutState(TROWAFIX_JSON, trowaFix);
+		}
+		void step() override {
+			if (module)
+				rightText = (module->OL_state[TROWAFIX_JSON] != 0.f) ? "✔" : "";
 		}
 	};
 
@@ -331,20 +408,32 @@ struct PhraseqWidget : ModuleWidget {
 		PhraseqStyleItem *style1Item = new PhraseqStyleItem();
 		style1Item->text = "Orange";// 
 		style1Item->module = module;
-		style1Item->style= STYLE_ORANGE;
+		style1Item->style = STYLE_ORANGE;
 		menu->addChild(style1Item);
 
 		PhraseqStyleItem *style2Item = new PhraseqStyleItem();
 		style2Item->text = "Bright";// 
 		style2Item->module = module;
-		style2Item->style= STYLE_BRIGHT;
+		style2Item->style = STYLE_BRIGHT;
 		menu->addChild(style2Item);
 			
 		PhraseqStyleItem *style3Item = new PhraseqStyleItem();
 		style3Item->text = "Dark";// 
 		style3Item->module = module;
-		style3Item->style= STYLE_DARK;
+		style3Item->style = STYLE_DARK;
 		menu->addChild(style3Item);
+
+		spacerLabel = new MenuLabel();
+		menu->addChild(spacerLabel);
+
+		MenuLabel *fixesLabel = new MenuLabel();
+		fixesLabel->text = "Fixes";
+		menu->addChild(fixesLabel);
+
+		TrowaFixItem *trowaFixItem = new TrowaFixItem();
+		trowaFixItem->text = "Trowa pattern offset";// 
+		trowaFixItem->module = module;
+		menu->addChild(trowaFixItem);
 	}
 };
 

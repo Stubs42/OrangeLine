@@ -25,6 +25,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #define MIN_INC			0.0001
 #define DEFAULT_INC		0.31746
+#define TROWFIX_PATTERN_OFFSET		0.31746 / 2.f
 
 //
 // Virtual Parameter Ids stored using Json
@@ -34,6 +35,14 @@ enum jsonIds {
 	// Parameters not bound to any user interface component to save internal module state
 	//
 	STYLE_JSON,
+	RESET_JSON,
+	PHRASELENCOUNTER_JSON,
+	PHRASEDURCOUNTER_JSON,
+	SLAVELENCOUNTER_JSON,
+	SLAVEPATTERN_JSON,
+	MASTERDELAYCOUNTER_JSON,
+	TROWAFIX_JSON,
+	DIVCOUNTER_JSON,
 
 	NUM_JSONS
 };
@@ -48,6 +57,8 @@ enum ParamIds {
 	DLY_PARAM,				// Master Sequencer Delay Knob
 	LEN_PARAM,				// Slave Sequencer Length Knob
 	INC_PARAM,				// Slave Sequencer Next Pattern Increment Knob
+	DIV_PARAM,				// Clock Division
+	MASTER_PTN_PARAM,		// Pattern Knob
 		
 	NUM_PARAMS
 };
@@ -61,7 +72,7 @@ enum InputIds {
 	PTN_INPUT,				// Main Pattern CV
 	MASTER_PTN_INPUT,		// Master Pattern Input
     MASTER_LEN_INPUT,       // Master Pattern Length CV	
-    MASTER_DUR_INPUT,       // Master Phrase Duration CV	
+    MASTER_DUR_INPUT,       // Master Phrase Duration CV
 
 	NUM_INPUTS
 };
@@ -76,6 +87,8 @@ enum OutputIds {
 	SLAVE_RST_OUTPUT,		// Slave Reset
 	SLAVE_CLK_OUTPUT,		// Slave Clock
 	SLAVE_PTN_OUTPUT,		// Slave Pattern CV
+	SPH_OUTPUT,				// Start Phrase
+	SPA_OUTPUT,				// Start Pattern
 
 	NUM_OUTPUTS
 };
