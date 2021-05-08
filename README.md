@@ -67,16 +67,16 @@ Example setup:
 
 Initialize Mother. Setup a mother major scale. Set weights for c,e,g to 100% and the other weights to 0. Leave the child scales weight at 50%. Set SPAN to max and trigger Mother using a clock. Mother will doodle on a C major chord. No sending a D to the CHLD input will make Mother play the notes of a D minor chord.
 
+
+## Phraseq
+
+<p align="center"><img src="res/PhraseqWork.svg"></p>
+
+### Short Description
+
+Phraseq 
 Have fun
 
-*)
-New modules will first show up marked as [Beta].
-Beta modules are published for early adopters and should not be considered stable.
-They may even disappear again if the concept behind the module doesn't work es expected.
-Functionality can change and no backward compatibility is promised between beta versions of a module.
-So problems with upgrading between beta versions may arise.
-After collecting feedback from the community and doing the polishing of GUI and functionality, those modules will hopefully enter a stable state. When a module has reached its stable state, the [Beta] mark will disappear.
-Modules not marked as beta will maintained in a backward compatible way if possible.
 
 
 
