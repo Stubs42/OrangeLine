@@ -32,6 +32,12 @@ struct Phraseq : Module {
 	/*
 		Module member variables
 	*/
+	int   phraseDurCounter   = 0;
+	int   phraseLenCounter   = 0;
+	int   slaveLenCounter    = 0;
+	int   masterDelayCounter = 0;
+	float slavePattern       = 0;
+	int   divCounter         = 0;
 
 // ********************************************************************************************************************************
 /*
@@ -145,17 +151,35 @@ struct Phraseq : Module {
 /*
 	Methods called directly or indirectly called from process () in OrangeLineCommon.hpp
 */
+	void processMaster() {
+        slavePattern = getStateInput(MASTER_PTN_INPUT) + getStateParam(MASTER_PTN_PARAM);
+		if (getStateJson(TROWAFIX_JSON))
+			slavePattern = slavePattern + TROWFIX_PATTERN_OFFSET;
+        setStateOutput (SLAVE_PTN_OUTPUT, slavePattern);
+        setStateOutput (SLAVE_RST_OUTPUT, 1.0f);
+        setStateOutput (SLAVE_CLK_OUTPUT, 1.0f);
+		setStateOutput (SPH_OUTPUT, 1.0f);
+		setStateOutput (SPA_OUTPUT, 1.0f);
+		slaveLenCounter  = (getStateParam (LEN_PARAM) * getStateParam(DIV_PARAM)) - 1;
+		phraseLenCounter = int(getStateInput (MASTER_LEN_INPUT) * 100.f) - 1;
+		if (phraseLenCounter < 0)
+			phraseLenCounter = slaveLenCounter;
+        phraseDurCounter = int(getStateInput (MASTER_DUR_INPUT) * 100.f) - 1;
+		if (phraseDurCounter < 0)
+			phraseDurCounter = phraseLenCounter;
+		divCounter = getStateParam(DIV_PARAM) - 1;
+	}
 	/**
 		Module specific process method called from process () in OrangeLineCommon.hpp
 	*/
 	inline void moduleProcess (const ProcessArgs &args) {
 
-		int   phraseDurCounter   = int(getStateJson (PHRASEDURCOUNTER_JSON));
-		int   phraseLenCounter   = int(getStateJson (PHRASELENCOUNTER_JSON));
-		int   slaveLenCounter    = int(getStateJson (SLAVELENCOUNTER_JSON));
-		int   masterDelayCounter = int(getStateJson (MASTERDELAYCOUNTER_JSON));
-		float slavePattern       = getStateJson (SLAVEPATTERN_JSON);
-		int   divCounter         = getStateJson (DIVCOUNTER_JSON);
+		phraseDurCounter   = int(getStateJson (PHRASEDURCOUNTER_JSON));
+		phraseLenCounter   = int(getStateJson (PHRASELENCOUNTER_JSON));
+		slaveLenCounter    = int(getStateJson (SLAVELENCOUNTER_JSON));
+		masterDelayCounter = int(getStateJson (MASTERDELAYCOUNTER_JSON));
+		slavePattern       = getStateJson (SLAVEPATTERN_JSON);
+		divCounter         = getStateJson (DIVCOUNTER_JSON);
 		
 		if (styleChanged) {
 			switch (int(getStateJson(STYLE_JSON))) {
@@ -177,23 +201,8 @@ struct Phraseq : Module {
 
         if (masterDelayCounter > 0) {
 			masterDelayCounter--;
-            if (masterDelayCounter == 0) {
-                slavePattern = getStateInput(MASTER_PTN_INPUT);
-				if (getStateJson(TROWAFIX_JSON))
-					slavePattern = slavePattern + TROWFIX_PATTERN_OFFSET;
-                setStateOutput (SLAVE_PTN_OUTPUT, slavePattern);
-                setStateOutput (SLAVE_RST_OUTPUT, 1.0f);
-                setStateOutput (SLAVE_CLK_OUTPUT, 1.0f);
-				setStateOutput (SPH_OUTPUT, 1.0f);
-				setStateOutput (SPA_OUTPUT, 1.0f);
-				slaveLenCounter  = getStateParam (LEN_PARAM) - 1;
-				phraseLenCounter = int(getStateInput (MASTER_LEN_INPUT) * 100.f) - 1;
-				if (phraseLenCounter < 0)
-					phraseLenCounter = slaveLenCounter;
-                phraseDurCounter = int(getStateInput (MASTER_DUR_INPUT) * 100.f) - 1;
-				if (phraseDurCounter < 0)
-					phraseDurCounter = phraseLenCounter;
-            }
+            if (masterDelayCounter == 0)
+				processMaster();
        }
 
         if (changeInput (RST_INPUT)) {
@@ -210,58 +219,45 @@ struct Phraseq : Module {
 				divCounter       = 0;
 	            setStateJson (RESET_JSON, 0.f);
             }
-			if (divCounter == 0) {
-				divCounter = int(getStateParam (DIV_PARAM));
-				if (phraseDurCounter == 0) {
-					setStateOutput (MASTER_CLK_OUTPUT, 10.f);
-					masterDelayCounter = getStateParam (DLY_PARAM);
-					if (masterDelayCounter == 0) {
-						slavePattern = getStateInput(MASTER_PTN_INPUT) + getStateParam(MASTER_PTN_PARAM) ;
-						if (getStateJson(TROWAFIX_JSON))
-							slavePattern = slavePattern + TROWFIX_PATTERN_OFFSET;
-						setStateOutput (SLAVE_PTN_OUTPUT, slavePattern);
-						setStateOutput (SLAVE_RST_OUTPUT, 1.0f);
-						setStateOutput (SLAVE_CLK_OUTPUT, 1.0f);
-						setStateOutput (SPH_OUTPUT, 1.0f);
-						setStateOutput (SPA_OUTPUT, 1.0f);
-						slaveLenCounter = getStateParam (LEN_PARAM) - 1;
-						phraseLenCounter = getStateInput (MASTER_LEN_INPUT) * 100 - 1;
-						if (phraseLenCounter < 0)
-							phraseLenCounter = slaveLenCounter;
-						phraseDurCounter = getStateInput (MASTER_DUR_INPUT) * 100 - 1;
-						if (phraseDurCounter < 0)
-							phraseDurCounter = phraseLenCounter;
-					}
-				}
-				else {
-					if (phraseLenCounter == 0) {
-						phraseLenCounter = getStateInput (MASTER_LEN_INPUT) * 100;
-						if (phraseLenCounter == 0)
-							phraseLenCounter = getStateParam (LEN_PARAM);
-						slavePattern = getStateInput(MASTER_PTN_INPUT);
-						if (getStateJson(TROWAFIX_JSON))
-							slavePattern = slavePattern + TROWFIX_PATTERN_OFFSET;
-						setStateOutput (SLAVE_PTN_OUTPUT, slavePattern);
-						slaveLenCounter = getStateParam (LEN_PARAM);
-						setStateOutput (SLAVE_RST_OUTPUT, 1.0f);
-						setStateOutput (SLAVE_CLK_OUTPUT, 1.0f);
-						setStateOutput (SPA_OUTPUT, 1.0f);
-					}
-					else {
-						if (slaveLenCounter == 0) {
-							slavePattern += getStateParam (INC_PARAM);
-							setStateOutput (SLAVE_RST_OUTPUT, 1.0f);
-							setStateOutput (SLAVE_PTN_OUTPUT, slavePattern);
-							slaveLenCounter = getStateParam (LEN_PARAM);
-						}
-					}
-					phraseLenCounter--;
-					slaveLenCounter--;
-					phraseDurCounter--;
-					setStateOutput (SLAVE_CLK_OUTPUT, 1.0f);
+			if (phraseDurCounter == 0) {
+				setStateOutput (MASTER_CLK_OUTPUT, 10.f);
+				masterDelayCounter = getStateParam (DLY_PARAM);
+				if (masterDelayCounter == 0) {
+					processMaster();
 				}
 			}
-			divCounter --;
+			else {
+				if (phraseLenCounter == 0) {
+					phraseLenCounter = getStateInput (MASTER_LEN_INPUT) * 100.f;
+					if (phraseLenCounter == 0)
+						phraseLenCounter = getStateParam (LEN_PARAM);
+					slavePattern = getStateInput(MASTER_PTN_INPUT);
+					if (getStateJson(TROWAFIX_JSON))
+						slavePattern = slavePattern + TROWFIX_PATTERN_OFFSET;
+					setStateOutput (SLAVE_PTN_OUTPUT, slavePattern);
+					slaveLenCounter = getStateParam (LEN_PARAM) * getStateParam(DIV_PARAM);
+					setStateOutput (SLAVE_RST_OUTPUT, 1.0f);
+					setStateOutput (SPA_OUTPUT, 1.0f);
+					divCounter = 0;
+				}
+				else {
+					if (slaveLenCounter == 0) {
+						slavePattern += getStateParam (INC_PARAM);
+						setStateOutput (SLAVE_RST_OUTPUT, 1.0f);
+						setStateOutput (SLAVE_PTN_OUTPUT, slavePattern);
+						slaveLenCounter = getStateParam (LEN_PARAM) * getStateParam(DIV_PARAM);
+						divCounter = 0;
+					}
+				}
+				phraseLenCounter--;
+				slaveLenCounter--;
+				phraseDurCounter--;
+				if (divCounter == 0) {
+					setStateOutput (SLAVE_CLK_OUTPUT, 1.0f);
+					divCounter = getStateParam(DIV_PARAM);
+				}
+				divCounter --;
+			}
         }
 		setStateJson (PHRASEDURCOUNTER_JSON,   float(phraseDurCounter));
 		setStateJson (PHRASELENCOUNTER_JSON,   float(phraseLenCounter));
