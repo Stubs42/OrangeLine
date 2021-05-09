@@ -178,11 +178,9 @@ struct Phraseq : Module {
         if (masterDelayCounter > 0) {
 			masterDelayCounter--;
             if (masterDelayCounter == 0) {
-				//DEBUG("masterDelay expired\n");
                 slavePattern = getStateInput(MASTER_PTN_INPUT);
 				if (getStateJson(TROWAFIX_JSON))
 					slavePattern = slavePattern + TROWFIX_PATTERN_OFFSET;
-				//DEBUG("slavePattern = %lf\n", slavePattern);
                 setStateOutput (SLAVE_PTN_OUTPUT, slavePattern);
                 setStateOutput (SLAVE_RST_OUTPUT, 1.0f);
                 setStateOutput (SLAVE_CLK_OUTPUT, 1.0f);
@@ -196,19 +194,14 @@ struct Phraseq : Module {
 				if (phraseDurCounter < 0)
 					phraseDurCounter = phraseLenCounter;
             }
-			else {
-				//DEBUG("masterDelay still active\n");
-			}
-        }
+       }
 
         if (changeInput (RST_INPUT)) {
-			//DEBUG("RESET detected\n");
             setStateJson (RESET_JSON, 1.f);
         }
 
         if (changeInput (CLK_INPUT)) {
             if (getStateJson (RESET_JSON) != 0.f) {
-				//DEBUG("RESET processing\n");
                 setStateOutput (MASTER_PTN_OUTPUT, getStateInput (PTN_INPUT));
                 setStateOutput (MASTER_RST_OUTPUT, 10.f);
                 phraseDurCounter = 0;
@@ -219,17 +212,13 @@ struct Phraseq : Module {
             }
 			if (divCounter == 0) {
 				divCounter = int(getStateParam (DIV_PARAM));
-				//DEBUG("divCounter = %d\n", divCounter);
 				if (phraseDurCounter == 0) {
 					setStateOutput (MASTER_CLK_OUTPUT, 10.f);
 					masterDelayCounter = getStateParam (DLY_PARAM);
-					//DEBUG("Master clocked, masterDelayCounter = %d\n", masterDelayCounter);
 					if (masterDelayCounter == 0) {
-						//DEBUG("masterDelay expired\n");
 						slavePattern = getStateInput(MASTER_PTN_INPUT) + getStateParam(MASTER_PTN_PARAM) ;
 						if (getStateJson(TROWAFIX_JSON))
 							slavePattern = slavePattern + TROWFIX_PATTERN_OFFSET;
-						//DEBUG("slavePattern = %lf\n", slavePattern);
 						setStateOutput (SLAVE_PTN_OUTPUT, slavePattern);
 						setStateOutput (SLAVE_RST_OUTPUT, 1.0f);
 						setStateOutput (SLAVE_CLK_OUTPUT, 1.0f);
@@ -243,13 +232,12 @@ struct Phraseq : Module {
 						if (phraseDurCounter < 0)
 							phraseDurCounter = phraseLenCounter;
 					}
-					else {
-						//DEBUG("masterDelay still active\n");
-					}
 				}
 				else {
 					if (phraseLenCounter == 0) {
 						phraseLenCounter = getStateInput (MASTER_LEN_INPUT) * 100;
+						if (phraseLenCounter == 0)
+							phraseLenCounter = getStateParam (LEN_PARAM);
 						slavePattern = getStateInput(MASTER_PTN_INPUT);
 						if (getStateJson(TROWAFIX_JSON))
 							slavePattern = slavePattern + TROWFIX_PATTERN_OFFSET;
