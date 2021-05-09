@@ -67,16 +67,72 @@ Example setup:
 
 Initialize Mother. Setup a mother major scale. Set weights for c,e,g to 100% and the other weights to 0. Leave the child scales weight at 50%. Set SPAN to max and trigger Mother using a clock. Mother will doodle on a C major chord. No sending a D to the CHLD input will make Mother play the notes of a D minor chord.
 
+
+## Phraseq
+
+<p align="center"><img src="res/PhraseqWork.svg"></p>
+
+### Short Description
+
+Phraseq is a Phrase Sequencer but has for itself no sequencing capabilities. Instead, Phraseq uses one external sequencer (master) to provide informations on the sequence of phrases to feed another sequencer (slave). The slave sequencer has to have to ability to store multiple patterns (slave patterns) and to switch between them by providing a pattern cv input. Your patches will use the outputs of the slave sequencers channels.
+
+The master sequencer provides three cv values for each phrase. The starting patterns cv value, the length of the pattern and the duration the phrase should play. If the duration is longer then the length, the pattern is repeated.
+
+The LENgth knob tells Phraseq the native number of steps the slave sequencer provides. If the length ofthe pattern given by the master sequencer is greater than LEN, the slave sequencer is advanced to the next pattern by adding the value of the INCrement knob to the current slave pattern cv.
+
+After a phrase is played (duration past) the master sequencer is clocked to provide the information on the next phrase to play. Since the master sequencer may need a number of samples to provide the cv outputs, the processing of the master sequencer inputs is delayed by the number of samples provided by the DLY knob.
+
+If the pattern length provided by the master is 0V, the length defauts to the value of the LEN knob. If the phrase duration provided by the master sequencer is 0V it defaults to the pattern length.
+
+### The Panel
+
+#### Top Row
+
+RST: Reset trigger cv input from your patch (usually clock)
+CLK: Clock trigger cv input
+DIV: Knob to select the clock division Phraseq should run with
+PTN: Pattern cv input to select master sequencer patterns (allows for nesting of Phraseqs)
+
+#### Left Column
+
+RST: Master reset trigger output
+
+CLK: Clock trigger out (triggered when nex phrase infomations are needed)
+
+PTN: Master sequencer pattern cv output, copied from Top Row PTN input when master CLK out is sent.
+
+DLY: Number of samples to wait after master CLK out is sent before processig the master input cv
+
+PTN: Input for slave sequencer start pattern cv
+
+LEN: Input for the pattern length (cv = #clockticks/100)
+
+DUR: Input for phrase duration (cv = #clockticks/100)
+
+#### Right Column
+
+LEN: Knob to set number of stes of the slave sequencer used
+
+INC: Knob to set the voltage increment used to advance the slave seuqnecers next pattern
+
+SPH: Trigger output signaling the start of a new phrase
+
+SPA: Trigger output signalling the start of the pattern
+
+RST: Reset trigger output to connect to the slave sequencers reset input
+
+CLK: Clocktrigger output to connect to the slave sequencers reset input
+
+PTN: Pattern cv output to select the slave seuqnecers pattern
+
+### Right Click Menu
+
+The right click menu offers the usual option including the selection of three different panel style.
+
+Since the trowasoft sequencer are not compatible on pattern cv in itsself, there is a trowa pattern offset fix selectable which add a slight offset to the pattern cv provided by the master sequencer.
+
 Have fun
 
-*)
-New modules will first show up marked as [Beta].
-Beta modules are published for early adopters and should not be considered stable.
-They may even disappear again if the concept behind the module doesn't work es expected.
-Functionality can change and no backward compatibility is promised between beta versions of a module.
-So problems with upgrading between beta versions may arise.
-After collecting feedback from the community and doing the polishing of GUI and functionality, those modules will hopefully enter a stable state. When a module has reached its stable state, the [Beta] mark will disappear.
-Modules not marked as beta will maintained in a backward compatible way if possible.
 
 
 
