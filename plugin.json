@@ -47,8 +47,8 @@
       ]
     },
     {
-      "slug": "Phraseq",
-      "name": "Phraseq",
+      "slug": "Phrase",
+      "name": "Phrase",
       "description": "Utility to sequence phrases by sequencing a sequencer",
       "tags": [
 	      "Sequencer",

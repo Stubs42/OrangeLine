@@ -1,5 +1,5 @@
 /*
-	Phraseq.hpp
+	Phrase.hpp
  	
 	Author: Dieter Stubler
 
@@ -43,6 +43,10 @@ enum jsonIds {
 	MASTERDELAYCOUNTER_JSON,
 	TROWAFIX_JSON,
 	DIVCOUNTER_JSON,
+	CLOCKDELAYCOUNTER_JSON,
+	CLOCKWITHRESET_JSON,
+	CLOCKWITHSPA_JSON,
+	CLOCKWITHSPH_JSON,
 
 	NUM_JSONS
 };
@@ -59,6 +63,7 @@ enum ParamIds {
 	INC_PARAM,				// Slave Sequencer Next Pattern Increment Knob
 	DIV_PARAM,				// Clock Division
 	MASTER_PTN_PARAM,		// Pattern Knob
+	CLK_DLY_PARAM,			// Clock Delay for Slave Clock out
 		
 	NUM_PARAMS
 };
@@ -73,6 +78,8 @@ enum InputIds {
 	MASTER_PTN_INPUT,		// Master Pattern Input
     MASTER_LEN_INPUT,       // Master Pattern Length CV	
     MASTER_DUR_INPUT,       // Master Phrase Duration CV
+	DLEN_INPUT,				// Default length of phrase if MASTER_LEN_IMPUT is 0V if connected
+							// If not connected, LEN_PARAM is used as default instead			
 
 	NUM_INPUTS
 };
@@ -89,6 +96,8 @@ enum OutputIds {
 	SLAVE_PTN_OUTPUT,		// Slave Pattern CV
 	SPH_OUTPUT,				// Start Phrase
 	SPA_OUTPUT,				// Start Pattern
+	ELEN_OUTPUT,			// Effective Length of Pattern from MASTER_LEN_INPUT if != 0V,
+							// DEFAULT_LEN_INPUT if connected, LEN_PARAM otherwise
 
 	NUM_OUTPUTS
 };

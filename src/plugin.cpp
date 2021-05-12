@@ -11,7 +11,7 @@ void init(Plugin *p) {
 	p->addModel(modelFence);
 	p->addModel(modelSwing);
 	p->addModel(modelMother);
-	p->addModel(modelPhraseq);
+	p->addModel(modelPhrase);
 
 	// Any other plugin initialization may go here.
 	// As an alternative, consider lazy-loading assets and lookup tables when your module is created to reduce startup times of Rack.

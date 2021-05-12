@@ -68,17 +68,17 @@ Example setup:
 Initialize Mother. Setup a mother major scale. Set weights for c,e,g to 100% and the other weights to 0. Leave the child scales weight at 50%. Set SPAN to max and trigger Mother using a clock. Mother will doodle on a C major chord. No sending a D to the CHLD input will make Mother play the notes of a D minor chord.
 
 
-## Phraseq
+## Phrase
 
-<p align="center"><img src="res/PhraseqWork.svg"></p>
+<p align="center"><img src="res/PhraseWork.svg"></p>
 
 ### Short Description
 
-Phraseq is a Phrase Sequencer but has for itself no sequencing capabilities. Instead, Phraseq uses one external sequencer (master) to provide informations on the sequence of phrases to feed another sequencer (slave). The slave sequencer has to have to ability to store multiple patterns (slave patterns) and to switch between them by providing a pattern cv input. Your patches will use the outputs of the slave sequencers channels.
+Phrase is a Phrase Sequencer but has for itself no sequencing capabilities. Instead, Phrase uses one external sequencer (master) to provide informations on the sequence of phrases to feed another sequencer (slave). The slave sequencer has to have to ability to store multiple patterns (slave patterns) and to switch between them by providing a pattern cv input. Your patches will use the outputs of the slave sequencers channels.
 
 The master sequencer provides three cv values for each phrase. The starting patterns cv value, the length of the pattern and the duration the phrase should play. If the duration is longer then the length, the pattern is repeated.
 
-The LENgth knob tells Phraseq the native number of steps the slave sequencer provides. If the length ofthe pattern given by the master sequencer is greater than LEN, the slave sequencer is advanced to the next pattern by adding the value of the INCrement knob to the current slave pattern cv.
+The LENgth knob tells Phrase the native number of steps the slave sequencer provides. If the length ofthe pattern given by the master sequencer is greater than LEN, the slave sequencer is advanced to the next pattern by adding the value of the INCrement knob to the current slave pattern cv.
 
 After a phrase is played (duration past) the master sequencer is clocked to provide the information on the next phrase to play. Since the master sequencer may need a number of samples to provide the cv outputs, the processing of the master sequencer inputs is delayed by the number of samples provided by the DLY knob.
 
@@ -90,8 +90,8 @@ If the pattern length provided by the master is 0V, the length defauts to the va
 
 RST: Reset trigger cv input from your patch (usually clock)
 CLK: Clock trigger cv input
-DIV: Knob to select the clock division Phraseq should run with
-PTN: Pattern cv input to select master sequencer patterns (allows for nesting of Phraseqs)
+DIV: Knob to select the clock division Phrase should run with
+PTN: Pattern cv input to select master sequencer patterns (allows for nesting of Phrases)
 
 #### Left Column
 

@@ -11,5 +11,5 @@ extern Plugin *pluginInstance;
 extern Model *modelFence;
 extern Model *modelSwing;
 extern Model *modelMother;
-extern Model *modelPhraseq;
+extern Model *modelPhrase;
 

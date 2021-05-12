@@ -1,7 +1,7 @@
 /*
-	Phraseq.cpp
+	Phrase.cpp
  
-	Code for the OrangeLine module Phraseq
+	Code for the OrangeLine module Phrase
 
 Copyright (C) 2019 Dieter Stubler
 
@@ -22,9 +22,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <stdio.h>
 #include <limits.h>
 
-#include "Phraseq.hpp"
+#include "Phrase.hpp"
 
-struct Phraseq : Module {
+struct Phrase : Module {
 
 	#include "OrangeLineCommon.hpp"
 
@@ -36,6 +36,10 @@ struct Phraseq : Module {
 	int   phraseLenCounter   = 0;
 	int   slaveLenCounter    = 0;
 	int   masterDelayCounter = 0;
+	int   clockDelayCounter  = 0;
+	bool  clockWithReset     = false;
+	bool  clockWithSpa       = false;
+	bool  clockWithSph       = false;
 	float slavePattern       = 0;
 	int   divCounter         = 0;
 
@@ -48,7 +52,7 @@ struct Phraseq : Module {
 
 		Typically just calls initializeInstance included from OrangeLineCommon.hpp
 	*/
-	Phraseq () {
+	Phrase () {
 		initializeInstance ();
 	}
 
@@ -90,6 +94,10 @@ struct Phraseq : Module {
 		setJsonLabel (MASTERDELAYCOUNTER_JSON, "masterDelayCounter");
 		setJsonLabel (TROWAFIX_JSON, "trowaFix");
 		setJsonLabel (DIVCOUNTER_JSON, "divCounter");
+		setJsonLabel (CLOCKDELAYCOUNTER_JSON, "clockDelayCounter");
+		setJsonLabel (CLOCKWITHRESET_JSON, "clockWithReset");
+		setJsonLabel (CLOCKWITHSPA_JSON, "clockWithSpa");
+		setJsonLabel (CLOCKWITHSPH_JSON, "clockWithSph");
 
 		#pragma GCC diagnostic pop
 
@@ -102,6 +110,10 @@ struct Phraseq : Module {
 		setStateJson (MASTERDELAYCOUNTER_JSON, 0.f);
 		setStateJson (TROWAFIX_JSON, 0.f);
 		setStateJson (DIVCOUNTER_JSON, 0.f);
+		setStateJson (CLOCKDELAYCOUNTER_JSON, 0.f);
+		setStateJson (CLOCKWITHRESET_JSON, 0.f);
+		setStateJson (CLOCKWITHSPA_JSON, 0.f);
+		setStateJson (CLOCKWITHSPH_JSON, 0.f);
 	}
 
 	/**
@@ -113,6 +125,8 @@ struct Phraseq : Module {
 		configParam (LEN_PARAM,  2.f,  64.f, 16.f, "Slave Sequencer Pattern Length", " Steps",  0.f, 1.f, 0.f);
 		configParam (INC_PARAM,  MIN_INC, 10.f, DEFAULT_INC, "Next Slave Pattern Increment");
 		configParam (MASTER_PTN_PARAM, -10.f, 10.f,  0.f, "Master Input Pattern Offset", "",  0.f, 1.f, 0.f);
+		configParam (MASTER_PTN_PARAM, -10.f, 10.f,  0.f, "Master Input Pattern Offset", "",  0.f, 1.f, 0.f);
+		configParam (CLK_DLY_PARAM,  0.f,  32.f,  0.f, "Slave Clock Delay", " Samples", 0.f, 1.f, 0.f);
 	}
 
 	/**
@@ -140,6 +154,10 @@ struct Phraseq : Module {
 		setStateJson (MASTERDELAYCOUNTER_JSON, 0.f);
 		setStateJson (TROWAFIX_JSON, 0.f);
 		setStateJson (DIVCOUNTER_JSON, 0.f);
+		setStateJson (CLOCKDELAYCOUNTER_JSON, 0.f);
+		setStateJson (CLOCKWITHRESET_JSON, 0.f);
+		setStateJson (CLOCKWITHSPA_JSON, 0.f);
+		setStateJson (CLOCKWITHSPH_JSON, 0.f);
 	}
 
 // ********************************************************************************************************************************
@@ -151,19 +169,39 @@ struct Phraseq : Module {
 /*
 	Methods called directly or indirectly called from process () in OrangeLineCommon.hpp
 */
+	void processClock() {
+		if (clockWithReset)
+	        setStateOutput (SLAVE_RST_OUTPUT, 1.0f);
+		if (clockWithSpa)
+			setStateOutput (SPA_OUTPUT, 1.0f);
+		if (clockWithSph)
+			setStateOutput (SPH_OUTPUT, 1.0f);
+        setStateOutput (SLAVE_CLK_OUTPUT, 1.0f);
+		clockWithReset = clockWithSpa = clockWithSph = false;
+	}
+
 	void processMaster() {
         slavePattern = getStateInput(MASTER_PTN_INPUT) + getStateParam(MASTER_PTN_PARAM);
 		if (getStateJson(TROWAFIX_JSON))
 			slavePattern = slavePattern + TROWFIX_PATTERN_OFFSET;
         setStateOutput (SLAVE_PTN_OUTPUT, slavePattern);
-        setStateOutput (SLAVE_RST_OUTPUT, 1.0f);
-        setStateOutput (SLAVE_CLK_OUTPUT, 1.0f);
-		setStateOutput (SPH_OUTPUT, 1.0f);
-		setStateOutput (SPA_OUTPUT, 1.0f);
+		clockWithSpa = clockWithSph = clockWithReset = true;
+		clockDelayCounter = getStateParam (CLK_DLY_PARAM);
+		if (clockDelayCounter == 0) {
+			processClock();
+		}
 		slaveLenCounter  = (getStateParam (LEN_PARAM) * getStateParam(DIV_PARAM)) - 1;
 		phraseLenCounter = int(getStateInput (MASTER_LEN_INPUT) * 100.f) - 1;
-		if (phraseLenCounter < 0)
-			phraseLenCounter = slaveLenCounter;
+		if (phraseLenCounter < 0) {
+			if (getInputConnected(DLEN_INPUT)) {
+				phraseLenCounter = int(getStateInput (DLEN_INPUT) * 100.f) - 1;
+				if (phraseLenCounter < 0)
+					phraseLenCounter = 0;
+			}
+			else			
+				phraseLenCounter = slaveLenCounter;
+		}
+		setStateOutput (ELEN_OUTPUT, float(phraseLenCounter + 1) / 100.f );
         phraseDurCounter = int(getStateInput (MASTER_DUR_INPUT) * 100.f) - 1;
 		if (phraseDurCounter < 0)
 			phraseDurCounter = phraseLenCounter;
@@ -178,6 +216,10 @@ struct Phraseq : Module {
 		phraseLenCounter   = int(getStateJson (PHRASELENCOUNTER_JSON));
 		slaveLenCounter    = int(getStateJson (SLAVELENCOUNTER_JSON));
 		masterDelayCounter = int(getStateJson (MASTERDELAYCOUNTER_JSON));
+		clockDelayCounter  = int(getStateJson (CLOCKDELAYCOUNTER_JSON));
+		clockWithReset     = bool(getStateJson (CLOCKWITHRESET_JSON));
+		clockWithSpa       = bool(getStateJson (CLOCKWITHSPA_JSON));
+		clockWithSph       = bool(getStateJson (CLOCKWITHSPH_JSON));
 		slavePattern       = getStateJson (SLAVEPATTERN_JSON);
 		divCounter         = getStateJson (DIVCOUNTER_JSON);
 		
@@ -203,6 +245,12 @@ struct Phraseq : Module {
 			masterDelayCounter--;
             if (masterDelayCounter == 0)
 				processMaster();
+       }
+
+        if (clockDelayCounter > 0) {
+			clockDelayCounter--;
+            if (clockDelayCounter == 0)
+				processClock();
        }
 
         if (changeInput (RST_INPUT)) {
@@ -236,14 +284,14 @@ struct Phraseq : Module {
 						slavePattern = slavePattern + TROWFIX_PATTERN_OFFSET;
 					setStateOutput (SLAVE_PTN_OUTPUT, slavePattern);
 					slaveLenCounter = getStateParam (LEN_PARAM) * getStateParam(DIV_PARAM);
-					setStateOutput (SLAVE_RST_OUTPUT, 1.0f);
-					setStateOutput (SPA_OUTPUT, 1.0f);
+					clockWithReset = true;
+					clockWithSpa   = true;
 					divCounter = 0;
 				}
 				else {
 					if (slaveLenCounter == 0) {
 						slavePattern += getStateParam (INC_PARAM);
-						setStateOutput (SLAVE_RST_OUTPUT, 1.0f);
+						clockWithReset = true;
 						setStateOutput (SLAVE_PTN_OUTPUT, slavePattern);
 						slaveLenCounter = getStateParam (LEN_PARAM) * getStateParam(DIV_PARAM);
 						divCounter = 0;
@@ -253,7 +301,10 @@ struct Phraseq : Module {
 				slaveLenCounter--;
 				phraseDurCounter--;
 				if (divCounter == 0) {
-					setStateOutput (SLAVE_CLK_OUTPUT, 1.0f);
+					clockDelayCounter = getStateParam (CLK_DLY_PARAM);
+					if (clockDelayCounter == 0) {
+						processClock();
+					}
 					divCounter = getStateParam(DIV_PARAM);
 				}
 				divCounter --;
@@ -263,6 +314,10 @@ struct Phraseq : Module {
 		setStateJson (PHRASELENCOUNTER_JSON,   float(phraseLenCounter));
 		setStateJson (SLAVELENCOUNTER_JSON,    float(slaveLenCounter));
 		setStateJson (MASTERDELAYCOUNTER_JSON, float(masterDelayCounter));
+		setStateJson (CLOCKDELAYCOUNTER_JSON,  float(clockDelayCounter));
+		setStateJson (CLOCKWITHRESET_JSON,     float(clockWithReset));
+		setStateJson (CLOCKWITHSPA_JSON,       float(clockWithSpa));
+		setStateJson (CLOCKWITHSPH_JSON,       float(clockWithSph));
 		setStateJson (SLAVEPATTERN_JSON,       slavePattern);
 		setStateJson (DIVCOUNTER_JSON,         divCounter);
 	}
@@ -297,21 +352,21 @@ struct Phraseq : Module {
 /**
 	Main Module Widget
 */
-struct PhraseqWidget : ModuleWidget {
+struct PhraseWidget : ModuleWidget {
 
-	PhraseqWidget(Phraseq *module) {
+	PhraseWidget(Phrase *module) {
 
 		setModule (module);
-		setPanel (APP->window->loadSvg(asset::plugin (pluginInstance, "res/Phraseq.svg")));
+		setPanel (APP->window->loadSvg(asset::plugin (pluginInstance, "res/PhraseOrange.svg")));
 
 		if (module) {
 			SvgPanel *brightPanel = new SvgPanel();
-			brightPanel->setBackground(APP->window->loadSvg(asset::plugin(pluginInstance, "res/PhraseqBright.svg")));
+			brightPanel->setBackground(APP->window->loadSvg(asset::plugin(pluginInstance, "res/PhraseBright.svg")));
 			brightPanel->visible = false;
 			module->brightPanel = brightPanel;
 			addChild(brightPanel);
 			SvgPanel *darkPanel = new SvgPanel();
-			darkPanel->setBackground(APP->window->loadSvg(asset::plugin(pluginInstance, "res/PhraseqDark.svg")));
+			darkPanel->setBackground(APP->window->loadSvg(asset::plugin(pluginInstance, "res/PhraseDark.svg")));
 			darkPanel->visible = false;
 			module->darkPanel = darkPanel;
 			addChild(darkPanel);
@@ -330,6 +385,7 @@ struct PhraseqWidget : ModuleWidget {
         knob = createParamCentered<RoundSmallBlackKnob> (mm2px (Vec ( 3.779 + 4.0 , /* 128.5 - */ 61.553 + 4)), module, DLY_PARAM);
         knob->snap = true;
    		addParam (knob);
+        addInput (createInputCentered<PJ301MPort>   (mm2px (Vec (  3.575 + 4.2 , /* 128.5 - */ 71.042 + 4.2)),  module, DLEN_INPUT));
 		addParam (createParamCentered<RoundSmallBlackKnob> (mm2px (Vec ( 3.805 + 4.0 , /* 128.5 - */ 80.937 + 4)),    module, MASTER_PTN_PARAM));
         
         addInput (createInputCentered<PJ301MPort>   (mm2px (Vec (  3.575 + 4.2 , /* 128.5 - */ 90.409 + 4.2)),  module, MASTER_PTN_INPUT));
@@ -340,7 +396,11 @@ struct PhraseqWidget : ModuleWidget {
         knob->snap = true;
    		addParam (knob);
 
+        addOutput (createOutputCentered<PJ301MPort>	(mm2px (Vec ( 33.941 + 4.2 , /* 128.5 - */ 41.011 + 4.2)),  module, ELEN_OUTPUT));
         addParam(createParamCentered<RoundSmallBlackKnob> (mm2px (Vec (33.941 + 4.0 , /* 128.5 - */ 50.932 + 4)), module, INC_PARAM));
+        knob = createParamCentered<RoundSmallBlackKnob> (mm2px (Vec ( 33.941 + 4.0 , /* 128.5 - */ 61.553 + 4)), module, CLK_DLY_PARAM);
+        knob->snap = true;
+   		addParam (knob);
 
         addOutput (createOutputCentered<PJ301MPort>	(mm2px (Vec ( 33.737 + 4.2 , /* 128.5 - */ 71.041 + 4.2)),  module, SPH_OUTPUT));
         addOutput (createOutputCentered<PJ301MPort>	(mm2px (Vec ( 33.737 + 4.2 , /* 128.5 - */ 80.741 + 4.2)),  module, SPA_OUTPUT));
@@ -349,8 +409,8 @@ struct PhraseqWidget : ModuleWidget {
         addOutput (createOutputCentered<PJ301MPort>	(mm2px (Vec ( 33.737 + 4.2 , /* 128.5 - */109.777 + 4.2)),  module, SLAVE_PTN_OUTPUT));
 	}        
 
-	struct PhraseqStyleItem : MenuItem {
-		Phraseq *module;
+	struct PhraseStyleItem : MenuItem {
+		Phrase *module;
 		int style;
 		void onAction(const event::Action &e) override {
 			module->OL_setOutState(STYLE_JSON, float(style));
@@ -363,7 +423,7 @@ struct PhraseqWidget : ModuleWidget {
 	};
 
 	struct TrowaFixItem : MenuItem {
-		Phraseq *module;
+		Phrase *module;
 		void onAction(const event::Action &e) override {
 			float trowaFix = module->OL_state[TROWAFIX_JSON];
 			if (trowaFix != 0.f)
@@ -382,26 +442,26 @@ struct PhraseqWidget : ModuleWidget {
 		MenuLabel *spacerLabel = new MenuLabel();
 		menu->addChild(spacerLabel);
 
-		Phraseq *module = dynamic_cast<Phraseq*>(this->module);
+		Phrase *module = dynamic_cast<Phrase*>(this->module);
 		assert(module);
 
 		MenuLabel *styleLabel = new MenuLabel();
 		styleLabel->text = "Style";
 		menu->addChild(styleLabel);
 
-		PhraseqStyleItem *style1Item = new PhraseqStyleItem();
+		PhraseStyleItem *style1Item = new PhraseStyleItem();
 		style1Item->text = "Orange";// 
 		style1Item->module = module;
 		style1Item->style = STYLE_ORANGE;
 		menu->addChild(style1Item);
 
-		PhraseqStyleItem *style2Item = new PhraseqStyleItem();
+		PhraseStyleItem *style2Item = new PhraseStyleItem();
 		style2Item->text = "Bright";// 
 		style2Item->module = module;
 		style2Item->style = STYLE_BRIGHT;
 		menu->addChild(style2Item);
 			
-		PhraseqStyleItem *style3Item = new PhraseqStyleItem();
+		PhraseStyleItem *style3Item = new PhraseStyleItem();
 		style3Item->text = "Dark";// 
 		style3Item->module = module;
 		style3Item->style = STYLE_DARK;
@@ -421,4 +481,4 @@ struct PhraseqWidget : ModuleWidget {
 	}
 };
 
-Model *modelPhraseq = createModel<Phraseq, PhraseqWidget>("Phraseq");
+Model *modelPhrase = createModel<Phrase, PhraseWidget>("Phrase");
