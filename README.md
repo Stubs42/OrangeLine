@@ -99,13 +99,17 @@ RST: Master reset trigger output
 
 CLK: Clock trigger out (triggered when nex phrase infomations are needed)
 
-PTN: Master sequencer pattern cv output, copied from Top Row PTN input when master CLK out is sent.
+PTN: Master sequencer pattern cv output, copied from top row PTN input when master CLK out is sent.
 
 DLY: Number of samples to wait after master CLK out is sent before processig the master input cv
 
-PTN: Input for slave sequencer start pattern cv
+DLEN: Default pattern length input used if LEN below is not connceted or 0V 
 
-LEN: Input for the pattern length (cv = #clockticks/100)
+DUR: Input for phrase duration (cv = #clockticks/100) 
+
+PTN: Knob for master pattern CV or offset if connecte and master pattern CV input for slave sequencer start pattern cv
+
+LEN: Input for the pattern length (cv = #clockticks/100), if not connected or 0V, defaults to DLEN, if connected or right column slave LEN knob 
 
 DUR: Input for phrase duration (cv = #clockticks/100)
 
@@ -113,7 +117,11 @@ DUR: Input for phrase duration (cv = #clockticks/100)
 
 LEN: Knob to set number of stes of the slave sequencer used
 
+ELEN: Effective pattern length from left columns master LEN input, DLEN input or LEN knob above
+
 INC: Knob to set the voltage increment used to advance the slave seuqnecers next pattern
+
+DLY: #Samples the slave clock and reset outputs below shall be delayed
 
 SPH: Trigger output signaling the start of a new phrase
 
@@ -121,9 +129,9 @@ SPA: Trigger output signalling the start of the pattern
 
 RST: Reset trigger output to connect to the slave sequencers reset input
 
-CLK: Clocktrigger output to connect to the slave sequencers reset input
+CLK: Clock trigger output to connect to the slave sequencers reset input
 
-PTN: Pattern cv output to select the slave seuqnecers pattern
+PTN: Pattern cv output to select the slave sequencers pattern
 
 ### Right Click Menu
 
