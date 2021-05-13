@@ -169,7 +169,134 @@ struct Phrase : Module {
 /*
 	Methods called directly or indirectly called from process () in OrangeLineCommon.hpp
 */
-	void processClock() {
+	void handleStyleChange () {
+		if (styleChanged) {
+			switch (int(getStateJson (STYLE_JSON))) {
+				case STYLE_ORANGE:
+					brightPanel->visible = false;
+					darkPanel->visible = false;
+					break;
+				case STYLE_BRIGHT:
+					brightPanel->visible = true;
+					darkPanel->visible = false;
+					break;
+				case STYLE_DARK:
+					brightPanel->visible = false;
+					darkPanel->visible = true;
+					break;
+			}
+			styleChanged = false;
+		}
+	}
+
+	/*
+		(Re)Start the phrase pattern
+	*/
+	void startPhrasePattern () {
+		/*
+			Get start pattern number for slave of phrase pattern from master sequencer
+		*/
+        slavePattern = getStateInput(MASTER_PTN_INPUT) + getStateParam(MASTER_PTN_PARAM);
+		if (getStateJson(TROWAFIX_JSON))
+			slavePattern = slavePattern + TROWFIX_PATTERN_OFFSET;
+		/*
+			Set slave sequencer pattern output and
+			request slave reset and start pattern trigger with next slave clock
+		*/
+		clockWithReset = true;
+		clockWithSpa   = true;
+
+        setStateOutput (SLAVE_PTN_OUTPUT, slavePattern);
+
+		/*
+			Initialize counters for phrase patterns
+		*/
+		slaveLenCounter  = getStateParam (LEN_PARAM) * getStateParam(DIV_PARAM);
+		phraseLenCounter = getStateInput (MASTER_LEN_INPUT) * 100.f;
+		if (phraseLenCounter <= 0 && getInputConnected(DLEN_INPUT))
+			phraseLenCounter = getStateInput (DLEN_INPUT) * 100.f;
+		if (phraseLenCounter <= 0)
+			phraseLenCounter = slaveLenCounter;
+		/*
+			Set effective phrase length output
+		*/
+		setStateOutput (ELEN_OUTPUT, float(phraseLenCounter) / 100.f );
+	}
+	
+	void advancePhrasePattern () {
+		/*
+			Advance slave sequencer to next pattern by incrementing the current slave pattern 
+		*/
+		slavePattern += getStateParam (INC_PARAM);
+		setStateOutput (SLAVE_PTN_OUTPUT, slavePattern);
+
+		slaveLenCounter = getStateParam (LEN_PARAM) * getStateParam(DIV_PARAM);
+		/*
+			Request e slave reset with next slave clock
+		*/
+		clockWithReset = true;
+	}
+
+	void clockMaster () {
+		setStateOutput (MASTER_CLK_OUTPUT, 10.f);
+		masterDelayCounter = getStateParam (DLY_PARAM) + 1;
+		checkDeferredProcessMaster ();
+	}
+
+	void checkDeferredProcessMaster () {
+	    if (masterDelayCounter > 0) {
+			masterDelayCounter--;
+	        if (masterDelayCounter == 0)
+				doProcessMaster();
+		}
+	}
+
+	/*
+		Process inputs from master sequencer after reset or end of phrase
+		usaualy delayed by 1 or more samples after clocking master sequencer
+	*/
+	void doProcessMaster() {
+		startPhrasePattern ();
+		/*
+			start the pattern duration
+			MUST be executed after startPhrasePattern ()
+			because startPhrasePattern sets phraseLenCounter used as default if duration <= 0 below
+		*/
+        phraseDurCounter = getStateInput (MASTER_DUR_INPUT) * 100.f;
+		if (phraseDurCounter <= 0)
+			phraseDurCounter = phraseLenCounter;
+		/*
+			Request start of phrase and slave reset on next slave clock
+			(start of pattern and slave reset already requeste by startPhrasePattern above)
+		*/
+		clockWithSph = true;
+		clockSlave();
+		/*
+			Decrement counters here instead of processing clock triggers because
+			we might run asynchronous
+		*/
+		slaveLenCounter--;
+		phraseLenCounter--;
+		phraseDurCounter--;
+	}
+
+	/*
+		Clock slave sequencer 
+	*/
+	void clockSlave() {
+		clockDelayCounter = getStateParam (CLK_DLY_PARAM) + 1;
+		checkDeferredClockSlave ();
+	}
+
+	void checkDeferredClockSlave () {
+        if (clockDelayCounter > 0) {
+			clockDelayCounter--;
+            if (clockDelayCounter == 0)
+				doClockSlave();
+       	}
+	}
+
+	void doClockSlave() {
 		if (clockWithReset)
 	        setStateOutput (SLAVE_RST_OUTPUT, 1.0f);
 		if (clockWithSpa)
@@ -180,33 +307,28 @@ struct Phrase : Module {
 		clockWithReset = clockWithSpa = clockWithSph = false;
 	}
 
-	void processMaster() {
-        slavePattern = getStateInput(MASTER_PTN_INPUT) + getStateParam(MASTER_PTN_PARAM);
-		if (getStateJson(TROWAFIX_JSON))
-			slavePattern = slavePattern + TROWFIX_PATTERN_OFFSET;
-        setStateOutput (SLAVE_PTN_OUTPUT, slavePattern);
-		clockWithSpa = clockWithSph = clockWithReset = true;
-		clockDelayCounter = getStateParam (CLK_DLY_PARAM);
-		if (clockDelayCounter == 0) {
-			processClock();
+	/*
+		Process reset from this or a previous sample
+	*/
+	void processPendingReset () {
+		if (getStateJson (RESET_JSON) != 0.f) {
+			/*
+				Set master sequencer pattern number and reset master sequencer
+			*/
+			setStateOutput (MASTER_PTN_OUTPUT, getStateInput (PTN_INPUT));
+			setStateOutput (MASTER_RST_OUTPUT, 10.f);
+			/*
+				Initialize all counters to 0, forcing further processing
+			*/
+			phraseDurCounter = 0;
+			phraseLenCounter = 0;
+			slaveLenCounter  = 0;
+			divCounter       = 0;
+
+			setStateJson (RESET_JSON, 0.f);
 		}
-		slaveLenCounter  = (getStateParam (LEN_PARAM) * getStateParam(DIV_PARAM)) - 1;
-		phraseLenCounter = int(getStateInput (MASTER_LEN_INPUT) * 100.f) - 1;
-		if (phraseLenCounter < 0) {
-			if (getInputConnected(DLEN_INPUT)) {
-				phraseLenCounter = int(getStateInput (DLEN_INPUT) * 100.f) - 1;
-				if (phraseLenCounter < 0)
-					phraseLenCounter = 0;
-			}
-			else			
-				phraseLenCounter = slaveLenCounter;
-		}
-		setStateOutput (ELEN_OUTPUT, float(phraseLenCounter + 1) / 100.f );
-        phraseDurCounter = int(getStateInput (MASTER_DUR_INPUT) * 100.f) - 1;
-		if (phraseDurCounter < 0)
-			phraseDurCounter = phraseLenCounter;
-		divCounter = getStateParam(DIV_PARAM) - 1;
 	}
+
 	/**
 		Module specific process method called from process () in OrangeLineCommon.hpp
 	*/
@@ -223,97 +345,31 @@ struct Phrase : Module {
 		slavePattern       = getStateJson (SLAVEPATTERN_JSON);
 		divCounter         = getStateJson (DIVCOUNTER_JSON);
 		
-		if (styleChanged) {
-			switch (int(getStateJson(STYLE_JSON))) {
-				case STYLE_ORANGE:
-					brightPanel->visible = false;
-					darkPanel->visible = false;
-					break;
-				case STYLE_BRIGHT:
-					brightPanel->visible = true;
-					darkPanel->visible = false;
-					break;
-				case STYLE_DARK:
-					brightPanel->visible = false;
-					darkPanel->visible = true;
-					break;
-			}
-			styleChanged = false;
-		}
-
-        if (masterDelayCounter > 0) {
-			masterDelayCounter--;
-            if (masterDelayCounter == 0)
-				processMaster();
-       }
-
-        if (clockDelayCounter > 0) {
-			clockDelayCounter--;
-            if (clockDelayCounter == 0)
-				processClock();
-       }
+		handleStyleChange ();
+		checkDeferredProcessMaster();
+		checkDeferredClockSlave ();
 
         if (changeInput (RST_INPUT)) {
             setStateJson (RESET_JSON, 1.f);
         }
 
         if (changeInput (CLK_INPUT)) {
-            if (getStateJson (RESET_JSON) != 0.f) {
-                setStateOutput (MASTER_PTN_OUTPUT, getStateInput (PTN_INPUT));
-                setStateOutput (MASTER_RST_OUTPUT, 10.f);
-                phraseDurCounter = 0;
-                phraseLenCounter = 0;
-				slaveLenCounter  = 0;
-				divCounter       = 0;
-	            setStateJson (RESET_JSON, 0.f);
-            }
-			if (phraseDurCounter == 0) {
-				setStateOutput (MASTER_CLK_OUTPUT, 10.f);
-				masterDelayCounter = getStateParam (DLY_PARAM);
-				if (masterDelayCounter == 0) {
-					processMaster();
-				}
-			}
+			processPendingReset ();
+			if (phraseDurCounter == 0)
+				clockMaster ();
 			else {
-				if (phraseLenCounter == 0) {
-					phraseLenCounter = getStateInput (MASTER_LEN_INPUT) * 100.f;
-					if (phraseLenCounter < 0)
-						phraseLenCounter = 0;
-					if (phraseLenCounter == 0) {
-						if (getInputConnected(DLEN_INPUT)) {
-							phraseLenCounter = int(getStateInput (DLEN_INPUT) * 100.f);
-							if (phraseLenCounter < 0)
-								phraseLenCounter = 0;
-						}
-						else			
-							phraseLenCounter = getStateParam (LEN_PARAM);
-					}
-					slavePattern = getStateInput(MASTER_PTN_INPUT);
-					if (getStateJson(TROWAFIX_JSON))
-						slavePattern = slavePattern + TROWFIX_PATTERN_OFFSET;
-					setStateOutput (SLAVE_PTN_OUTPUT, slavePattern);
-					slaveLenCounter = getStateParam (LEN_PARAM) * getStateParam(DIV_PARAM);
-					clockWithReset = true;
-					clockWithSpa   = true;
-					divCounter = 0;
-				}
+				if (phraseLenCounter == 0)
+					startPhrasePattern ();
 				else {
-					if (slaveLenCounter == 0) {
-						slavePattern += getStateParam (INC_PARAM);
-						clockWithReset = true;
-						setStateOutput (SLAVE_PTN_OUTPUT, slavePattern);
-						slaveLenCounter = getStateParam (LEN_PARAM) * getStateParam(DIV_PARAM);
-						divCounter = 0;
-					}
+					if (slaveLenCounter == 0) 
+						advancePhrasePattern ();
 				}
-				phraseLenCounter--;
 				slaveLenCounter--;
+				phraseLenCounter--;
 				phraseDurCounter--;
+
 				if (divCounter == 0) {
-					clockDelayCounter = getStateParam (CLK_DLY_PARAM);
-					if (clockDelayCounter == 0) {
-						processClock();
-					}
+					clockSlave();
 					divCounter = getStateParam(DIV_PARAM);
 				}
 				divCounter --;
