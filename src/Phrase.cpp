@@ -278,6 +278,10 @@ struct Phrase : Module {
 		slaveLenCounter--;
 		phraseLenCounter--;
 		phraseDurCounter--;
+		/*
+			Start Div counter
+		*/
+		divCounter = getStateParam(DIV_PARAM) - 1;
 	}
 
 	/*
@@ -323,7 +327,6 @@ struct Phrase : Module {
 			phraseDurCounter = 0;
 			phraseLenCounter = 0;
 			slaveLenCounter  = 0;
-			divCounter       = 0;
 
 			setStateJson (RESET_JSON, 0.f);
 		}
