@@ -277,8 +277,17 @@ struct Phrase : Module {
 			else {
 				if (phraseLenCounter == 0) {
 					phraseLenCounter = getStateInput (MASTER_LEN_INPUT) * 100.f;
-					if (phraseLenCounter == 0)
-						phraseLenCounter = getStateParam (LEN_PARAM);
+					if (phraseLenCounter < 0)
+						phraseLenCounter = 0;
+					if (phraseLenCounter == 0) {
+						if (getInputConnected(DLEN_INPUT)) {
+							phraseLenCounter = int(getStateInput (DLEN_INPUT) * 100.f);
+							if (phraseLenCounter < 0)
+								phraseLenCounter = 0;
+						}
+						else			
+							phraseLenCounter = getStateParam (LEN_PARAM);
+					}
 					slavePattern = getStateInput(MASTER_PTN_INPUT);
 					if (getStateJson(TROWAFIX_JSON))
 						slavePattern = slavePattern + TROWFIX_PATTERN_OFFSET;
