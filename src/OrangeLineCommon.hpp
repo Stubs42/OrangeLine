@@ -337,11 +337,12 @@ inline NVGcolor getTextColor () {
 	Generic process() Method
 */
 void process (const ProcessArgs &args) override {
-	
+
 	bool skip = moduleSkipProcess();
 	idleSkipCounter = (idleSkipCounter + 1) % IDLESKIP;
 	if (skip) {
 		samplesSkipped ++;
+		processActiveOutputTriggers ();
 		return;
 	}
 
@@ -521,6 +522,54 @@ inline void processParamsAndInputs () {
 				setStateInput (inputIdx, value);
 				if (changeInput(inputIdx))
 					OL_customChangeBits |= getCustomChangeMaskInput (inputIdx);
+			}
+		}
+	}
+}
+
+/**
+    Output processing of active triggers
+*/
+inline void processActiveOutputTriggers () {
+	for (int stateIdx = stateIdxOutput (0), outputIdx = 0; stateIdx <= maxStateIdxOutput; stateIdx++, outputIdx++) {
+		if (getStateTypeOutput (outputIdx) != STATE_TYPE_TRIGGER)
+			continue;
+		if (getOutPoly (outputIdx)) {
+			int channel;
+			for (channel = 0; channel < getOutPolyChannels (outputIdx); channel++) {
+				int cvOutPolyIdx = outputIdx * POLY_CHANNELS + channel;
+				/*
+					Pulse generators of active Trigger outputs have to be processed independently of changes in current process() run
+				*/
+				if (OL_statePoly [NUM_INPUTS * POLY_CHANNELS + cvOutPolyIdx] > 0.f) {
+					bool trgActive = ((dsp::PulseGenerator*)(OL_outStateTriggerPoly[cvOutPolyIdx]))->process ((float)OL_sampleTime);
+					if (trgActive) {
+						OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cvOutPolyIdx] = 10.f;
+						OL_wasTriggeredPoly[cvOutPolyIdx] = true;
+					}
+					else 
+						OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cvOutPolyIdx] = 0.f;
+					if (OL_isGate[outputIdx] && OL_wasTriggeredPoly[cvOutPolyIdx])
+						trgActive = !trgActive;
+					outputs[outputIdx].setVoltage (trgActive ? 10.f : 0.f, channel);
+				}
+			}
+		}
+		else {
+			/*
+				Pulse generators of active Trigger outputs have to be processed independently of changes in current process() run
+			*/
+			if (getStateOutput (outputIdx) > 0.f) {
+				bool trgActive = ((dsp::PulseGenerator*)(OL_outStateTrigger[outputIdx]))->process ((float)OL_sampleTime);
+				if (trgActive) {
+					setStateOutput (outputIdx, 10.f);
+					OL_wasTriggered[outputIdx] = true;
+				}
+				else 
+					setStateOutput (outputIdx, 0.f);
+				if (OL_isGate[outputIdx] && OL_wasTriggered[outputIdx])
+					trgActive = !trgActive;
+				outputs[outputIdx].setVoltage (trgActive ? 10.f : 0.f);
 			}
 		}
 	}
