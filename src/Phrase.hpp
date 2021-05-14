@@ -23,7 +23,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define CHG_RST_IN		1
 #define CHG_CLK_IN		(1 << 1)
 
-#define MIN_INC			0.0001
+#define MIN_INC			-10.
+#define MAX_INC			10.
 #define DEFAULT_INC		0.31746
 #define TROWFIX_PATTERN_OFFSET		0.31746 / 2.f
 

@@ -42,6 +42,7 @@ struct Phrase : Module {
 	bool  clockWithSph       = false;
 	float slavePattern       = 0;
 	int   divCounter         = 0;
+	float defaultPhraseLen ;
 
 // ********************************************************************************************************************************
 /*
@@ -122,8 +123,8 @@ struct Phrase : Module {
 	inline void moduleParamConfig () {	
 		configParam (DIV_PARAM,  1.f, 256.f,  1.f, "Clock Division", "",  0.f, 1.f, 0.f);
 		configParam (DLY_PARAM,  0.f,  32.f,  1.f, "Master Response Delay", " Samples", 0.f, 1.f, 0.f);
-		configParam (LEN_PARAM,  2.f,  64.f, 16.f, "Slave Sequencer Pattern Length", " Steps",  0.f, 1.f, 0.f);
-		configParam (INC_PARAM,  MIN_INC, 10.f, DEFAULT_INC, "Next Slave Pattern Increment");
+		configParam (LEN_PARAM,  1.f,  64.f, 16.f, "Slave Sequencer Pattern Length", " Steps",  0.f, 1.f, 0.f);
+		configParam (INC_PARAM,  MIN_INC, MAX_INC, DEFAULT_INC, "Next Slave Pattern Increment");
 		configParam (MASTER_PTN_PARAM, -10.f, 10.f,  0.f, "Master Input Pattern Offset", "",  0.f, 1.f, 0.f);
 		configParam (MASTER_PTN_PARAM, -10.f, 10.f,  0.f, "Master Input Pattern Offset", "",  0.f, 1.f, 0.f);
 		configParam (CLK_DLY_PARAM,  0.f,  32.f,  0.f, "Slave Clock Delay", " Samples", 0.f, 1.f, 0.f);
@@ -213,14 +214,8 @@ struct Phrase : Module {
 		*/
 		slaveLenCounter  = getStateParam (LEN_PARAM) * getStateParam(DIV_PARAM);
 		phraseLenCounter = getStateInput (MASTER_LEN_INPUT) * 100.f;
-		if (phraseLenCounter <= 0 && getInputConnected(DLEN_INPUT))
-			phraseLenCounter = getStateInput (DLEN_INPUT) * 100.f;
 		if (phraseLenCounter <= 0)
-			phraseLenCounter = slaveLenCounter;
-		/*
-			Set effective phrase length output
-		*/
-		setStateOutput (ELEN_OUTPUT, float(phraseLenCounter) / 100.f );
+			phraseLenCounter = defaultPhraseLen * 100.f;
 	}
 	
 	void advancePhrasePattern () {
@@ -327,6 +322,7 @@ struct Phrase : Module {
 			phraseDurCounter = 0;
 			phraseLenCounter = 0;
 			slaveLenCounter  = 0;
+			divCounter       = 0;
 
 			setStateJson (RESET_JSON, 0.f);
 		}
@@ -348,6 +344,15 @@ struct Phrase : Module {
 		slavePattern       = getStateJson (SLAVEPATTERN_JSON);
 		divCounter         = getStateJson (DIVCOUNTER_JSON);
 		
+		/*
+			Derive default phrase length from DLEN if connected or LEN*DIV/100 and set effective default phrase length output
+		*/
+		if (getInputConnected(DLEN_INPUT))
+			defaultPhraseLen = getStateInput (DLEN_INPUT);
+		else
+			defaultPhraseLen = (getStateParam (LEN_PARAM) * getStateParam(DIV_PARAM)) / 100.f;
+		setStateOutput (ELEN_OUTPUT, defaultPhraseLen);
+
 		handleStyleChange ();
 		checkDeferredProcessMaster();
 		checkDeferredClockSlave ();

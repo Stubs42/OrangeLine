@@ -117,7 +117,7 @@ DUR: Input for phrase duration (cv = #clockticks/100)
 
 LEN: Knob to set number of stes of the slave sequencer used
 
-ELEN: Effective pattern length from left columns master LEN input, DLEN input or LEN knob above
+ELEN: Effective default pattern length from copied from left columns DLEN input if connected, or (LEN knob above * top rows DIV knob) / 100 otherwise.
 
 INC: Knob to set the voltage increment used to advance the slave seuqnecers next pattern
 
