@@ -492,7 +492,9 @@ inline void processParamsAndInputs () {
 				
 					Big pit I fell in first!
 					If you write the line below this comment as:
-	//			if (((dsp::SchmittTrigger)(*OL_inStateTrigger[i])).process(value))
+
+						if (((dsp::SchmittTrigger)(*OL_inStateTrigger[i])).process(value))
+
 					this will not work because it looks like we get a new SchmittTigger instance for every call...
 				*/
 				if (((dsp::SchmittTrigger*)OL_inStateTrigger[NUM_PARAMS + inputIdx])->process (OL_state[stateIdx])) {
@@ -502,9 +504,9 @@ inline void processParamsAndInputs () {
 			}
 			else { 
 				float value = inputs[inputIdx].getVoltage ();
-				// if (value == INFINITY || value == -INFINITY || value != value /* is nsn chaeck */) value = 0.f;
 				if (!std::isfinite(value)) value = 0.f;
-				value = clamp(value, -10.f, 10.f);
+				// Do not clamp because some modules might have to deal with lower and larger values
+				// value = clamp(value, -10.f, 10.f);
 				setStateInput (inputIdx, value);
 				if (changeInput(inputIdx))
 					OL_customChangeBits |= getCustomChangeMaskInput (inputIdx);
