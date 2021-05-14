@@ -69,6 +69,7 @@ struct Fence : Module {
 
 	int   trgChannels = 0;
 
+
 	/*
 		Variables used speed up processing
 	*/
@@ -84,7 +85,42 @@ struct Fence : Module {
 	Fence () {
 		initializeInstance ();
 	}
+	/*
+		Method to decide whether this call of process() should be skipped
+	*/
+	/*
+		Method to decide whether this call of process() should be skipped
 
+		Only process when idleSkipCOunter provided by OrangeLineCommmon.hpp == 0
+		or we are running some delayed processing
+		or if we have a clock trigger.
+		We must not do a trigger process here but just check if the clock trigger input changed
+	*/
+	bool moduleSkipProcess() {
+		bool skip = (idleSkipCounter != 0);
+		if (skip) {
+			int channels;
+			if (getInputConnected(TRG_INPUT)) {
+				channels = inputs[TRG_INPUT].getChannels();
+				for (int i = 0; i < channels; i ++) {
+					if (OL_statePoly[TRG_INPUT * POLY_CHANNELS + i] != inputs[TRG_INPUT].getVoltage(i)) {
+						skip = false;
+						break;
+					}
+				}
+			}
+			else {
+				channels = inputs[CV_INPUT].getChannels();
+				for (int i = 0; i < channels; i ++) {
+					if (OL_statePoly[CV_INPUT * POLY_CHANNELS + i] != inputs[CV_INPUT].getVoltage(i)) {
+						skip = false;
+						break;
+					}
+				}
+			}
+		}
+		return skip;
+	}
 	/**
 		Method to set stateTypes != default types set by initializeInstance() in OrangeLineModule.hpp
 		which is called from constructor

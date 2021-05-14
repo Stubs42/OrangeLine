@@ -67,6 +67,8 @@ const char *channelNumbers[16] = {
 	"1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16"
 };
 
+int    idleSkipCounter = 0;
+int    samplesSkipped  = 0;
 /*
 	Got random implementation from Frozen Wastland Seeds of Change
 */
@@ -335,6 +337,14 @@ inline NVGcolor getTextColor () {
 	Generic process() Method
 */
 void process (const ProcessArgs &args) override {
+	
+	bool skip = moduleSkipProcess();
+	idleSkipCounter = (idleSkipCounter + 1) % IDLESKIP;
+	if (skip) {
+		samplesSkipped ++;
+		return;
+	}
+
 	OL_sampleTime = 1.0 / (double)(APP->engine->getSampleRate ());
 
 	initialize ();
@@ -345,6 +355,7 @@ void process (const ProcessArgs &args) override {
 	reflectChanges();
 
 	OL_initialized = true;
+	samplesSkipped = 0;
 }
 
 /**
@@ -471,7 +482,7 @@ inline void processParamsAndInputs () {
 				}
 				else {
 					float value = inputs[inputIdx].getVoltage (channel);
-					if (value == INFINITY || value == NAN) value = 0.f;
+					if (!std::isfinite(value)) value = 0.f;
 					if (OL_statePoly[idx] != value) {
 						OL_statePoly[idx] = value;
 						OL_inStateChangePoly[idx] = true;

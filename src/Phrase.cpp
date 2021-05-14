@@ -43,6 +43,10 @@ struct Phrase : Module {
 	float slavePattern       = 0;
 	int   divCounter         = 0;
 	float defaultPhraseLen ;
+	float oldClkInputVoltage = 0;
+	int   oldClockDelayCounter = 0;
+	int   oldMasterDelayCounter = 0;
+
 
 // ********************************************************************************************************************************
 /*
@@ -56,7 +60,28 @@ struct Phrase : Module {
 	Phrase () {
 		initializeInstance ();
 	}
+	/*
+		Method to decide whether this call of process() should be skipped
 
+		Only process when idleSkipCOunter provided by OrangeLineCommmon.hpp == 0
+		or we are running some delayed processing
+		or if we have a clock trigger.
+		We must not do a trigger process here but just check if the clock trigger input changed
+	*/
+	bool moduleSkipProcess() {
+		bool skip = (idleSkipCounter != 0);
+		float clkInputVolgate = inputs[CLK_INPUT].getVoltage (); 
+		if (clkInputVolgate    != oldClkInputVoltage ||
+			clockDelayCounter  != oldClockDelayCounter ||
+			masterDelayCounter != oldMasterDelayCounter
+		   ) {
+			skip = false;
+		}
+		oldClockDelayCounter  = clockDelayCounter;
+		oldMasterDelayCounter = masterDelayCounter;
+		oldClkInputVoltage    = clkInputVolgate;
+		return skip;
+	}
 	/**
 		Method to set stateTypes != default types set by initializeInstance() in OrangeLineModule.hpp
 		which is called from constructor

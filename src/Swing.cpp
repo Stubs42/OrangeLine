@@ -53,7 +53,13 @@ struct Swing : Module {
 	Swing () {
 		initializeInstance ();
 	}
-
+	/*
+		Method to decide whether this call of process() should be skipped
+	*/
+	bool moduleSkipProcess() {
+		bool skip = (idleSkipCounter != 0);
+		return skip;
+	}
 	/**
 		Method to set stateTypes != default types set by initializeInstance() in OrangeLineModule.hpp
 		which is called from constructor
@@ -172,7 +178,7 @@ struct Swing : Module {
 		}
 
 		if (phase < 0.f || clkMultCnt > 0) {
-			phase += phaseStep;
+			phase += phaseStep * (1 + samplesSkipped);
 			if (phase > PHASE_HIGH) {
 				clkMultCnt --;
 				phase = PHASE_LOW;

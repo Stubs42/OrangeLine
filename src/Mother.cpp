@@ -95,7 +95,34 @@ struct Mother : Module {
 	Mother () {
 		initializeInstance ();
 	}
-
+	/*
+		Method to decide whether this call of process() should be skipped
+	*/
+	bool moduleSkipProcess() {
+		bool skip = (idleSkipCounter != 0);
+		if (skip) {
+			int channels;
+			if (getInputConnected(TRG_INPUT)) {
+				channels = inputs[TRG_INPUT].getChannels();
+				for (int i = 0; i < channels; i ++) {
+					if (OL_statePoly[TRG_INPUT * POLY_CHANNELS + i] != inputs[TRG_INPUT].getVoltage(i)) {
+						skip = false;
+						break;
+					}
+				}
+			}
+			else {
+				channels = inputs[CV_INPUT].getChannels();
+				for (int i = 0; i < channels; i ++) {
+					if (OL_statePoly[CV_INPUT * POLY_CHANNELS + i] != inputs[CV_INPUT].getVoltage(i)) {
+						skip = false;
+						break;
+					}
+				}
+			}
+		}
+		return skip;		
+	}
 	/**
 		Method to set stateTypes != default types set by initializeInstance() in OrangeLineModule.hpp
 		which is called from constructor
@@ -250,11 +277,11 @@ struct Mother : Module {
 	}
 
 	inline void checkTmpHead () {
-		if (tmpHeadCounter >= 0) {
-			if (tmpHeadCounter == 0) {
+		if (tmpHeadCounter >= 0 - IDLESKIP) {
+			if (tmpHeadCounter >= 0 - IDLESKIP && tmpHeadCounter <= 0) {
 				strcpy (headDisplayText, headText);
 			}
-			tmpHeadCounter--;
+			tmpHeadCounter = tmpHeadCounter - (1 + samplesSkipped);
 		}
 	}
 
@@ -266,11 +293,12 @@ struct Mother : Module {
 		Module specific process method called from process () in OrangeLineCommon.hpp
 	*/
 	inline void moduleProcess (const ProcessArgs &args) {
+		int reflectDecrement = (1 + samplesSkipped);
 		if (reflectCounter >= 0 )
-			reflectCounter --;
+			reflectCounter -= reflectDecrement;
 
 		if (reflectFateCounter >= 0)
-			reflectFateCounter --;
+			reflectFateCounter -= reflectDecrement;
 
 		checkTmpHead ();
 
