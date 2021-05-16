@@ -372,9 +372,10 @@ struct Phrase : Module {
 		/*
 			Derive default phrase length from DLEN if connected or LEN*DIV/100 and set effective default phrase length output
 		*/
+		defaultPhraseLen = 0.f;
 		if (getInputConnected(DLEN_INPUT))
 			defaultPhraseLen = getStateInput (DLEN_INPUT);
-		else
+		if (defaultPhraseLen == 0.f)
 			defaultPhraseLen = (getStateParam (LEN_PARAM) * getStateParam(DIV_PARAM)) / 100.f;
 		setStateOutput (ELEN_OUTPUT, defaultPhraseLen);
 
