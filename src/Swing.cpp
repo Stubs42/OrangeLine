@@ -39,6 +39,7 @@ struct Swing : Module {
     int     tPos = -1;
     float   cmp = 0;
     bool    tClkFired = true;
+	int		tClkDelay = -1;
 
 // ********************************************************************************************************************************
 /*
@@ -52,7 +53,13 @@ struct Swing : Module {
 	Swing () {
 		initializeInstance ();
 	}
-
+	/*
+		Method to decide whether this call of process() should be skipped
+	*/
+	bool moduleSkipProcess() {
+		bool skip = (idleSkipCounter != 0);
+		return skip;
+	}
 	/**
 		Method to set stateTypes != default types set by initializeInstance() in OrangeLineModule.hpp
 		which is called from constructor
@@ -97,6 +104,9 @@ struct Swing : Module {
         }
 	}
 
+	inline void moduleCustomInitialize () {
+	}
+
 	/**
 		Method to initialize the module after loading a patch or a preset
 		Called from initialize () included from from OrangeLineCommon.hpp
@@ -113,7 +123,6 @@ struct Swing : Module {
 		Currently called twice when add a module to patch ...
 	*/
 	void moduleReset () {
-		setStateJson (      STYLE_JSON,                0.f);
 		styleChanged = true;
 	}
 
@@ -126,7 +135,6 @@ struct Swing : Module {
 /*
 	Methods called directly or indirectly called from process () in OrangeLineCommon.hpp
 */
-
 	/**
 		Module specific process method called from process () in OrangeLineCommon.hpp
 	*/
@@ -160,42 +168,42 @@ struct Swing : Module {
             clkMultCnt = 0;
             eClkFired = false;
             tClkFired = true;
+			tClkDelay = FIRST_TCLK_DELAY;
             phase = 0.f;
             tPos = -1;
         }
-		/*
-			Check whether we have to do anything at all
-		*/
-		if (true) {
-            if (changeInput (CLK_INPUT)) {
-                clkMultCnt = CLOCK_MULT;
-                phase = 0.f;
-            }
+		if (changeInput (CLK_INPUT)) {
+			clkMultCnt = CLOCK_MULT;
+			phase = 0.f;
+		}
 
-            if (phase < 0.f || clkMultCnt > 0) {
-                phase += phaseStep;
-                if (phase > PHASE_HIGH) {
-                    clkMultCnt --;
-                    phase = PHASE_LOW;
-                    eClkFired = false;
-                }
-                if (!eClkFired && phase >= PHASE_LOW) {
-                    tPos ++;
-                    if (tPos >= getStateParam (LEN_PARAM))
-                        tPos = 0;
-                    cmp = getStateParam (TIM_PARAM_01 + tPos) * getStateParam (AMT_PARAM) / 100 / 10.f;
-                    cmp = clamp(cmp, MIN_CMP, MAX_CMP);
-                    setStateOutput (CMP_OUTPUT, cmp);
-                    setStateOutput (ECLK_OUTPUT, 10.f);
-                    eClkFired = true;
-                    tClkFired = false;
-                }
-            }
-            setStateOutput (PHS_OUTPUT, phase);
-            if (!tClkFired && phase >= cmp) {
-                setStateOutput (TCLK_OUTPUT, 10.f);
-                tClkFired = true;
-            }
+		if (phase < 0.f || clkMultCnt > 0) {
+			phase += phaseStep * (1 + samplesSkipped);
+			if (phase > PHASE_HIGH) {
+				clkMultCnt --;
+				phase = PHASE_LOW;
+				eClkFired = false;
+			}
+			if (!eClkFired && phase >= PHASE_LOW) {
+				tPos ++;
+				if (tPos >= getStateParam (LEN_PARAM))
+					tPos = 0;
+				cmp = getStateParam (TIM_PARAM_01 + tPos) * getStateParam (AMT_PARAM) / 100 / 10.f;
+				cmp = clamp(cmp, MIN_CMP, MAX_CMP);
+				setStateOutput (CMP_OUTPUT, cmp);
+				setStateOutput (ECLK_OUTPUT, 10.f);
+				eClkFired = true;
+				tClkFired = false;
+			}
+		}
+		setStateOutput (PHS_OUTPUT, phase);
+		if ((!tClkFired && phase >= cmp) || tClkDelay == 0) {
+			if (tClkDelay >= 0)
+				tClkDelay --;
+			else {
+				setStateOutput (TCLK_OUTPUT, 10.f);
+				tClkFired = true;
+			}
 		}
 	}
 

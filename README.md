@@ -63,28 +63,84 @@ FATE allows mother to choose notes by probability. If SPAN is 0 no probability p
 If TRG is connected Mother will only process CV in when a trigger is received. If TRG is not connected Mother will process on each (quantized) change of CV in. On change of CV out a gate is produced on the GATE output.
 POW will output the weight of the selected note.
 
-### Example setup:
+Example setup:
 
 Initialize Mother. Setup a mother major scale. Set weights for c,e,g to 100% and the other weights to 0. Leave the child scales weight at 50%. Set SPAN to max and trigger Mother using a clock. Mother will doodle on a C major chord. No sending a D to the CHLD input will make Mother play the notes of a D minor chord.
 
-### Polyphony
 
-Mother accepts polyphonic inputs for cvIn, random and triggers and produces polyphonic cvOut, gate and pow outputs.
-The number of channels on output is the maximum of number of channels on the trigger or cvIn inputs and the auto channel number which can be setup in the right click menu.
-When processing a channel it uses the according input channels for processing.
-If number of cvIn channels is smaller than the number of output channels, Mother generates a random cvIn for the missing channels to process. If the number of trigger in channels is smaller than the number of output channels, the last trigger in channel will be used as trigger in for the missing channels. If the number of random in channels is smaller than the number of output channels, Mother will continue using the random number generator seeded by the last random in channel for the missing channels.
-So if setting Auto Channels to for example 4 in the right click menu and just connect a monophonic trigger at trg in, Mother will produce 4 different out channels on each trigger in using a randomly seeded random generator to randomize the 4 cvIns to process.
+## Phrase
+
+<p align="center"><img src="res/PhraseWork.svg"></p>
+
+### Short Description
+
+Phrase is a Phrase Sequencer but has for itself no sequencing capabilities. Instead, Phrase uses one external sequencer (master) to provide informations on the sequence of phrases to feed another sequencer (slave). The slave sequencer has to have to ability to store multiple patterns (slave patterns) and to switch between them by providing a pattern cv input. Your patches will use the outputs of the slave sequencers channels.
+
+The master sequencer provides three cv values for each phrase. The starting patterns cv value, the length of the pattern and the duration the phrase should play. If the duration is longer then the length, the pattern is repeated.
+
+The LENgth knob tells Phrase the native number of steps the slave sequencer provides. If the length ofthe pattern given by the master sequencer is greater than LEN, the slave sequencer is advanced to the next pattern by adding the value of the INCrement knob to the current slave pattern cv.
+
+After a phrase is played (duration past) the master sequencer is clocked to provide the information on the next phrase to play. Since the master sequencer may need a number of samples to provide the cv outputs, the processing of the master sequencer inputs is delayed by the number of samples provided by the DLY knob.
+
+If the pattern length provided by the master is 0V, the length defauts to the value of the LEN knob. If the phrase duration provided by the master sequencer is 0V it defaults to the pattern length.
+
+### The Panel
+
+#### Top Row
+
+RST: Reset trigger cv input from your patch (usually clock)
+CLK: Clock trigger cv input
+DIV: Knob to select the clock division Phrase should run with
+PTN: Pattern cv input to select master sequencer patterns (allows for nesting of Phrases)
+
+#### Left Column
+
+RST: Master reset trigger output
+
+CLK: Clock trigger out (triggered when nex phrase infomations are needed)
+
+PTN: Master sequencer pattern cv output, copied from top row PTN input when master CLK out is sent.
+
+DLY: Number of samples to wait after master CLK out is sent before processig the master input cv
+
+DLEN: Default pattern length input used if LEN below is not connceted or 0V 
+
+DUR: Input for phrase duration (cv = #clockticks/100) 
+
+PTN: Knob for master pattern CV or offset if connecte and master pattern CV input for slave sequencer start pattern cv
+
+LEN: Input for the pattern length (cv = #clockticks/100), if not connected or 0V, defaults to DLEN, if connected or right column slave LEN knob 
+
+DUR: Input for phrase duration (cv = #clockticks/100)
+
+#### Right Column
+
+LEN: Knob to set number of stes of the slave sequencer used
+
+ELEN: Effective default pattern length from copied from left columns DLEN input if connected, or (LEN knob above * top rows DIV knob) / 100 otherwise.
+
+INC: Knob to set the voltage increment used to advance the slave seuqnecers next pattern
+
+DLY: #Samples the slave clock and reset outputs below shall be delayed
+
+SPH: Trigger output signaling the start of a new phrase
+
+SPA: Trigger output signalling the start of the pattern
+
+RST: Reset trigger output to connect to the slave sequencers reset input
+
+CLK: Clock trigger output to connect to the slave sequencers reset input
+
+PTN: Pattern cv output to select the slave sequencers pattern
+
+### Right Click Menu
+
+The right click menu offers the usual option including the selection of three different panel style.
+
+Since the trowasoft sequencer are not compatible on pattern cv in itsself, there is a trowa pattern offset fix selectable which add a slight offset to the pattern cv provided by the master sequencer.
 
 Have fun
 
-*)
-New modules will first show up marked as [Beta].
-Beta modules are published for early adopters and should not be considered stable.
-They may even disappear again if the concept behind the module doesn't work as expected.
-Functionality can change and no backward compatibility is promised between beta versions of a module.
-So problems with upgrading between beta versions may arise.
-After collecting feedback from the community and doing the polishing of GUI and functionality, those modules will hopefully enter a stable state. When a module has reached its stable state, the [Beta] mark will disappear.
-Modules not marked as beta will maintained in a backward compatible way if possible.
 
 
 

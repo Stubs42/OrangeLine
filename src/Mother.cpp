@@ -46,32 +46,39 @@ struct Mother : Module {
 	const char *notes[NUM_NOTES] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
 	const char *interval = "0123456789ABO";
 	
-	int   	effectiveRoot  = 0;
-	int   	effectiveScale = 0;
-	float 	effectiveScaleDisplay = 0.f;
-	int   	effectiveChild = 0;
-	int   	jsonOnOffBaseIdx = ONOFF_JSON;
-	int   	jsonWeightBaseIdx = WEIGHT_JSON;
+	int	effectiveRoot  = 0;
+	int	effectiveScale = 0;
+	float	effectiveScaleDisplay = 0.f;
+	int	effectiveChild = 0;
+	int	jsonOnOffBaseIdx = ONOFF_JSON;
+	int	jsonWeightBaseIdx = WEIGHT_JSON;
 	float	motherWeights[NUM_NOTES];
-	float  	pCvOut[NUM_NOTES];
+	float	pCvOut[NUM_NOTES];
 	float	pProb[NUM_NOTES];
 	bool	pMother[NUM_NOTES];
 	float	pNoteIdx[NUM_NOTES];
-	int		noteIdx;
-	int		noteIdxIn;
-	int		pCnt = 0;
+	int	noteIdx;
+	int	noteIdxIn;
+	int	pCnt = 0;
 	float	pTotal = 0;
 	bool	triggered = false;
 	int 	cvChannels = 0;
-	int		trgChannels = 0;
-	int		rndChannels = 0;
-	int		channels = 0;
-	float   oldCvOut[POLY_CHANNELS];	//	Old value of cvOut to detect changes for triggering trgOut
-	float   oldCvIn [POLY_CHANNELS];	//	Old value of cvOut to detect changes of quantized input
-	int	  	headScrollTimer = 0;
+	int	trgChannels = 0;
+	int	rndChannels = 0;
+	int	autoChannels = 0;
+	int	channels = 0;
+	float	oldCvOut[POLY_CHANNELS];	//	Old value of cvOut to detect changes for triggering trgOut
+	float	oldCvIn [POLY_CHANNELS];	//	Old value of cvOut to detect changes of quantized input
+	int	headScrollTimer = 0;
 
 	bool	headClick;
-	int		scaleSelected = -1;
+	int	scaleSelected = -1;
+
+	bool	visualizationDisabledChanged = false;
+	bool	rootBasedDisplayChanged = false;
+	bool	cBasedDisplayChanged = false;
+	bool	disableGrabChanged = false;
+	bool	disableDnaChanged = false;
 		
 	#include "MotherJsonLabels.hpp"
 	#include "MotherScales.hpp"
@@ -88,21 +95,48 @@ struct Mother : Module {
 	Mother () {
 		initializeInstance ();
 	}
-
+	/*
+		Method to decide whether this call of process() should be skipped
+	*/
+	bool moduleSkipProcess() {
+		bool skip = (idleSkipCounter != 0);
+		if (skip) {
+			int channels;
+			if (getInputConnected(TRG_INPUT)) {
+				channels = inputs[TRG_INPUT].getChannels();
+				for (int i = 0; i < channels; i ++) {
+					if (OL_statePoly[TRG_INPUT * POLY_CHANNELS + i] != inputs[TRG_INPUT].getVoltage(i)) {
+						skip = false;
+						break;
+					}
+				}
+			}
+			else {
+				channels = inputs[CV_INPUT].getChannels();
+				for (int i = 0; i < channels; i ++) {
+					if (OL_statePoly[CV_INPUT * POLY_CHANNELS + i] != inputs[CV_INPUT].getVoltage(i)) {
+						skip = false;
+						break;
+					}
+				}
+			}
+		}
+		return skip;		
+	}
 	/**
 		Method to set stateTypes != default types set by initializeInstance() in OrangeLineModule.hpp
 		which is called from constructor
 	*/
 	void moduleInitStateTypes () {
 		for (int i = ONOFF_PARAM; i <= ONOFF_PARAM_LAST; i ++)
-	     	setStateTypeParam  (i, STATE_TYPE_TRIGGER);
-     	setStateTypeInput  (TRG_INPUT, STATE_TYPE_TRIGGER);
+			setStateTypeParam  (i, STATE_TYPE_TRIGGER);
+     		setStateTypeInput  (TRG_INPUT, STATE_TYPE_TRIGGER);
 
 		setCustomChangeMaskInput (TRG_INPUT, CHG_TRG_IN);
 		setInPoly                (TRG_INPUT, true);
 
 		setCustomChangeMaskInput (CV_INPUT, CHG_CV_IN);
-		setInPoly          (CV_INPUT, true);
+		setInPoly                (CV_INPUT, true);
 
 		setInPoly          (RND_INPUT, true);
 
@@ -142,16 +176,22 @@ struct Mother : Module {
 		configParam (FATE_AMT_PARAM,  0.f,  6.f, 0.f, "Amount"      , "", 0.f, 1.f, 0.f);
 		configParam (FATE_SHP_PARAM,  0.f,  1.f, 0.5f, "Shape"       , "", 0.f, 1.f, 0.f);
 
+		char buffer[64];
 		for (int i = NUM_NOTES - 1; i >= 0; i--) {
-    		configParam (WEIGHT_PARAM + i,  0.f, 1.f, 0.5f, "Weight",      "", 0.f, 1.f, 0.f);
+			sprintf (buffer, "Weight %d", i + 1);
+	    		configParam (WEIGHT_PARAM + i,  0.f, 1.f, 0.5f, buffer, "", 0.f, 1.f, 0.f);
 			setCustomChangeMaskParam (WEIGHT_PARAM + i, CHG_WEIGHT);
-    		configParam ( ONOFF_PARAM + i,  0.f, 1.f, 0.f,  "Note On/Off", "", 0.f, 1.f, 0.f);
+			sprintf (buffer, "Note On/Off %d", i + 1);
+	    		configParam ( ONOFF_PARAM + i,  0.f, 1.f, 0.f,  buffer, "", 0.f, 1.f, 0.f);
 			setCustomChangeMaskParam ( ONOFF_PARAM + i, CHG_ONOFF);
-        }
+		}
 		setCustomChangeMaskInput ( SCL_INPUT, CHG_SCL);
 		setCustomChangeMaskInput (CHLD_INPUT, CHG_CHLD);
 		setCustomChangeMaskInput (ROOT_INPUT, CHG_ROOT);
 		isGate (GATE_OUTPUT) = true;
+	}
+
+	inline void moduleCustomInitialize () {
 	}
 
 	/**
@@ -193,8 +233,12 @@ struct Mother : Module {
 		gettimeofday(&tp, NULL);
 		unsigned long int seed = tp.tv_sec * 1000 + tp.tv_usec / 1000;
 		init_genrand (seed);
-		strcpy (headText, GREETING);
-		strcpy (headDisplayText, GREETING);
+		setStateJson (AUTO_CHANNELS_JSON, 1.f);
+		setStateJson (VISUALIZATION_DISABLED_JSON, 0.f);
+		setStateJson (DNA_DISABLED_JSON, 0.f);
+		setStateJson (GRAB_DISABLED_JSON, 0.f);
+		setStateJson (ROOT_BASED_DISPLAY_JSON, 0.f);
+		setStateJson (C_BASED_DISPLAY_JSON, 0.f);
 	}
 
 // ********************************************************************************************************************************
@@ -233,11 +277,11 @@ struct Mother : Module {
 	}
 
 	inline void checkTmpHead () {
-		if (tmpHeadCounter >= 0) {
-			if (tmpHeadCounter == 0) {
+		if (tmpHeadCounter >= 0 - IDLESKIP) {
+			if (tmpHeadCounter >= 0 - IDLESKIP && tmpHeadCounter <= 0) {
 				strcpy (headDisplayText, headText);
 			}
-			tmpHeadCounter--;
+			tmpHeadCounter = tmpHeadCounter - (1 + samplesSkipped);
 		}
 	}
 
@@ -249,11 +293,12 @@ struct Mother : Module {
 		Module specific process method called from process () in OrangeLineCommon.hpp
 	*/
 	inline void moduleProcess (const ProcessArgs &args) {
-		if (reflectCounter >= 0)
-			reflectCounter --;
+		int reflectDecrement = (1 + samplesSkipped);
+		if (reflectCounter >= 0 )
+			reflectCounter -= reflectDecrement;
 
 		if (reflectFateCounter >= 0)
-			reflectFateCounter --;
+			reflectFateCounter -= reflectDecrement;
 
 		checkTmpHead ();
 
@@ -280,19 +325,23 @@ struct Mother : Module {
 		triggered = false;
 		float cvOut = 0.f;
 		float cvIn;
-		float semiAmt = getStateParam (FATE_AMT_PARAM) / 12;
+		float semiAmt = getStateParam (FATE_AMT_PARAM) / 12.f;
 		float shp = getStateParam (FATE_SHP_PARAM);
 		float d;
 		float weight;
 		float rnd;
 		bool grab = false;
 		bool fromMother = false;
+		bool lastWasTrigger = false;
 
 		if ((customChangeBits & CHG_TRG_IN) || (!trgConnected && (customChangeBits & CHG_CV_IN))) {
 			cvChannels = inputs[CV_INPUT].getChannels ();
 			trgChannels = inputs[TRG_INPUT].getChannels ();
 			rndChannels = inputs[RND_INPUT].getChannels ();
+			autoChannels = int(getStateJson(AUTO_CHANNELS_JSON));
 			channels = cvChannels > trgChannels ? cvChannels : trgChannels;
+			if (trgConnected && autoChannels > channels)
+				channels = autoChannels;
 			setOutPolyChannels (CV_OUTPUT, channels);
 			setOutPolyChannels (GATE_OUTPUT, channels);
 			setOutPolyChannels (POW_OUTPUT, channels);
@@ -306,15 +355,18 @@ struct Mother : Module {
 				int cvOutPolyIdx  =   CV_OUTPUT * POLY_CHANNELS + channel;
 				int powOutPolyIdx =  POW_OUTPUT * POLY_CHANNELS + channel;
 
-				if ((!trgConnected && OL_inStateChangePoly[cvInPolyIdx]) || OL_inStateChangePoly[trgInPolyIdx]) {
+				if ((!trgConnected && OL_inStateChangePoly[cvInPolyIdx]) || OL_inStateChangePoly[trgInPolyIdx] || (channel >= trgChannels && lastWasTrigger)) {
+					if (channel < trgChannels)
+						lastWasTrigger = OL_inStateChangePoly[trgInPolyIdx];
+
 					reflectCounter = REFLECT_DURATION;
-					if (rndConnected && channel <= rndChannels)
+					if (rndConnected && channel < rndChannels)
 						init_genrand (int(round (OL_statePoly[rndInPolyIdx] * 100000)));
-					
+
 					pCnt = 0;
 					pTotal = 0.f;
 
-					if (OL_inStateChangePoly[trgInPolyIdx] && (!getInputConnected (CV_INPUT) || channel >= cvChannels))
+					if ((OL_inStateChangePoly[trgInPolyIdx] || lastWasTrigger) && (!getInputConnected (CV_INPUT) || channel >= cvChannels))
 						cvIn = genrand_real () * 20.f - 10.f;
 					else
 						cvIn = OL_statePoly[cvInPolyIdx] - (float(effectiveRoot) / 12.f);
@@ -323,16 +375,22 @@ struct Mother : Module {
 					noteIdx = (note - effectiveChild + NUM_NOTES) % NUM_NOTES;
 					noteIdxIn = (note (cvIn) - effectiveChild + NUM_NOTES) % NUM_NOTES;
 					if (getStateJson (jsonOnOffBaseIdx + note) > 0.f && semiAmt > 0.f) {
-						d = abs (cvIn - cvOut);
+						d = fabs (cvIn - cvOut);
 						pCvOut[pCnt] = cvOut;
-						weight = getStateParam (WEIGHT_PARAM + noteIdx);
-						if (weight == 0.5f && effectiveChild > 0) {
+						if (getStateJson(ROOT_BASED_DISPLAY_JSON) == 1.f)
+							weight = getStateParam (WEIGHT_PARAM + (noteIdx + effectiveChild) % NUM_NOTES);
+						else
+							if (getStateJson(C_BASED_DISPLAY_JSON) == 1.f)
+								weight = getStateParam (WEIGHT_PARAM + (noteIdx + effectiveChild + effectiveRoot) % NUM_NOTES);
+							else
+								weight = getStateParam (WEIGHT_PARAM + noteIdx);
+						if (weight == 0.5f && effectiveChild > 0 && getStateJson (DNA_DISABLED_JSON) == 0.f) {
 							fromMother = true;
 							weight = motherWeights[noteIdx];
 						}
 						else
 							fromMother = false;
-						if (weight == 1.f) {
+						if (weight == 1.f && getStateJson (GRAB_DISABLED_JSON) == 0.f) {
 							pProb[0] = 1.f;
 							pNoteIdx[0] = noteIdx;
 							pMother[0] = fromMother;
@@ -359,18 +417,24 @@ struct Mother : Module {
 							if (getStateJson (jsonOnOffBaseIdx + note) > 0.f) {
 								if (semiAmt == 0.f)
 									break;
-								d = abs (cvIn - cvOut);
-								if (d > semiAmt)
+								d = fabs (cvIn - cvOut);
+								if (d > semiAmt + PRECISION)
 									break;
 								pCvOut[pCnt] = cvOut;
-								weight = getStateParam (WEIGHT_PARAM + noteIdx);
-								if (weight == 0.5f && effectiveChild > 0) {
+								if (getStateJson(ROOT_BASED_DISPLAY_JSON) == 1.f)
+									weight = getStateParam (WEIGHT_PARAM + (noteIdx + effectiveChild) % NUM_NOTES);
+								else
+									if (getStateJson(C_BASED_DISPLAY_JSON) == 1.f)
+										weight = getStateParam (WEIGHT_PARAM + (noteIdx + effectiveChild + effectiveRoot) % NUM_NOTES);
+									else
+										weight = getStateParam (WEIGHT_PARAM + noteIdx);
+								if (weight == 0.5f && effectiveChild > 0 && getStateJson (DNA_DISABLED_JSON) == 0.f) {
 									fromMother = true;
 									weight = motherWeights[noteIdx];
 								}
 								else
 									fromMother = false;
-								if (weight == 1.f) {
+								if (weight == 1.f && getStateJson (GRAB_DISABLED_JSON) == 0.f) {
 									pProb[0] = 1.f;
 									pNoteIdx[0] = noteIdx;
 									pMother[0] = fromMother;
@@ -394,8 +458,8 @@ struct Mother : Module {
 									//        		shape = (shape - 0.5) * 20
 									//    	return 1.0 - (float(dist)/float(span))**shape
 									//
-									if (shp < 1) {
-										float f = (1.f - pow (abs (d - SEMITONE) / semiAmt, shp < 0.5 ? shp * 2.f : 1.f + (shp - 0.5) * 20));
+									if (shp < 1.f) {
+										float f = (1.f - pow (d / semiAmt, shp < 0.5f ? shp * 2.f : 1.f + (shp - 0.5f) * 20.f));
 										weight *= f;
 									}
 									//
@@ -437,15 +501,21 @@ struct Mother : Module {
 					cvOut += (float(effectiveRoot) / 12.f);
 					cvOut = quantize (cvOut);
 
-					if (abs (cvOut - oldCvOut[channel]) > PRECISION) {
+					if (fabs (cvOut - oldCvOut[channel]) > PRECISION) {
 						if (OL_statePoly[NUM_INPUTS * POLY_CHANNELS + trgOutPolyIdx] != 10.f) {
 							OL_statePoly[NUM_INPUTS * POLY_CHANNELS + trgOutPolyIdx] = 10.f;
 							OL_outStateChangePoly[trgOutPolyIdx] = true;
 						}
 						note = note (cvOut);
 						noteIdx = (note - effectiveChild + NUM_NOTES) % NUM_NOTES;
-						weight = getStateParam (WEIGHT_PARAM + noteIdx);
-						if (weight == 0.5f && effectiveChild > 0)
+						if (getStateJson(ROOT_BASED_DISPLAY_JSON) == 1.f)
+							weight = getStateParam (WEIGHT_PARAM + (noteIdx + effectiveChild) % NUM_NOTES);
+						else
+							if (getStateJson(C_BASED_DISPLAY_JSON) == 1.f)
+								weight = getStateParam (WEIGHT_PARAM + (noteIdx + effectiveChild + effectiveRoot) % NUM_NOTES);
+							else
+								weight = getStateParam (WEIGHT_PARAM + noteIdx);
+						if (weight == 0.5f && effectiveChild > 0 && getStateJson (DNA_DISABLED_JSON) == 0.f)
 							weight = motherWeights[noteIdx];
 						OL_statePoly[NUM_INPUTS * POLY_CHANNELS + powOutPolyIdx] = weight * 10.f;
 						OL_outStateChangePoly[powOutPolyIdx] = true;
@@ -456,6 +526,8 @@ struct Mother : Module {
 					}
 					oldCvOut[channel] = cvOut;
 				}
+				else
+					lastWasTrigger = false;
 			}
 		}
 	}
@@ -470,7 +542,6 @@ struct Mother : Module {
 		This method should not do dsp or other logic processing.
 	*/
 	inline void moduleProcessState () {
-
 		effectiveScale = (int(getStateParam (SCL_PARAM)) - 1 + note (getStateInput (SCL_INPUT))) % NUM_NOTES;
 		effectiveScaleDisplay = float(effectiveScale + 1);
 		effectiveChild = (int(getStateParam (CHLD_PARAM)) + note (getStateInput (CHLD_INPUT))) % NUM_NOTES;
@@ -485,7 +556,7 @@ struct Mother : Module {
 
 		effectiveRoot  = (int(getStateParam (ROOT_PARAM)) + note (getStateInput (ROOT_INPUT))) % NUM_NOTES;
 
-		int jsonOnOffBaseIdx = ONOFF_JSON + effectiveScale * NUM_NOTES;
+		jsonOnOffBaseIdx = ONOFF_JSON + effectiveScale * NUM_NOTES;
 		int jsonIdx;
 		float f;
 
@@ -533,7 +604,6 @@ struct Mother : Module {
 			}
 			didSelectScale = false;
 		}
-
 		jsonWeightBaseIdx = WEIGHT_JSON + effectiveScale * NUM_CHLD * NUM_NOTES + effectiveChild * NUM_NOTES;
 		if (customChangeBits & CHG_WEIGHT && initialized) {
 			float weight;
@@ -542,13 +612,20 @@ struct Mother : Module {
 				if (inChangeParam (paramIdx)) {
 					jsonIdx = jsonWeightBaseIdx + i;
 					weight = getStateParam (paramIdx);
+					if (getStateJson(ROOT_BASED_DISPLAY_JSON) == 1.f)
+						jsonIdx = jsonWeightBaseIdx + ((i + NUM_NOTES - effectiveChild) % NUM_NOTES);
+					else
+						if (getStateJson(C_BASED_DISPLAY_JSON) == 1.f)
+							jsonIdx = jsonWeightBaseIdx + ((i + 2 * NUM_NOTES - effectiveChild - effectiveRoot) % NUM_NOTES);
+						else
+							jsonIdx = jsonWeightBaseIdx + i;
 					setStateJson (jsonIdx, weight);
 					pct = int(round (weight * 100.f));
 					if (getStateJson (jsonOnOffBaseIdx + (i + effectiveChild) % NUM_NOTES) == 0.f)
 						snprintf(tmpHeadText, sizeof(tmpHeadText), "Wgt. %02d  n/a", paramIdx - WEIGHT_PARAM + 1);
-					else if (pct == 50 && getStateParam (CHLD_PARAM) > 0.f)
+					else if (pct == 50 && getStateParam (CHLD_PARAM) > 0.f && getStateJson (DNA_DISABLED_JSON) == 0.f)
 						snprintf(tmpHeadText, sizeof(tmpHeadText), "Wgt. %02d  DNA", paramIdx - WEIGHT_PARAM + 1);
-					else if (pct == 100)
+					else if (pct == 100 && getStateJson (GRAB_DISABLED_JSON) == 0.f)
 						snprintf(tmpHeadText, sizeof(tmpHeadText), "Wgt. %02d GRAB", paramIdx - WEIGHT_PARAM + 1);
 					else 
 						snprintf(tmpHeadText, sizeof(tmpHeadText), "Wgt. %02d %3d%%", paramIdx - WEIGHT_PARAM + 1, pct);
@@ -556,9 +633,15 @@ struct Mother : Module {
 				}
 			}
 		}
-		if (customChangeBits & (CHG_SCL | CHG_CHLD)) {
+		if (customChangeBits & (CHG_SCL | CHG_CHLD | CHG_ROOT) || rootBasedDisplayChanged || cBasedDisplayChanged) {
 			for (int paramIdx = WEIGHT_PARAM, i = 0; paramIdx <= WEIGHT_PARAM_LAST; paramIdx ++, i++) {
-				jsonIdx = jsonWeightBaseIdx + i;
+				if (getStateJson(ROOT_BASED_DISPLAY_JSON) == 1.f)
+					jsonIdx = jsonWeightBaseIdx + ((i + NUM_NOTES - effectiveChild) % NUM_NOTES);
+				else
+					if (getStateJson(C_BASED_DISPLAY_JSON) == 1.f)
+						jsonIdx = jsonWeightBaseIdx + ((i + 2 * NUM_NOTES - effectiveChild - effectiveRoot) % NUM_NOTES);
+					else
+						jsonIdx = jsonWeightBaseIdx + i;
 				setStateParam (paramIdx, getStateJson (jsonIdx));
 			}
 			updateMotherWeights ();
@@ -603,28 +686,37 @@ struct Mother : Module {
 		int r = 0, g = 0, b = 0;
 
 		if (reflectFateCounter > 0) {
-			float semiAmt = getStateParam (FATE_AMT_PARAM) / 12;
+			float semiAmt = getStateParam (FATE_AMT_PARAM) / 12.f;
 			float shp = getStateParam (FATE_SHP_PARAM);
 			float d;
 			if (lightIdx < NUM_NOTES / 2)
-				d = abs (5.5f / 12.f - lightIdx / 12.f);
+				d = fabs ((5.5f - lightIdx) / 12.f);
 			else
-				d = abs (lightIdx / 12.f - 5.5f / 12.f);
-			if (d > semiAmt)
-				weight = 0;
-			else
-				weight = (1.f - pow (abs (d - SEMITONE) / semiAmt, shp < 0.5 ? shp * 2.f : 1.f + (shp - 0.5) * 20));
+				d = fabs ((lightIdx - 5.5f) / 12.f);
+			if (d > semiAmt + PRECISION)
+				weight = 0.f;
+			else {
+				weight = (1.f - pow (d / semiAmt, shp < 0.5f ? shp * 2.f : 1.f + (shp - 0.5f) * 20.f));
+			}
 			r = 0;
 			g = int(weight * 255.f);
 			b = 0;
 			color = (r << 16) + (g << 8) + b;
 		}
 		else {
-			weight = getStateParam (WEIGHT_PARAM + lightIdx);
+			if (getStateJson(ROOT_BASED_DISPLAY_JSON) == 1.f)
+				weight = getStateParam (WEIGHT_PARAM + (lightIdx + effectiveChild) % NUM_NOTES);
+			else
+				if (getStateJson(C_BASED_DISPLAY_JSON) == 1.f)
+					weight = getStateParam (WEIGHT_PARAM + (lightIdx + effectiveChild + effectiveRoot) % NUM_NOTES);
+				else
+					weight = getStateParam (WEIGHT_PARAM + lightIdx);
+
 			if (channels == 1) {
-				if (state > 0.f || (reflectCounter > 0 && noteIdxIn == lightIdx)) {
+
+				if (state > 0.f || (reflectCounter > 0 && getStateJson(VISUALIZATION_DISABLED_JSON) == 0.f && noteIdxIn == lightIdx)) {
 					int r = 0, g = 0, b = 0;
-					if (reflectCounter > 0) {
+					if (reflectCounter > 0 && getStateJson(VISUALIZATION_DISABLED_JSON) == 0.f) {
 						if (noteIdxIn == lightIdx) {
 								g = 32;
 								b = 32;
@@ -638,7 +730,7 @@ struct Mother : Module {
 									break;
 								}
 							}
-							if (reflectWeight == 1.f) {
+							if (reflectWeight == 1.f && getStateJson (GRAB_DISABLED_JSON) == 0.f) {
 								if (weight == 1.f)
 									r = 255;
 								else if (pMother[i]) {
@@ -660,18 +752,18 @@ struct Mother : Module {
 						}
 					}
 					else {
-						if (weight == 0.5f && effectiveChild > 0) {
+						if (weight == 0.5f && effectiveChild > 0 && getStateJson (DNA_DISABLED_JSON) == 0.f) {
 							r = 0;
 							g = 0;
 							motherWeight = motherWeights[lightIdx];
-							if (motherWeight == 1.f) {
+							if (motherWeight == 1.f && getStateJson (GRAB_DISABLED_JSON) == 0.f) {
 								r = 196;
 								b = 64;
 							}
 							else
 								b = int(motherWeight * 223.f + 32.f);
 						}
-						else if (weight == 1.f) {
+						else if (weight == 1.f && getStateJson (GRAB_DISABLED_JSON) == 0.f) {
 							r = 255;
 							g = 0;
 							b = 0;
@@ -691,7 +783,7 @@ struct Mother : Module {
 			else {
 				if (state > 0.f) {
 					bool hit = false;
-					if (reflectCounter > 0) {
+					if (reflectCounter > 0 && getStateJson(VISUALIZATION_DISABLED_JSON) == 0.f) {
 						for (int channel = 0; channel < channels; channel++) {
 							int note = note (oldCvOut[channel]);
 							noteIdx = (note - effectiveChild + NUM_NOTES) % NUM_NOTES;
@@ -705,18 +797,18 @@ struct Mother : Module {
 						}
 					}
 					if (!hit) {
-						if (weight == 0.5f && effectiveChild > 0) {
+						if (weight == 0.5f && effectiveChild > 0 && getStateJson (DNA_DISABLED_JSON) == 0.f) {
 							r = 0;
 							g = 0;
 							motherWeight = motherWeights[lightIdx];
-							if (motherWeight == 1.f) {
+							if (motherWeight == 1.f && getStateJson (GRAB_DISABLED_JSON) == 0.f) {
 								r = 196;
 								b = 64;
 							}
 							else
 								b = int(motherWeight * 223.f + 32.f);
 						}
-						else if (weight == 1.f) {
+						else if (weight == 1.f && getStateJson (GRAB_DISABLED_JSON) == 0.f) {
 							r = 255;
 							g = 0;
 							b = 0;
@@ -734,6 +826,12 @@ struct Mother : Module {
 				}
 			}
 		}
+		if (getStateJson(ROOT_BASED_DISPLAY_JSON) == 1.f)
+			lightIdx = (lightIdx + effectiveChild) % NUM_NOTES;
+		else
+			if (getStateJson(C_BASED_DISPLAY_JSON) == 1.f)
+				lightIdx = (lightIdx + effectiveChild + effectiveRoot) % NUM_NOTES;
+
 		setRgbLight (NOTE_LIGHT_01_RGB + 3 * lightIdx, color);
 	}	
 
@@ -741,21 +839,31 @@ struct Mother : Module {
 		Non standard reflect processing results to user interface components and outputs
 	*/
 	inline void moduleReflectChanges () {
-//		if ((customChangeBits & (CHG_ONOFF | CHG_SCL | CHG_CHLD)) || !initialized)
 		if ((customChangeBits & (CHG_ONOFF | CHG_SCL | CHG_CHLD)) && initialized)
 			setHeadScale ();
-
+		else {
+			if (!initialized) {
+				setHeadScale ();
+				strcpy (headDisplayText, GREETING);
+				tmpHeadCounter = GREETING_DURATION;
+			}
+		}
 		if ((customChangeBits & (CHG_SCL | CHG_CHLD | CHG_ROOT)) || !initialized) {
-			strcpy (childText, notes[(effectiveChild + effectiveRoot) % NUM_NOTES]);
+				strcpy (childText, notes[(effectiveChild + effectiveRoot) % NUM_NOTES]);
 		}
 		if ((customChangeBits & CHG_ROOT) || !initialized) {
 			strcpy ( rootText, notes[effectiveRoot]);
 		}
-		if (triggered || (customChangeBits & (CHG_WEIGHT | CHG_ONOFF | CHG_SCL | CHG_CHLD)) || !initialized || reflectCounter >= 0 || reflectFateCounter >= 0) {
-			int start = ONOFF_JSON + effectiveScale * NUM_NOTES;
+		if (triggered || (customChangeBits & (CHG_WEIGHT | CHG_ONOFF | CHG_SCL | CHG_CHLD | CHG_ROOT)) || !initialized ||
+		    (reflectCounter >= 0 && getStateJson(VISUALIZATION_DISABLED_JSON) == 0.f) || reflectFateCounter >= 0 || visualizationDisabledChanged || rootBasedDisplayChanged || disableGrabChanged || disableDnaChanged) {
+			rootBasedDisplayChanged = false;
+			visualizationDisabledChanged = false;
+			disableGrabChanged = false;
+			disableDnaChanged = false;
+			int jsonIdx = ONOFF_JSON + effectiveScale * NUM_NOTES;
 			int lightIdx;
-			for (int jsonIdx = start; jsonIdx < start + NUM_NOTES; jsonIdx ++) {
-				lightIdx = (jsonIdx - start - effectiveChild + NUM_NOTES) % NUM_NOTES;
+			for (int idx = 0; idx < NUM_NOTES; idx ++, jsonIdx ++) {
+				lightIdx = (idx - effectiveChild + NUM_NOTES) % NUM_NOTES;
 				setNoteLight (lightIdx, getStateJson (jsonIdx));
 			}
 		}
@@ -768,7 +876,55 @@ struct Mother : Module {
 /*
 	Module widget implementation
 */
+struct KeysWidget : TransparentWidget {
 
+	Mother     *module = nullptr;
+
+	static KeysWidget* create (Module *module) {
+		KeysWidget *w = new KeysWidget();
+		w->box.pos  = mm2px (Vec (0, 0));
+		w->box.size = mm2px (Vec (10, 120));
+		w->module   = (Mother *)(module);
+
+		return w;
+	}
+
+	/**
+		Constructor
+	*/
+	KeysWidget () {
+	}
+
+	void draw (const DrawArgs &drawArgs) override { 
+		int offset;		
+		int whites = 0b101010110101;
+		if (module) {
+			if (module->getStateJson(C_BASED_DISPLAY_JSON) == 1.0f) 
+				offset = 0;
+			else {
+				offset = module->effectiveRoot;
+				if (module-> getStateJson(ROOT_BASED_DISPLAY_JSON) == 0.0f)
+					offset += module->effectiveChild;
+			}
+			offset = offset % NUM_NOTES;
+		}
+		else
+			offset = 0;
+		for (int i = offset + NUM_NOTES; i > offset; i--) {
+			NVGcolor white = nvgRGB(255, 255, 255);
+			NVGcolor black = nvgRGB(0, 0, 0);
+			int idx = (i - 1) % NUM_NOTES;
+			NVGcolor color = whites & 1 ? white : black;
+			whites = whites >> 1;
+			Vec pos = mm2px (Vec (3.175 + 2.381, 128.5 - 105.886 - 2.381 + float(idx) * (105.886 - 25.559) / 11.f));
+		    nvgBeginPath (drawArgs.vg);
+			nvgCircle (drawArgs.vg, pos.x, pos.y, 10.1);
+			nvgStrokeWidth (drawArgs.vg, mm2px (0.35f));
+			nvgStrokeColor (drawArgs.vg, color);
+			nvgStroke(drawArgs.vg);
+		}
+	}
+};
 /**
 	Main Module Widget
 */
@@ -777,6 +933,7 @@ struct MotherWidget : ModuleWidget {
 	TextWidget *rootWidget;
 	NumberWidget *scaleWidget;
 	TextWidget *childWidget;
+	KeysWidget *keysWidget;
 
     char scaleBuffer[3];
 
@@ -799,25 +956,26 @@ struct MotherWidget : ModuleWidget {
 			module->darkPanel = darkPanel;
 			addChild(darkPanel);
 		}
+		keysWidget = KeysWidget::create(module);
+		addChild (keysWidget);
 
 		knob = createParamCentered<RoundSmallBlackKnob> (mm2px (Vec (24.098 + 4, 128.5 - 41.724 - 4)), module, ROOT_PARAM);
-        knob->snap = true;
+		knob->snap = true;
    		addParam (knob);
 
-        knob = createParamCentered<RoundSmallBlackKnob> (mm2px (Vec (12.034 + 4, 128.5 - 75.057 - 4)), module,  SCL_PARAM);
-        knob->snap = true;
+		knob = createParamCentered<RoundSmallBlackKnob> (mm2px (Vec (12.034 + 4, 128.5 - 75.057 - 4)), module,  SCL_PARAM);
+    		    knob->snap = true;
    		addParam (knob);
 
-        knob = createParamCentered<RoundSmallBlackKnob> (mm2px (Vec (25.686 + 4, 128.5 - 75.057 - 4)), module, CHLD_PARAM);
-        knob->snap = true;
+		knob = createParamCentered<RoundSmallBlackKnob> (mm2px (Vec (25.686 + 4, 128.5 - 75.057 - 4)), module, CHLD_PARAM);
+		knob->snap = true;
    		addParam (knob);
 
-        knob = createParamCentered<RoundSmallBlackKnob> (mm2px (Vec (13.621 + 4, 128.5 - 99.822 - 4)), module, FATE_AMT_PARAM);
-        knob->snap = true;
+		knob = createParamCentered<RoundSmallBlackKnob> (mm2px (Vec (13.621 + 4, 128.5 - 99.822 - 4)), module, FATE_AMT_PARAM);
+		knob->snap = true;
    		addParam (knob);
 
-        knob = createParamCentered<RoundSmallBlackKnob> (mm2px (Vec (24.098 + 4, 128.5 - 99.822 - 4)), module, FATE_SHP_PARAM);
-        // knob->snap = true;
+		knob = createParamCentered<RoundSmallBlackKnob> (mm2px (Vec (24.098 + 4, 128.5 - 99.822 - 4)), module, FATE_SHP_PARAM);
    		addParam (knob);
 
 		for (int i = 0; i < NUM_NOTES; i++) {
@@ -845,25 +1003,25 @@ struct MotherWidget : ModuleWidget {
 		const char *text;
 
 		text = (module != nullptr ? module->headDisplayText : nullptr);
-        headWidget = TextWidget::create (mm2px (Vec(3.183 - 0.25 - 0.35, 128.5 - 115.271)), module, text, "Major", 12, (module ? &(module->headScrollTimer) : nullptr));
+		headWidget = TextWidget::create (mm2px (Vec(3.183 - 0.25 - 0.35, 128.5 - 115.271)), module, text, "Major", 12, (module ? &(module->headScrollTimer) : nullptr));
 		headWidget->pStyle = (module == nullptr ? nullptr : &(module->OL_state[STYLE_JSON]));
-        addChild (headWidget);
+		addChild (headWidget);
 
 		text = (module != nullptr ? module->rootText : nullptr);
-        rootWidget = TextWidget::create (mm2px (Vec(24.996 - 0.25, 128.5 - 52.406)), module, text, "C", 2, nullptr);
+		rootWidget = TextWidget::create (mm2px (Vec(24.996 - 0.25, 128.5 - 52.406)), module, text, "C", 2, nullptr);
 		rootWidget->pStyle = (module == nullptr ? nullptr : &(module->OL_state[STYLE_JSON]));
-        addChild (rootWidget);
+		addChild (rootWidget);
 
 		float *pvalue  = (module != nullptr ? &(module->effectiveScaleDisplay) : nullptr);
-        scaleWidget = NumberWidget::create (mm2px (Vec(12.931 - 0.25, 128.5 - 86.537)), module, pvalue, 1.f, "%2.0f", scaleBuffer, 2);
+		scaleWidget = NumberWidget::create (mm2px (Vec(12.931 - 0.25, 128.5 - 86.537)), module, pvalue, 1.f, "%2.0f", scaleBuffer, 2);
 		scaleWidget->pStyle = (module == nullptr ? nullptr : &(module->OL_state[STYLE_JSON]));
 
-        addChild (scaleWidget);
+		addChild (scaleWidget);
 
 		text = (module != nullptr ? module->childText : nullptr);
-        childWidget = TextWidget::create (mm2px (Vec(26.742 - 0.25, 128.5 - 86.537)), module, text, "C", 2, nullptr);
+		childWidget = TextWidget::create (mm2px (Vec(26.742 - 0.25, 128.5 - 86.537)), module, text, "C", 2, nullptr);
 		childWidget->pStyle = (module == nullptr ? nullptr : &(module->OL_state[STYLE_JSON]));
-        addChild (childWidget);
+		addChild (childWidget);
 	}
 
 	struct MotherScalesItem : MenuItem {
@@ -893,6 +1051,50 @@ struct MotherWidget : ModuleWidget {
 			}
 			return menu;
 		}
+
+		void onEnter (const event::Enter &  e) override	 {
+			if (module != nullptr && module->effectiveChild == 0)
+				MenuItem::onEnter(e);
+		}
+
+		void step() override {
+			if (module && module->effectiveChild == 0)
+				disabled = false;
+			else
+				disabled = true;
+		}
+	};
+
+	struct AutoChannelsItem : MenuItem {
+		Mother *module;
+		
+		struct AutoChannelItem : MenuItem {
+			Mother *module;
+			int channels;
+			void onAction(const event::Action &e) override {
+				module->OL_setOutState(AUTO_CHANNELS_JSON, float(channels));
+			}
+			void step() override {
+				if (module)
+					rightText = (module != nullptr && module->OL_state[AUTO_CHANNELS_JSON] == channels) ? "✔" : "";
+			}
+		};
+
+		Menu *createChildMenu() override {
+			Menu *menu = new Menu;
+			AutoChannelItem *autoChannelItem;
+			for (int channel = 0; channel < 16; channel++) {
+				
+				autoChannelItem = new AutoChannelItem ();
+				autoChannelItem->module = module;
+				autoChannelItem->channels = channel + 1;
+				autoChannelItem->text = module->channelNumbers[channel];
+				autoChannelItem->setSize (Vec(50, 20));
+
+				menu->addChild(autoChannelItem);
+			}
+			return menu;
+		}
 	};
 
 	struct MotherStyleItem : MenuItem {
@@ -908,6 +1110,88 @@ struct MotherWidget : ModuleWidget {
 		}
 	};
 
+	struct MotherDisableVisualizationItem : MenuItem {
+		Mother *module;
+		void onAction(const event::Action &e) override {
+			if (module->OL_state[VISUALIZATION_DISABLED_JSON] == 0.f)
+				module->OL_setOutState(VISUALIZATION_DISABLED_JSON, 1.f);
+			else
+				module->OL_setOutState(VISUALIZATION_DISABLED_JSON, 0.f);
+			module->visualizationDisabledChanged = true;
+		}
+		void step() override {
+			if (module)
+				rightText = (module != nullptr && module->OL_state[VISUALIZATION_DISABLED_JSON] == 1.0f) ? "✔" : "";
+		}
+	};
+
+	struct MotherDisableDnaItem : MenuItem {
+		Mother *module;
+		void onAction(const event::Action &e) override {
+			if (module->OL_state[DNA_DISABLED_JSON] == 0.f)
+				module->OL_setOutState(DNA_DISABLED_JSON, 1.f);
+			else
+				module->OL_setOutState(DNA_DISABLED_JSON, 0.f);
+			module->disableDnaChanged = true;
+		}
+		void step() override {
+			if (module)
+				rightText = (module != nullptr && module->OL_state[DNA_DISABLED_JSON] == 1.0f) ? "✔" : "";
+		}
+	};
+
+	struct MotherDisableGrabItem : MenuItem {
+		Mother *module;
+		void onAction(const event::Action &e) override {
+			if (module->OL_state[GRAB_DISABLED_JSON] == 0.f)
+				module->OL_setOutState(GRAB_DISABLED_JSON, 1.f);
+			else
+				module->OL_setOutState(GRAB_DISABLED_JSON, 0.f);
+			module->disableGrabChanged = true;
+		}
+		void step() override {
+			if (module)
+				rightText = (module != nullptr && module->OL_state[GRAB_DISABLED_JSON] == 1.0f) ? "✔" : "";
+		}
+	};
+
+	struct MotherRootBasedDisplayItem : MenuItem {
+		Mother *module;
+		void onAction(const event::Action &e) override {
+			if (module->OL_state[ROOT_BASED_DISPLAY_JSON] == 0.f) {
+				module->OL_setOutState(ROOT_BASED_DISPLAY_JSON, 1.f);
+				module->OL_setOutState(C_BASED_DISPLAY_JSON, 0.f);
+			}
+			else
+				module->OL_setOutState(ROOT_BASED_DISPLAY_JSON, 0.f);
+			module->rootBasedDisplayChanged = true;
+			module->cBasedDisplayChanged = true;
+		}
+		void step() override {
+			if (module)
+				rightText = (module != nullptr && module->OL_state[ROOT_BASED_DISPLAY_JSON] == 1.0f) ? "✔" : "";
+		}
+	};
+
+	struct MotherCBasedDisplayItem : MenuItem {
+		Mother *module;
+		void onAction(const event::Action &e) override {
+			if (module->OL_state[C_BASED_DISPLAY_JSON] == 0.f) {
+				module->OL_setOutState(C_BASED_DISPLAY_JSON, 1.f);
+				module->OL_setOutState(ROOT_BASED_DISPLAY_JSON, 0.f);
+			}
+			else {
+				module->OL_setOutState(C_BASED_DISPLAY_JSON, 0.f);
+			}
+			module->rootBasedDisplayChanged = true;
+			module->cBasedDisplayChanged = true;
+		}
+		void step() override {
+			if (module)
+				rightText = (module != nullptr && module->OL_state[C_BASED_DISPLAY_JSON] == 1.0f) ? "✔" : "";
+		}
+	};
+
 	void appendContextMenu(Menu *menu) override {
 		if (module) {
 			MenuLabel *spacerLabel = new MenuLabel();
@@ -916,9 +1200,9 @@ struct MotherWidget : ModuleWidget {
 			Mother *module = dynamic_cast<Mother*>(this->module);
 			assert(module);
 
-			MenuLabel *styleLabel = new MenuLabel();
-			styleLabel->text = "Mother";
-			menu->addChild(styleLabel);
+			MenuLabel *motherLabel = new MenuLabel();
+			motherLabel->text = "Mother";
+			menu->addChild(motherLabel);
 
 			MotherScalesItem *motherScalesItem = new MotherScalesItem();
 			motherScalesItem->module = module;		
@@ -929,7 +1213,52 @@ struct MotherWidget : ModuleWidget {
 			spacerLabel = new MenuLabel();
 			menu->addChild(spacerLabel);
 
-			styleLabel = new MenuLabel();
+			MenuLabel *behaviourLabel = new MenuLabel();
+			behaviourLabel->text = "Behaviour";
+			menu->addChild(behaviourLabel);
+
+			MotherDisableVisualizationItem *motherDisableVisualizationItem = new MotherDisableVisualizationItem();
+			motherDisableVisualizationItem->module = module;		
+			motherDisableVisualizationItem->text = "Disable Visualization";
+			menu->addChild(motherDisableVisualizationItem);
+
+			MotherDisableDnaItem *motherDisableDnaItem = new MotherDisableDnaItem();
+			motherDisableDnaItem->module = module;		
+			motherDisableDnaItem->text = "Disable DNA";
+			menu->addChild(motherDisableDnaItem);
+
+			MotherDisableGrabItem *motherDisableGrabItem = new MotherDisableGrabItem();
+			motherDisableGrabItem->module = module;		
+			motherDisableGrabItem->text = "Disable Grab";
+			menu->addChild(motherDisableGrabItem);
+
+			MotherRootBasedDisplayItem *motherRootBasedDisplayItem = new MotherRootBasedDisplayItem();
+			motherRootBasedDisplayItem->module = module;		
+			motherRootBasedDisplayItem->text = "Root Based Display";
+			menu->addChild(motherRootBasedDisplayItem);
+
+			MotherCBasedDisplayItem *motherCBasedDisplayItem = new MotherCBasedDisplayItem();
+			motherCBasedDisplayItem->module = module;		
+			motherCBasedDisplayItem->text = "C Based Display";
+			menu->addChild(motherCBasedDisplayItem);
+
+			spacerLabel = new MenuLabel();
+			menu->addChild(spacerLabel);
+
+			MenuLabel *polyphonyLabel = new MenuLabel();
+			polyphonyLabel->text = "Polyphony";
+			menu->addChild(polyphonyLabel);
+
+			AutoChannelsItem *autoChannelsItem = new AutoChannelsItem();
+			autoChannelsItem->module = module;		
+			autoChannelsItem->text = "Auto Channels";
+			autoChannelsItem->rightText = RIGHT_ARROW;
+			menu->addChild(autoChannelsItem);
+
+			spacerLabel = new MenuLabel();
+			menu->addChild(spacerLabel);
+
+			MenuLabel *styleLabel = new MenuLabel();
 			styleLabel->text = "Style";
 			menu->addChild(styleLabel);
 

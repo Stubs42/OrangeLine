@@ -3,28 +3,21 @@
  
 	Include file  member variables and methods common to all OrangeLine modules.
 	To be included inside the module definition <module_name>.cpp like this:
-
 		...
 		struct <module_name> : Module {
-
 			#include "OrangeLineCommon.hpp"
 		...
-
 	All methods starting with modulul.. like moduleInitStateTypes have to be implemented in
 	<module_name>.cpp
-
 Copyright (C) 2019 Dieter Stubler
-
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
 the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
-
 This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
-
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
@@ -33,7 +26,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 // ********************************************************************************************************************************
 /*
 	Common member variables of all OrangeLine modules
-
 	Never use OL_ member variables in module specific code like in <module_name>.cpp
 	Use macros defined in OrangeLine.hpp instead
 */
@@ -71,6 +63,12 @@ bool   styleChanged = true;
 SvgPanel *brightPanel;
 SvgPanel *darkPanel;
 
+const char *channelNumbers[16] = {
+	"1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16"
+};
+
+int    idleSkipCounter = 0;
+int    samplesSkipped  = 0;
 /*
 	Got random implementation from Frozen Wastland Seeds of Change
 */
@@ -159,27 +157,20 @@ float normal_number() {
 // ********************************************************************************************************************************
 /*
 	Initialization
-
 	Constructor has to create a valid and consistent initial state to present to the dataToJson call
 	right after adding the module.
-
 	Now to cases:
-
 	1.	dataToJson is called first:	module added to the patch
 	2.	dataFromJson is called first: patch was (re)loaded or a preset was loaded
-
 	In both cases we may have to init non persistent state of the module after both actions.
-
 	This forces an initialize step at the beginning of process () which handles this 
 	before further processing
-
 	OL_initialized = false indicates that the module was just added to the patch or dataFromJson has been called
 	and has to be initialized
 */
 
 /**
 	Initialize  Modul State
-
 	Called from Constructor
 	Set all default types and collect values/Voltages where appropriate.
 	then calls module specific initStateTypes () method to set module specific types != defaults.
@@ -320,15 +311,6 @@ inline void OL_setInState (int stateIdx, float value) {
 		OL_outStateChange[stateIdx] = OL_inStateChange[stateIdx] = true;
 	}
 }
-/*
-inline void OL_setInStatePoly (int stateIdx, int channel, float value) {
-	int idx = stateIdx + channel * NUM_POLYS;
-	if (OL_statePoly[idx] != value) {
-		OL_statePoly[idx] = value;
-		OL_outStateChangePoly[idx] = OL_inStateChangePoly[idx] = true;
-	}
-}
-*/
 /**
 	Method to set the outgoing state of params
 	output state change is flagged
@@ -339,16 +321,6 @@ inline void OL_setOutState (int stateIdx, float value) {
 		OL_outStateChange[stateIdx] = true;
 	}
 }
-/*
-inline void OL_setOutStatePoly (int stateIdx, int channel, float value) {
-	int idx = stateIdx + channel * NUM_POLYS;
-	if (OL_statePoly[idx] != value) {
-		OL_statePoly[idx] = value;
-		OL_outStateChangePoly[idx] = true;
-	}
-}
-*/
-
 /**
 	Method to configure json labels
 */
@@ -365,6 +337,15 @@ inline NVGcolor getTextColor () {
 	Generic process() Method
 */
 void process (const ProcessArgs &args) override {
+
+	bool skip = moduleSkipProcess();
+	idleSkipCounter = (idleSkipCounter + 1) % IDLESKIP;
+	if (skip) {
+		samplesSkipped ++;
+		processActiveOutputTriggers ();
+		return;
+	}
+
 	OL_sampleTime = 1.0 / (double)(APP->engine->getSampleRate ());
 
 	initialize ();
@@ -375,22 +356,19 @@ void process (const ProcessArgs &args) override {
 	reflectChanges();
 
 	OL_initialized = true;
+	samplesSkipped = 0;
 }
 
 /**
   Initialize Module after:
-
 		adding the module to or 
 		(re)loading a patch or 
 		loading a preset or 
 		reset call (right click initialize)
-
 	Can and does assume that all params assotiated to ui components have
 	been set or initialized and json state is valid.
-
 	If already initialized, reset all state changes to false to prepare a clean
 	state to the following state processing.
-
 	If not yet initialized, moduleInitialize () is called and out state changes are
 	flagged to ensure that reflectChanges () updates the ui to reflect the new state. 
 	In state changes are not reset when moduleInitialize () is called because
@@ -399,11 +377,29 @@ void process (const ProcessArgs &args) override {
 	OL_initialized to false to request initialize ().
 */
 inline void initialize () {
-	memset (OL_outStateChange,     false, sizeof(OL_outStateChange));
-	memset (OL_outStateChangePoly, false, sizeof(OL_outStateChangePoly));
+	moduleCustomInitialize();
+	for (unsigned long i = stateIdxParam(0); i < NUM_STATES; i ++)
+		OL_outStateChange[i] = false;
+	for (int i = 0; i < NUM_OUTPUTS; i ++) {
+		int idx = i * POLY_CHANNELS;
+		if (getOutPoly(i))
+			for (int j = 0; j < POLY_CHANNELS; j++)
+				OL_outStateChangePoly[idx + j] = false;
+		else
+			OL_outStateChangePoly[idx] = false;
+	}
 	if (OL_initialized) {
-		memset (OL_inStateChange,     false, sizeof( OL_inStateChange));
-		memset (OL_inStateChangePoly, false, sizeof( OL_inStateChangePoly));
+		int idxParam = stateIdxParam(0);
+		for (int i = 0; i < NUM_PARAMS + NUM_INPUTS; i ++) 
+			OL_inStateChange[idxParam + i] = false;
+		for (int i = 0; i < NUM_INPUTS; i ++) {
+			int idx = i * POLY_CHANNELS;
+			if (getInPoly(i))
+				for (int j = 0; j < POLY_CHANNELS; j++)
+					OL_inStateChangePoly[idx + j] = false;
+			else
+				OL_inStateChangePoly[idx] = false;
+		}
 	}
 	else {
 		moduleInitialize ();
@@ -435,9 +431,7 @@ inline void processParamsAndInputs () {
 			
 				Big pit I fell in first!
 				If you write the line below this comment as:
-
 //			if (((dsp::SchmittTrigger)(*OL_inStateTrigger[i])).process(value))
-
 				this will not work because it looks like we get a new SchmittTigger instance for every call...
 			*/
 			if (((dsp::SchmittTrigger*)OL_inStateTrigger[paramIdx])->process (OL_state[stateIdx])) {
@@ -489,6 +483,7 @@ inline void processParamsAndInputs () {
 				}
 				else {
 					float value = inputs[inputIdx].getVoltage (channel);
+					if (!std::isfinite(value)) value = 0.f;
 					if (OL_statePoly[idx] != value) {
 						OL_statePoly[idx] = value;
 						OL_inStateChangePoly[idx] = true;
@@ -510,7 +505,7 @@ inline void processParamsAndInputs () {
 					Big pit I fell in first!
 					If you write the line below this comment as:
 
-	//			if (((dsp::SchmittTrigger)(*OL_inStateTrigger[i])).process(value))
+						if (((dsp::SchmittTrigger)(*OL_inStateTrigger[i])).process(value))
 
 					this will not work because it looks like we get a new SchmittTigger instance for every call...
 				*/
@@ -520,9 +515,61 @@ inline void processParamsAndInputs () {
 				}
 			}
 			else { 
-				setStateInput (inputIdx, inputs[inputIdx].getVoltage ());
+				float value = inputs[inputIdx].getVoltage ();
+				if (!std::isfinite(value)) value = 0.f;
+				// Do not clamp because some modules might have to deal with lower and larger values
+				// value = clamp(value, -10.f, 10.f);
+				setStateInput (inputIdx, value);
 				if (changeInput(inputIdx))
 					OL_customChangeBits |= getCustomChangeMaskInput (inputIdx);
+			}
+		}
+	}
+}
+
+/**
+    Output processing of active triggers
+*/
+inline void processActiveOutputTriggers () {
+	for (int stateIdx = stateIdxOutput (0), outputIdx = 0; stateIdx <= maxStateIdxOutput; stateIdx++, outputIdx++) {
+		if (getStateTypeOutput (outputIdx) != STATE_TYPE_TRIGGER)
+			continue;
+		if (getOutPoly (outputIdx)) {
+			int channel;
+			for (channel = 0; channel < getOutPolyChannels (outputIdx); channel++) {
+				int cvOutPolyIdx = outputIdx * POLY_CHANNELS + channel;
+				/*
+					Pulse generators of active Trigger outputs have to be processed independently of changes in current process() run
+				*/
+				if (OL_statePoly [NUM_INPUTS * POLY_CHANNELS + cvOutPolyIdx] > 0.f) {
+					bool trgActive = ((dsp::PulseGenerator*)(OL_outStateTriggerPoly[cvOutPolyIdx]))->process ((float)OL_sampleTime);
+					if (trgActive) {
+						OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cvOutPolyIdx] = 10.f;
+						OL_wasTriggeredPoly[cvOutPolyIdx] = true;
+					}
+					else 
+						OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cvOutPolyIdx] = 0.f;
+					if (OL_isGate[outputIdx] && OL_wasTriggeredPoly[cvOutPolyIdx])
+						trgActive = !trgActive;
+					outputs[outputIdx].setVoltage (trgActive ? 10.f : 0.f, channel);
+				}
+			}
+		}
+		else {
+			/*
+				Pulse generators of active Trigger outputs have to be processed independently of changes in current process() run
+			*/
+			if (getStateOutput (outputIdx) > 0.f) {
+				bool trgActive = ((dsp::PulseGenerator*)(OL_outStateTrigger[outputIdx]))->process ((float)OL_sampleTime);
+				if (trgActive) {
+					setStateOutput (outputIdx, 10.f);
+					OL_wasTriggered[outputIdx] = true;
+				}
+				else 
+					setStateOutput (outputIdx, 0.f);
+				if (OL_isGate[outputIdx] && OL_wasTriggered[outputIdx])
+					trgActive = !trgActive;
+				outputs[outputIdx].setVoltage (trgActive ? 10.f : 0.f);
 			}
 		}
 	}

@@ -67,6 +67,9 @@ struct Fence : Module {
 	float processStep = 0.f;
 	float cvOut = 0.f;
 
+	int   trgChannels = 0;
+
+
 	/*
 		Variables used speed up processing
 	*/
@@ -82,7 +85,42 @@ struct Fence : Module {
 	Fence () {
 		initializeInstance ();
 	}
+	/*
+		Method to decide whether this call of process() should be skipped
+	*/
+	/*
+		Method to decide whether this call of process() should be skipped
 
+		Only process when idleSkipCOunter provided by OrangeLineCommmon.hpp == 0
+		or we are running some delayed processing
+		or if we have a clock trigger.
+		We must not do a trigger process here but just check if the clock trigger input changed
+	*/
+	bool moduleSkipProcess() {
+		bool skip = (idleSkipCounter != 0);
+		if (skip) {
+			int channels;
+			if (getInputConnected(TRG_INPUT)) {
+				channels = inputs[TRG_INPUT].getChannels();
+				for (int i = 0; i < channels; i ++) {
+					if (OL_statePoly[TRG_INPUT * POLY_CHANNELS + i] != inputs[TRG_INPUT].getVoltage(i)) {
+						skip = false;
+						break;
+					}
+				}
+			}
+			else {
+				channels = inputs[CV_INPUT].getChannels();
+				for (int i = 0; i < channels; i ++) {
+					if (OL_statePoly[CV_INPUT * POLY_CHANNELS + i] != inputs[CV_INPUT].getVoltage(i)) {
+						skip = false;
+						break;
+					}
+				}
+			}
+		}
+		return skip;
+	}
 	/**
 		Method to set stateTypes != default types set by initializeInstance() in OrangeLineModule.hpp
 		which is called from constructor
@@ -168,6 +206,8 @@ struct Fence : Module {
 		or a right click initialize (reset).
 	*/
 	inline void moduleInitialize () {
+		styleChanged = true;
+
 		initializeForMode ();
 		memset (oldCvOut, 0.f, sizeof (oldCvOut));
 		memset ( oldCvIn, 0.f, sizeof ( oldCvIn));
@@ -200,8 +240,6 @@ struct Fence : Module {
 		setStateJson (HIGHCLAMPED_JSON,                0.f);
 
 		setStateJson (       GATE_JSON,                0.f);
-
-		setStateJson (      STYLE_JSON,                0.f);
 
 		setStateJson (       LINK_JSON, getForMode (DEFAULT_LINK_RAW, DEFAULT_LINK_QTZ, DEFAULT_LINK_SHPR));
 
@@ -316,7 +354,6 @@ struct Fence : Module {
 /*
 	Methods called directly or indirectly called from process () in OrangeLineCommon.hpp
 */
-
 	/**
 		Module specific process method called from process () in OrangeLineCommon.hpp
 	*/
@@ -339,6 +376,8 @@ struct Fence : Module {
 			styleChanged = false;
 		}
 
+		bool lastWasTrigger = false;
+		
 		//
 		//	Undo knob fakes
 		//
@@ -384,6 +423,7 @@ struct Fence : Module {
 		bool inConnected = getInputConnected (CV_INPUT);
 		if (inConnected & (run || change)) {
 			int channels = inputs[CV_INPUT].getChannels();
+			trgChannels = inputs[TRG_INPUT].getChannels ();
 			setOutPolyChannels(CV_OUTPUT, channels);
 			setOutPolyChannels(TRG_OUTPUT, channels);
 			bool trgConnected = getInputConnected (TRG_INPUT); 
@@ -393,12 +433,15 @@ struct Fence : Module {
 				int trgOutPolyIdx = TRG_OUTPUT * POLY_CHANNELS + channel;
 				int cvOutPolyIdx = CV_OUTPUT * POLY_CHANNELS + channel;
 
-				if ((!trgConnected && OL_inStateChangePoly[cvInPolyIdx]) || OL_inStateChangePoly[trgInPolyIdx] || change) {
+				if ((!trgConnected && OL_inStateChangePoly[cvInPolyIdx]) || OL_inStateChangePoly[trgInPolyIdx] || (channel >= trgChannels  &&  lastWasTrigger) || change) {
 					cvOut = OL_statePoly[cvInPolyIdx];
+					if (channel < trgChannels) {
+						lastWasTrigger = OL_inStateChangePoly[trgInPolyIdx];
+					}
 					if (mode == MODE_QTZ_INT)
 						cvOut = quantize (cvOut);
-					if (cvOut == oldCvIn[channel] && !OL_inStateChangePoly[trgInPolyIdx] && !change)
-						continue;
+					if (cvOut == oldCvIn[channel] && !(OL_inStateChangePoly[trgInPolyIdx] || lastWasTrigger) && !change)
+						continue;				
 					oldCvIn[channel]  = cvOut;
 					if (cvOut > processHigh) {
 						if (mode == MODE_QTZ_INT) {
@@ -455,7 +498,7 @@ struct Fence : Module {
 					if (mode == MODE_QTZ_INT)
 						cvOut = quantize (cvOut);
 					cvOut = clamp (cvOut, minLow, maxHigh);
-					if (abs (cvOut - oldCvOut[channel]) > PRECISION) {
+					if (fabs (cvOut - oldCvOut[channel]) > PRECISION) {
 						if (OL_statePoly[NUM_INPUTS * POLY_CHANNELS + trgOutPolyIdx] != 10.f) {
 							OL_statePoly[NUM_INPUTS * POLY_CHANNELS + trgOutPolyIdx] = 10.f;
 							OL_outStateChangePoly[trgOutPolyIdx] = true;
@@ -467,8 +510,17 @@ struct Fence : Module {
 					}
 					oldCvOut[channel] = cvOut;
 				}
+				else
+					lastWasTrigger = false;				
 			}
 		}
+	}
+
+	inline void moduleCustomInitialize () {
+		OL_outStateChange[stateIdxJson(MODE_JSON)] = false;
+		OL_outStateChange[stateIdxJson(LINK_JSON)] = false;
+		OL_inStateChange[stateIdxJson(MODE_JSON)] = false;
+		OL_inStateChange[stateIdxJson(LINK_JSON)] = false;
 	}
 
 	/**
@@ -482,21 +534,26 @@ struct Fence : Module {
 	*/
 	inline void moduleProcessState () {
 
-		if (inChangeParam (MODE_PARAM))	//	User clicked on mode button
+		if (inChangeParam (MODE_PARAM))	{ //	User clicked on mode button
 			setStateJson (MODE_JSON, float((int(getStateJson (MODE_JSON)) + 1) % 3));
+//			fprintf (stderr, "inChangeParam (MODE_PARAM)\n");
+		}
 
-		if (inChangeParam (LINK_PARAM))	//	User clicked on link button
+		if (inChangeParam (LINK_PARAM))	{ //	User clicked on link button
 			setStateJson (LINK_JSON, float((int(getStateJson (LINK_JSON)) + 1) % 3));
-
+//			fprintf (stderr, "inChangeParam (LINK_PARAM)\n");
+		}
 		if (inChangeParam (GATE_PARAM)) {	//	User clicked on tr/gt button
 			if (getStateJson (GATE_JSON) == 0.f)
 				setStateJson (GATE_JSON, 1.f);
 			else {
 				setStateJson (GATE_JSON, 0.f);
 			}
+//			fprintf (stderr, "inChangeParam (GATE_PARAM)\n");
 		}
 
 		if (changeJson (MODE_JSON)) {	//	Mode has changed. Restore low, high, step and link for new mode
+//			fprintf (stderr, "changeJson (MODE_JSON)\n");
 			//
 			switch (int(getStateJson (MODE_JSON))) {
 				case MODE_RAW_INT:
