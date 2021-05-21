@@ -89,8 +89,11 @@ If the pattern length provided by the master is 0V, the length defauts to the va
 #### Top Row
 
 RST: Reset trigger cv input from your patch (usually clock)
+
 CLK: Clock trigger cv input
+
 DIV: Knob to select the clock division Phrase should run with
+
 PTN: Pattern cv input to select master sequencer patterns (allows for nesting of Phrases)
 
 #### Left Column
