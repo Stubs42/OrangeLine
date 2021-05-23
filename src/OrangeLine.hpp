@@ -55,6 +55,20 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define TEXT_SCROLL_DELAY   22050
 #define TEXT_SCROLL_PRE_DELAY   TEXT_SCROLL_DELAY * 4
 
+/*
+	Random implementation derived from the one used in Frozen Wastland Seeds of Change
+*/
+#define N 624
+#define M 397
+#define MATRIX_A 0x9908b0dfUL   /* constant vector a */
+#define UPPER_MASK 0x80000000UL /* most significant w-r bits */
+#define LOWER_MASK 0x7fffffffUL /* least significant r bits */
+typedef struct OrangeLineRandom {
+	unsigned long mt[N]; /* the array for the state vector  */
+	int mti=N+1; /* mti==N+1 means mt[N] is not initialized */
+	int latest_seed = 0;
+} OrangeLineRandom;
+
 #define stateIdxJson(i)			(i)
 #define stateIdxParam(i)		(NUM_JSONS + (i))
 #define stateIdxInput(i)		(NUM_JSONS + NUM_PARAMS + (i))
@@ -143,12 +157,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 	ParamQuantity *pq = paramQuantities[paramId]; \
 	pq->label = pLabel; \
 }
-
-#define N 624
-#define M 397
-#define MATRIX_A 0x9908b0dfUL   /* constant vector a */
-#define UPPER_MASK 0x80000000UL /* most significant w-r bits */
-#define LOWER_MASK 0x7fffffffUL /* least significant r bits */
 
 // ********************************************************************************************************************************
 /**

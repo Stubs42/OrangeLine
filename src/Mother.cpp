@@ -79,7 +79,7 @@ struct Mother : Module {
 	bool	cBasedDisplayChanged = false;
 	bool	disableGrabChanged = false;
 	bool	disableDnaChanged = false;
-		
+	
 	#include "MotherJsonLabels.hpp"
 	#include "MotherScales.hpp"
 
@@ -232,7 +232,7 @@ struct Mother : Module {
 		struct timeval tp;
 		gettimeofday(&tp, NULL);
 		unsigned long int seed = tp.tv_sec * 1000 + tp.tv_usec / 1000;
-		init_genrand (seed);
+		initRandom (&globalRandom, seed);
 		setStateJson (AUTO_CHANNELS_JSON, 1.f);
 		setStateJson (VISUALIZATION_DISABLED_JSON, 0.f);
 		setStateJson (DNA_DISABLED_JSON, 0.f);
@@ -361,13 +361,13 @@ struct Mother : Module {
 
 					reflectCounter = REFLECT_DURATION;
 					if (rndConnected && channel < rndChannels)
-						init_genrand (int(round (OL_statePoly[rndInPolyIdx] * 100000)));
+						initRandom (&globalRandom, int(round (OL_statePoly[rndInPolyIdx] * 100000)));
 
 					pCnt = 0;
 					pTotal = 0.f;
 
 					if ((OL_inStateChangePoly[trgInPolyIdx] || lastWasTrigger) && (!getInputConnected (CV_INPUT) || channel >= cvChannels))
-						cvIn = genrand_real () * 20.f - 10.f;
+						cvIn = getRandom(&globalRandom) * 20.f - 10.f;
 					else
 						cvIn = OL_statePoly[cvInPolyIdx] - (float(effectiveRoot) / 12.f);
 					cvOut = quantize (cvIn);
@@ -479,7 +479,7 @@ struct Mother : Module {
 					}
 					if (pCnt > 0 && !grab) {
 						float sum = 0.f;
-						rnd = genrand_real () * pTotal;
+						rnd = getRandom (&globalRandom) * pTotal;
 						for (int i = 0; i < pCnt; i++) {
 							sum += pProb[i];
 							if (sum >= rnd) {

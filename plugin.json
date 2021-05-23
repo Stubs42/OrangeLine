@@ -54,6 +54,15 @@
 	      "Sequencer",
         "Utility"
       ]
+    },
+    {
+      "slug": "Dejavu",
+      "name": "Dejavu",
+      "description": "Random Cv and Trigger generator with nested repeat functionality",
+      "tags": [
+        "Utility",
+        "Polyphonic"
+      ]
     }
   ]
 }

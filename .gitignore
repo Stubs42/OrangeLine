@@ -3,3 +3,4 @@ plugin.so
 dist/
 *.swp
 *.dll
+.vscode/

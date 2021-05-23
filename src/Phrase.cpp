@@ -155,6 +155,9 @@ struct Phrase : Module {
 		configParam (CLK_DLY_PARAM,  0.f,  32.f,  0.f, "Slave Clock Delay", " Samples", 0.f, 1.f, 0.f);
 	}
 
+	inline void moduleCustomInitialize () {
+	}
+
 	/**
 		Method to initialize the module after loading a patch or a preset
 		Called from initialize () included from from OrangeLineCommon.hpp
@@ -419,9 +422,6 @@ struct Phrase : Module {
 		setStateJson (CLOCKWITHSPH_JSON,       float(clockWithSph));
 		setStateJson (SLAVEPATTERN_JSON,       slavePattern);
 		setStateJson (DIVCOUNTER_JSON,         divCounter);
-	}
-
-	inline void moduleCustomInitialize () {
 	}
 
 	/**
