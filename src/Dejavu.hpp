@@ -20,20 +20,36 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 #include "OrangeLine.hpp"
 
-#define NUM_LENGTHS 4
-#define L_DIGITS    5
+// #define USE_DEBUG_OUTPUT
+
+#define MAX_REP 210
+
+#define REP_INPUT_SCALE 1000
+#define REP_INPUT_MAX 99999
+
+// Seed CV 10V = 10.000
+#define SEED_INPUT_SCALE 1000
+#define SEED_MAX 9999
+#define DIV_MAX 64
+
+// Do not change if you do not have 4 rows of repition knobs
+#define NUM_ROWS 4
 
 #define HEAT_LOW   0.f
 #define HEAT_HIGH 10.f
 
-#define GATE_COLOR_ON  0xffff00
-#define GATE_COLOR_OFF 0x000000
-#define SH_COLOR_ON    0xffff00
-#define SH_COLOR_OFF   0x000000
+#define GATE_COLOR_ON   0xffff00
+#define GATE_COLOR_OFF  0x000000
+#define SH_COLOR_ON     0xffff00
+#define SH_COLOR_OFF    0x000000
+#define ONOFF_COLOR_ON  0x00ff00
+#define ONOFF_COLOR_OFF 0x000000
+#define ONOFF_COLOR_ON_INACTIVE 0x001100
 
-#define GATE_MODE 1.f
-#define TRIGGER_MODE 0.f
+#define GATE_MODE    1
+#define TRIGGER_MODE 0
 
+#define PARAM_DISPLAY_CYCLES 30
 //
 // Virtual Parameter Ids stored using Json
 //
@@ -43,10 +59,16 @@ enum jsonIds {
 	//
 	STYLE_JSON,
 	RESET_JSON,
-	COUNTER_JSON,
-	COUNTER_END_JSON = COUNTER_JSON + NUM_LENGTHS - 1,
+	LEN_COUNTER_JSON,
+	LEN_COUNTER_JSON_END = LEN_COUNTER_JSON +  NUM_ROWS - 1,
+	ONOFF_JSON,
+	ONOFF_JSON_END = ONOFF_JSON + NUM_ROWS - 1,
+	DUR_COUNTER_JSON,
+	DUR_COUNTER_JSON_END = DUR_COUNTER_JSON +  NUM_ROWS - 1,
 	GATE_JSON,
 	SH_JSON,
+	DIVCOUNTER_JSON,
+	POLY_CHANNELS_JSON,
 
 	NUM_JSONS
 };
@@ -60,10 +82,13 @@ enum ParamIds {
 	//
 	DIV_PARAM,
 	SEED_PARAM,
-	L_PARAM,
-	L_END_PARAM = L_PARAM + NUM_LENGTHS - 1,
+	LEN_PARAM,
+	LEN_PARAM_END = LEN_PARAM +  NUM_ROWS - 1,
+	ONOFF_PARAM,
+	ONOFF_PARAM_END = ONOFF_PARAM +  NUM_ROWS - 1,
+	DUR_PARAM,
+	DUR_PARAM_END = DUR_PARAM +  NUM_ROWS - 1,
  	HEAT_PARAM,
-	HEAT_ATT_PARAM,
 	SH_PARAM,
 	GATE_PARAM,
 	OFS_PARAM,
@@ -83,25 +108,30 @@ enum InputIds {
 	CLK_INPUT,
 	DIV_INPUT,
 	SEED_INPUT,
-	L_INPUT,
-	L_END_INPUT = L_INPUT + NUM_LENGTHS,
-	TL_INPUT,
-	TL_END_INPUT = TL_INPUT + NUM_LENGTHS - 1,
+	REP_INPUT,
+	TRG_INPUT,
 	HEAT_INPUT,
+	HEAT_KNOB_ATT_INPUT,
 	OFS_INPUT,
 	SCL_INPUT,
+	GATE_INPUT,
+	SH_INPUT,
 
-	NUM_INPUTS}
-;
+	NUM_INPUTS
+	};
 
 //
 // Output Ids
 //
 enum OutputIds {
-	TL_OUTPUT,
-	TL_END_OUTPUT = TL_OUTPUT + NUM_LENGTHS - 1,
+	REP_OUTPUT,
+	TRG_OUTPUT,
 	GATE_OUTPUT,
 	CV_OUTPUT,
+
+#ifdef USE_DEBUG_OUTPUT
+	DEBUG_OUTPUT,
+#endif
 
 	NUM_OUTPUTS
 };
@@ -110,6 +140,8 @@ enum OutputIds {
 // Ligh Ids
 //
 enum LightIds {
+	REP_LIGHT_RGB,
+	REP_LIGHT_END = REP_LIGHT_RGB + ( NUM_ROWS * 3) - 1,
 	SH_LIGHT_RGB,
 	SH_LIGHT__GB,
 	SH_LIGHT___B,

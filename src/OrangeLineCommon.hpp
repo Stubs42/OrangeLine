@@ -41,7 +41,8 @@ dsp::SchmittTrigger *OL_inStateTrigger  [NUM_TRIGGERS];	//	trigger objects for p
 dsp::PulseGenerator *OL_outStateTrigger [NUM_OUTPUTS];	//	pulse generator objects for outputs (triggers)
 bool OL_isGate [NUM_OUTPUTS];
 bool OL_wasTriggered [NUM_OUTPUTS];		// remember whether we triggered once at all only set when triggerd but never reset
-bool OL_isPoly[NUM_INPUTS + NUM_OUTPUTS];
+bool OL_isPoly [NUM_INPUTS + NUM_OUTPUTS];
+float OL_isGatePoly [NUM_OUTPUTS * POLY_CHANNELS];	// float not bool because treated as: <-5 false, >5 true, else use OL_isPoly
 int  OL_polyChannels[NUM_OUTPUTS];
 
 /*
@@ -70,6 +71,8 @@ const char *channelNumbers[16] = {
 int    idleSkipCounter = 0;
 int    samplesSkipped  = 0;
 
+int    lastParamChanged = 0;
+bool   paramChanged = false;
 /*
 	Random implementation derived from the one used in Frozen Wastland Seeds of Change
 */
@@ -161,6 +164,7 @@ inline void initializeInstance () {
 	memset (          OL_isGate, false, sizeof (OL_isGate));			// Initialize trg outputs to TRIGGER = false (GATE = true)
 	memset (    OL_wasTriggered, false, sizeof (OL_wasTriggered));		// Initialize trg outputs to TRIGGER = false (GATE = true)
 	memset (    OL_polyChannels,     0, sizeof (OL_polyChannels));		// Initialize number of poly channels for outputs
+	memset (      OL_isGatePoly,     0, sizeof (OL_isGatePoly));		// Initialize number isGate definitions of poly channels for outputs
 
 	memset (          OL_statePoly,   0.f, sizeof (OL_statePoly));
 	memset (  OL_inStateChangePoly, false, sizeof (OL_inStateChangePoly));
@@ -416,8 +420,11 @@ inline void processParamsAndInputs () {
 		}
 		else {
 			setInStateParam (paramIdx, params[paramIdx].getValue ());
-			if (inChangeParam (paramIdx))
+			if (inChangeParam (paramIdx)) {
 				OL_customChangeBits |= getCustomChangeMaskParam (paramIdx);
+				lastParamChanged = paramIdx;
+				paramChanged = true;
+			}
 		}
 	}
 	/*
@@ -524,7 +531,14 @@ inline void processActiveOutputTriggers () {
 					}
 					else 
 						OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cvOutPolyIdx] = 0.f;
-					if (OL_isGate[outputIdx] && OL_wasTriggeredPoly[cvOutPolyIdx])
+					
+					bool isGate = OL_isGate[outputIdx];
+					if (OL_isGatePoly[channel * POLY_CHANNELS + outputIdx] > 5.f)
+						isGate = true;
+					if (OL_isGatePoly[channel * POLY_CHANNELS + outputIdx] < -5.f)
+						isGate = false;
+
+					if (isGate && OL_wasTriggeredPoly[cvOutPolyIdx])
 						trgActive = !trgActive;
 					outputs[outputIdx].setVoltage (trgActive ? 10.f : 0.f, channel);
 				}
@@ -593,9 +607,16 @@ inline void reflectChanges () {
 						OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cvOutPolyIdx] = 10.f;
 						OL_wasTriggeredPoly[cvOutPolyIdx] = true;
 					}
-					else 
+					else {
 						OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cvOutPolyIdx] = 0.f;
-					if (OL_isGate[outputIdx] && OL_wasTriggeredPoly[cvOutPolyIdx])
+					}
+					OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cvOutPolyIdx] = 0.f;
+					bool isGate = OL_isGate[outputIdx];
+					if (OL_isGatePoly[channel * POLY_CHANNELS + outputIdx] > 5.f)
+						isGate = true;
+					if (OL_isGatePoly[channel * POLY_CHANNELS + outputIdx] < -5.f)
+						isGate = false;	
+					if (isGate && OL_wasTriggeredPoly[cvOutPolyIdx])
 						trgActive = !trgActive;
 					outputs[outputIdx].setVoltage (trgActive ? 10.f : 0.f, channel);
 				}

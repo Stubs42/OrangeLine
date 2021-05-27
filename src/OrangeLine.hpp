@@ -66,7 +66,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 typedef struct OrangeLineRandom {
 	unsigned long mt[N]; /* the array for the state vector  */
 	int mti=N+1; /* mti==N+1 means mt[N] is not initialized */
-	int latest_seed = 0;
+	unsigned long latest_seed = 0;
 } OrangeLineRandom;
 
 #define stateIdxJson(i)			(i)
@@ -133,6 +133,8 @@ typedef struct OrangeLineRandom {
 #define customChangeBits		OL_customChangeBits
 
 #define isGate(i)			OL_isGate[i]
+#define isGatePoly(c, i)		OL_isGatePoly[c * POLY_CHANNELS + i]
+
 #define getInputConnected(i)		OL_inputConnected[i]
 #define initialized			OL_initialized
 

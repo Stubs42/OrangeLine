@@ -128,18 +128,7 @@ struct Phrase : Module {
 		#pragma GCC diagnostic pop
 
 		setStateJson (STYLE_JSON, float(STYLE_ORANGE));
-		setStateJson (RESET_JSON, 0.f);
-		setStateJson (PHRASELENCOUNTER_JSON, 0.f);
-		setStateJson (PHRASEDURCOUNTER_JSON, 0.f);
-		setStateJson (SLAVELENCOUNTER_JSON, 0.f);
-		setStateJson (SLAVEPATTERN_JSON, 0.f);
-		setStateJson (MASTERDELAYCOUNTER_JSON, 0.f);
-		setStateJson (TROWAFIX_JSON, 0.f);
-		setStateJson (DIVCOUNTER_JSON, 0.f);
-		setStateJson (CLOCKDELAYCOUNTER_JSON, 0.f);
-		setStateJson (CLOCKWITHRESET_JSON, 0.f);
-		setStateJson (CLOCKWITHSPA_JSON, 0.f);
-		setStateJson (CLOCKWITHSPH_JSON, 0.f);
+		moduleReset();
 	}
 
 	/**
