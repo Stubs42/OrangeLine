@@ -42,7 +42,7 @@ dsp::PulseGenerator *OL_outStateTrigger [NUM_OUTPUTS];	//	pulse generator object
 bool OL_isGate [NUM_OUTPUTS];
 bool OL_wasTriggered [NUM_OUTPUTS];		// remember whether we triggered once at all only set when triggerd but never reset
 bool OL_isPoly [NUM_INPUTS + NUM_OUTPUTS];
-float OL_isGatePoly [NUM_OUTPUTS * POLY_CHANNELS];	// float not bool because treated as: <-5 false, >5 true, else use OL_isPoly
+bool OL_isGatePoly [NUM_OUTPUTS * POLY_CHANNELS];
 int  OL_polyChannels[NUM_OUTPUTS];
 
 /*
@@ -164,7 +164,7 @@ inline void initializeInstance () {
 	memset (          OL_isGate, false, sizeof (OL_isGate));			// Initialize trg outputs to TRIGGER = false (GATE = true)
 	memset (    OL_wasTriggered, false, sizeof (OL_wasTriggered));		// Initialize trg outputs to TRIGGER = false (GATE = true)
 	memset (    OL_polyChannels,     0, sizeof (OL_polyChannels));		// Initialize number of poly channels for outputs
-	memset (      OL_isGatePoly,     0, sizeof (OL_isGatePoly));		// Initialize number isGate definitions of poly channels for outputs
+	memset (      OL_isGatePoly, false, sizeof (OL_isGatePoly));		// Initialize number isGate definitions of poly channels for outputs
 
 	memset (          OL_statePoly,   0.f, sizeof (OL_statePoly));
 	memset (  OL_inStateChangePoly, false, sizeof (OL_inStateChangePoly));
@@ -533,10 +533,8 @@ inline void processActiveOutputTriggers () {
 						OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cvOutPolyIdx] = 0.f;
 					
 					bool isGate = OL_isGate[outputIdx];
-					if (OL_isGatePoly[channel * POLY_CHANNELS + outputIdx] > 5.f)
+					if (OL_isGatePoly[outputIdx * POLY_CHANNELS + channel] > 5.f)
 						isGate = true;
-					if (OL_isGatePoly[channel * POLY_CHANNELS + outputIdx] < -5.f)
-						isGate = false;
 
 					if (isGate && OL_wasTriggeredPoly[cvOutPolyIdx])
 						trgActive = !trgActive;
@@ -610,12 +608,9 @@ inline void reflectChanges () {
 					else {
 						OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cvOutPolyIdx] = 0.f;
 					}
-					OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cvOutPolyIdx] = 0.f;
 					bool isGate = OL_isGate[outputIdx];
-					if (OL_isGatePoly[channel * POLY_CHANNELS + outputIdx] > 5.f)
+					if (OL_isGatePoly[outputIdx * POLY_CHANNELS + channel] > 5.f)
 						isGate = true;
-					if (OL_isGatePoly[channel * POLY_CHANNELS + outputIdx] < -5.f)
-						isGate = false;	
 					if (isGate && OL_wasTriggeredPoly[cvOutPolyIdx])
 						trgActive = !trgActive;
 					outputs[outputIdx].setVoltage (trgActive ? 10.f : 0.f, channel);
