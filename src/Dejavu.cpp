@@ -88,6 +88,7 @@ struct Dejavu : Module {
 		setInPoly          (REP_INPUT, true);
 		setInPoly          (TRG_INPUT, true);
 
+		setStateTypeOutput (TRG_OUTPUT, STATE_TYPE_TRIGGER);
 		setOutPoly         (TRG_OUTPUT, true);
 
 		setInPoly          (HEAT_INPUT, true);
@@ -149,23 +150,23 @@ struct Dejavu : Module {
 		Initialize param configs
 	*/
 	inline void moduleParamConfig () {
-		configParam (DIV_PARAM,             1.f,     DIV_MAX,   1.f, "Clock Division",       "", 0.f, 1.f, 0.f);
-		configParam (SEED_PARAM,            0.f,    SEED_MAX,   0.f, "Seed",                 "", 0.f, 1.f, 0.f);
+		configParam (DIV_PARAM,             1.f,   DIV_MAX,   1.f, "Clock Division",       "", 0.f, 1.f, 0.f);
+		configParam (SEED_PARAM,            0.f,  SEED_MAX,   0.f, "Seed",                 "", 0.f, 1.f, 0.f);
 		
-		configParam (LEN_PARAM + 0,       1.f,     MAX_REP,   1.f, "Length 1",               "", 0.f, 1.f, 0.f);
-		configParam (LEN_PARAM + 1,       1.f,     MAX_REP,   1.f, "Length 2",               "", 0.f, 1.f, 0.f);
-		configParam (LEN_PARAM + 2,       1.f,     MAX_REP,   1.f, "Length 3",               "", 0.f, 1.f, 0.f);
-		configParam (LEN_PARAM + 3,       1.f,     MAX_REP,   1.f, "Length 4",               "", 0.f, 1.f, 0.f);		
+		configParam (LEN_PARAM + 0,       1.f,     	   128,   1.f, "Length 1",               "", 0.f, 1.f, 0.f);
+		configParam (LEN_PARAM + 1,       1.f,          64,   1.f, "Length 2",               "", 0.f, 1.f, 0.f);
+		configParam (LEN_PARAM + 2,       1.f,     		32,   1.f, "Length 3",               "", 0.f, 1.f, 0.f);
+		configParam (LEN_PARAM + 3,       1.f,     		16,   1.f, "Length 4",               "", 0.f, 1.f, 0.f);		
  
    		configParam (ONOFF_PARAM + 0,     0.f,         1.f,   0.f, "Repeater 1 On/Offf",     "", 0.f, 1.f, 0.f);
    		configParam (ONOFF_PARAM + 1,     0.f,         1.f,   0.f, "Repeater 2 On/Offf",     "", 0.f, 1.f, 0.f);
    		configParam (ONOFF_PARAM + 2,     0.f,         1.f,   0.f, "Repeater 3 On/Offf",     "", 0.f, 1.f, 0.f);
    		configParam (ONOFF_PARAM + 3,     0.f,         1.f,   0.f, "Repeater 4 On/Offf",     "", 0.f, 1.f, 0.f);
 
-		configParam (DUR_PARAM + 0,       1.f,     MAX_REP,   1.f, "Duration 1",             "", 0.f, 1.f, 0.f);
-		configParam (DUR_PARAM + 1,       1.f,     MAX_REP,   1.f, "Duration 2",             "", 0.f, 1.f, 0.f);
-		configParam (DUR_PARAM + 2,       1.f,     MAX_REP,   1.f, "Duration 3",             "", 0.f, 1.f, 0.f);
-		configParam (DUR_PARAM + 3,       1.f,     MAX_REP,   1.f, "Duration 4",             "", 0.f, 1.f, 0.f);		
+		configParam (DUR_PARAM + 0,       1.f,         128,   1.f, "Duration 1",             "", 0.f, 1.f, 0.f);
+		configParam (DUR_PARAM + 1,       1.f,     		64,   1.f, "Duration 2",             "", 0.f, 1.f, 0.f);
+		configParam (DUR_PARAM + 2,       1.f,     		32,   1.f, "Duration 3",             "", 0.f, 1.f, 0.f);
+		configParam (DUR_PARAM + 3,       1.f,     		16,   1.f, "Duration 4",             "", 0.f, 1.f, 0.f);		
 
 		configParam (HEAT_PARAM,            0.f,       100.f,  50.f, "Heat",                 "%", 0.f, 1.f, 0.f);
 		
@@ -282,25 +283,40 @@ void debugOutput (int channel, float value) {
 		return count;
 	}
 
-	int getRepCountFromInput (int row, int i) {
+	int getRepCountFromInput (int baseIdx, int row) {
+		// Channels: 
+		//  0: DUR Value for repeater row 1
+		//  1: LEN Value for repeater row 1
+		//  2/3, 4/5, 6/7 as above DUR/LEN for repeater rows 2,3 and 4
+		// Channels 0 to 7 are interpreted in the same way as the knobs and 
+		// scaled by a factor of 100 (0.64V represents a length of 64 clockticks or multiples)
+		// Channels 8 to 15 follow the same layout as channels 1 to 7 but interpreted as raw length values and are
+		// scaled by a factor of 10.000 (10V represents a length of 10.000 clockticks.
+		// all channels be >= 1 and are ignored otherwise but allow any other length as long the effective length does not exceed max float.
 		if (! getInputConnected (REP_INPUT))
 			return 0;
+
 		int channels = inputs[REP_INPUT].getChannels();
-		if (row > channels)
+
+		// calulate first poly channel to look into (the cooked ones) 0 to 7
+		int channel = row * 2;
+		if (baseIdx == LEN_COUNTER_JSON) 
+			channel ++;		
+		if (channel > channels)
 			return 0;
-		// REP_INPUT is polyphonic
-		// Channels 1 to  NUM_ROWS are interpreted in the same way as the Knobs
-		// Channels  NUM_ROWS + 1 to  NUM_ROWS * 2 are take lietrally allowing uneven patterns of repition
-		// index is 0 based
-		int rep = int(OL_statePoly[REP_INPUT * POLY_CHANNELS + row] * REP_INPUT_SCALE);
-		if (rep != 0)
-			return calculateCount (REP_INPUT, row, rep);
-		if (row +  NUM_ROWS > channels)
+
+		int value = int(OL_statePoly[baseIdx * POLY_CHANNELS + channel] * REP_INPUT_SCALE_1);
+		if (value >= 1) {
+			return calculateCount (baseIdx, row, (value));
+		}
+		// now look into the raw input channels
+		channel += 8;
+		if (channel > channels)
 			return 0;
-		rep = OL_statePoly[REP_INPUT * POLY_CHANNELS + row +  NUM_ROWS] * REP_INPUT_SCALE;
-		if (rep == 0)
-			return 0;
-		return rep;
+		value = int(OL_statePoly[baseIdx * POLY_CHANNELS + channel] * REP_INPUT_SCALE_2);
+		if (value >= 1)
+			value = 0;
+		return value;
 	}
 	
 	int calculateCount (int baseIdx, int row, int count) {
@@ -363,7 +379,14 @@ void debugOutput (int channel, float value) {
 		if (changeInput (CLK_INPUT)) {
 
 			if (int(getStateJson (DIVCOUNTER_JSON)) == 0) {
-				setStateJson (DIVCOUNTER_JSON, getStateParam(DIV_PARAM));
+				if (getInputConnected (DIV_INPUT)) {
+					int div = int(getStateInput(DIV_INPUT) * 10);
+					if (div < 1) div = 1;
+					if (div > DIV_MAX) div = DIV_MAX;
+					setStateJson (DIVCOUNTER_JSON, float(div));
+				}
+				else
+					setStateJson (DIVCOUNTER_JSON, getStateParam(DIV_PARAM));
 
 				p_srcRandomGenerator = &globalRandom;
 				for (int row =  NUM_ROWS - 1; row >= 0; row --) {
@@ -381,6 +404,15 @@ void debugOutput (int channel, float value) {
 						repeatSeed[row] = getRandomRaw (p_srcRandomGenerator);
 						durCount = getRepCount (DUR_COUNTER_JSON, row);
 						// DEBUG("durCount reinitialited to %d for row %d", durCount, row);
+						if (OL_statePoly[(NUM_INPUTS + REP_OUTPUT) * POLY_CHANNELS + row * 2] != 10.f) {
+							OL_statePoly[(NUM_INPUTS + REP_OUTPUT) * POLY_CHANNELS + row * 2] = 10.f;
+							OL_outStateChangePoly[REP_OUTPUT * POLY_CHANNELS + row * 2] = float(durCount) / 10000;
+						}
+						// trigger repeats TRG output
+						if (OL_statePoly[(NUM_INPUTS + TRG_OUTPUT) * POLY_CHANNELS + row * 2] != 10.f) {
+							OL_statePoly[(NUM_INPUTS + TRG_OUTPUT) * POLY_CHANNELS + row * 2] = 10.f;
+							OL_outStateChangePoly[TRG_OUTPUT * POLY_CHANNELS + row * 2] = true;
+						}
 						lenCount = 0; // force a length reset off this row 
 					}
 
@@ -389,6 +421,16 @@ void debugOutput (int channel, float value) {
 						initRandom (&(repeatRandomGenerator[row]), repeatSeed[row]);
 						lenCount = getRepCount(LEN_COUNTER_JSON, row);
 						// DEBUG("lenCount reinitialited to %d for row %d", lenCount, row);
+						// write effective
+						if (OL_statePoly[(NUM_INPUTS + REP_OUTPUT) * POLY_CHANNELS + row * 2 + 1] != 10.f) {
+							OL_statePoly[(NUM_INPUTS + REP_OUTPUT) * POLY_CHANNELS + row * 2 + 1] = 10.f;
+							OL_outStateChangePoly[REP_OUTPUT * POLY_CHANNELS + row * 2 + 1] = float(lenCount) / 10000;
+						}
+						// trigger repeats TRG output
+						if (OL_statePoly[(NUM_INPUTS + TRG_OUTPUT) * POLY_CHANNELS + row * 2 + 1] != 10.f) {
+							OL_statePoly[(NUM_INPUTS + TRG_OUTPUT) * POLY_CHANNELS + row * 2 + 1] = 10.f;
+							OL_outStateChangePoly[TRG_OUTPUT * POLY_CHANNELS + row * 2 + 1] = true;
+						}
 						if (row > 0)
 							setStateJson (DUR_COUNTER_JSON + row - 1, 0.f); // force duration reset the row below
 					}
@@ -398,6 +440,8 @@ void debugOutput (int channel, float value) {
 
 					durCount--;
 					setStateJson (DUR_COUNTER_JSON + row, durCount);
+					OL_statePoly[NUM_INPUTS * POLY_CHANNELS + TRG_OUTPUT * POLY_CHANNELS + row] = 10.f;
+					OL_outStateChangePoly[TRG_OUTPUT * POLY_CHANNELS + row] = true;
 
 					lenCount--;
 					setStateJson (LEN_COUNTER_JSON + row, lenCount);
@@ -419,6 +463,7 @@ void debugOutput (int channel, float value) {
 				/*
 					Process output channels
 				*/
+				setOutPolyChannels(TRG_OUTPUT, 8);
 				setOutPolyChannels(GATE_OUTPUT, getStateJson(POLY_CHANNELS_JSON));
 				setOutPolyChannels(CV_OUTPUT, getStateJson(POLY_CHANNELS_JSON));
 				int heatPolyChannels = inputs[HEAT_INPUT].getChannels();
@@ -671,13 +716,23 @@ struct LeftWidget : TransparentWidget {
 	}
 };
 
-#define PI 3.14159265
+#define PI            3.14159265
+#define FLASH_FRAMES 10
+#define NUM_FLASHES	  9
 
 struct RigthWidget : TransparentWidget {
 
 	std::shared_ptr<Font> pFont;
 
 	Dejavu     *module = nullptr;
+
+	int flashFrameCounter[NUM_FLASHES] = 
+		{0, 0, 0, 0, 	// [0..3]:	urLength hits (newSeeds)
+		 0, 0, 0, 0,	// [4..7]: 	lenLength hits (reSeeds)
+		 0};			//      8:	middle Circle flashing on dur Enf of top active row
+
+	int oldCounter[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+	int flashDot[4] = {0, 0, 0, 0};
 
 	static RigthWidget* create (Dejavu *module) {
 		RigthWidget *w = new RigthWidget();
@@ -700,21 +755,38 @@ struct RigthWidget : TransparentWidget {
 		nvgBeginPath (nvg);
 		nvgCircle (nvg, x, y, radius);
 
-		if (strokeWidth == 0){
+		nvgStrokeWidth (nvg, strokeWidth);
+		if (strokeWidth == 0){ 
 			nvgFillColor (nvg, color);
 			nvgFill (nvg);
 		}
 		else {
 			nvgStrokeColor (nvg, color);
-			nvgStrokeWidth (nvg, strokeWidth);
 			nvgStroke(nvg);
 		}
 	}
 
+	unsigned char flashAlpha (int i, unsigned char alpha) {
+		int a = alpha; 
+		if (flashFrameCounter[i] > 0) {
+			// DEBUG("Flashing for level i = %d, flashFrameCounter = %d", i, flashFrameCounter[i]);
+			a += (float(255 - alpha) / FLASH_FRAMES) * flashFrameCounter[i];
+			if (a > 255) 
+				a = 255;
+		}
+		return a;
+	}
+
+	void decrementFlashCounters() {
+		for (int i = 0; i < NUM_FLASHES; i++)
+			if (flashFrameCounter[i] > 0)
+				flashFrameCounter[i]--;
+	}
+
 	void draw (const DrawArgs &drawArgs) override {
 		if (module) {
-			nvgGlobalCompositeOperation(drawArgs.vg, NVG_SOURCE_OVER);
-			nvgGlobalCompositeBlendFunc(drawArgs.vg, NVG_SRC_COLOR, NVG_ZERO);
+			// nvgGlobalCompositeOperation(drawArgs.vg, NVG_SOURCE_OVER);
+			// nvgGlobalCompositeBlendFunc(drawArgs.vg, NVG_SRC_COLOR, NVG_ZERO);
 
 			// float style = module->getStateJson(STYLE_JSON);
 
@@ -724,42 +796,123 @@ struct RigthWidget : TransparentWidget {
 			//nvgFill(drawArgs.vg);
 
 			NVGcolor dotColor[4] = {
-				nvgRGBA (0x99, 0x00, 0xff, 0xff),
-				nvgRGBA (0x00, 0xff, 0x00, 0xff),
-				nvgRGBA (0xff, 0xff, 0x66, 0xff),
-				nvgRGBA (0xff, 0x88, 0x00, 0xff)
+				nvgRGB (0x00, 0xff, 0x00),
+				nvgRGB (0xff, 0xff, 0x00),
+				nvgRGB (0xff, 0x00, 0x00),
+				nvgRGB (0xff, 0x00, 0xff)
 			};
-			int trackAlpha = 0xbb;
 			NVGcolor trackColor[4] = {
-				nvgRGBA (0x00, 0x00, 0xff, trackAlpha),
-				nvgRGBA (0x00, 0xff, 0x00, trackAlpha),
-				nvgRGBA (0xff, 0xff, 0x66, trackAlpha),
-				nvgRGBA (0xff, 0x88, 0x00, trackAlpha)
+				nvgRGB (0x00, 0xff, 0x00),
+				nvgRGB (0xff, 0xff, 0x00),
+				nvgRGB (0xff, 0x00, 0x00),
+				nvgRGB (0xff, 0x00, 0xff)
 			};
+			NVGcolor armColor[4] = {
+				nvgRGB (0x00, 0xff, 0x00),
+				nvgRGB (0xff, 0xff, 0x00),
+				nvgRGB (0xff, 0x00, 0x00),
+				nvgRGB (0xff, 0x00, 0xff)
+			};
+			// NVGcolor midColor = nvgRGB (0x00, 0x00, 0xff);
 
-			float maxTrackRadius   = (box.size.x / 2) - mm2px(1.f);
-			float radiusDistance   = mm2px(2.5f);
-			float radiusDot        = 2.f;
-			float trackStrokeWidth = 1.f;
+			int dotAlpha = 125; // 200;
+			int trkAlpha = 125; // 100;
+			int armAlpha = 125; // 150;
+			// int midAlpha =   0;
 
+			float maxTrackRadius    = (box.size.x / 2) - mm2px(1.5f);
+			float radiusDistance    = mm2px(2.5f);
+			float radiusDot         = mm2px(1);
+			float trackStrokeWidth  = mm2px(0.25);
+			float armStrokeWidth[4] = { mm2px(0.75), mm2px(1), mm2px(1.5), mm2px(2) };
+
+			// float radiusMid = maxTrackRadius - (4 * radiusDistance);
 			Vec center = Vec(box.size.x / 2, box.size.y / 2);
-			float levelRadius = maxTrackRadius; 
+			float levelRadius = maxTrackRadius - (3 * radiusDistance);
+
+			int topActive = -1;
+			for (int level = NUM_ROWS - 1;level >= 0; level--)
+				if (module->rowActive (level)) {
+					if (topActive == -1)
+						topActive = level;
+				}
+
 			for (int level = NUM_ROWS - 1;level >= 0; level--) {
-				if (module->rowActive(level)) {
-					drawCircle(drawArgs.vg, center.x, center.y, levelRadius, trackColor[NUM_ROWS - 1 - level], trackStrokeWidth);
-					int durCount = module->getRepCount(DUR_PARAM, + level);
-					int lenCount = module->getRepCount(LEN_PARAM, + level);
+
+				if (module->rowActive (level)) {
+
+					bool reverse = false;
+					NVGcolor colorTrk = trackColor[reverse ? NUM_ROWS - 1 - level : level];
+					NVGcolor colorDot =   dotColor[reverse ? NUM_ROWS - 1 - level : level];
+					NVGcolor colorArm =   armColor[reverse ? NUM_ROWS - 1 - level : level];
+					NVGcolor color;
+
+					int durCounter = int(module->getStateJson(DUR_COUNTER_JSON + level));
+					int lenCounter = int(module->getStateJson(LEN_COUNTER_JSON + level));
+
+					int durCount = module->getRepCount (DUR_PARAM, + level);
+					int lenCount = module->getRepCount (LEN_PARAM, + level);
+
 					float cycles = (float(durCount) / float(lenCount));
+
+					bool durEnd = false;
+					if (durCounter > oldCounter[level]) {
+						flashFrameCounter[level] = FLASH_FRAMES;
+						if (level == topActive)
+							flashFrameCounter[8] = FLASH_FRAMES;	// flash the middle Circle also
+						durEnd = true;
+					}
+					oldCounter[level] = durCounter;
+	
+					if (lenCounter > oldCounter[level+NUM_ROWS]) { // lenCounter was reset
+						if (durEnd)
+							flashDot[level] = -1;	// flash all dots of circle just hit a durution end
+						else
+							flashDot[level] = (durCount - durCounter) / lenCount;
+						flashFrameCounter[level+4] = FLASH_FRAMES;
+					}
+					oldCounter[level+NUM_ROWS] = lenCounter;
+
+/*
+					// Draw middle circle representing the global random generator
+					if (level == topActive) {
+						color = nvgTransRGBA (midColor, flashAlpha (8, midAlpha));
+						drawCircle (drawArgs.vg, center.x, center.y, radiusMid, color, trackStrokeWidth);
+					}
+*/
+					// Draw track circla
+					color = nvgTransRGBA (colorTrk, trkAlpha);
+					drawCircle (drawArgs.vg, center.x, center.y, levelRadius, color, trackStrokeWidth);
+					// Draw dots on track circle
 					float radAlpha  = (2 * PI) / cycles;
-					int point = 0;
-					for (; float(point) < cycles; point ++) {
+					for (int point = 0; point < cycles; point ++) {
 						float x = sin (radAlpha * point + PI) * levelRadius;
 						float y = cos (radAlpha * point + PI) * levelRadius;
-						drawCircle(drawArgs.vg, x + center.x, y + center.y, radiusDot, dotColor[NUM_ROWS - 1 - level], 0);
+						nvgBeginPath (drawArgs.vg);
+						// nvgShapeAntiAlias(drawArgs.vg, false);
+						NVGcolor color = nvgTransRGBA (colorDot, dotAlpha);
+						DEBUG("Level: %d, point = %d, flashDot[%d] = %d", level, point, level, flashDot[level]);
+						if (point == flashDot[level] || flashDot[level] == -1)
+							color = nvgTransRGBA (color, flashAlpha (level+4, dotAlpha));
+						drawCircle(drawArgs.vg, x + center.x, y + center.y, radiusDot, color, 0);
 					}
+
+					// Draw the Arm of the clock for this level
+					nvgBeginPath (drawArgs.vg);
+					nvgMoveTo (drawArgs.vg, center.x, center.y);
+					float progress = (float(durCounter) / float(durCount));
+					radAlpha = (2 * PI) * progress;
+					nvgLineTo (drawArgs.vg, center.x + (cos(radAlpha - PI/2) * levelRadius), center.y + (sin(radAlpha - PI/2) * levelRadius));
+					// nvgClosePath(NVGcontext* ctx);
+					nvgLineCap (drawArgs.vg, NVG_ROUND);
+					color = nvgTransRGBA (colorArm, flashAlpha (level, armAlpha));
+					nvgStrokeColor (drawArgs.vg, color);
+					nvgStrokeWidth (drawArgs.vg, armStrokeWidth[level]);
+					nvgStroke (drawArgs.vg);
 				}
-				levelRadius -= radiusDistance;
+				levelRadius += radiusDistance;
 			}
+			decrementFlashCounters();
 		}
 	}
 };

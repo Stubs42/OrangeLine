@@ -22,10 +22,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 // #define USE_DEBUG_OUTPUT
 
-#define MAX_REP 210
-
-#define REP_INPUT_SCALE 1000
-#define REP_INPUT_MAX 99999
+#define REP_INPUT_SCALE_1   100
+#define REP_INPUT_SCALE_2 10000
+#define REP_INPUT_MAX     99999
 
 // Seed CV 10V = 10.000
 #define SEED_INPUT_SCALE 1000

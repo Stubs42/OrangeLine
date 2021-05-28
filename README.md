@@ -100,7 +100,7 @@ PTN: Pattern cv input to select master sequencer patterns (allows for nesting of
 
 RST: Master reset trigger output
 
-CLK: Clock trigger out (triggered when nex phrase infomations are needed)
+CLK: Clock trigger out (triggered when nexi phrase infomations are needed)
 
 PTN: Master sequencer pattern cv output, copied from top row PTN input when master CLK out is sent.
 
@@ -144,6 +144,134 @@ Since the trowasoft sequencer are not compatible on pattern cv in itsself, there
 
 Have fun
 
+## Dejavu
 
+<p align="center"><img src="res/Dejavu_Final_Screenshot.svg"></p>
 
+### Short Description
 
+Dajavu is a polyphonic source for random gates/triggers as well as random cv.
+It provides polyphonic output for up to 16 channels of trigger/gates and cv each. 
+The number of channels provided can be set in the right clock menu of the module. 
+
+Its unique property is the ability to repeat the generated random sequences in up to 4 levels of nested phrases. Why ? Random generative patterns are much more accepted when there is a good amount of recognition of somthing heard before.
+
+Repitition justifies!
+
+Example:
+
+A simple Random generator generates values: ASDIGUEOIRJHSVMCXNSIEKZTAGSFDHD.... which is a chaotic sequence with no structure.
+Dejavu allows to generate : ASDI GUEO ASDI GUEO IRJH SVMC IRJH SVMC ... and more up to 4 nesting levels of repition.
+
+If you are familiar with Frozen Wastelands 'Seeds of Change' and 'The Gardener', you will be nearly all the way to understand Dejavu.
+On the bottom end, Dejavu is logically a chain of 4 'Gardeners' with its respective 'Seeds Of Change' seed source plus all the cabeling and 
+logical processing to sample and hold cv and trigger outputs. Thus Dejavu can free up a whole row some patches and frees a lot of CPU so.
+
+### The Panel
+
+#### Top Left Section
+
+RST: Reset trigger cv input from your patch (usually clock)
+
+CLK: Clock trigger cv input
+
+DIV Input: CV input for DIV, if connected DIV knob will be ignored, input CV is scaled by factor 10 (6.4V represents the max DIV of 64) 
+
+DIV Knob: Selects the clock division Dejavu should run with, if DIV input is not connected
+
+SEED CV Input: Global Seed to initialize Dejavu an Reset. Scales by factor 1000 (9.999V represent the max seed of 9999) The resultig seed is clamped to [0..9999]
+
+SEED Knob: Defines the starting seed Dejavu should reset to on RST trigger input
+
+#### Left Display
+
+The left display shows the current active seed, the random generator used to initilize the seeds of all generators needed for the outputs,
+was last initialized with. It changes whenever the lowest active REP row reaches its end of duration. The random generator is reset to the this same seed whenever the lowest active REP row reaches its end of length.
+
+If a knob is turned, the display switches to give a feedback of the current value of the moving knob for some time.
+
+#### Middle Left Section
+
+This section contains 4 rows to define the (nested) repitition of the generated random value stream. 
+A row is active if it is switched on with the respective LED in the middle of the row and either LEN or DUR of this row is != 1. 
+Each row holds a random generator to provide a seed for the active random generator row above or 
+the active random generator for output seed initialization. 
+On each end of duration (DUR length) the row initializes its random generator from a seed of an active row above or 
+the global random generator if it is the highest active row. In this case, the random generator will start to create a new sequence of randoms. 
+On each end of lenth (LEN length) the random generator is reset to the seed it was initialized last.
+This will start to deliver the same sequence of seed to its lower row or the out processing random generator as after its last LEN end.
+
+LEN Knob: Define the length of the random sequence to repeat.
+
+LED Button: Switch this row on or off, the LED is dimmed if a row is on but incative because both LEN and DUR are set to 1
+
+DUR Knob: Define the total length of the phrase. It is typically a multiple of LEN but other values are working as well. If lower than LEN, the sequence will never reach its end of length because it is terminated before by the lower DUR. If DUR is greater that LEN, Dejavu will just generate the same sequence as after the last len/dur end again.
+
+The rows 2 to 4 will interpret their LEN und DUR values as multiples of the DUR length of the active REP row above. Having a DUR of 64 set for the first row and we set a LEN of 2 and a DUR of 4 in the second row, this will result in an effective LEN of 64 x 2 = 128 and an effective DUR of 64 x 4 = 256 for the second row. The effective value of DUR will again provide the unit for the rows below.
+
+#### REP Input/Output Section
+
+REP input: Polyphonic input to control the DUR and LEN of the 4 rows in the repeater section above
+
+Channels: 
+
+0: DUR Value for repeater row 1
+
+1: LEN Value for repeater row 1
+
+2/3, 4/5, 6/7 as above DUR/LEN for repeater rows 2,3 and 4
+
+Channels 0 to 7 are interpreted in the same way as the knobs and scaled by a factor of 100 (0.64V represents a length of 64 clockticks or multiples).
+
+Channels 8 to 15 follow the same layout as channels 1 to 7 but interpreted as raw length values and are 
+scaled by a factor of 10.000 (10V represents a length of 10.000 clockticks.
+
+All channels have be >= 1V and are ignored otherwise but allow any other length as long the effective length does not exceed max float.
+
+TRG input: Polyphonic trigger inputs to force an end of duration event for rows 1 (channel 0) to row 4 (channel 3)
+
+REP output: Polyphonic cv outputs for the effective DUR/LEN of each row. Updated whenever the respective end of duration or end of length trigger is triggert.
+
+Channel 0 = DUR 1, Channel 1 = LEN 1, Channel 2 = DUR 2, ... . Values are scaled by a factor 10.000. so 10V represents an effective length of 100.000 clockticks.
+
+TRG output: Polyphonic trigger output for end of duration (channel 0,2,4,6) and length (channel 1,3,5,7) for the 4 repeater rows.
+
+#### Right Display
+
+A visualisation of Dejavus repeat state. All active repeater rows ware represented by a circle of dots and an assotiated clock hand.
+Whenever the hand reaches a dot, an end of length event has occured. Whenever the hand reaches 12:00 an end of duraction event has occured for
+this row. Row 1 of repeater is the outer ring, row 4 the inner ring. inactive rows are not displayed
+
+#### Heat Section
+
+HEAT Knob: The HEAT knob defines the global probability of output triggers to be fired on each clock tick.
+
+Left CV input: Polyphonic input for probabilities for the GATE output channels (bottom right output).
+
+Right CV input: Attenuation input for the HEAT Knob (NOT the CV input!). defined how the HEAT knob will change the value given by the LEFT CV input.
+
+#### Output Section
+
+OFS Knob: Offset of the CV values to be generated
+
+OFS CV input: Polyphonic input to set OFS per cv output channel
+
+OFS Attenuation Trimpod: Attenuator for the CV input
+
+SCL Knob: Scale of the CV output to be generated
+
+SCL CV input: Polyphonic input to set SCL per cv output channel
+
+SCL Attenuation Trimpod: Attenuator for the CV input
+
+S&H Button. Switches whether a cv change on output should occur on evry clock tick (S&H off) or only when a trigger output on that channel occured.
+
+S&H Input: Polyphonic input for S&H per channel. If S&H input channel n is > 5V. cv output channel n is set to s&h.
+
+GATE Button: Defines whether the trigger output generates triggers (off) or gates (on).
+
+GATE INPUT: Polyphonic GATE input. Defines GATE/TRG for each polychannel
+
+CV Output: (Upper bottom right) Polyphonic CV output
+
+GATE_Output: (Bottom right) Polyphonic Trigger/Gate output.
