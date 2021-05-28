@@ -42,7 +42,7 @@ dsp::PulseGenerator *OL_outStateTrigger [NUM_OUTPUTS];	//	pulse generator object
 bool OL_isGate [NUM_OUTPUTS];
 bool OL_wasTriggered [NUM_OUTPUTS];		// remember whether we triggered once at all only set when triggerd but never reset
 bool OL_isPoly [NUM_INPUTS + NUM_OUTPUTS];
-bool OL_isGatePoly [NUM_OUTPUTS * POLY_CHANNELS];
+float OL_isGatePoly [NUM_OUTPUTS * POLY_CHANNELS];
 int  OL_polyChannels[NUM_OUTPUTS];
 
 /*

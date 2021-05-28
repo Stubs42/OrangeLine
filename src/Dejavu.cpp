@@ -506,51 +506,53 @@ void debugOutput (int channel, float value) {
 						OL_outStateChangePoly[GATE_OUTPUT * POLY_CHANNELS + channel] = true;
 						fired = true;
 					}
-					if (fired) {
-						bool sh = (getStateJson(SH_JSON) == 1.f);
+					else {
+						OL_statePoly[ (NUM_INPUTS + GATE_OUTPUT) * POLY_CHANNELS + channel] = 0.f;
+						// Do not signal a output change, this will taken as a trigger !
+						// OL_outStateChangePoly[GATE_OUTPUT * POLY_CHANNELS + channel] = true;
+						outputs[GATE_OUTPUT].setVoltage (0.f, channel);
+					}
+					bool sh = false;
+					if (!fired) {
+						sh = (getStateJson(SH_JSON) == 1.f);
 						if (getInputConnected(SH_INPUT)) {
 							float value = lastShValue;
-							if (channel > inputs[SH_INPUT].getChannels()) {
+							if (channel <= inputs[SH_INPUT].getChannels()) {
 								value = OL_statePoly[SH_INPUT * POLY_CHANNELS + channel];
 							}
 							lastShValue = value;
 							sh = (value > 5.f);
 						}
-						if (!sh) {
-							float cvRandom = -10.f + getRandom (&(channelRandomGeneratorCv[channel])) * 20.f;
-							float scl = getStateParam (SCL_PARAM) / 100.f;
-							if (getInputConnected (SCL_INPUT)) {
-								int sclInput = 0.f;
-								if (channel > sclPolyChannels)
-									sclInput = lastSclInput;
-								else {
-									sclInput = OL_statePoly[SCL_INPUT * POLY_CHANNELS + channel];
-									lastSclInput = sclInput;
-								}
-								scl += (getStateParam(SCL_ATT_PARAM) / 100.f) * sclInput / 10.f;
-							}
-							cvRandom *= scl;
-							float ofs = getStateParam (OFS_PARAM);
-							if (getInputConnected (OFS_INPUT)) {
-								int ofsInput = 0.f;
-								if (channel > ofsPolyChannels)
-									ofsInput = lastOfsInput;
-								else {
-									ofsInput = OL_statePoly[OFS_INPUT * POLY_CHANNELS + channel];
-									lastOfsInput = ofsInput;
-								}
-								ofs += (getStateParam(OFS_ATT_PARAM) / 100.f) * ofsInput;
-							}
-							cvRandom += ofs;
-							cvRandom = clamp (cvRandom, -10.f, 10.f);
-							OL_statePoly[NUM_INPUTS * POLY_CHANNELS + CV_OUTPUT * POLY_CHANNELS + channel] = cvRandom;
-							OL_outStateChangePoly[CV_OUTPUT * POLY_CHANNELS + channel] = true;
-						}
 					}
-					else {
-						OL_statePoly[ (NUM_INPUTS + GATE_OUTPUT) * POLY_CHANNELS + channel] = 0.f;
-//						OL_outStateChangePoly[GATE_OUTPUT * POLY_CHANNELS + channel] = true;
-						outputs[GATE_OUTPUT].setVoltage (0.f, channel);
+					if (!sh || fired) {
+						float cvRandom = -10.f + getRandom (&(channelRandomGeneratorCv[channel])) * 20.f;
+						float scl = getStateParam (SCL_PARAM) / 100.f;
+						if (getInputConnected (SCL_INPUT)) {
+							int sclInput = 0.f;
+							if (channel > sclPolyChannels)
+								sclInput = lastSclInput;
+							else {
+								sclInput = OL_statePoly[SCL_INPUT * POLY_CHANNELS + channel];
+								lastSclInput = sclInput;
+							}
+							scl += (getStateParam(SCL_ATT_PARAM) / 100.f) * sclInput / 10.f;
+						}
+						cvRandom *= scl;
+						float ofs = getStateParam (OFS_PARAM);
+						if (getInputConnected (OFS_INPUT)) {
+							int ofsInput = 0.f;
+							if (channel > ofsPolyChannels)
+								ofsInput = lastOfsInput;
+							else {
+								ofsInput = OL_statePoly[OFS_INPUT * POLY_CHANNELS + channel];
+								lastOfsInput = ofsInput;
+							}
+							ofs += (getStateParam(OFS_ATT_PARAM) / 100.f) * ofsInput;
+						}
+						cvRandom += ofs;
+						cvRandom = clamp (cvRandom, -10.f, 10.f);
+						OL_statePoly[NUM_INPUTS * POLY_CHANNELS + CV_OUTPUT * POLY_CHANNELS + channel] = cvRandom;
+						OL_outStateChangePoly[CV_OUTPUT * POLY_CHANNELS + channel] = true;
 					}
 				}	
 			}	
@@ -600,11 +602,12 @@ void debugOutput (int channel, float value) {
 			int channels = inputs[GATE_INPUT].getChannels();
 			float lastValue = 0;
 			for (int channel = 0; channel < POLY_CHANNELS; channel ++) {
-				int value;
+				float value;
 				if (channel > channels)
 					value = lastValue;
-				else
+				else {
 					value = OL_statePoly[GATE_INPUT * POLY_CHANNELS + channel];
+				}
 				OL_isGatePoly[GATE_OUTPUT * POLY_CHANNELS + channel] = value;
 				lastValue = value;
 			}
