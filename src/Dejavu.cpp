@@ -549,7 +549,8 @@ void debugOutput (int channel, float value) {
 					}
 					else {
 						OL_statePoly[ (NUM_INPUTS + GATE_OUTPUT) * POLY_CHANNELS + channel] = 0.f;
-						OL_outStateChangePoly[GATE_OUTPUT * POLY_CHANNELS + channel] = true;
+//						OL_outStateChangePoly[GATE_OUTPUT * POLY_CHANNELS + channel] = true;
+						outputs[GATE_OUTPUT].setVoltage (0.f, channel);
 					}
 				}	
 			}	
@@ -899,7 +900,7 @@ struct RigthWidget : TransparentWidget {
 						nvgBeginPath (drawArgs.vg);
 						// nvgShapeAntiAlias(drawArgs.vg, false);
 						NVGcolor color = nvgTransRGBA (colorDot, dotAlpha);
-						DEBUG("Level: %d, point = %d, flashDot[%d] = %d", level, point, level, flashDot[level]);
+						// DEBUG("Level: %d, point = %d, flashDot[%d] = %d", level, point, level, flashDot[level]);
 						if (point == flashDot[level] || flashDot[level] == -1)
 							color = nvgTransRGBA (color, flashAlpha (level+4, dotAlpha));
 						drawCircle(drawArgs.vg, x + center.x, y + center.y, radiusDot, color, 0);
