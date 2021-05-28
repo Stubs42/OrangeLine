@@ -502,7 +502,7 @@ void debugOutput (int channel, float value) {
 						heat +=  heatInput;
 					}
 					if (heat >= gateRandom) {
-						OL_statePoly[ NUM_INPUTS * POLY_CHANNELS + GATE_OUTPUT * POLY_CHANNELS + channel] = 10.f;
+						OL_statePoly[ (NUM_INPUTS + GATE_OUTPUT) * POLY_CHANNELS + channel] = 10.f;
 						OL_outStateChangePoly[GATE_OUTPUT * POLY_CHANNELS + channel] = true;
 						fired = true;
 					}
@@ -547,6 +547,10 @@ void debugOutput (int channel, float value) {
 							OL_outStateChangePoly[CV_OUTPUT * POLY_CHANNELS + channel] = true;
 						}
 					}
+					else {
+						OL_statePoly[ (NUM_INPUTS + GATE_OUTPUT) * POLY_CHANNELS + channel] = 0.f;
+						OL_outStateChangePoly[GATE_OUTPUT * POLY_CHANNELS + channel] = true;
+					}
 				}	
 			}	
 			setStateJson(DIVCOUNTER_JSON, getStateJson(DIVCOUNTER_JSON) - 1);
@@ -563,8 +567,12 @@ void debugOutput (int channel, float value) {
 		This method should not do dsp or other logic processing.
 	*/
 	inline void moduleProcessState () {
-		if (inChangeParam (GATE_PARAM))	{
-			setStateJson (GATE_JSON, float((int(getStateJson (GATE_JSON)) + 1) % 2));
+		if (inChangeParam (GATE_PARAM)) {	//	User clicked on tr/gt button
+			if (getStateJson (GATE_JSON) == 0.f)
+				setStateJson (GATE_JSON, 1.f);
+			else {
+				setStateJson (GATE_JSON, 0.f);
+			}
 		}
 
 		if (getStateJson (GATE_JSON) > 0.f)
@@ -596,7 +604,7 @@ void debugOutput (int channel, float value) {
 					value = lastValue;
 				else
 					value = OL_statePoly[GATE_INPUT * POLY_CHANNELS + channel];
-				OL_isGatePoly[GATE_OUTPUT * POLY_CHANNELS_JSON + channel] = value;
+				OL_isGatePoly[GATE_OUTPUT * POLY_CHANNELS + channel] = value;
 				lastValue = value;
 			}
 		}
