@@ -467,7 +467,6 @@ void debugOutput (int channel, float value) {
 						}
 					}
 					if (!sh || fired) {
-						float cvRandom = -10.f + getRandom (&(channelRandomGeneratorCv[channel])) * 20.f;
 						float scl = getStateParam (SCL_PARAM) / 100.f;
 						if (getInputConnected (SCL_INPUT)) {
 							int sclInput = 0.f;
@@ -479,7 +478,11 @@ void debugOutput (int channel, float value) {
 							}
 							scl += (getStateParam(SCL_ATT_PARAM) / 100.f) * sclInput / 10.f;
 						}
-						cvRandom *= scl;
+						float cvRandom = getRandom (&(channelRandomGeneratorCv[channel]));
+						if (scl < 0)
+							cvRandom = (cvRandom - 0.5) * -scl * 20.f;		// bipolar scale
+						else
+							cvRandom *= scl * 10.f;							// unipolar scale
 						float ofs = getStateParam (OFS_PARAM);
 						if (getInputConnected (OFS_INPUT)) {
 							int ofsInput = 0.f;
@@ -520,7 +523,7 @@ void debugOutput (int channel, float value) {
 			}
 		}
 
-		if (getStateJson (GATE_JSON) > 0.f)
+		if (getStateJson (GATE_JSON) > 0.f && !getInputConnected(GATE_INPUT))
 			isGate (GATE_OUTPUT) = true;
 		else
 			isGate (GATE_OUTPUT) = false;
@@ -553,6 +556,9 @@ void debugOutput (int channel, float value) {
 				OL_isGatePoly[GATE_OUTPUT * POLY_CHANNELS + channel] = value;
 				lastValue = value;
 			}
+		} else {
+			for (int channel = 0; channel < POLY_CHANNELS; channel ++)
+				OL_isGatePoly[GATE_OUTPUT * POLY_CHANNELS + channel] = 0.f;
 		}
 
 		for (int row = 0; row < NUM_ROWS; row++) {
