@@ -22,9 +22,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 // #define USE_DEBUG_OUTPUT
 
-#define REP_INPUT_SCALE_1   100
-#define REP_INPUT_SCALE_2 10000
-#define REP_INPUT_MAX     99999
+#define REP_INPUT_SCALE_COOKED   100
+#define REP_INPUT_SCALE_RAW    10000
+#define REP_INPUT_MAX          99999
 
 // Seed CV 10V = 10.000
 #define SEED_INPUT_SCALE 1000
@@ -47,6 +47,14 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #define GATE_MODE    1
 #define TRIGGER_MODE 0
+
+// DO NOT CHANGE LEN or DUR because they are used in integer calculations !
+#define LEN 0
+#define DUR 1
+
+// DO NOT CHANGE RAW or COOKED because they are used in integer calculations !
+#define COOKED 0
+#define RAW 1
 
 #define PARAM_DISPLAY_CYCLES 30
 //

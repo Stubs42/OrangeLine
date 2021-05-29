@@ -69,60 +69,61 @@ typedef struct OrangeLineRandom {
 	unsigned long latest_seed = 0;
 } OrangeLineRandom;
 
-#define stateIdxJson(i)			(i)
-#define stateIdxParam(i)		(NUM_JSONS + (i))
-#define stateIdxInput(i)		(NUM_JSONS + NUM_PARAMS + (i))
-#define stateIdxOutput(i)		(NUM_JSONS + NUM_PARAMS + NUM_INPUTS + (i))
-#define stateIdxLight(i)		(NUM_JSONS + NUM_PARAMS + NUM_INPUTS + NUM_OUTPUTS + (i))
+#define stateIdxJson(i)   (i)
+#define stateIdxParam(i)  (NUM_JSONS + (i))
+#define stateIdxInput(i)  (NUM_JSONS + NUM_PARAMS + (i))
+#define stateIdxOutput(i) (NUM_JSONS + NUM_PARAMS + NUM_INPUTS + (i))
+#define stateIdxLight(i)  (NUM_JSONS + NUM_PARAMS + NUM_INPUTS + NUM_OUTPUTS + (i))
 
-#define changeJson(i)			OL_outStateChange[stateIdxJson   (i)]
-#define inChangeParam(i)		OL_inStateChange [stateIdxParam  (i)]
-#define changeParam(i)			OL_outStateChange[stateIdxParam  (i)]
-#define changeInput(i)			OL_inStateChange [stateIdxInput  (i)]
-#define changeOutput(i)			OL_outStateChange[stateIdxOutput (i)]
-#define changeLight(i)			OL_outStateChange[stateIdxLight  (i)]
+#define changeJson(i)    OL_outStateChange[stateIdxJson   (i)]
+#define inChangeParam(i) OL_inStateChange [stateIdxParam  (i)]
+#define changeParam(i)   OL_outStateChange[stateIdxParam  (i)]
+#define changeInput(i)   OL_inStateChange [stateIdxInput  (i)]
+#define changeOutput(i)	 OL_outStateChange[stateIdxOutput (i)]
+#define changeLight(i)   OL_outStateChange[stateIdxLight  (i)]
 
-#define getStateJson(i)			OL_state[stateIdxJson   (i)]
-#define getStateParam(i)		OL_state[stateIdxParam  (i)]
-#define getStateInput(i)		OL_state[stateIdxInput  (i)]
-#define getStateOutput(i)		OL_state[stateIdxOutput (i)]
-#define getStateLight(i)		OL_state[stateIdxLight  (i)]
+#define getStateJson(i)   OL_state[stateIdxJson   (i)]
+#define getStateParam(i)  OL_state[stateIdxParam  (i)]
+#define getStateInput(i)  OL_state[stateIdxInput  (i)]
+#define getStateOutput(i) OL_state[stateIdxOutput (i)]
+#define getStateLight(i)  OL_state[stateIdxLight  (i)]
 
-#define setStateJson(i, v)		OL_setOutState (stateIdxJson   (i), v)
-#define setInStateParam(i, v)		OL_setInState  (stateIdxParam  (i), v)
-#define setStateParam(i, v)		OL_setOutState (stateIdxParam  (i), v)
-#define setStateInput(i, v)		OL_setInState  (stateIdxInput  (i), v)
-#define setStateOutput(i, v)		OL_setOutState (stateIdxOutput (i), v)
-#define setStateLight(i, v)		OL_setOutState (stateIdxLight  (i), v) 
+#define setStateJson(i, v)       OL_setOutState (stateIdxJson   (i), v)
+#define setInStateParam(i, v)    OL_setInState  (stateIdxParam  (i), v)
+#define setStateParam(i, v)      OL_setOutState (stateIdxParam  (i), v)
+#define setStateInput(i, v)      OL_setInState  (stateIdxInput  (i), v)
+#define setStateOutput(i, v)     OL_setOutState (stateIdxOutput (i), v)
+#define setStateOutPoly(i, c, v) OL_setOutStatePoly ((i), (c), v)
+#define setStateLight(i, v)      OL_setOutState (stateIdxLight  (i), v) 
 
-#define getStateTypeParam(i)		OL_stateType[stateIdxParam  (i)]
-#define getStateTypeInput(i)		OL_stateType[stateIdxInput  (i)]
-#define getStateTypeOutput(i)		OL_stateType[stateIdxOutput (i)]
-#define getStateTypeLight(i)		OL_stateType[stateIdxLight  (i)]
+#define getStateTypeParam(i)  OL_stateType[stateIdxParam  (i)]
+#define getStateTypeInput(i)  OL_stateType[stateIdxInput  (i)]
+#define getStateTypeOutput(i) OL_stateType[stateIdxOutput (i)]
+#define getStateTypeLight(i)  OL_stateType[stateIdxLight  (i)]
 
-#define setStateTypeParam(i, t)		(OL_stateType[stateIdxParam  (i)] = (t))
-#define setStateTypeInput(i, t)		(OL_stateType[stateIdxInput  (i)] = (t))
-#define setStateTypeOutput(i, t)	(OL_stateType[stateIdxOutput (i)] = (t))
-#define setStateTypeLight(i, t)		(OL_stateType[stateIdxLight  (i)] = (t))
+#define setStateTypeParam(i, t)  (OL_stateType[stateIdxParam  (i)] = (t))
+#define setStateTypeInput(i, t)	 (OL_stateType[stateIdxInput  (i)] = (t))
+#define setStateTypeOutput(i, t) (OL_stateType[stateIdxOutput (i)] = (t))
+#define setStateTypeLight(i, t)  (OL_stateType[stateIdxLight  (i)] = (t))
 
-#define maxStateIdxJson			(stateIdxParam  (0) - 1)
-#define maxStateIdxParam		(stateIdxInput  (0) - 1)
-#define maxStateIdxInput		(stateIdxOutput (0) - 1)
-#define maxStateIdxOutput		(stateIdxLight  (0) - 1)
-#define maxStateIdxLight		(NUM_STATES - 1)
+#define maxStateIdxJson	  (stateIdxParam  (0) - 1)
+#define maxStateIdxParam  (stateIdxInput  (0) - 1)
+#define maxStateIdxInput  (stateIdxOutput (0) - 1)
+#define maxStateIdxOutput (stateIdxLight  (0) - 1)
+#define maxStateIdxLight  (NUM_STATES - 1)
 
-#define getCustomChangeMask(i)		OL_customChangeMask[i]
-#define getCustomChangeMaskParam(i)	getCustomChangeMask(i)
-#define getCustomChangeMaskInput(i)	getCustomChangeMask(NUM_PARAMS + (i))
+#define getCustomChangeMask(i)      OL_customChangeMask[i]
+#define getCustomChangeMaskParam(i) getCustomChangeMask(i)
+#define getCustomChangeMaskInput(i) getCustomChangeMask(NUM_PARAMS + (i))
 
-#define setCustomChangeMask(i, v)	(OL_customChangeMask[i] = (v))
-#define setCustomChangeMaskParam(i, v)	setCustomChangeMask((i), (v))
-#define setCustomChangeMaskInput(i, v)	setCustomChangeMask(NUM_PARAMS + (i), (v))
+#define setCustomChangeMask(i, v)       (OL_customChangeMask[i] = (v))
+#define setCustomChangeMaskParam(i, v)  setCustomChangeMask((i), (v))
+#define setCustomChangeMaskInput(i, v)  setCustomChangeMask(NUM_PARAMS + (i), (v))
 
-#define setInPoly(i, v)			(OL_isPoly[i] = (v))
-#define setOutPoly(i, v)		(OL_isPoly[NUM_INPUTS + i] = (v))
-#define getInPoly(i)			OL_isPoly[i]
-#define getOutPoly(i)			OL_isPoly[NUM_INPUTS + i]
+#define setInPoly(i, v)  (OL_isPoly[i] = (v))
+#define setOutPoly(i, v) (OL_isPoly[NUM_INPUTS + i] = (v))
+#define getInPoly(i)     OL_isPoly[i]
+#define getOutPoly(i)    OL_isPoly[NUM_INPUTS + i]
 
 // #define getIsHot(i)				OL_isHot[i]
 // #define setIsHot(i, v)			(OL_isHot[i] = (v))

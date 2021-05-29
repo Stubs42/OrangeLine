@@ -211,30 +211,30 @@ The rows 2 to 4 will interpret their LEN und DUR values as multiples of the DUR 
 
 #### REP Input/Output Section
 
-REP input: Polyphonic input to control the DUR and LEN of the 4 rows in the repeater section above
+REP input: Polyphonic input to control the LEN and DUR of the 4 rows in the repeater section above
 
 Channels: 
 
-0: DUR Value for repeater row 1
+0: LEN Value for repeater row 1
 
-1: LEN Value for repeater row 1
+1: DUR Value for repeater row 1
 
-2/3, 4/5, 6/7 as above DUR/LEN for repeater rows 2,3 and 4
+2/3, 4/5, 6/7 as above LEN/DUR for repeater rows 2,3 and 4
 
 Channels 0 to 7 are interpreted in the same way as the knobs and scaled by a factor of 100 (0.64V represents a length of 64 clockticks or multiples).
 
 Channels 8 to 15 follow the same layout as channels 1 to 7 but interpreted as raw length values and are 
 scaled by a factor of 10.000 (10V represents a length of 10.000 clockticks.
 
-All channels have be >= 1V and are ignored otherwise but allow any other length as long the effective length does not exceed max float.
+All channels with cv < 1V and are ignored but allow any other length as long the effective length does not exceed max float.
 
-TRG input: Polyphonic trigger inputs to force an end of duration event for rows 1 (channel 0) to row 4 (channel 3)
+TRG input: Polyphonic trigger inputs to force an end of length or end of duration for rows 1 (channel 0) to row 4 (channel 3)
 
 REP output: Polyphonic cv outputs for the effective DUR/LEN of each row. Updated whenever the respective end of duration or end of length trigger is triggert.
 
 Channel 0 = DUR 1, Channel 1 = LEN 1, Channel 2 = DUR 2, ... . Values are scaled by a factor 10.000. so 10V represents an effective length of 100.000 clockticks.
 
-TRG output: Polyphonic trigger output for end of duration (channel 0,2,4,6) and length (channel 1,3,5,7) for the 4 repeater rows.
+TRG output: Polyphonic trigger output for end of length (channel 0,2,4,6) and duration (channel 1,3,5,7) for the 4 repeater rows.
 
 #### Right Display
 

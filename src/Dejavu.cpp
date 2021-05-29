@@ -49,6 +49,9 @@ struct Dejavu : Module {
 	#pragma GCC diagnostic pop
 
 	OrangeLineRandom *p_srcRandomGenerator = &globalRandom;
+
+	int effectiveCount[8] = {1,1,1,1,1,1,1,1};
+
 // ********************************************************************************************************************************
 /*
 	Initialization
@@ -86,8 +89,9 @@ struct Dejavu : Module {
 			setStateTypeParam  (ONOFF_PARAM + row, STATE_TYPE_TRIGGER);
 
 		setInPoly          (REP_INPUT, true);
-		setInPoly          (TRG_INPUT, true);
+		setOutPoly         (REP_OUTPUT, true);
 
+		setInPoly          (TRG_INPUT, true);
 		setStateTypeOutput (TRG_OUTPUT, STATE_TYPE_TRIGGER);
 		setOutPoly         (TRG_OUTPUT, true);
 
@@ -263,75 +267,41 @@ void debugOutput (int channel, float value) {
 		}
 	}
 
-	int getRepCount (int baseIdx, int row) {
-
-		if (int(getStateJson (ONOFF_PARAM + row)) == 0 || 
-			(int(getStateParam (LEN_PARAM + row)) == 1 && int(getStateParam (DUR_PARAM + row)) == 1)) {
-				// we are inactive so only called due to get factor for an active one above
-				if (row == 0)
-					// if we are the lowerst just return 1 for the multiply factor
-					return 1;
-				else
-					// propagate the call down a level
-					return 	getRepCount (baseIdx, row - 1);
-		}
-		int count = getRepCountFromInput (baseIdx, row);
-		if (count == 0)
-			count = calculateCount (baseIdx, row, int(getStateParam (baseIdx + row)));
-		if (count < 1)
-			count = 1;
-		return count;
-	}
-
-	int getRepCountFromInput (int baseIdx, int row) {
-		// Channels: 
-		//  0: DUR Value for repeater row 1
-		//  1: LEN Value for repeater row 1
-		//  2/3, 4/5, 6/7 as above DUR/LEN for repeater rows 2,3 and 4
-		// Channels 0 to 7 are interpreted in the same way as the knobs and 
-		// scaled by a factor of 100 (0.64V represents a length of 64 clockticks or multiples)
-		// Channels 8 to 15 follow the same layout as channels 1 to 7 but interpreted as raw length values and are
-		// scaled by a factor of 10.000 (10V represents a length of 10.000 clockticks.
-		// all channels be >= 1 and are ignored otherwise but allow any other length as long the effective length does not exceed max float.
-		if (! getInputConnected (REP_INPUT))
-			return 0;
-
+	void prepareEffectiveCounts() {
+		int effectiveCountIndex = 0;
 		int channels = inputs[REP_INPUT].getChannels();
-
-		// calulate first poly channel to look into (the cooked ones) 0 to 7
-		int channel = row * 2;
-		if (baseIdx == LEN_COUNTER_JSON) 
-			channel ++;		
-		if (channel > channels)
-			return 0;
-
-		int value = int(OL_statePoly[baseIdx * POLY_CHANNELS + channel] * REP_INPUT_SCALE_1);
-		if (value >= 1) {
-			return calculateCount (baseIdx, row, (value));
-		}
-		// now look into the raw input channels
-		channel += 8;
-		if (channel > channels)
-			return 0;
-		value = int(OL_statePoly[baseIdx * POLY_CHANNELS + channel] * REP_INPUT_SCALE_2);
-		if (value >= 1)
-			value = 0;
-		return value;
-	}
-	
-	int calculateCount (int baseIdx, int row, int count) {
-		if (row == 0)
-			return count;
-		else {
-			if (baseIdx == LEN_COUNTER_JSON)
-				baseIdx = DUR_COUNTER_JSON;
-			return count * getRepCount (baseIdx, row - 1);
+		for (int row = 0; row < NUM_ROWS; row ++) {
+			int multiple = (row == 0) ? 1 : effectiveCount[(row - 1) * 2 + DUR];
+			for (int lenOrDur = LEN; lenOrDur <= DUR; lenOrDur++) {
+				int value = 0;
+				if (getInputConnected (REP_INPUT)) {
+					for (int mode = RAW; mode >= COOKED; mode--) {
+						int inputScale = ( mode == RAW ? REP_INPUT_SCALE_RAW : REP_INPUT_SCALE_COOKED );
+						int channel = row * 2 + (mode * 8) + lenOrDur;
+						if (channel < channels) {
+							int inputValue = floor(OL_statePoly[REP_INPUT * POLY_CHANNELS + channel] * inputScale + 0.5);
+							if (inputValue >= 1) {
+								value = inputValue * ( mode == RAW ? 1 : multiple );
+								break;
+							}
+						}
+					}
+				}
+				if (value == 0) {
+					int paramIdx = LEN_PARAM;
+					if (lenOrDur == DUR) {
+						paramIdx = DUR_PARAM;
+					}
+					value = int(getStateParam (paramIdx + row)) * multiple;
+				}
+				effectiveCount[effectiveCountIndex++] = value;
+			}
 		}
 	}
 
 	bool rowActive (int row) {
 		if (int(getStateJson (ONOFF_PARAM + row)) == 0 || 
-			(int(getStateParam (LEN_PARAM + row)) == 1 && int(getStateParam (DUR_PARAM + row)) == 1))
+			(effectiveCount[row * 2 + LEN] == 1 && effectiveCount[row * 2 + DUR] == 1))
 			return false;
 		return true;
 	}
@@ -377,76 +347,48 @@ void debugOutput (int channel, float value) {
 		}
 
 		if (changeInput (CLK_INPUT)) {
-
+			prepareEffectiveCounts();
 			if (int(getStateJson (DIVCOUNTER_JSON)) == 0) {
-				if (getInputConnected (DIV_INPUT)) {
-					int div = int(getStateInput(DIV_INPUT) * 10);
-					if (div < 1) div = 1;
-					if (div > DIV_MAX) div = DIV_MAX;
-					setStateJson (DIVCOUNTER_JSON, float(div));
-				}
+				int div;
+				if (getInputConnected (DIV_INPUT))
+					div = int(getStateInput(DIV_INPUT) * 10);
 				else
-					setStateJson (DIVCOUNTER_JSON, getStateParam(DIV_PARAM));
-
+					div = int(getStateParam(DIV_PARAM));
+				if (div < 1) div = 1;
+				if (div > DIV_MAX) div = DIV_MAX;
+				setStateJson (DIVCOUNTER_JSON, float(div));
+				setOutPolyChannels(REP_OUTPUT, 8);
 				p_srcRandomGenerator = &globalRandom;
 				for (int row =  NUM_ROWS - 1; row >= 0; row --) {
-
 					if (!rowActive (row))
 						continue;	// Nothing to do here
-
-					// We still have to run nothing if this row iswitched off to keep trak of the counter? NO!!!!
-
-					int durCount = int(getStateJson (DUR_COUNTER_JSON + row));
-					int lenCount = int(getStateJson (LEN_COUNTER_JSON + row));
-
-					if (durCount == 0) {
-						// DEBUG("durCount == 0 for row %d", row);
-						repeatSeed[row] = getRandomRaw (p_srcRandomGenerator);
-						durCount = getRepCount (DUR_COUNTER_JSON, row);
-						// DEBUG("durCount reinitialited to %d for row %d", durCount, row);
-						if (OL_statePoly[(NUM_INPUTS + REP_OUTPUT) * POLY_CHANNELS + row * 2] != 10.f) {
-							OL_statePoly[(NUM_INPUTS + REP_OUTPUT) * POLY_CHANNELS + row * 2] = 10.f;
-							OL_outStateChangePoly[REP_OUTPUT * POLY_CHANNELS + row * 2] = float(durCount) / 10000;
+					for (int lenOrDur = DUR; lenOrDur >= LEN; lenOrDur--) {
+						int counterJson;
+						if (lenOrDur == DUR)
+							counterJson = DUR_COUNTER_JSON;
+						else
+							counterJson = LEN_COUNTER_JSON;
+						int count = int(getStateJson (counterJson + row));
+						if (count == 0) {
+							if (lenOrDur == DUR) {
+								repeatSeed[row] = getRandomRaw (p_srcRandomGenerator);
+								setStateJson (LEN_COUNTER_JSON + row, 0.f);
+								if (row > 0)
+									setStateJson (DUR_COUNTER_JSON + (row - 1), 0.f);
+							}
+							else {
+								initRandom (&(repeatRandomGenerator[row]), repeatSeed[row]);
+							}
+							count = effectiveCount[(row * 2) + lenOrDur];
+							setStateOutPoly (REP_OUTPUT, row * 2 + lenOrDur, float(count) / 10000);
+							setStateOutPoly (TRG_OUTPUT, row * 2 + lenOrDur, 10.f);
+							setStateJson (counterJson + row, float(count)); 
 						}
-						// trigger repeats TRG output
-						if (OL_statePoly[(NUM_INPUTS + TRG_OUTPUT) * POLY_CHANNELS + row * 2] != 10.f) {
-							OL_statePoly[(NUM_INPUTS + TRG_OUTPUT) * POLY_CHANNELS + row * 2] = 10.f;
-							OL_outStateChangePoly[TRG_OUTPUT * POLY_CHANNELS + row * 2] = true;
-						}
-						lenCount = 0; // force a length reset off this row 
 					}
-
-					if (lenCount == 0){
-						// DEBUG("lenCount == 0 for row %d", row);
-						initRandom (&(repeatRandomGenerator[row]), repeatSeed[row]);
-						lenCount = getRepCount(LEN_COUNTER_JSON, row);
-						// DEBUG("lenCount reinitialited to %d for row %d", lenCount, row);
-						// write effective
-						if (OL_statePoly[(NUM_INPUTS + REP_OUTPUT) * POLY_CHANNELS + row * 2 + 1] != 10.f) {
-							OL_statePoly[(NUM_INPUTS + REP_OUTPUT) * POLY_CHANNELS + row * 2 + 1] = 10.f;
-							OL_outStateChangePoly[REP_OUTPUT * POLY_CHANNELS + row * 2 + 1] = float(lenCount) / 10000;
-						}
-						// trigger repeats TRG output
-						if (OL_statePoly[(NUM_INPUTS + TRG_OUTPUT) * POLY_CHANNELS + row * 2 + 1] != 10.f) {
-							OL_statePoly[(NUM_INPUTS + TRG_OUTPUT) * POLY_CHANNELS + row * 2 + 1] = 10.f;
-							OL_outStateChangePoly[TRG_OUTPUT * POLY_CHANNELS + row * 2 + 1] = true;
-						}
-						if (row > 0)
-							setStateJson (DUR_COUNTER_JSON + row - 1, 0.f); // force duration reset the row below
-					}
-
-					// DEBUG("p_srcRandomGenerator = &(repeatRandomGenerator[%d]);", row);
 					p_srcRandomGenerator = &(repeatRandomGenerator[row]);
-
-					durCount--;
-					setStateJson (DUR_COUNTER_JSON + row, durCount);
-					OL_statePoly[NUM_INPUTS * POLY_CHANNELS + TRG_OUTPUT * POLY_CHANNELS + row] = 10.f;
-					OL_outStateChangePoly[TRG_OUTPUT * POLY_CHANNELS + row] = true;
-
-					lenCount--;
-					setStateJson (LEN_COUNTER_JSON + row, lenCount);
+					setStateJson (DUR_COUNTER_JSON + row, getStateJson (DUR_COUNTER_JSON + row) - 1);
+					setStateJson (LEN_COUNTER_JSON + row, getStateJson (LEN_COUNTER_JSON + row) - 1);
 				}
-
 				// Reinitialize Gate and CV random generators
 				// ge a new seed from the srcRandomGenerator 
 				// DEBUG("channelRandomGenerator initialized from lengthRandomGenerator[0] seed : % 8lX", seed);
@@ -797,7 +739,7 @@ struct RigthWidget : TransparentWidget {
 
 	void draw (const DrawArgs &drawArgs) override {
 		if (module) {
-			// nvgGlobalCompositeOperation(drawArgs.vg, NVG_SOURCE_OVER);
+			nvgGlobalCompositeOperation(drawArgs.vg, NVG_SOURCE_OVER);
 			// nvgGlobalCompositeBlendFunc(drawArgs.vg, NVG_SRC_COLOR, NVG_ZERO);
 
 			// float style = module->getStateJson(STYLE_JSON);
@@ -862,8 +804,8 @@ struct RigthWidget : TransparentWidget {
 					int durCounter = int(module->getStateJson(DUR_COUNTER_JSON + level));
 					int lenCounter = int(module->getStateJson(LEN_COUNTER_JSON + level));
 
-					int durCount = module->getRepCount (DUR_PARAM, + level);
-					int lenCount = module->getRepCount (LEN_PARAM, + level);
+					int durCount = module->effectiveCount[level * 2 + DUR];
+					int lenCount = module->effectiveCount[level * 2 + LEN];
 
 					float cycles = (float(durCount) / float(lenCount));
 

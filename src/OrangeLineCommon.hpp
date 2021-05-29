@@ -290,6 +290,16 @@ inline void OL_setInState (int stateIdx, float value) {
 		OL_outStateChange[stateIdx] = OL_inStateChange[stateIdx] = true;
 	}
 }
+
+inline void OL_setInStatePoly (int stateIdx, int channel, float value) {
+	if (OL_statePoly[(NUM_INPUTS + stateIdx) * POLY_CHANNELS + channel] != value) {
+		OL_statePoly[(NUM_INPUTS + stateIdx) * POLY_CHANNELS + channel] = value;
+		if (stateIdxOutput (stateIdx) != STATE_TYPE_TRIGGER || value > 0.) {
+			OL_inStateChangePoly[stateIdx * POLY_CHANNELS + channel] = true;
+			OL_outStateChangePoly[stateIdx * POLY_CHANNELS + channel] = true;
+		}
+	}
+}
 /**
 	Method to set the outgoing state of params
 	output state change is flagged
@@ -298,6 +308,14 @@ inline void OL_setOutState (int stateIdx, float value) {
 	if (OL_state[stateIdx] != value) {
 		OL_state[stateIdx]  = value;
 		OL_outStateChange[stateIdx] = true;
+	}
+}
+inline void OL_setOutStatePoly (int stateIdx, int channel, float value) {
+	if (OL_statePoly[(NUM_INPUTS + stateIdx) * POLY_CHANNELS + channel] != value) {
+		OL_statePoly[(NUM_INPUTS + stateIdx) * POLY_CHANNELS + channel] = value;
+		if (stateIdxOutput (stateIdx) != STATE_TYPE_TRIGGER || value > 0.) {
+			OL_outStateChangePoly[stateIdx * POLY_CHANNELS + channel] = true;
+		}
 	}
 }
 /**
