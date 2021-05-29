@@ -146,7 +146,7 @@ Have fun
 
 ## Dejavu
 
-<p align="center"><img src="res/Dejavu_Final_Screenshot.svg"></p>
+<p align="center"><img src="res/Dejavu_Final_Screenshot.png"></p>
 
 ### Short Description
 
