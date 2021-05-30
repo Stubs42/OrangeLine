@@ -164,6 +164,15 @@ typedef struct OrangeLineRandom {
 	pq->label = pLabel; \
 }
 
+#define reConfigParamMinValue(paramId, value) { \
+	ParamQuantity *pq = paramQuantities[paramId]; \
+	pq->minValue = value; \
+}
+
+#define reConfigParamMaxValue(paramId, value) { \
+	ParamQuantity *pq = paramQuantities[paramId]; \
+	pq->maxValue = value; \
+}
 // ********************************************************************************************************************************
 /**
 	Widgets

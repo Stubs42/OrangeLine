@@ -697,7 +697,6 @@ void dataFromJson (json_t *rootJ) override {
 	for (int jsonIdx = 0; jsonIdx < NUM_JSONS; jsonIdx ++)
 		if ((pJson = json_object_get (rootJ, OL_jsonLabel[jsonIdx])) != nullptr)
 			setStateJson (jsonIdx, json_real_value (pJson));
-
 	OL_initialized = false;	//  indiacte that we have to reinitialize
 }
 

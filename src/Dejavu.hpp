@@ -28,7 +28,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 // Seed CV 10V = 10.000
 #define SEED_INPUT_SCALE 1000
-#define SEED_MAX 9999
+#define DEFAULT_SEED	   66	// = 0x42 ;-)
+#define SEED_MAX 		 99999
 #define DIV_MAX 64
 
 // Do not change if you do not have 4 rows of repition knobs
@@ -68,6 +69,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define DIRECTION_BACKWARD  0.f
 #define DIRECTION_CLOCKWISE 1.f
 
+#define RANGE_INIT 256
+#define RANGE_MAX  REP_INPUT_MAX
 //
 // Virtual Parameter Ids stored using Json
 //
@@ -89,6 +92,10 @@ enum jsonIds {
 	POLY_CHANNELS_JSON,
 	MODULE_STATE_JSON,
 	DIRECTION_JSON,
+	RANGE_JSON,
+	RANGE_JSON_END = RANGE_JSON +  (NUM_ROWS * 2) - 1,
+	ACTIVE_PARAM_JSON,
+	ACTIVE_PARAM_JSON_END = ACTIVE_PARAM_JSON + (NUM_ROWS * 2) - 1,
 
 	NUM_JSONS
 };

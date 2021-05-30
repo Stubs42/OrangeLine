@@ -54,6 +54,8 @@ struct Dejavu : Module {
 
 	bool flashEvent[8] = {false, false, false, false, false, false, false, false };
 
+	float oldModuleState = STATE_ACTIVE;
+
 // ********************************************************************************************************************************
 /*
 	Initialization
@@ -150,8 +152,43 @@ struct Dejavu : Module {
 		setJsonLabel (POLY_CHANNELS_JSON, "polyChannels");
 		setJsonLabel (MODULE_STATE_JSON, "moduleState");
 		setJsonLabel (DIRECTION_JSON, "directon");
+		setJsonLabel (ACTIVE_PARAM_JSON + 0, "ActiveLength1");
+		setJsonLabel (ACTIVE_PARAM_JSON + 1, "ActiveDuration1");
+		setJsonLabel (ACTIVE_PARAM_JSON + 2, "ActiveLength2");
+		setJsonLabel (ACTIVE_PARAM_JSON + 3, "ActiveDuration2");
+		setJsonLabel (ACTIVE_PARAM_JSON + 4, "ActiveLength3");
+		setJsonLabel (ACTIVE_PARAM_JSON + 5, "ActiveDuration3");
+		setJsonLabel (ACTIVE_PARAM_JSON + 6, "ActiveLength4");
+		setJsonLabel (ACTIVE_PARAM_JSON + 7, "ActiveDuration4");
+		setJsonLabel (RANGE_JSON + 0, "MaxLength1");
+		setJsonLabel (RANGE_JSON + 1, "MaxDuration1");
+		setJsonLabel (RANGE_JSON + 2, "MaxLength2");
+		setJsonLabel (RANGE_JSON + 3, "MaxDuration2");
+		setJsonLabel (RANGE_JSON + 4, "MaxLength3");
+		setJsonLabel (RANGE_JSON + 5, "MaxDuration3");
+		setJsonLabel (RANGE_JSON + 6, "MaxLength4");
+		setJsonLabel (RANGE_JSON + 7, "MaxDuration4");
 
 		#pragma GCC diagnostic pop
+
+		// TODO: Maybe should go somewhere else, load a template ? 
+		setStateJson (RANGE_JSON + 0, RANGE_INIT);
+		setStateJson (RANGE_JSON + 1, RANGE_INIT);
+		setStateJson (RANGE_JSON + 2, RANGE_INIT);
+		setStateJson (RANGE_JSON + 3, RANGE_INIT);
+		setStateJson (RANGE_JSON + 4, RANGE_INIT);
+		setStateJson (RANGE_JSON + 5, RANGE_INIT);
+		setStateJson (RANGE_JSON + 6, RANGE_INIT);
+		setStateJson (RANGE_JSON + 7, RANGE_INIT);
+
+		setStateJson (ACTIVE_PARAM_JSON + 0, 1);
+		setStateJson (ACTIVE_PARAM_JSON + 1, 1);
+		setStateJson (ACTIVE_PARAM_JSON + 2, 1);
+		setStateJson (ACTIVE_PARAM_JSON + 3, 1);
+		setStateJson (ACTIVE_PARAM_JSON + 4, 1);
+		setStateJson (ACTIVE_PARAM_JSON + 5, 1);
+		setStateJson (ACTIVE_PARAM_JSON + 6, 1);
+		setStateJson (ACTIVE_PARAM_JSON + 7, 1);
 	}
 
 	/**
@@ -159,22 +196,22 @@ struct Dejavu : Module {
 	*/
 	inline void moduleParamConfig () {
 		configParam (DIV_PARAM,             1.f,   DIV_MAX,   1.f, "Clock Division",       "", 0.f, 1.f, 0.f);
-		configParam (SEED_PARAM,            0.f,  SEED_MAX,   0.f, "Seed",                 "", 0.f, 1.f, 0.f);
+		configParam (SEED_PARAM,            0.f,  SEED_MAX,   DEFAULT_SEED, "Seed",                 "", 0.f, 1.f, 0.f);
 		
-		configParam (LEN_PARAM + 0,       1.f,     	   128,   1.f, "Length 1",               "", 0.f, 1.f, 0.f);
-		configParam (LEN_PARAM + 1,       1.f,          64,   1.f, "Length 2",               "", 0.f, 1.f, 0.f);
-		configParam (LEN_PARAM + 2,       1.f,     		32,   1.f, "Length 3",               "", 0.f, 1.f, 0.f);
-		configParam (LEN_PARAM + 3,       1.f,     		16,   1.f, "Length 4",               "", 0.f, 1.f, 0.f);		
+		configParam (LEN_PARAM + 0,       1.f,  RANGE_INIT,   1.f, "Length 1",               "", 0.f, 1.f, 0.f);
+		configParam (LEN_PARAM + 1,       1.f,  RANGE_INIT,   1.f, "Length 2",               "", 0.f, 1.f, 0.f);
+		configParam (LEN_PARAM + 2,       1.f,  RANGE_INIT,   1.f, "Length 3",               "", 0.f, 1.f, 0.f);
+		configParam (LEN_PARAM + 3,       1.f,  RANGE_INIT,   1.f, "Length 4",               "", 0.f, 1.f, 0.f);		
  
    		configParam (ONOFF_PARAM + 0,     0.f,         1.f,   0.f, "Repeater 1 On/Offf",     "", 0.f, 1.f, 0.f);
    		configParam (ONOFF_PARAM + 1,     0.f,         1.f,   0.f, "Repeater 2 On/Offf",     "", 0.f, 1.f, 0.f);
    		configParam (ONOFF_PARAM + 2,     0.f,         1.f,   0.f, "Repeater 3 On/Offf",     "", 0.f, 1.f, 0.f);
    		configParam (ONOFF_PARAM + 3,     0.f,         1.f,   0.f, "Repeater 4 On/Offf",     "", 0.f, 1.f, 0.f);
 
-		configParam (DUR_PARAM + 0,       1.f,         128,   1.f, "Duration 1",             "", 0.f, 1.f, 0.f);
-		configParam (DUR_PARAM + 1,       1.f,     		64,   1.f, "Duration 2",             "", 0.f, 1.f, 0.f);
-		configParam (DUR_PARAM + 2,       1.f,     		32,   1.f, "Duration 3",             "", 0.f, 1.f, 0.f);
-		configParam (DUR_PARAM + 3,       1.f,     		16,   1.f, "Duration 4",             "", 0.f, 1.f, 0.f);		
+		configParam (DUR_PARAM + 0,       1.f,  RANGE_INIT,   1.f, "Duration 1",             "", 0.f, 1.f, 0.f);
+		configParam (DUR_PARAM + 1,       1.f,  RANGE_INIT,   1.f, "Duration 2",             "", 0.f, 1.f, 0.f);
+		configParam (DUR_PARAM + 2,       1.f,  RANGE_INIT,   1.f, "Duration 3",             "", 0.f, 1.f, 0.f);
+		configParam (DUR_PARAM + 3,       1.f,  RANGE_INIT,   1.f, "Duration 4",             "", 0.f, 1.f, 0.f);		
 
 		configParam (HEAT_PARAM,            0.f,       100.f,  50.f, "Heat",                 "%", 0.f, 1.f, 0.f);
 		
@@ -263,8 +300,7 @@ void debugOutput (int channel, float value) {
 		}
 		else
 			seed = getStateParam (SEED_PARAM);
-
-		initRandom (&globalRandom, seed);
+		initRandom (&globalRandom, (unsigned long)seed);
 
 		for (int i = 0; i <  NUM_ROWS; i ++) {
 			setStateJson (LEN_COUNTER_JSON + i, 0.f);
@@ -310,6 +346,31 @@ void debugOutput (int channel, float value) {
 			(effectiveCount[row * 2 + LEN] == 1 && effectiveCount[row * 2 + DUR] == 1))
 			return false;
 		return true;
+	}
+
+	void reconfigureForState () {
+		if (getStateJson(MODULE_STATE_JSON) == STATE_ACTIVE) {
+			int activeParamIdx = 0;
+			for (int i = 0; i < NUM_ROWS; i++, activeParamIdx++) {
+				reConfigParamMinValue(DUR_PARAM + i, 1);
+				reConfigParamMaxValue(LEN_PARAM + i, getStateJson(RANGE_JSON + activeParamIdx));
+			}
+			for (int i = 0; i < NUM_ROWS; i++, activeParamIdx++) {
+				reConfigParamMinValue(DUR_PARAM + i, 1);
+				reConfigParamMaxValue(DUR_PARAM + i, getStateJson(RANGE_JSON + activeParamIdx));
+			}
+		}
+		if (oldModuleState == STATE_ACTIVE && getStateJson(MODULE_STATE_JSON) == STATE_EDIT_RANGES) {
+			int activeParamIdx = 0;
+			for (int i = 0; i < NUM_ROWS; i++, activeParamIdx++) {
+				reConfigParamMinValue(LEN_PARAM + i, getStateJson(ACTIVE_PARAM_JSON + activeParamIdx));
+				reConfigParamMaxValue(LEN_PARAM + i, RANGE_MAX);
+			}
+			for (int i = 0; i < NUM_ROWS; i++, activeParamIdx++) {
+				reConfigParamMinValue(DUR_PARAM + i, getStateJson(ACTIVE_PARAM_JSON + activeParamIdx));
+				reConfigParamMaxValue(DUR_PARAM + i, RANGE_MAX);
+			}
+		}
 	}
 /*
 	Methods called directly or indirectly called from process () in OrangeLineCommon.hpp
@@ -509,6 +570,46 @@ void debugOutput (int channel, float value) {
 			}	
 			setStateJson(DIVCOUNTER_JSON, getStateJson(DIVCOUNTER_JSON) - 1);
 		}
+		if (getStateJson(MODULE_STATE_JSON) != STATE_ACTIVE && oldModuleState == STATE_ACTIVE) {
+			// save user settings for length and duration
+			int activeParamIdx = 0;
+			for (int i = 0; i < NUM_ROWS; i++, activeParamIdx++)
+				setStateJson(ACTIVE_PARAM_JSON + activeParamIdx, getStateParam(LEN_PARAM + i));
+			for (int i = 0; i < NUM_ROWS; i++, activeParamIdx++)
+				setStateJson(ACTIVE_PARAM_JSON + activeParamIdx, getStateParam(DUR_PARAM + i));
+			if (getStateJson(MODULE_STATE_JSON) == STATE_EDIT_RANGES) {
+				// set param to values for ranges
+				// take care of missig values due to upgrade of module
+				for (int i = 0; i < NUM_ROWS * 2; i++)
+					if (getStateJson(RANGE_JSON + i) < 1)
+						setStateJson(RANGE_JSON + i, RANGE_INIT);
+				int activeParamIdx = 0;
+				for (int i = 0; i < NUM_ROWS; i++, activeParamIdx++)
+					setStateParam(LEN_PARAM + i, getStateJson(RANGE_JSON + activeParamIdx));
+				for (int i = 0; i < NUM_ROWS; i++, activeParamIdx++)
+					setStateParam(DUR_PARAM + i, getStateJson(RANGE_JSON + activeParamIdx));
+			}
+			reconfigureForState();
+			oldModuleState = getStateJson(MODULE_STATE_JSON);
+		}
+		if (getStateJson(MODULE_STATE_JSON) == STATE_ACTIVE && oldModuleState != STATE_ACTIVE) {
+			// set ranges from params
+			if (oldModuleState == STATE_EDIT_RANGES) {
+				int activeParamIdx = 0;
+				for (int i = 0; i < NUM_ROWS; i++, activeParamIdx++)
+					setStateJson(RANGE_JSON + activeParamIdx, getStateParam(LEN_PARAM + i));
+				for (int i = 0; i < NUM_ROWS; i++, activeParamIdx++)
+					setStateJson(RANGE_JSON + activeParamIdx, getStateParam(DUR_PARAM + i));
+			}
+			// restore user settings for length and duration
+			int activeParamIdx = 0;
+			for (int i = 0; i < NUM_ROWS; i++, activeParamIdx++)
+				setStateParam(LEN_PARAM + i, getStateJson(ACTIVE_PARAM_JSON + activeParamIdx));
+			for (int i = 0; i < NUM_ROWS; i++, activeParamIdx++)
+				setStateParam(DUR_PARAM + i, getStateJson(ACTIVE_PARAM_JSON + activeParamIdx));
+			reconfigureForState();
+			oldModuleState = getStateJson(MODULE_STATE_JSON);
+		}
 	}
 
 	/**
@@ -627,11 +728,11 @@ struct LeftWidget : TransparentWidget {
 	LeftWidget () {
 	}
 
-	bool paramEdit (int param) {
+	bool redParam (int param) {
 		float moduleState = module->getStateJson (MODULE_STATE_JSON);
 		if (moduleState != STATE_ACTIVE) {
 			if ((param >= LEN_PARAM && param <= LEN_PARAM_END) ||
-				(param >= DUR_PARAM && param <= DUR_PARAM_END))
+				(param >= DUR_PARAM && param <= DUR_PARAM_END) || param == -1)
 				return true;
 		}
 		return false;
@@ -656,12 +757,14 @@ struct LeftWidget : TransparentWidget {
 			} 
 			float moduleState = module->getStateJson (MODULE_STATE_JSON);
 			int param = module->lastParamChanged;
+			if (paramDisplayCycles == 0)
+				module->lastParamChanged = -1;
 			if (paramDisplayCycles > 0) {
 				ParamQuantity *pq = module->paramQuantities[param];
 				const char *label = pq->label.data();
 				const char *unit  = pq->unit.data();
 
-				if (!paramEdit (param)) {
+				if (!redParam (param)) {
 					if (*unit != '\0')
 						snprintf (headBuffer, 17, "%s[%s]:", label, unit);
 					else
@@ -675,11 +778,14 @@ struct LeftWidget : TransparentWidget {
 				}
 
 				float value = module->getStateParam (param);
-				if (value == float(int(value)))
-					snprintf (valueBuffer, 17, "%8.0lf", module->getStateParam (param));
-				else
-					snprintf (valueBuffer, 17, "%8.3lf", module->getStateParam (param));
-
+				if (param == SEED_PARAM)
+					sprintf (valueBuffer, "%08lX", (unsigned long)(module->getStateParam (param)));
+				else {
+					if (value == float(int(value)))
+						snprintf (valueBuffer, 17, "%8.0lf", module->getStateParam (param));
+					else
+						snprintf (valueBuffer, 17, "%8.3lf", module->getStateParam (param));
+				}
 				paramDisplayCycles --;
 			}
 			else {
@@ -702,7 +808,7 @@ struct LeftWidget : TransparentWidget {
 			}
 			nvgFontFaceId (drawArgs.vg, pFont->handle);
 			nvgFontSize (drawArgs.vg, 20);
-			nvgFillColor (drawArgs.vg, !paramEdit (param) ? (style == STYLE_ORANGE ? ORANGE : WHITE) : RED);
+			nvgFillColor (drawArgs.vg, redParam (param) ? RED : (style == STYLE_ORANGE ? ORANGE : WHITE));
 			nvgText (drawArgs.vg, mm2px(2.447) - box.pos.x + mm2px(0.5), mm2px(41.283) - box.pos.y + mm2px(4.812), valueBuffer, nullptr);
 
 			nvgFontSize (drawArgs.vg, 10);
@@ -793,6 +899,8 @@ struct RigthWidget : TransparentWidget {
 
 	void draw (const DrawArgs &drawArgs) override {
 		if (module) {
+			if (module->getStateJson(MODULE_STATE_JSON) != STATE_ACTIVE)
+				return;
 			nvgGlobalCompositeOperation(drawArgs.vg, NVG_SOURCE_OVER);
 			//nvgGlobalCompositeBlendFunc(drawArgs.vg, NVG_SRC_COLOR, NVG_ZERO);
 
