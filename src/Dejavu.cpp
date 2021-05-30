@@ -148,6 +148,8 @@ struct Dejavu : Module {
 		setJsonLabel (SH_JSON, "sh");
 		setJsonLabel (DIVCOUNTER_JSON, "divCounter");
 		setJsonLabel (POLY_CHANNELS_JSON, "polyChannels");
+		setJsonLabel (MODULE_STATE_JSON, "moduleState");
+		setJsonLabel (DIRECTION_JSON, "directon");
 
 		#pragma GCC diagnostic pop
 	}
@@ -224,6 +226,8 @@ struct Dejavu : Module {
 		setStateJson (SH_JSON, 0.f);
 		setStateJson (DIVCOUNTER_JSON, 0.f);
 		setStateJson (POLY_CHANNELS_JSON, 1.f);
+		setStateJson (MODULE_STATE_JSON, STATE_ACTIVE);
+		setStateJson (DIRECTION_JSON, DIRECTION_BACKWARD);
 	}
 
 #ifdef USE_DEBUG_OUTPUT
@@ -332,11 +336,11 @@ void debugOutput (int channel, float value) {
 			styleChanged = false;
 		}
 
-		if (changeInput (RST_INPUT))
+		if (changeInput (RST_INPUT) && getStateJson(MODULE_STATE_JSON) == STATE_ACTIVE)
 			doReset();
 
 		// handle polyphonic TRG_INPUT
-		if (getInputConnected (TRG_INPUT)) {
+		if (getInputConnected (TRG_INPUT) && getStateJson(MODULE_STATE_JSON) == STATE_ACTIVE) {
 			int channels = inputs[TRG_INPUT].getChannels();
 			for (int channel =  NUM_ROWS - 1; channel >= 0; channel--) {
 				if (channel > channels)
@@ -347,9 +351,8 @@ void debugOutput (int channel, float value) {
 				}
 			}
 		}
-
-		if (changeInput (CLK_INPUT)) {
-			prepareEffectiveCounts();
+		prepareEffectiveCounts();
+		if (changeInput (CLK_INPUT) && getStateJson(MODULE_STATE_JSON) == STATE_ACTIVE) {
 			if (int(getStateJson (DIVCOUNTER_JSON)) == 0) {
 				int div;
 				if (getInputConnected (DIV_INPUT))
@@ -624,6 +627,16 @@ struct LeftWidget : TransparentWidget {
 	LeftWidget () {
 	}
 
+	bool paramEdit (int param) {
+		float moduleState = module->getStateJson (MODULE_STATE_JSON);
+		if (moduleState != STATE_ACTIVE) {
+			if ((param >= LEN_PARAM && param <= LEN_PARAM_END) ||
+				(param >= DUR_PARAM && param <= DUR_PARAM_END))
+				return true;
+		}
+		return false;
+	}
+
 	void draw (const DrawArgs &drawArgs) override {
 		if (module) {
 			float style = module->getStateJson(STYLE_JSON);
@@ -641,35 +654,55 @@ struct LeftWidget : TransparentWidget {
 				paramDisplayCycles = PARAM_DISPLAY_CYCLES;
 				module->paramChanged = false;
 			} 
+			float moduleState = module->getStateJson (MODULE_STATE_JSON);
+			int param = module->lastParamChanged;
 			if (paramDisplayCycles > 0) {
-				int param = module->lastParamChanged;
 				ParamQuantity *pq = module->paramQuantities[param];
 				const char *label = pq->label.data();
 				const char *unit  = pq->unit.data();
-				if (*unit != '\0')
-					snprintf (headBuffer, 17, "%s[%s]:", label, unit);
-				else
-					snprintf (headBuffer, 17, "%s:", label);
-				float value = module->getStateParam(param);
+
+				if (!paramEdit (param)) {
+					if (*unit != '\0')
+						snprintf (headBuffer, 17, "%s[%s]:", label, unit);
+					else
+						snprintf (headBuffer, 17, "%s:", label);
+				}
+				else {
+					if (moduleState == STATE_EDIT_RANGES)
+						snprintf (headBuffer, 17, "Max %s:", label);
+					else
+						snprintf (headBuffer, 17, "Count %s:", label);
+				}
+
+				float value = module->getStateParam (param);
 				if (value == float(int(value)))
-					snprintf (valueBuffer, 17, "%8.0lf", module->getStateParam(param));
+					snprintf (valueBuffer, 17, "%8.0lf", module->getStateParam (param));
 				else
-					snprintf (valueBuffer, 17, "%8.3lf", module->getStateParam(param));
+					snprintf (valueBuffer, 17, "%8.3lf", module->getStateParam (param));
 
 				paramDisplayCycles --;
 			}
 			else {
-				if (module->p_srcRandomGenerator != nullptr) {
-					strncpy (headBuffer, module->displayHeading, 17);
-					sprintf (valueBuffer, "%08lX", module->p_srcRandomGenerator->latest_seed);
+				if (moduleState == STATE_ACTIVE) {
+					if (module->p_srcRandomGenerator != nullptr) {
+						strncpy (headBuffer, module->displayHeading, 17);
+						sprintf (valueBuffer, "%08lX", module->p_srcRandomGenerator->latest_seed);
+					}
+					else {
+						strcpy(valueBuffer, "null");
+					}
 				}
 				else {
-					strcpy(valueBuffer, "null");
+					snprintf (headBuffer,  17, "Edit:");
+					if (moduleState == STATE_EDIT_RANGES)
+						snprintf (valueBuffer, 17, " RANGES ");
+					else
+						snprintf (valueBuffer, 17, "COUNTERS");
 				}
 			}
 			nvgFontFaceId (drawArgs.vg, pFont->handle);
 			nvgFontSize (drawArgs.vg, 20);
-			nvgFillColor (drawArgs.vg, (style == STYLE_ORANGE) ? ORANGE : WHITE);
+			nvgFillColor (drawArgs.vg, !paramEdit (param) ? (style == STYLE_ORANGE ? ORANGE : WHITE) : RED);
 			nvgText (drawArgs.vg, mm2px(2.447) - box.pos.x + mm2px(0.5), mm2px(41.283) - box.pos.y + mm2px(4.812), valueBuffer, nullptr);
 
 			nvgFontSize (drawArgs.vg, 10);
@@ -678,10 +711,6 @@ struct LeftWidget : TransparentWidget {
 		}
 	}
 };
-
-#define PI            3.14159265
-#define FLASH_FRAMES 10
-#define NUM_FLASHES	  9
 
 struct RigthWidget : TransparentWidget {
 
@@ -696,6 +725,8 @@ struct RigthWidget : TransparentWidget {
 
 	// int oldCounter[8] = {0, 0, 0, 0, 0, 0, 0, 0};
 	int flashDot[4] = {0, 0, 0, 0};
+
+	bool clockwise = false;
 
 	static RigthWidget* create (Dejavu *module) {
 		RigthWidget *w = new RigthWidget();
@@ -712,6 +743,20 @@ struct RigthWidget : TransparentWidget {
 		Constructor
 	*/
 	RigthWidget () {
+	}
+
+	inline float xForAlpha(float alpha) {
+		if (!clockwise)
+			return sin(alpha+PI);
+		else
+			return cos(alpha-PI/2);
+	}
+
+	inline float yForAlpha(float alpha) {
+		if (!clockwise)
+			return cos(alpha+PI);
+		else
+			return sin(alpha-PI/2);
 	}
 
 	void drawCircle(NVGcontext *nvg, float x, float y, float radius, NVGcolor color, float strokeWidth) {
@@ -749,7 +794,9 @@ struct RigthWidget : TransparentWidget {
 	void draw (const DrawArgs &drawArgs) override {
 		if (module) {
 			nvgGlobalCompositeOperation(drawArgs.vg, NVG_SOURCE_OVER);
-			// nvgGlobalCompositeBlendFunc(drawArgs.vg, NVG_SRC_COLOR, NVG_ZERO);
+			//nvgGlobalCompositeBlendFunc(drawArgs.vg, NVG_SRC_COLOR, NVG_ZERO);
+
+			clockwise = (module->getStateJson(DIRECTION_JSON) == DIRECTION_CLOCKWISE);
 
 			// float style = module->getStateJson(STYLE_JSON);
 
@@ -813,10 +860,10 @@ struct RigthWidget : TransparentWidget {
 					int durCounter = int(module->getStateJson(DUR_COUNTER_JSON + row));
 					// int lenCounter = int(module->getStateJson(LEN_COUNTER_JSON + row));
 
-					int durCount = module->effectiveCount[row * 2 + DUR];
-					int lenCount = module->effectiveCount[row * 2 + LEN];
+					int duration = module->effectiveCount[row * 2 + DUR];
+					int length   = module->effectiveCount[row * 2 + LEN];
 
-					float cycles = (float(durCount) / float(lenCount));
+					float cycles = (float(duration) / float(length));
 
 					bool durEnd = false;
 					// if (durCounter > oldCounter[row]) {
@@ -834,7 +881,7 @@ struct RigthWidget : TransparentWidget {
 						if (durEnd)
 							flashDot[row] = -1;	// flash all dots of circle just hit a durution end
 						else
-							flashDot[row] = (durCount - durCounter) / lenCount;
+							flashDot[row] = (duration - durCounter) / length;
 						flashFrameCounter[(row*2)+LEN] = FLASH_FRAMES;
 						module->flashEvent[(row*2)+LEN] = false;
 					}
@@ -853,8 +900,8 @@ struct RigthWidget : TransparentWidget {
 					// Draw dots on track circle
 					float radAlpha  = (2 * PI) / cycles;
 					for (int point = 0; point < cycles; point ++) {
-						float x = sin (radAlpha * point + PI) * rowRadius;
-						float y = cos (radAlpha * point + PI) * rowRadius;
+						float x = xForAlpha (radAlpha * point) * rowRadius;
+						float y = yForAlpha (radAlpha * point) * rowRadius;
 						nvgBeginPath (drawArgs.vg);
 						// nvgShapeAntiAlias(drawArgs.vg, false);
 						NVGcolor color = nvgTransRGBA (colorDot, dotAlpha);
@@ -867,9 +914,9 @@ struct RigthWidget : TransparentWidget {
 					// Draw the Arm of the clock for this row
 					nvgBeginPath (drawArgs.vg);
 					nvgMoveTo (drawArgs.vg, center.x, center.y);
-					float progress = (float(durCounter) / float(durCount));
+					float progress = 1 - (float(durCounter) / float(duration));
 					radAlpha = (2 * PI) * progress;
-					nvgLineTo (drawArgs.vg, center.x + (cos(radAlpha - PI/2) * rowRadius), center.y + (sin(radAlpha - PI/2) * rowRadius));
+					nvgLineTo (drawArgs.vg, center.x + (xForAlpha(radAlpha) * rowRadius), center.y + (yForAlpha(radAlpha) * rowRadius));
 					// nvgClosePath(NVGcontext* ctx);
 					nvgLineCap (drawArgs.vg, NVG_ROUND);
 					color = nvgTransRGBA (colorArm, flashAlpha ((row*2)+DUR, armAlpha));
@@ -983,19 +1030,6 @@ struct DejavuWidget : ModuleWidget {
 #endif
 	}
 
-	struct DejavuStyleItem : MenuItem {
-		Dejavu *module;
-		int style;
-		void onAction(const event::Action &e) override {
-			module->OL_setOutState(STYLE_JSON, float(style));
-			module->styleChanged = true;
-		}
-		void step() override {
-			if (module)
-				rightText = (module != nullptr && module->OL_state[STYLE_JSON] == style) ? "✔" : "";
-		}
-	};
-
     struct PolyChannelsItem : MenuItem {
     Dejavu *module;
 
@@ -1026,6 +1060,43 @@ struct DejavuWidget : ModuleWidget {
 		}
     };
 
+	struct DirectionItem : MenuItem {
+		Dejavu *module;
+		float direction;
+		void onAction(const event::Action &e) override {
+			module->setStateJson(DIRECTION_JSON, direction);
+		}
+		void step() override {
+			if (module)
+				rightText = (module != nullptr && module->getStateJson(DIRECTION_JSON) == direction) ? "✔" : "";
+		}
+	};
+
+	struct ModuleStateItem : MenuItem {
+		Dejavu *module;
+		int state;
+		void onAction(const event::Action &e) override {
+			module->setStateJson(MODULE_STATE_JSON, state);
+		}
+		void step() override {
+			if (module)
+				rightText = (module != nullptr && module->getStateJson(MODULE_STATE_JSON) == state) ? "✔" : "";
+		}
+	};
+
+	struct DejavuStyleItem : MenuItem {
+		Dejavu *module;
+		int style;
+		void onAction(const event::Action &e) override {
+			module->OL_setOutState(STYLE_JSON, float(style));
+			module->styleChanged = true;
+		}
+		void step() override {
+			if (module)
+				rightText = (module != nullptr && module->OL_state[STYLE_JSON] == style) ? "✔" : "";
+		}
+	};
+
 	void appendContextMenu(Menu *menu) override {
 		if (module) {
 			MenuLabel *spacerLabel = new MenuLabel();
@@ -1037,10 +1108,6 @@ struct DejavuWidget : ModuleWidget {
 			spacerLabel = new MenuLabel();
 			menu->addChild(spacerLabel);
 
-			MenuLabel *polyphonyLabel = new MenuLabel();
-			polyphonyLabel->text = "Polyphony";
-			menu->addChild(polyphonyLabel);
-
 			PolyChannelsItem *polyChannelsItem = new PolyChannelsItem();
 			polyChannelsItem->module = module;
 			polyChannelsItem->text = "Poly Channels";
@@ -1049,6 +1116,56 @@ struct DejavuWidget : ModuleWidget {
 
 			spacerLabel = new MenuLabel();
 			menu->addChild(spacerLabel);
+
+			MenuLabel *visualLabel = new MenuLabel();
+			visualLabel->text = "Visual";
+			menu->addChild(visualLabel);
+
+			MenuLabel *directionLabel = new MenuLabel();
+			directionLabel->text = "Direction";
+			menu->addChild(directionLabel);
+
+			DirectionItem *directionItem1 = new DirectionItem ();
+			directionItem1->module = module;
+			directionItem1->direction = DIRECTION_CLOCKWISE;
+			directionItem1->text = "Clockwise";
+			directionItem1->setSize (Vec(50, 20));
+			menu->addChild(directionItem1);
+
+			DirectionItem *directionItem2 = new DirectionItem ();
+			directionItem2->module = module;
+			directionItem2->direction = DIRECTION_BACKWARD;
+			directionItem2->text = "Backward";
+			directionItem2->setSize (Vec(50, 20));
+			menu->addChild(directionItem2);
+
+			spacerLabel = new MenuLabel();
+			menu->addChild(spacerLabel);
+
+			MenuLabel *moduleStateLabel = new MenuLabel();
+			moduleStateLabel->text = "Module State";
+			menu->addChild(moduleStateLabel);
+
+			ModuleStateItem *moduleStateItem1 = new ModuleStateItem ();
+			moduleStateItem1->module = module;
+			moduleStateItem1->state = STATE_ACTIVE;
+			moduleStateItem1->text = "Active";
+			moduleStateItem1->setSize (Vec(50, 20));
+			menu->addChild(moduleStateItem1);
+
+			ModuleStateItem *moduleStateItem2 = new ModuleStateItem ();
+			moduleStateItem2->module = module;
+			moduleStateItem2->state = STATE_EDIT_RANGES;
+			moduleStateItem2->text = "Edit Ranges";
+			moduleStateItem2->setSize (Vec(50, 20));
+			menu->addChild(moduleStateItem2);
+
+			ModuleStateItem *moduleStateItem3 = new ModuleStateItem ();
+			moduleStateItem3->module = module;
+			moduleStateItem3->state = STATE_EDIT_COUNTERS;
+			moduleStateItem3->text = "Edit Counters";
+			moduleStateItem3->setSize (Vec(50, 20));
+			menu->addChild(moduleStateItem3);
 
 			spacerLabel = new MenuLabel();
 			menu->addChild(spacerLabel);

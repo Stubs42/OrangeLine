@@ -56,7 +56,18 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define COOKED 0
 #define RAW 1
 
+#define STATE_ACTIVE        0
+#define STATE_EDIT_RANGES   1
+#define STATE_EDIT_COUNTERS 2
+
 #define PARAM_DISPLAY_CYCLES 30
+
+#define FLASH_FRAMES  5
+#define NUM_FLASHES	  9
+
+#define DIRECTION_BACKWARD  0.f
+#define DIRECTION_CLOCKWISE 1.f
+
 //
 // Virtual Parameter Ids stored using Json
 //
@@ -76,6 +87,8 @@ enum jsonIds {
 	SH_JSON,
 	DIVCOUNTER_JSON,
 	POLY_CHANNELS_JSON,
+	MODULE_STATE_JSON,
+	DIRECTION_JSON,
 
 	NUM_JSONS
 };

@@ -28,8 +28,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "plugin.hpp"
 
-#define ORANGE		nvgRGB(255, 102, 0)
-#define WHITE		nvgRGB(255, 255, 255)
+#define ORANGE		nvgRGB (255, 102,   0)
+#define WHITE		nvgRGB (255, 255, 255)
+#define RED			nvgRGB (255,   0,   0)
 
 #define STYLE_ORANGE	0
 #define STYLE_BRIGHT	1
@@ -54,6 +55,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define MAX_TEXT_SIZE  64
 #define TEXT_SCROLL_DELAY   22050
 #define TEXT_SCROLL_PRE_DELAY   TEXT_SCROLL_DELAY * 4
+
+#define PI            3.14159265
 
 /*
 	Random implementation derived from the one used in Frozen Wastland Seeds of Change
