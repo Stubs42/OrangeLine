@@ -52,6 +52,8 @@ struct Dejavu : Module {
 
 	int effectiveCount[8] = {1,1,1,1,1,1,1,1};
 
+	bool flashEvent[8] = {false, false, false, false, false, false, false, false };
+
 // ********************************************************************************************************************************
 /*
 	Initialization
@@ -370,6 +372,7 @@ void debugOutput (int channel, float value) {
 							counterJson = LEN_COUNTER_JSON;
 						int count = int(getStateJson (counterJson + row));
 						if (count == 0) {
+							flashEvent[(row*2)+lenOrDur] = true;
 							if (lenOrDur == DUR) {
 								repeatSeed[row] = getRandomRaw (p_srcRandomGenerator);
 								setStateJson (LEN_COUNTER_JSON + row, 0.f);
@@ -691,7 +694,7 @@ struct RigthWidget : TransparentWidget {
 		 0, 0, 0, 0,	// [4..7]: 	lenLength hits (reSeeds)
 		 0};			//      8:	middle Circle flashing on dur Enf of top active row
 
-	int oldCounter[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+	// int oldCounter[8] = {0, 0, 0, 0, 0, 0, 0, 0};
 	int flashDot[4] = {0, 0, 0, 0};
 
 	static RigthWidget* create (Dejavu *module) {
@@ -729,7 +732,7 @@ struct RigthWidget : TransparentWidget {
 	unsigned char flashAlpha (int i, unsigned char alpha) {
 		int a = alpha; 
 		if (flashFrameCounter[i] > 0) {
-			// DEBUG("Flashing for level i = %d, flashFrameCounter = %d", i, flashFrameCounter[i]);
+			// DEBUG("Flashing for row i = %d, flashFrameCounter = %d", i, flashFrameCounter[i]);
 			a += (float(255 - alpha) / FLASH_FRAMES) * flashFrameCounter[i];
 			if (a > 255) 
 				a = 255;
@@ -788,89 +791,93 @@ struct RigthWidget : TransparentWidget {
 
 			// float radiusMid = maxTrackRadius - (4 * radiusDistance);
 			Vec center = Vec(box.size.x / 2, box.size.y / 2);
-			float levelRadius = maxTrackRadius - (3 * radiusDistance);
+			float rowRadius = maxTrackRadius - (3 * radiusDistance);
 
 			int topActive = -1;
-			for (int level = NUM_ROWS - 1;level >= 0; level--)
-				if (module->rowActive (level)) {
+			for (int row = NUM_ROWS - 1;row >= 0; row--)
+				if (module->rowActive (row)) {
 					if (topActive == -1)
-						topActive = level;
+						topActive = row;
 				}
 
-			for (int level = NUM_ROWS - 1;level >= 0; level--) {
+			for (int row = NUM_ROWS - 1;row >= 0; row--) {
 
-				if (module->rowActive (level)) {
+				if (module->rowActive (row)) {
 
 					bool reverse = false;
-					NVGcolor colorTrk = trackColor[reverse ? NUM_ROWS - 1 - level : level];
-					NVGcolor colorDot =   dotColor[reverse ? NUM_ROWS - 1 - level : level];
-					NVGcolor colorArm =   armColor[reverse ? NUM_ROWS - 1 - level : level];
+					NVGcolor colorTrk = trackColor[reverse ? NUM_ROWS - 1 - row : row];
+					NVGcolor colorDot =   dotColor[reverse ? NUM_ROWS - 1 - row : row];
+					NVGcolor colorArm =   armColor[reverse ? NUM_ROWS - 1 - row : row];
 					NVGcolor color;
 
-					int durCounter = int(module->getStateJson(DUR_COUNTER_JSON + level));
-					int lenCounter = int(module->getStateJson(LEN_COUNTER_JSON + level));
+					int durCounter = int(module->getStateJson(DUR_COUNTER_JSON + row));
+					// int lenCounter = int(module->getStateJson(LEN_COUNTER_JSON + row));
 
-					int durCount = module->effectiveCount[level * 2 + DUR];
-					int lenCount = module->effectiveCount[level * 2 + LEN];
+					int durCount = module->effectiveCount[row * 2 + DUR];
+					int lenCount = module->effectiveCount[row * 2 + LEN];
 
 					float cycles = (float(durCount) / float(lenCount));
 
 					bool durEnd = false;
-					if (durCounter > oldCounter[level]) {
-						flashFrameCounter[level] = FLASH_FRAMES;
-						if (level == topActive)
+					// if (durCounter > oldCounter[row]) {
+					if (module->flashEvent[(row*2)+DUR]) {
+						flashFrameCounter[(row*2)+DUR] = FLASH_FRAMES;
+						if (row == topActive)
 							flashFrameCounter[8] = FLASH_FRAMES;	// flash the middle Circle also
 						durEnd = true;
+						module->flashEvent[(row*2)+DUR] = false;
 					}
-					oldCounter[level] = durCounter;
+					// oldCounter[row] = durCounter;
 	
-					if (lenCounter > oldCounter[level+NUM_ROWS]) { // lenCounter was reset
+					// if (lenCounter > oldCounter[row+NUM_ROWS]) { // lenCounter was reset
+					if (module->flashEvent[(row*2)+LEN]) {
 						if (durEnd)
-							flashDot[level] = -1;	// flash all dots of circle just hit a durution end
+							flashDot[row] = -1;	// flash all dots of circle just hit a durution end
 						else
-							flashDot[level] = (durCount - durCounter) / lenCount;
-						flashFrameCounter[level+4] = FLASH_FRAMES;
+							flashDot[row] = (durCount - durCounter) / lenCount;
+						flashFrameCounter[(row*2)+LEN] = FLASH_FRAMES;
+						module->flashEvent[(row*2)+LEN] = false;
 					}
-					oldCounter[level+NUM_ROWS] = lenCounter;
+					// oldCounter[row+NUM_ROWS] = lenCounter;
 
 /*
 					// Draw middle circle representing the global random generator
-					if (level == topActive) {
+					if (row == topActive) {
 						color = nvgTransRGBA (midColor, flashAlpha (8, midAlpha));
 						drawCircle (drawArgs.vg, center.x, center.y, radiusMid, color, trackStrokeWidth);
 					}
 */
 					// Draw track circla
 					color = nvgTransRGBA (colorTrk, trkAlpha);
-					drawCircle (drawArgs.vg, center.x, center.y, levelRadius, color, trackStrokeWidth);
+					drawCircle (drawArgs.vg, center.x, center.y, rowRadius, color, trackStrokeWidth);
 					// Draw dots on track circle
 					float radAlpha  = (2 * PI) / cycles;
 					for (int point = 0; point < cycles; point ++) {
-						float x = sin (radAlpha * point + PI) * levelRadius;
-						float y = cos (radAlpha * point + PI) * levelRadius;
+						float x = sin (radAlpha * point + PI) * rowRadius;
+						float y = cos (radAlpha * point + PI) * rowRadius;
 						nvgBeginPath (drawArgs.vg);
 						// nvgShapeAntiAlias(drawArgs.vg, false);
 						NVGcolor color = nvgTransRGBA (colorDot, dotAlpha);
-						// DEBUG("Level: %d, point = %d, flashDot[%d] = %d", level, point, level, flashDot[level]);
-						if (point == flashDot[level] || flashDot[level] == -1)
-							color = nvgTransRGBA (color, flashAlpha (level+4, dotAlpha));
+						// DEBUG("Level: %d, point = %d, flashDot[%d] = %d", row, point, row, flashDot[row]);
+						if (point == flashDot[row] || flashDot[row] == -1)
+							color = nvgTransRGBA (color, flashAlpha ((row*2)+LEN, dotAlpha));
 						drawCircle(drawArgs.vg, x + center.x, y + center.y, radiusDot, color, 0);
 					}
 
-					// Draw the Arm of the clock for this level
+					// Draw the Arm of the clock for this row
 					nvgBeginPath (drawArgs.vg);
 					nvgMoveTo (drawArgs.vg, center.x, center.y);
 					float progress = (float(durCounter) / float(durCount));
 					radAlpha = (2 * PI) * progress;
-					nvgLineTo (drawArgs.vg, center.x + (cos(radAlpha - PI/2) * levelRadius), center.y + (sin(radAlpha - PI/2) * levelRadius));
+					nvgLineTo (drawArgs.vg, center.x + (cos(radAlpha - PI/2) * rowRadius), center.y + (sin(radAlpha - PI/2) * rowRadius));
 					// nvgClosePath(NVGcontext* ctx);
 					nvgLineCap (drawArgs.vg, NVG_ROUND);
-					color = nvgTransRGBA (colorArm, flashAlpha (level, armAlpha));
+					color = nvgTransRGBA (colorArm, flashAlpha ((row*2)+DUR, armAlpha));
 					nvgStrokeColor (drawArgs.vg, color);
-					nvgStrokeWidth (drawArgs.vg, armStrokeWidth[level]);
+					nvgStrokeWidth (drawArgs.vg, armStrokeWidth[row]);
 					nvgStroke (drawArgs.vg);
 				}
-				levelRadius += radiusDistance;
+				rowRadius += radiusDistance;
 			}
 			decrementFlashCounters();
 		}
