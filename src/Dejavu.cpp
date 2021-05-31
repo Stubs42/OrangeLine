@@ -318,7 +318,7 @@ void debugOutput (int channel, float value) {
 		initRandom (&globalRandom, (unsigned long)seed);
 
 		int preOffset = 0;
-		for (int row = 0; row <  NUM_ROWS; row ++) {
+		for (int row = 0; row < NUM_ROWS; row ++) {
 			// DEBUG("doReset (): resetting counters for row %d", row);
 			// DEBUG("doReset (): preOffset = %d", preOffset);
 			int offset = int(getStateJson(RESET_DUR_OFFSET_JSON + row));
@@ -344,6 +344,8 @@ void debugOutput (int channel, float value) {
 
 			preOffset = offset;
 			initRandom (&(repeatRandomGenerator[row]), getRandomRaw(&globalRandom));
+			if (rowActive(row))
+				p_srcRandomGenerator = &(repeatRandomGenerator[row]);
 		}
 	}
 
