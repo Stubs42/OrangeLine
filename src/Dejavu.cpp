@@ -514,30 +514,30 @@ void debugOutput (int channel, float value) {
 				float lastShValue = 0;
 				for (int channel = 0; channel < getStateJson(POLY_CHANNELS_JSON); channel ++) {
 					float gateRandom = getRandom (&(channelRandomGeneratorGate[channel]));
-					float heat = getStateParam(HEAT_PARAM) / 100.f;
 					bool fired = false;
-					if (getInputConnected(HEAT_INPUT)) {
-						float heatInput = 0.f;
 
+					float heat = getStateParam(HEAT_PARAM) / 100.f;
+					if (getInputConnected(HEAT_KNOB_ATT_INPUT)) {
+						float knobAttInput = 1.f;
+						if (channel > knbPolyChannels)
+							knobAttInput = lastKnbInput;
+						else {
+							knobAttInput = OL_statePoly[HEAT_KNOB_ATT_INPUT * POLY_CHANNELS + channel] / 10.f;
+							lastKnbInput = knobAttInput;
+						}
+						heat *= knobAttInput;
+					}
+					float heatInput = 0.f;
+					if (getInputConnected(HEAT_INPUT)) {
 						if (channel > heatPolyChannels)
 							heatInput = lastHeatInput;
 						else {
 							heatInput = OL_statePoly[HEAT_INPUT * POLY_CHANNELS + channel] / 10.f;
 							lastHeatInput = heatInput;
 						}
-
-						if (getInputConnected(HEAT_KNOB_ATT_INPUT)) {
-							float knobAttInput = 1.f;
-							if (channel > knbPolyChannels)
-								knobAttInput = lastKnbInput;
-							else {
-								knobAttInput = OL_statePoly[HEAT_KNOB_ATT_INPUT * POLY_CHANNELS + channel] / 10.f;
-								lastKnbInput = knobAttInput;
-							}
-							heat *= knobAttInput;
-						}
-						heat +=  heatInput;
 					}
+					heat += heatInput;
+
 					if (heat >= gateRandom) {
 						OL_statePoly[ (NUM_INPUTS + GATE_OUTPUT) * POLY_CHANNELS + channel] = 10.f;
 						OL_outStateChangePoly[GATE_OUTPUT * POLY_CHANNELS + channel] = true;
