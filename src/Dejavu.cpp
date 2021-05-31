@@ -51,12 +51,10 @@ struct Dejavu : Module {
 	OrangeLineRandom *p_srcRandomGenerator = &globalRandom;
 
 	int effectiveCount[8] = {1,1,1,1,1,1,1,1};
-
 	bool flashEvent[8] = {false, false, false, false, false, false, false, false };
-
 	float oldModuleState = STATE_ACTIVE;
-
 	bool wobbleParamActive = false;
+	bool hadResetWithOffset = false;
 
 // ********************************************************************************************************************************
 /*
@@ -349,9 +347,12 @@ void debugOutput (int channel, float value) {
 
 			preOffset = offset;
 			initRandom (&(repeatRandomGenerator[row]), getRandomRaw(&globalRandom));
+
 			if (rowActive(row))
 				p_srcRandomGenerator = &(repeatRandomGenerator[row]);
 		}
+		if (preOffset > 0)
+			hadResetWithOffset = true;
 	}
 
 	void prepareEffectiveCounts() {
@@ -451,6 +452,8 @@ void debugOutput (int channel, float value) {
 				for (int row =  NUM_ROWS - 1; row >= 0; row --) {
 					if (!rowActive (row))
 						continue;	// Nothing to do here
+					if (hadResetWithOffset)
+						repeatSeed[row] = getRandomRaw (p_srcRandomGenerator);
 					for (int lenOrDur = DUR; lenOrDur >= LEN; lenOrDur--) {
 						int counterJson;
 						if (lenOrDur == DUR)
@@ -592,6 +595,7 @@ void debugOutput (int channel, float value) {
 			}	
 			setStateJson(DIVCOUNTER_JSON, getStateJson(DIVCOUNTER_JSON) - 1);
 		}
+		hadResetWithOffset = false;
 	}
 
 	void wobbleParams() {
@@ -1126,19 +1130,30 @@ struct RigthWidget : TransparentWidget {
 					}
 */
 					// Draw track circla
+					float u = rowRadius * 2 * PI;
+					if (u / cycles < radiusDot * 2)
+						radiusDot = u / cycles / 2;
+					bool onlyFlashDots = false;
+					if (radiusDot <= trackStrokeWidth) {
+						trkAlpha *= 1.5;
+						if (trkAlpha > 255)
+							trkAlpha = 255;
+						onlyFlashDots = true;
+					}
 					color = nvgTransRGBA (colorTrk, trkAlpha);
 					drawCircle (drawArgs.vg, center.x, center.y, rowRadius, color, trackStrokeWidth);
 					// Draw dots on track circle
 					float radAlpha  = (2 * PI) / cycles;
 					for (int point = 0; point < cycles; point ++) {
+						color = nvgTransRGBA (colorDot, dotAlpha);
+						if (point == flashDot[row] || flashDot[row] == -1) {
+							color = nvgTransRGBA (color, flashAlpha ((row*2)+LEN, dotAlpha));
+						}
+						if (!(point == flashDot[row] || flashDot[row] == -1) && onlyFlashDots)
+							continue;
 						float x = xForAlpha (radAlpha * point) * rowRadius;
 						float y = yForAlpha (radAlpha * point) * rowRadius;
 						nvgBeginPath (drawArgs.vg);
-						// nvgShapeAntiAlias(drawArgs.vg, false);
-						NVGcolor color = nvgTransRGBA (colorDot, dotAlpha);
-						// DEBUG("Level: %d, point = %d, flashDot[%d] = %d", row, point, row, flashDot[row]);
-						if (point == flashDot[row] || flashDot[row] == -1)
-							color = nvgTransRGBA (color, flashAlpha ((row*2)+LEN, dotAlpha));
 						drawCircle(drawArgs.vg, x + center.x, y + center.y, radiusDot, color, 0);
 					}
 
