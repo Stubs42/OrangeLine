@@ -56,6 +56,8 @@ struct Dejavu : Module {
 
 	float oldModuleState = STATE_ACTIVE;
 
+	bool wobbleParamActive = false;
+
 // ********************************************************************************************************************************
 /*
 	Initialization
@@ -153,42 +155,27 @@ struct Dejavu : Module {
 		setJsonLabel (MODULE_STATE_JSON, "moduleState");
 		setJsonLabel (DIRECTION_JSON, "directon");
 		setJsonLabel (ACTIVE_PARAM_JSON + 0, "ActiveLength1");
-		setJsonLabel (ACTIVE_PARAM_JSON + 1, "ActiveDuration1");
-		setJsonLabel (ACTIVE_PARAM_JSON + 2, "ActiveLength2");
-		setJsonLabel (ACTIVE_PARAM_JSON + 3, "ActiveDuration2");
-		setJsonLabel (ACTIVE_PARAM_JSON + 4, "ActiveLength3");
-		setJsonLabel (ACTIVE_PARAM_JSON + 5, "ActiveDuration3");
-		setJsonLabel (ACTIVE_PARAM_JSON + 6, "ActiveLength4");
+		setJsonLabel (ACTIVE_PARAM_JSON + 1, "ActiveLength2");
+		setJsonLabel (ACTIVE_PARAM_JSON + 2, "ActiveLength3");
+		setJsonLabel (ACTIVE_PARAM_JSON + 3, "ActiveLength4");
+		setJsonLabel (ACTIVE_PARAM_JSON + 4, "ActiveDuration1");
+		setJsonLabel (ACTIVE_PARAM_JSON + 5, "ActiveDuration2");
+		setJsonLabel (ACTIVE_PARAM_JSON + 6, "ActiveDuration3");
 		setJsonLabel (ACTIVE_PARAM_JSON + 7, "ActiveDuration4");
 		setJsonLabel (RANGE_JSON + 0, "MaxLength1");
-		setJsonLabel (RANGE_JSON + 1, "MaxDuration1");
-		setJsonLabel (RANGE_JSON + 2, "MaxLength2");
-		setJsonLabel (RANGE_JSON + 3, "MaxDuration2");
-		setJsonLabel (RANGE_JSON + 4, "MaxLength3");
-		setJsonLabel (RANGE_JSON + 5, "MaxDuration3");
-		setJsonLabel (RANGE_JSON + 6, "MaxLength4");
+		setJsonLabel (RANGE_JSON + 1, "MaxLength2");
+		setJsonLabel (RANGE_JSON + 2, "MaxLength3");
+		setJsonLabel (RANGE_JSON + 3, "MaxLength4");
+		setJsonLabel (RANGE_JSON + 4, "MaxDuration1");
+		setJsonLabel (RANGE_JSON + 5, "MaxDuration2");
+		setJsonLabel (RANGE_JSON + 6, "MaxDuration3");
 		setJsonLabel (RANGE_JSON + 7, "MaxDuration4");
-
+		setJsonLabel (RESET_DUR_OFFSET_JSON + 0, "ResetDurationOffset1");
+		setJsonLabel (RESET_DUR_OFFSET_JSON + 1, "ResetDurationOffset2");
+		setJsonLabel (RESET_DUR_OFFSET_JSON + 2, "ResetDurationOffset3");
+		setJsonLabel (RESET_DUR_OFFSET_JSON + 3, "ResetDurationOffset4");
+		
 		#pragma GCC diagnostic pop
-
-		// TODO: Maybe should go somewhere else, load a template ? 
-		setStateJson (RANGE_JSON + 0, RANGE_INIT);
-		setStateJson (RANGE_JSON + 1, RANGE_INIT);
-		setStateJson (RANGE_JSON + 2, RANGE_INIT);
-		setStateJson (RANGE_JSON + 3, RANGE_INIT);
-		setStateJson (RANGE_JSON + 4, RANGE_INIT);
-		setStateJson (RANGE_JSON + 5, RANGE_INIT);
-		setStateJson (RANGE_JSON + 6, RANGE_INIT);
-		setStateJson (RANGE_JSON + 7, RANGE_INIT);
-
-		setStateJson (ACTIVE_PARAM_JSON + 0, 1);
-		setStateJson (ACTIVE_PARAM_JSON + 1, 1);
-		setStateJson (ACTIVE_PARAM_JSON + 2, 1);
-		setStateJson (ACTIVE_PARAM_JSON + 3, 1);
-		setStateJson (ACTIVE_PARAM_JSON + 4, 1);
-		setStateJson (ACTIVE_PARAM_JSON + 5, 1);
-		setStateJson (ACTIVE_PARAM_JSON + 6, 1);
-		setStateJson (ACTIVE_PARAM_JSON + 7, 1);
 	}
 
 	/**
@@ -240,6 +227,7 @@ struct Dejavu : Module {
 	*/
 	inline void moduleInitialize () {
 		styleChanged = true;
+		reconfigureForState ();
 	}
 
 	/**
@@ -265,6 +253,32 @@ struct Dejavu : Module {
 		setStateJson (POLY_CHANNELS_JSON, 1.f);
 		setStateJson (MODULE_STATE_JSON, STATE_ACTIVE);
 		setStateJson (DIRECTION_JSON, DIRECTION_BACKWARD);
+
+		setStateJson (MODULE_STATE_JSON, STATE_ACTIVE);
+		oldModuleState = STATE_ACTIVE;
+
+		setStateJson (RANGE_JSON + 0, RANGE_INIT);
+		setStateJson (RANGE_JSON + 1, RANGE_INIT);
+		setStateJson (RANGE_JSON + 2, RANGE_INIT);
+		setStateJson (RANGE_JSON + 3, RANGE_INIT);
+		setStateJson (RANGE_JSON + 4, RANGE_INIT);
+		setStateJson (RANGE_JSON + 5, RANGE_INIT);
+		setStateJson (RANGE_JSON + 6, RANGE_INIT);
+		setStateJson (RANGE_JSON + 7, RANGE_INIT);
+
+		setStateJson (ACTIVE_PARAM_JSON + 0, 1);
+		setStateJson (ACTIVE_PARAM_JSON + 1, 1);
+		setStateJson (ACTIVE_PARAM_JSON + 2, 1);
+		setStateJson (ACTIVE_PARAM_JSON + 3, 1);
+		setStateJson (ACTIVE_PARAM_JSON + 4, 1);
+		setStateJson (ACTIVE_PARAM_JSON + 5, 1);
+		setStateJson (ACTIVE_PARAM_JSON + 6, 1);
+		setStateJson (ACTIVE_PARAM_JSON + 7, 1);
+
+		setStateJson (RESET_DUR_OFFSET_JSON + 0, 0);
+		setStateJson (RESET_DUR_OFFSET_JSON + 1, 0);
+		setStateJson (RESET_DUR_OFFSET_JSON + 2, 0);
+		setStateJson (RESET_DUR_OFFSET_JSON + 3, 0);
 	}
 
 #ifdef USE_DEBUG_OUTPUT
@@ -302,10 +316,34 @@ void debugOutput (int channel, float value) {
 			seed = getStateParam (SEED_PARAM);
 		initRandom (&globalRandom, (unsigned long)seed);
 
-		for (int i = 0; i <  NUM_ROWS; i ++) {
-			setStateJson (LEN_COUNTER_JSON + i, 0.f);
-			setStateJson (DUR_COUNTER_JSON + i, 0.f);
-			initRandom (&(repeatRandomGenerator[i]), getRandomRaw(&globalRandom));
+		int preOffset = 0;
+		for (int row = 0; row <  NUM_ROWS; row ++) {
+
+			DEBUG("doReset (): resetting counters for row %d", row);
+			DEBUG("doReset (): preOffset = %d", preOffset);
+			int offset = int(getStateJson(RESET_DUR_OFFSET_JSON + row));
+			DEBUG("doReset (): offset = %d", offset);
+			int effDurCnt = effectiveCount[2 * row + DUR];
+			DEBUG("doReset (): effDurCnt (duration of row) = %d", effDurCnt);
+			int multiple = (row == 0 ? 1 : effectiveCount[2 * (row - 1) + DUR]);
+			DEBUG("doReset (): multiple (DUR length of previous row or 1 if row == 0) = %d", multiple);
+			offset *=  multiple;
+			DEBUG("doReset (): offset *= multiple = %d", offset);
+			offset += preOffset;
+			DEBUG("doReset (): offset += preOffset = %d", offset);
+			int durCounter = effDurCnt - (offset % effDurCnt);
+			DEBUG("doReset (): durCounter = effDurCnt - (offset % effDurCnt) = %d", durCounter);
+			DEBUG("doReset (): Setting DUR_COUNTER_JSON for row to %d", durCounter);
+			setStateJson (DUR_COUNTER_JSON + row, durCounter);
+			int effLenCnt = effectiveCount[(row * 2) + LEN];
+			DEBUG("doReset (): effLenCnt(length of row) = effectiveCount[(row * 2) + LEN] (length = %d", effLenCnt);
+			int lenCounter = effLenCnt - durCounter % effLenCnt;
+			DEBUG("doReset (): lenCounter = effLenCnt - durCounter % effLenCnt = %d", lenCounter);
+			DEBUG("doReset (): Setting LEN_COUNTER_JSON for row to %d", lenCounter);
+			setStateJson (LEN_COUNTER_JSON + row, lenCounter);
+
+			preOffset = offset;
+			initRandom (&(repeatRandomGenerator[row]), getRandomRaw(&globalRandom));
 		}
 	}
 
@@ -329,49 +367,26 @@ void debugOutput (int channel, float value) {
 						}
 					}
 				}
-				if (value == 0) {
-					int paramIdx = LEN_PARAM;
-					if (lenOrDur == DUR) {
-						paramIdx = DUR_PARAM;
-					}
-					value = int(getStateParam (paramIdx + row)) * multiple;
-				}
+				if (value == 0)
+					value = int(getStateJson (ACTIVE_PARAM_JSON + lenOrDur * 4 + row)) * multiple;
+				// DEBUG("prepareEffectiveCounts(): effectiveCount[%d] = %d", effectiveCountIndex, effectiveCount[effectiveCountIndex]);
 				effectiveCount[effectiveCountIndex++] = value;
 			}
 		}
 	}
 
 	bool rowActive (int row) {
-		if (int(getStateJson (ONOFF_PARAM + row)) == 0 || 
-			(effectiveCount[row * 2 + LEN] == 1 && effectiveCount[row * 2 + DUR] == 1))
+		if (int(getStateJson (ONOFF_PARAM + row)) == 0)
 			return false;
+		if (effectiveCount[row * 2 + LEN] == 1 && effectiveCount[row * 2 + DUR] == 1)
+			return false;
+		if (row > 0) 
+			if (effectiveCount[row * 2 + DUR] == effectiveCount[(row - 1) * 2 + DUR] && 
+			    effectiveCount[row * 2 + LEN] == effectiveCount[(row - 1) * 2 + DUR])
+				return false;
 		return true;
 	}
 
-	void reconfigureForState () {
-		if (getStateJson(MODULE_STATE_JSON) == STATE_ACTIVE) {
-			int activeParamIdx = 0;
-			for (int i = 0; i < NUM_ROWS; i++, activeParamIdx++) {
-				reConfigParamMinValue(DUR_PARAM + i, 1);
-				reConfigParamMaxValue(LEN_PARAM + i, getStateJson(RANGE_JSON + activeParamIdx));
-			}
-			for (int i = 0; i < NUM_ROWS; i++, activeParamIdx++) {
-				reConfigParamMinValue(DUR_PARAM + i, 1);
-				reConfigParamMaxValue(DUR_PARAM + i, getStateJson(RANGE_JSON + activeParamIdx));
-			}
-		}
-		if (oldModuleState == STATE_ACTIVE && getStateJson(MODULE_STATE_JSON) == STATE_EDIT_RANGES) {
-			int activeParamIdx = 0;
-			for (int i = 0; i < NUM_ROWS; i++, activeParamIdx++) {
-				reConfigParamMinValue(LEN_PARAM + i, getStateJson(ACTIVE_PARAM_JSON + activeParamIdx));
-				reConfigParamMaxValue(LEN_PARAM + i, RANGE_MAX);
-			}
-			for (int i = 0; i < NUM_ROWS; i++, activeParamIdx++) {
-				reConfigParamMinValue(DUR_PARAM + i, getStateJson(ACTIVE_PARAM_JSON + activeParamIdx));
-				reConfigParamMaxValue(DUR_PARAM + i, RANGE_MAX);
-			}
-		}
-	}
 /*
 	Methods called directly or indirectly called from process () in OrangeLineCommon.hpp
 */
@@ -396,6 +411,8 @@ void debugOutput (int channel, float value) {
 			}
 			styleChanged = false;
 		}
+		syncParams();
+		prepareEffectiveCounts();
 
 		if (changeInput (RST_INPUT) && getStateJson(MODULE_STATE_JSON) == STATE_ACTIVE)
 			doReset();
@@ -412,8 +429,7 @@ void debugOutput (int channel, float value) {
 				}
 			}
 		}
-		prepareEffectiveCounts();
-		if (changeInput (CLK_INPUT) && getStateJson(MODULE_STATE_JSON) == STATE_ACTIVE) {
+		if (changeInput (CLK_INPUT)) { // && getStateJson(MODULE_STATE_JSON) == STATE_ACTIVE) {
 			if (int(getStateJson (DIVCOUNTER_JSON)) == 0) {
 				int div;
 				if (getInputConnected (DIV_INPUT))
@@ -435,7 +451,7 @@ void debugOutput (int channel, float value) {
 						else
 							counterJson = LEN_COUNTER_JSON;
 						int count = int(getStateJson (counterJson + row));
-						if (count == 0) {
+						if (count <= 0) {
 							flashEvent[(row*2)+lenOrDur] = true;
 							if (lenOrDur == DUR) {
 								repeatSeed[row] = getRandomRaw (p_srcRandomGenerator);
@@ -570,45 +586,120 @@ void debugOutput (int channel, float value) {
 			}	
 			setStateJson(DIVCOUNTER_JSON, getStateJson(DIVCOUNTER_JSON) - 1);
 		}
-		if (getStateJson(MODULE_STATE_JSON) != STATE_ACTIVE && oldModuleState == STATE_ACTIVE) {
-			// save user settings for length and duration
-			int activeParamIdx = 0;
-			for (int i = 0; i < NUM_ROWS; i++, activeParamIdx++)
-				setStateJson(ACTIVE_PARAM_JSON + activeParamIdx, getStateParam(LEN_PARAM + i));
-			for (int i = 0; i < NUM_ROWS; i++, activeParamIdx++)
-				setStateJson(ACTIVE_PARAM_JSON + activeParamIdx, getStateParam(DUR_PARAM + i));
-			if (getStateJson(MODULE_STATE_JSON) == STATE_EDIT_RANGES) {
-				// set param to values for ranges
-				// take care of missig values due to upgrade of module
-				for (int i = 0; i < NUM_ROWS * 2; i++)
-					if (getStateJson(RANGE_JSON + i) < 1)
-						setStateJson(RANGE_JSON + i, RANGE_INIT);
-				int activeParamIdx = 0;
-				for (int i = 0; i < NUM_ROWS; i++, activeParamIdx++)
-					setStateParam(LEN_PARAM + i, getStateJson(RANGE_JSON + activeParamIdx));
-				for (int i = 0; i < NUM_ROWS; i++, activeParamIdx++)
-					setStateParam(DUR_PARAM + i, getStateJson(RANGE_JSON + activeParamIdx));
+	}
+
+	void wobbleParams() {
+		if (!wobbleParamActive) {
+			for (int row = 0; row < NUM_ROWS; row++) {
+				setStateParam(LEN_PARAM + row, getStateParam(LEN_PARAM + row) + WOBBLE_AMOUNT);
+				setStateParam(DUR_PARAM + row, getStateParam(DUR_PARAM + row) + WOBBLE_AMOUNT);
 			}
-			reconfigureForState();
-			oldModuleState = getStateJson(MODULE_STATE_JSON);
+			wobbleParamActive = true;
 		}
-		if (getStateJson(MODULE_STATE_JSON) == STATE_ACTIVE && oldModuleState != STATE_ACTIVE) {
-			// set ranges from params
-			if (oldModuleState == STATE_EDIT_RANGES) {
-				int activeParamIdx = 0;
-				for (int i = 0; i < NUM_ROWS; i++, activeParamIdx++)
-					setStateJson(RANGE_JSON + activeParamIdx, getStateParam(LEN_PARAM + i));
-				for (int i = 0; i < NUM_ROWS; i++, activeParamIdx++)
-					setStateJson(RANGE_JSON + activeParamIdx, getStateParam(DUR_PARAM + i));
+		else {
+			for (int row = 0; row < NUM_ROWS; row++) {
+				float value = getStateParam(LEN_PARAM + row);
+				if (float(int(value)) != value)
+					setStateParam(LEN_PARAM + row, value);
+				value = getStateParam(DUR_PARAM + row);
+				if (float(int(value)) != value)
+					setStateParam(DUR_PARAM + row, value);
 			}
+			wobbleParamActive = false;
+		}
+	}
+
+	void syncParams () {
+		if (oldModuleState != getStateJson (MODULE_STATE_JSON)) {
+			paramsFromJson ();
+			reconfigureForState ();
+			wobbleParams ();
+			oldModuleState = getStateJson (MODULE_STATE_JSON);
+		}
+		paramsToJson();
+	}
+
+	void paramsFromJson () {
+		if (getStateJson(MODULE_STATE_JSON) == STATE_ACTIVE && oldModuleState != STATE_ACTIVE) {
 			// restore user settings for length and duration
 			int activeParamIdx = 0;
 			for (int i = 0; i < NUM_ROWS; i++, activeParamIdx++)
 				setStateParam(LEN_PARAM + i, getStateJson(ACTIVE_PARAM_JSON + activeParamIdx));
 			for (int i = 0; i < NUM_ROWS; i++, activeParamIdx++)
 				setStateParam(DUR_PARAM + i, getStateJson(ACTIVE_PARAM_JSON + activeParamIdx));
-			reconfigureForState();
-			oldModuleState = getStateJson(MODULE_STATE_JSON);
+		}
+		if (getStateJson(MODULE_STATE_JSON) == STATE_EDIT_RANGES && oldModuleState != STATE_EDIT_RANGES) {
+			// set param to values for ranges
+			// take care of missig values due to upgrade of module
+			for (int i = 0; i < NUM_ROWS * 2; i++)
+				if (getStateJson(RANGE_JSON + i) < 1)
+					setStateJson(RANGE_JSON + i, RANGE_INIT);
+			int activeParamIdx = 0;
+			for (int i = 0; i < NUM_ROWS; i++, activeParamIdx++)
+				setStateParam(LEN_PARAM + i, getStateJson(RANGE_JSON + activeParamIdx));
+			for (int i = 0; i < NUM_ROWS; i++, activeParamIdx++)
+				setStateParam(DUR_PARAM + i, getStateJson(RANGE_JSON + activeParamIdx));
+		}
+		if (getStateJson(MODULE_STATE_JSON) == STATE_EDIT_OFFSETS && oldModuleState != STATE_EDIT_OFFSETS) {
+			for (int i = 0; i < NUM_ROWS; i++)
+				setStateParam(DUR_PARAM + i, getStateJson(RESET_DUR_OFFSET_JSON + i));
+		}
+	}
+
+	void paramsToJson () {
+		if (getStateJson(MODULE_STATE_JSON) == STATE_ACTIVE) {
+			int activeParamIdx = 0;
+			for (int i = 0; i < NUM_ROWS; i++, activeParamIdx++)
+				setStateJson(ACTIVE_PARAM_JSON + activeParamIdx, getStateParam(LEN_PARAM + i));
+			for (int i = 0; i < NUM_ROWS; i++, activeParamIdx++)
+				setStateJson(ACTIVE_PARAM_JSON + activeParamIdx, getStateParam(DUR_PARAM + i));
+		}
+		if (getStateJson(MODULE_STATE_JSON) == STATE_EDIT_RANGES) {
+			int activeParamIdx = 0;
+			for (int i = 0; i < NUM_ROWS; i++, activeParamIdx++)
+				setStateJson(RANGE_JSON + activeParamIdx, getStateParam(LEN_PARAM + i));
+			for (int i = 0; i < NUM_ROWS; i++, activeParamIdx++)
+				setStateJson(RANGE_JSON + activeParamIdx, getStateParam(DUR_PARAM + i));
+		}
+		if (getStateJson(MODULE_STATE_JSON) == STATE_EDIT_OFFSETS) {
+			for (int i = 0; i < NUM_ROWS; i++)
+				setStateJson(RESET_DUR_OFFSET_JSON + i, getStateParam(DUR_PARAM + i));
+		}
+	}
+
+	void reconfigureForState () {
+		if (getStateJson(MODULE_STATE_JSON) == STATE_ACTIVE) {
+			int activeParamIdx = 0;
+			for (int row = 0; row < NUM_ROWS; row++, activeParamIdx++) {
+				reConfigParamMinValue (LEN_PARAM + row, 1);				
+				reConfigParamMaxValue (LEN_PARAM + row, getStateJson (RANGE_JSON + activeParamIdx));
+				reConfigParamDefault  (LEN_PARAM + row, 1.0);
+			}
+			for (int row = 0; row < NUM_ROWS; row++, activeParamIdx++) {
+				reConfigParamMinValue (DUR_PARAM + row, 1);
+				reConfigParamMaxValue (DUR_PARAM + row, getStateJson (RANGE_JSON + activeParamIdx));
+				reConfigParamDefault  (DUR_PARAM + row, 1.0);
+			}
+		}
+		if (getStateJson(MODULE_STATE_JSON) == STATE_EDIT_RANGES) {
+			int activeParamIdx = 0;
+			for (int row = 0; row < NUM_ROWS; row++, activeParamIdx++) {
+				reConfigParamMinValue (LEN_PARAM + row, getStateJson (ACTIVE_PARAM_JSON + activeParamIdx));
+				reConfigParamMaxValue (LEN_PARAM + row, RANGE_MAX);
+				reConfigParamDefault  (LEN_PARAM + row, getStateJson (ACTIVE_PARAM_JSON + activeParamIdx));
+			}
+			for (int row = 0; row < NUM_ROWS; row++, activeParamIdx++) {
+				reConfigParamMinValue (DUR_PARAM + row, getStateJson (ACTIVE_PARAM_JSON + activeParamIdx));
+				reConfigParamMaxValue (DUR_PARAM + row, RANGE_MAX);
+				reConfigParamDefault  (DUR_PARAM + row, getStateJson (ACTIVE_PARAM_JSON + activeParamIdx));
+			}
+		}
+		if (getStateJson(MODULE_STATE_JSON) == STATE_EDIT_OFFSETS) {
+			for (int row = 0; row < NUM_ROWS; row++) {
+				reConfigParamMinValue (DUR_PARAM + row, 0);
+				reConfigParamMaxValue (DUR_PARAM + row, getStateJson (ACTIVE_PARAM_JSON + DUR * 4 + row));
+				reConfigParamDefault  (DUR_PARAM + row, getStateJson (RESET_DUR_OFFSET_JSON + row));
+			}
 		}
 	}
 
@@ -670,7 +761,8 @@ void debugOutput (int channel, float value) {
 
 		for (int row = 0; row < NUM_ROWS; row++) {
 			if (getStateJson (ONOFF_JSON + row) == 1.) {
-				if (int(getStateParam (LEN_PARAM + row)) == 1 && int(getStateParam (DUR_PARAM + row)) == 1)
+				if (int(getStateJson (ACTIVE_PARAM_JSON + LEN * 4 + row)) == 1 && 
+				    int(getStateJson (ACTIVE_PARAM_JSON + DUR * 4 + row)) == 1)
 					setRgbLight (REP_LIGHT_RGB + (3 * row), ONOFF_COLOR_ON_INACTIVE);
 				else
 					setRgbLight (REP_LIGHT_RGB + (3 * row), ONOFF_COLOR_ON);
@@ -730,9 +822,13 @@ struct LeftWidget : TransparentWidget {
 
 	bool redParam (int param) {
 		float moduleState = module->getStateJson (MODULE_STATE_JSON);
-		if (moduleState != STATE_ACTIVE) {
+		if (moduleState == STATE_EDIT_RANGES) {
 			if ((param >= LEN_PARAM && param <= LEN_PARAM_END) ||
 				(param >= DUR_PARAM && param <= DUR_PARAM_END) || param == -1)
+				return true;
+		}
+		if (moduleState == STATE_EDIT_OFFSETS) {
+			if ((param >= DUR_PARAM && param <= DUR_PARAM_END) || param == -1)
 				return true;
 		}
 		return false;
@@ -774,7 +870,7 @@ struct LeftWidget : TransparentWidget {
 					if (moduleState == STATE_EDIT_RANGES)
 						snprintf (headBuffer, 17, "Max %s:", label);
 					else
-						snprintf (headBuffer, 17, "Count %s:", label);
+						snprintf (headBuffer, 17, "Offset %s:", label);
 				}
 
 				float value = module->getStateParam (param);
@@ -802,8 +898,8 @@ struct LeftWidget : TransparentWidget {
 					snprintf (headBuffer,  17, "Edit:");
 					if (moduleState == STATE_EDIT_RANGES)
 						snprintf (valueBuffer, 17, " RANGES ");
-					else
-						snprintf (valueBuffer, 17, "COUNTERS");
+					if (moduleState == STATE_EDIT_OFFSETS)
+						snprintf (valueBuffer, 17, " OFFSETS");
 				}
 			}
 			nvgFontFaceId (drawArgs.vg, pFont->handle);
@@ -1270,11 +1366,18 @@ struct DejavuWidget : ModuleWidget {
 
 			ModuleStateItem *moduleStateItem3 = new ModuleStateItem ();
 			moduleStateItem3->module = module;
-			moduleStateItem3->state = STATE_EDIT_COUNTERS;
-			moduleStateItem3->text = "Edit Counters";
+			moduleStateItem3->state = STATE_EDIT_OFFSETS;
+			moduleStateItem3->text = "Edit Offsets";
 			moduleStateItem3->setSize (Vec(50, 20));
 			menu->addChild(moduleStateItem3);
-
+/*
+			ModuleStateItem *moduleStateItem4 = new ModuleStateItem ();
+			moduleStateItem4->module = module;
+			moduleStateItem4->state = STATE_EDIT_OFFSET_RANGES;
+			moduleStateItem4->text = "Edit Offsets Ranges";
+			moduleStateItem4->setSize (Vec(50, 20));
+			menu->addChild(moduleStateItem4);
+*/
 			spacerLabel = new MenuLabel();
 			menu->addChild(spacerLabel);
 

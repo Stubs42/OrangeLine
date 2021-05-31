@@ -133,7 +133,7 @@ double getRandom (OrangeLineRandom *rnd)
 	Initialization
 	Constructor has to create a valid and consistent initial state to present to the dataToJson call
 	right after adding the module.
-	Now to cases:
+	Now two cases:
 	1.	dataToJson is called first:	module added to the patch
 	2.	dataFromJson is called first: patch was (re)loaded or a preset was loaded
 	In both cases we may have to init non persistent state of the module after both actions.

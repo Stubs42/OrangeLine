@@ -57,11 +57,11 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define COOKED 0
 #define RAW 1
 
-#define STATE_ACTIVE        0
-#define STATE_EDIT_RANGES   1
-#define STATE_EDIT_COUNTERS 2
+#define STATE_ACTIVE             0
+#define STATE_EDIT_RANGES        1
+#define STATE_EDIT_OFFSETS  	 2
 
-#define PARAM_DISPLAY_CYCLES 30
+#define PARAM_DISPLAY_CYCLES    50
 
 #define FLASH_FRAMES  5
 #define NUM_FLASHES	  9
@@ -69,8 +69,11 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define DIRECTION_BACKWARD  0.f
 #define DIRECTION_CLOCKWISE 1.f
 
-#define RANGE_INIT 256
-#define RANGE_MAX  REP_INPUT_MAX
+#define RANGE_INIT 	256
+#define RANGE_MAX  	REP_INPUT_MAX
+#define COUNTER_MAX REP_INPUT_MAX
+
+#define WOBBLE_AMOUNT 0.000001
 //
 // Virtual Parameter Ids stored using Json
 //
@@ -96,6 +99,8 @@ enum jsonIds {
 	RANGE_JSON_END = RANGE_JSON +  (NUM_ROWS * 2) - 1,
 	ACTIVE_PARAM_JSON,
 	ACTIVE_PARAM_JSON_END = ACTIVE_PARAM_JSON + (NUM_ROWS * 2) - 1,
+	RESET_DUR_OFFSET_JSON,
+	RESET_DUR_OFFSET_JSON_END = RESET_DUR_OFFSET_JSON + NUM_ROWS - 1,
 
 	NUM_JSONS
 };
