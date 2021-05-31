@@ -175,7 +175,9 @@ struct Dejavu : Module {
 		setJsonLabel (RESET_DUR_OFFSET_JSON + 1, "ResetDurationOffset2");
 		setJsonLabel (RESET_DUR_OFFSET_JSON + 2, "ResetDurationOffset3");
 		setJsonLabel (RESET_DUR_OFFSET_JSON + 3, "ResetDurationOffset4");
-		
+		setJsonLabel (ACTIVE_HEAT_PARAM_JSON, "ActiveHeatParam");
+		setJsonLabel (DISPLAY_ALPHA_JSON, "DisplayAlpha");
+
 		#pragma GCC diagnostic pop
 	}
 
@@ -201,7 +203,7 @@ struct Dejavu : Module {
 		configParam (DUR_PARAM + 2,       1.f,  RANGE_INIT,   1.f, "Duration 3",             "", 0.f, 1.f, 0.f);
 		configParam (DUR_PARAM + 3,       1.f,  RANGE_INIT,   1.f, "Duration 4",             "", 0.f, 1.f, 0.f);		
 
-		configParam (HEAT_PARAM,            0.f,       100.f,  50.f, "Heat",                 "%", 0.f, 1.f, 0.f);
+		configParam (HEAT_PARAM,            0.f,       100.f,  DEFAULT_HEAT, "Heat",                 "%", 0.f, 1.f, 0.f);
 		
 		configParam (OFS_PARAM,           -10.f,        10.f,   0.f, "Offset",               "",  0.f, 1.f, 0.f);
 		configParam (OFS_ATT_PARAM,      -100.f,       100.f,   0.f, "Offset Attenuation",   "%", 0.f, 1.f, 0.f);
@@ -280,6 +282,9 @@ struct Dejavu : Module {
 		setStateJson (RESET_DUR_OFFSET_JSON + 1, 0);
 		setStateJson (RESET_DUR_OFFSET_JSON + 2, 0);
 		setStateJson (RESET_DUR_OFFSET_JSON + 3, 0);
+
+		setStateJson (ACTIVE_HEAT_PARAM_JSON, DEFAULT_HEAT);
+		setStateJson (DISPLAY_ALPHA_JSON, INIT_DISPLAY_ALPHA);
 	}
 
 #ifdef USE_DEBUG_OUTPUT
@@ -621,6 +626,10 @@ void debugOutput (int channel, float value) {
 	}
 
 	void paramsFromJson () {
+		if ((getStateJson(MODULE_STATE_JSON) == STATE_EDIT_RANGES || getStateJson(MODULE_STATE_JSON) == STATE_EDIT_OFFSETS)
+		    && oldModuleState == STATE_ACTIVE) {
+			setStateParam (HEAT_PARAM, getStateJson(DISPLAY_ALPHA_JSON));
+			}
 		if (getStateJson(MODULE_STATE_JSON) == STATE_ACTIVE && oldModuleState != STATE_ACTIVE) {
 			// restore user settings for length and duration
 			int activeParamIdx = 0;
@@ -628,6 +637,7 @@ void debugOutput (int channel, float value) {
 				setStateParam(LEN_PARAM + i, getStateJson(ACTIVE_PARAM_JSON + activeParamIdx));
 			for (int i = 0; i < NUM_ROWS; i++, activeParamIdx++)
 				setStateParam(DUR_PARAM + i, getStateJson(ACTIVE_PARAM_JSON + activeParamIdx));
+			setStateParam (HEAT_PARAM, getStateJson(ACTIVE_HEAT_PARAM_JSON));
 		}
 		if (getStateJson(MODULE_STATE_JSON) == STATE_EDIT_RANGES && oldModuleState != STATE_EDIT_RANGES) {
 			// set param to values for ranges
@@ -654,6 +664,7 @@ void debugOutput (int channel, float value) {
 				setStateJson(ACTIVE_PARAM_JSON + activeParamIdx, getStateParam(LEN_PARAM + i));
 			for (int i = 0; i < NUM_ROWS; i++, activeParamIdx++)
 				setStateJson(ACTIVE_PARAM_JSON + activeParamIdx, getStateParam(DUR_PARAM + i));
+			setStateJson(ACTIVE_HEAT_PARAM_JSON, getStateParam(HEAT_PARAM));
 		}
 		if (getStateJson(MODULE_STATE_JSON) == STATE_EDIT_RANGES) {
 			int activeParamIdx = 0;
@@ -661,10 +672,12 @@ void debugOutput (int channel, float value) {
 				setStateJson(RANGE_JSON + activeParamIdx, getStateParam(LEN_PARAM + i));
 			for (int i = 0; i < NUM_ROWS; i++, activeParamIdx++)
 				setStateJson(RANGE_JSON + activeParamIdx, getStateParam(DUR_PARAM + i));
+			setStateJson(DISPLAY_ALPHA_JSON, getStateParam(HEAT_PARAM));
 		}
 		if (getStateJson(MODULE_STATE_JSON) == STATE_EDIT_OFFSETS) {
 			for (int i = 0; i < NUM_ROWS; i++)
 				setStateJson(RESET_DUR_OFFSET_JSON + i, getStateParam(DUR_PARAM + i));
+			setStateJson(DISPLAY_ALPHA_JSON, getStateParam(HEAT_PARAM));
 		}
 	}
 
@@ -827,9 +840,13 @@ struct LeftWidget : TransparentWidget {
 			if ((param >= LEN_PARAM && param <= LEN_PARAM_END) ||
 				(param >= DUR_PARAM && param <= DUR_PARAM_END) || param == -1)
 				return true;
+			if (param == HEAT_PARAM)
+				return true;
 		}
 		if (moduleState == STATE_EDIT_OFFSETS) {
 			if ((param >= DUR_PARAM && param <= DUR_PARAM_END) || param == -1)
+				return true;
+			if (param == HEAT_PARAM)
 				return true;
 		}
 		return false;
@@ -868,10 +885,14 @@ struct LeftWidget : TransparentWidget {
 						snprintf (headBuffer, 17, "%s:", label);
 				}
 				else {
-					if (moduleState == STATE_EDIT_RANGES)
-						snprintf (headBuffer, 17, "Max %s:", label);
-					else
-						snprintf (headBuffer, 17, "Offset %s:", label);
+					if (param == HEAT_PARAM)
+						snprintf (headBuffer, 17, "Alpha[%s]:", "%");
+					else {
+						if (moduleState == STATE_EDIT_RANGES)
+							snprintf (headBuffer, 17, "Max %s:", label);
+						else
+							snprintf (headBuffer, 17, "Offset %s:", label);
+					}
 				}
 
 				float value = module->getStateParam (param);
@@ -996,8 +1017,12 @@ struct RigthWidget : TransparentWidget {
 
 	void draw (const DrawArgs &drawArgs) override {
 		if (module) {
-			if (module->getStateJson(MODULE_STATE_JSON) != STATE_ACTIVE)
-				return;
+			
+//			if (module->getStateJson(MODULE_STATE_JSON) != STATE_ACTIVE)
+//				return;
+
+			float displayAlpha = module->getStateJson(DISPLAY_ALPHA_JSON);
+
 			nvgGlobalCompositeOperation(drawArgs.vg, NVG_SOURCE_OVER);
 			//nvgGlobalCompositeBlendFunc(drawArgs.vg, NVG_SRC_COLOR, NVG_ZERO);
 
@@ -1030,10 +1055,11 @@ struct RigthWidget : TransparentWidget {
 			};
 			// NVGcolor midColor = nvgRGB (0x00, 0x00, 0xff);
 
-			int dotAlpha = 125; // 200;
-			int trkAlpha = 125; // 100;
-			int armAlpha = 125; // 150;
-			// int midAlpha =   0;
+			int alpha = (displayAlpha / 100) * 255;
+			int dotAlpha = alpha;
+			int trkAlpha = alpha;
+			int armAlpha = alpha;
+			// int midAlpha = alpha;
 
 			float maxTrackRadius    = (box.size.x / 2) - mm2px(1.5f);
 			float radiusDistance    = mm2px(2.5f);
@@ -1354,7 +1380,7 @@ struct DejavuWidget : ModuleWidget {
 			ModuleStateItem *moduleStateItem1 = new ModuleStateItem ();
 			moduleStateItem1->module = module;
 			moduleStateItem1->state = STATE_ACTIVE;
-			moduleStateItem1->text = "Active";
+			moduleStateItem1->text = "Normal Operation";
 			moduleStateItem1->setSize (Vec(50, 20));
 			menu->addChild(moduleStateItem1);
 

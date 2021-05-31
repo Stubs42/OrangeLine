@@ -74,6 +74,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define COUNTER_MAX REP_INPUT_MAX
 
 #define WOBBLE_AMOUNT 0.000001
+
+#define INIT_DISPLAY_ALPHA 50
+#define DEFAULT_HEAT 50
 //
 // Virtual Parameter Ids stored using Json
 //
@@ -101,6 +104,8 @@ enum jsonIds {
 	ACTIVE_PARAM_JSON_END = ACTIVE_PARAM_JSON + (NUM_ROWS * 2) - 1,
 	RESET_DUR_OFFSET_JSON,
 	RESET_DUR_OFFSET_JSON_END = RESET_DUR_OFFSET_JSON + NUM_ROWS - 1,
+	ACTIVE_HEAT_PARAM_JSON,
+	DISPLAY_ALPHA_JSON,
 
 	NUM_JSONS
 };
