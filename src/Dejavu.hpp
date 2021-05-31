@@ -77,6 +77,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #define INIT_DISPLAY_ALPHA 50
 #define DEFAULT_HEAT 50
+
+#define GREETING_HEAD  "-- Orange Line --"
+#define GREETING_VALUE " DEJAVU "
+#define GREETING_CYCLES	100
 //
 // Virtual Parameter Ids stored using Json
 //

@@ -55,6 +55,7 @@ struct Dejavu : Module {
 	float oldModuleState = STATE_ACTIVE;
 	bool wobbleParamActive = false;
 	bool hadResetWithOffset = false;
+	int greetingCycles = 0;
 
 // ********************************************************************************************************************************
 /*
@@ -283,6 +284,8 @@ struct Dejavu : Module {
 
 		setStateJson (ACTIVE_HEAT_PARAM_JSON, DEFAULT_HEAT);
 		setStateJson (DISPLAY_ALPHA_JSON, INIT_DISPLAY_ALPHA);
+
+		greetingCycles = GREETING_CYCLES;
 	}
 
 #ifdef USE_DEBUG_OUTPUT
@@ -878,6 +881,7 @@ struct LeftWidget : TransparentWidget {
 			if (paramDisplayCycles == 0)
 				module->lastParamChanged = -1;
 			if (paramDisplayCycles > 0) {
+				module->greetingCycles = 0;
 				ParamQuantity *pq = module->paramQuantities[param];
 				const char *label = pq->label.data();
 				const char *unit  = pq->unit.data();
@@ -912,12 +916,19 @@ struct LeftWidget : TransparentWidget {
 			}
 			else {
 				if (moduleState == STATE_ACTIVE) {
-					if (module->p_srcRandomGenerator != nullptr) {
-						strncpy (headBuffer, module->displayHeading, 17);
-						sprintf (valueBuffer, "%08lX", module->p_srcRandomGenerator->latest_seed);
+					if (module->greetingCycles > 0) {
+						strcpy(headBuffer, GREETING_HEAD);
+						strcpy(valueBuffer, GREETING_VALUE);
+						module->greetingCycles--;
 					}
 					else {
-						strcpy(valueBuffer, "null");
+						if (module->p_srcRandomGenerator != nullptr) {
+							strncpy (headBuffer, module->displayHeading, 17);
+							sprintf (valueBuffer, "%08lX", module->p_srcRandomGenerator->latest_seed);
+						}
+						else {
+							strcpy(valueBuffer, "null");
+						}
 					}
 				}
 				else {
