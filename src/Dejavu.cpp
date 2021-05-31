@@ -97,7 +97,8 @@ struct Dejavu : Module {
 		setInPoly          (REP_INPUT, true);
 		setOutPoly         (REP_OUTPUT, true);
 
-		setInPoly          (TRG_INPUT, true);
+		setStateTypeOutput (TRG_INPUT, STATE_TYPE_TRIGGER);
+
 		setStateTypeOutput (TRG_OUTPUT, STATE_TYPE_TRIGGER);
 		setOutPoly         (TRG_OUTPUT, true);
 
@@ -318,28 +319,27 @@ void debugOutput (int channel, float value) {
 
 		int preOffset = 0;
 		for (int row = 0; row <  NUM_ROWS; row ++) {
-
-			DEBUG("doReset (): resetting counters for row %d", row);
-			DEBUG("doReset (): preOffset = %d", preOffset);
+			// DEBUG("doReset (): resetting counters for row %d", row);
+			// DEBUG("doReset (): preOffset = %d", preOffset);
 			int offset = int(getStateJson(RESET_DUR_OFFSET_JSON + row));
-			DEBUG("doReset (): offset = %d", offset);
+			// DEBUG("doReset (): offset = %d", offset);
 			int effDurCnt = effectiveCount[2 * row + DUR];
-			DEBUG("doReset (): effDurCnt (duration of row) = %d", effDurCnt);
+			// DEBUG("doReset (): effDurCnt (duration of row) = %d", effDurCnt);
 			int multiple = (row == 0 ? 1 : effectiveCount[2 * (row - 1) + DUR]);
-			DEBUG("doReset (): multiple (DUR length of previous row or 1 if row == 0) = %d", multiple);
+			// DEBUG("doReset (): multiple (DUR length of previous row or 1 if row == 0) = %d", multiple);
 			offset *=  multiple;
-			DEBUG("doReset (): offset *= multiple = %d", offset);
+			// DEBUG("doReset (): offset *= multiple = %d", offset);
 			offset += preOffset;
-			DEBUG("doReset (): offset += preOffset = %d", offset);
+			// DEBUG("doReset (): offset += preOffset = %d", offset);
 			int durCounter = effDurCnt - (offset % effDurCnt);
-			DEBUG("doReset (): durCounter = effDurCnt - (offset % effDurCnt) = %d", durCounter);
-			DEBUG("doReset (): Setting DUR_COUNTER_JSON for row to %d", durCounter);
+			// DEBUG("doReset (): durCounter = effDurCnt - (offset % effDurCnt) = %d", durCounter);
+			// DEBUG("doReset (): Setting DUR_COUNTER_JSON for row to %d", durCounter);
 			setStateJson (DUR_COUNTER_JSON + row, durCounter);
 			int effLenCnt = effectiveCount[(row * 2) + LEN];
-			DEBUG("doReset (): effLenCnt(length of row) = effectiveCount[(row * 2) + LEN] (length = %d", effLenCnt);
+			// DEBUG("doReset (): effLenCnt(length of row) = effectiveCount[(row * 2) + LEN] (length = %d", effLenCnt);
 			int lenCounter = effLenCnt - durCounter % effLenCnt;
-			DEBUG("doReset (): lenCounter = effLenCnt - durCounter % effLenCnt = %d", lenCounter);
-			DEBUG("doReset (): Setting LEN_COUNTER_JSON for row to %d", lenCounter);
+			// DEBUG("doReset (): lenCounter = effLenCnt - durCounter % effLenCnt = %d", lenCounter);
+			// DEBUG("doReset (): Setting LEN_COUNTER_JSON for row to %d", lenCounter);
 			setStateJson (LEN_COUNTER_JSON + row, lenCounter);
 
 			preOffset = offset;
@@ -417,19 +417,14 @@ void debugOutput (int channel, float value) {
 		if (changeInput (RST_INPUT) && getStateJson(MODULE_STATE_JSON) == STATE_ACTIVE)
 			doReset();
 
-		// handle polyphonic TRG_INPUT
-		if (getInputConnected (TRG_INPUT) && getStateJson(MODULE_STATE_JSON) == STATE_ACTIVE) {
-			int channels = inputs[TRG_INPUT].getChannels();
-			for (int channel =  NUM_ROWS - 1; channel >= 0; channel--) {
-				if (channel > channels)
-					break;
-				if (OL_inStateChangePoly[TRG_INPUT * POLY_CHANNELS + channel]) { 
-					setStateJson (DUR_COUNTER_JSON + channel, 0.f);
-					break;
-				}
+		if (changeInput (TRG_INPUT)) {
+			for (int row = 0; row < NUM_ROWS; row++) {
+				setStateJson(LEN_COUNTER_JSON + row, 0);
+				setStateJson(DUR_COUNTER_JSON + row, 0);
 			}
 		}
-		if (changeInput (CLK_INPUT)) { // && getStateJson(MODULE_STATE_JSON) == STATE_ACTIVE) {
+
+		if (changeInput (CLK_INPUT)) {
 			if (int(getStateJson (DIVCOUNTER_JSON)) == 0) {
 				int div;
 				if (getInputConnected (DIV_INPUT))
