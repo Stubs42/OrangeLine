@@ -373,6 +373,11 @@ void debugOutput (int channel, float value) {
 				effectiveCount[effectiveCountIndex++] = value;
 			}
 		}
+		for (int i = 0; i < NUM_ROWS * 2; i++) {
+			OL_statePoly[NUM_INPUTS * POLY_CHANNELS + REP_OUTPUT * POLY_CHANNELS + i] = float(effectiveCount[i]) / REP_INPUT_SCALE_RAW;
+			OL_outStateChangePoly[REP_OUTPUT * POLY_CHANNELS + i] = true;
+			// DEBUG("Set REP_OUTPUT[%d] to %lf", i, float(effectiveCount[i]) / REP_INPUT_SCALE_RAW);
+		}
 	}
 
 	bool rowActive (int row) {
@@ -458,7 +463,6 @@ void debugOutput (int channel, float value) {
 								initRandom (&(repeatRandomGenerator[row]), repeatSeed[row]);
 							}
 							count = effectiveCount[(row * 2) + lenOrDur];
-							setStateOutPoly (REP_OUTPUT, row * 2 + lenOrDur, float(count) / 10000);
 							setStateOutPoly (TRG_OUTPUT, row * 2 + lenOrDur, 10.f);
 							setStateJson (counterJson + row, float(count)); 
 						}
