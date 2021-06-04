@@ -73,6 +73,7 @@ int    samplesSkipped  = 0;
 
 int    lastParamChanged = 0;
 bool   paramChanged = false;
+bool   dataFromJsonCalled = false;
 /*
 	Random implementation derived from the one used in Frozen Wastland Seeds of Change
 */
@@ -81,7 +82,7 @@ OrangeLineRandom globalRandom;
 void initRandom (OrangeLineRandom *rnd, unsigned long s)
 {
 	rnd->mti=N+1; /* mti==N+1 means mt[N] is not initialized */
-	rnd->latest_seed = s;
+	rnd->latestSeed = s;
     rnd->mt[0]= s & 0xffffffffUL;
     for (rnd->mti=1; rnd->mti<N; rnd->mti++) {
         rnd->mt[rnd->mti] = 
@@ -93,6 +94,7 @@ void initRandom (OrangeLineRandom *rnd, unsigned long s)
         rnd->mt[rnd->mti] &= 0xffffffffUL;
         /* for >32 bit machines */
     }
+	rnd->getCount = 0;
 }
 unsigned long getRandomRaw (OrangeLineRandom *rnd)
 {
@@ -120,6 +122,7 @@ unsigned long getRandomRaw (OrangeLineRandom *rnd)
     y ^= (y << 7) & 0x9d2c5680UL;
     y ^= (y << 15) & 0xefc60000UL;
     y ^= (y >> 18);
+	rnd->getCount++;
     return y;
 }
 
@@ -334,7 +337,6 @@ inline NVGcolor getTextColor () {
 	Generic process() Method
 */
 void process (const ProcessArgs &args) override {
-
 	bool skip = moduleSkipProcess();
 	idleSkipCounter = (idleSkipCounter + 1) % IDLESKIP;
 	if (skip) {
@@ -354,6 +356,7 @@ void process (const ProcessArgs &args) override {
 
 	OL_initialized = true;
 	samplesSkipped = 0;
+	dataFromJsonCalled = false;
 }
 
 /**
@@ -438,7 +441,7 @@ inline void processParamsAndInputs () {
 		}
 		else {
 			setInStateParam (paramIdx, params[paramIdx].getValue ());
-			if (inChangeParam (paramIdx)) {
+			if (inChangeParam (paramIdx) && OL_initialized) {
 				OL_customChangeBits |= getCustomChangeMaskParam (paramIdx);
 				lastParamChanged = paramIdx;
 				paramChanged = true;
@@ -680,7 +683,6 @@ inline void reflectChanges () {
 	Create a json object for VCV to store as preset or when saving a patch (including autosave)
 */
 json_t *dataToJson () override {
-
 	json_t *rootJ = json_object ();
 	int jsonIdx;
 	for (jsonIdx = 0; jsonIdx < NUM_JSONS; jsonIdx ++) {
@@ -697,7 +699,8 @@ void dataFromJson (json_t *rootJ) override {
 	for (int jsonIdx = 0; jsonIdx < NUM_JSONS; jsonIdx ++)
 		if ((pJson = json_object_get (rootJ, OL_jsonLabel[jsonIdx])) != nullptr)
 			setStateJson (jsonIdx, json_real_value (pJson));
-	OL_initialized = false;	//  indiacte that we have to reinitialize
+	OL_initialized = false;		// indiacte that we have to reinitialize
+	dataFromJsonCalled = true;	// indicate that we reloaded a patch or a preset
 }
 
 /**
