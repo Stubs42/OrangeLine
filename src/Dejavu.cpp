@@ -234,6 +234,7 @@ struct Dejavu : Module {
 
 	/**
 		Method to set the module in its initial state after adding to a patch or right click initialize
+		This is also called when reopenig a patch !!!!
 	*/
 	void moduleReset () {
 		setStateJson (RESET_JSON,       0.f);
@@ -309,6 +310,7 @@ void debugOutput (int channel, float value) {
 	Set all counters to 0 on reset
 */
 	void doReset () {
+		DEBUG("doReset(): called with changeInput (RST_INPUT) = %d, OL_initialized = %d, dataFromJosonCalled = %d", changeInput (RST_INPUT), OL_initialized, dataFromJsonCalled);
 		float seed = 0; 
 		if (getInputConnected (SEED_INPUT)) {
 			float seedFloat = getStateInput (SEED_INPUT) * SEED_INPUT_SCALE;
@@ -340,13 +342,15 @@ void debugOutput (int channel, float value) {
 			int durCounter = effDurCnt - (offset % effDurCnt);
 			// DEBUG("doReset (): durCounter = effDurCnt - (offset % effDurCnt) = %d", durCounter);
 			// DEBUG("doReset (): Setting DUR_COUNTER_JSON for row to %d", durCounter);
-			setStateJson (DUR_COUNTER_JSON + row, durCounter);
+			if (!dataFromJsonCalled)
+				setStateJson (DUR_COUNTER_JSON + row, durCounter);
 			int effLenCnt = effectiveCount[(row * 2) + LEN];
 			// DEBUG("doReset (): effLenCnt(length of row) = effectiveCount[(row * 2) + LEN] (length = %d", effLenCnt);
 			int lenCounter = effLenCnt - durCounter % effLenCnt;
 			// DEBUG("doReset (): lenCounter = effLenCnt - durCounter % effLenCnt = %d", lenCounter);
 			// DEBUG("doReset (): Setting LEN_COUNTER_JSON for row to %d", lenCounter);
-			setStateJson (LEN_COUNTER_JSON + row, lenCounter);
+			if (!dataFromJsonCalled)
+				setStateJson (LEN_COUNTER_JSON + row, lenCounter);
 
 			preOffset = offset;
 			initRandom (&(repeatRandomGenerator[row]), getRandomRaw(&globalRandom));
@@ -356,6 +360,8 @@ void debugOutput (int channel, float value) {
 		}
 		if (preOffset > 0)
 			hadResetWithOffset = true;
+		if (dataFromJsonCalled)
+			greetingCycles = 0;
 	}
 
 	void prepareEffectiveCounts() {
@@ -430,8 +436,9 @@ void debugOutput (int channel, float value) {
 		syncParams();
 		prepareEffectiveCounts();
 
-		if (changeInput (RST_INPUT) && getStateJson(MODULE_STATE_JSON) == STATE_ACTIVE)
+		if (changeInput (RST_INPUT) || OL_initialized == false) {
 			doReset();
+		}
 
 		if (changeInput (TRG_INPUT)) {
 			for (int row = 0; row < NUM_ROWS; row++) {
@@ -464,8 +471,9 @@ void debugOutput (int channel, float value) {
 						else
 							counterJson = LEN_COUNTER_JSON;
 						int count = int(getStateJson (counterJson + row));
-						if (count <= 0) {
+						if (count == 1)
 							flashEvent[(row*2)+lenOrDur] = true;
+						if (count <= 0) {
 							if (lenOrDur == DUR) {
 								repeatSeed[row] = getRandomRaw (p_srcRandomGenerator);
 								setStateJson (LEN_COUNTER_JSON + row, 0.f);
@@ -601,6 +609,22 @@ void debugOutput (int channel, float value) {
 		hadResetWithOffset = false;
 	}
 
+	void deWobbleParams() {
+		if (wobbleParamActive) {
+			for (int row = 0; row < NUM_ROWS; row++) {
+				int intValue = int(getStateParam(LEN_PARAM + row));
+				float floatValue = getStateParam(LEN_PARAM + row);
+				if (floatValue != intValue)
+					setStateParam(LEN_PARAM + row, intValue);
+				intValue = int(getStateParam(DUR_PARAM + row));
+				floatValue = getStateParam(DUR_PARAM + row);
+				if (floatValue != intValue)
+					setStateParam(DUR_PARAM + row, intValue);
+			}
+			wobbleParamActive = false;
+		}
+	}
+
 	void wobbleParams() {
 		if (!wobbleParamActive) {
 			for (int row = 0; row < NUM_ROWS; row++) {
@@ -608,17 +632,6 @@ void debugOutput (int channel, float value) {
 				setStateParam(DUR_PARAM + row, getStateParam(DUR_PARAM + row) + WOBBLE_AMOUNT);
 			}
 			wobbleParamActive = true;
-		}
-		else {
-			for (int row = 0; row < NUM_ROWS; row++) {
-				float value = getStateParam(LEN_PARAM + row);
-				if (float(int(value)) != value)
-					setStateParam(LEN_PARAM + row, value);
-				value = getStateParam(DUR_PARAM + row);
-				if (float(int(value)) != value)
-					setStateParam(DUR_PARAM + row, value);
-			}
-			wobbleParamActive = false;
 		}
 	}
 
@@ -629,7 +642,10 @@ void debugOutput (int channel, float value) {
 			wobbleParams ();
 			oldModuleState = getStateJson (MODULE_STATE_JSON);
 		}
-		paramsToJson();
+		else {
+			deWobbleParams();
+			paramsToJson();
+		}
 	}
 
 	void paramsFromJson () {
@@ -668,22 +684,22 @@ void debugOutput (int channel, float value) {
 		if (getStateJson(MODULE_STATE_JSON) == STATE_ACTIVE) {
 			int activeParamIdx = 0;
 			for (int i = 0; i < NUM_ROWS; i++, activeParamIdx++)
-				setStateJson(ACTIVE_PARAM_JSON + activeParamIdx, getStateParam(LEN_PARAM + i));
+				setStateJson(ACTIVE_PARAM_JSON + activeParamIdx, int(getStateParam(LEN_PARAM + i)));
 			for (int i = 0; i < NUM_ROWS; i++, activeParamIdx++)
-				setStateJson(ACTIVE_PARAM_JSON + activeParamIdx, getStateParam(DUR_PARAM + i));
+				setStateJson(ACTIVE_PARAM_JSON + activeParamIdx, int(getStateParam(DUR_PARAM + i)));
 			setStateJson(ACTIVE_HEAT_PARAM_JSON, getStateParam(HEAT_PARAM));
 		}
 		if (getStateJson(MODULE_STATE_JSON) == STATE_EDIT_RANGES) {
 			int activeParamIdx = 0;
 			for (int i = 0; i < NUM_ROWS; i++, activeParamIdx++)
-				setStateJson(RANGE_JSON + activeParamIdx, getStateParam(LEN_PARAM + i));
+				setStateJson(RANGE_JSON + activeParamIdx, int(getStateParam(LEN_PARAM + i)));
 			for (int i = 0; i < NUM_ROWS; i++, activeParamIdx++)
-				setStateJson(RANGE_JSON + activeParamIdx, getStateParam(DUR_PARAM + i));
+				setStateJson(RANGE_JSON + activeParamIdx, int(getStateParam(DUR_PARAM + i)));
 			setStateJson(DISPLAY_ALPHA_JSON, getStateParam(HEAT_PARAM));
 		}
 		if (getStateJson(MODULE_STATE_JSON) == STATE_EDIT_OFFSETS) {
 			for (int i = 0; i < NUM_ROWS; i++)
-				setStateJson(RESET_DUR_OFFSET_JSON + i, getStateParam(DUR_PARAM + i));
+				setStateJson(RESET_DUR_OFFSET_JSON + i, int(getStateParam(DUR_PARAM + i)));
 			setStateJson(DISPLAY_ALPHA_JSON, getStateParam(HEAT_PARAM));
 		}
 	}
@@ -871,11 +887,10 @@ struct LeftWidget : TransparentWidget {
 			//nvgFillColor (drawArgs.vg, nvgRGB(0, 0, 255));
 			//nvgRect(drawArgs.vg, 0, 0, box.size.x, box.size.y);
 			//nvgFill(drawArgs.vg);
-
 			if (module->paramChanged) {
 				paramDisplayCycles = PARAM_DISPLAY_CYCLES;
 				module->paramChanged = false;
-			} 
+			}
 			float moduleState = module->getStateJson (MODULE_STATE_JSON);
 			int param = module->lastParamChanged;
 			if (paramDisplayCycles == 0)
@@ -924,7 +939,7 @@ struct LeftWidget : TransparentWidget {
 					else {
 						if (module->p_srcRandomGenerator != nullptr) {
 							strncpy (headBuffer, module->displayHeading, 17);
-							sprintf (valueBuffer, "%08lX", module->p_srcRandomGenerator->latest_seed);
+							sprintf (valueBuffer, "%08lX", module->p_srcRandomGenerator->latestSeed);
 						}
 						else {
 							strcpy(valueBuffer, "null");
@@ -937,6 +952,7 @@ struct LeftWidget : TransparentWidget {
 						snprintf (valueBuffer, 17, " RANGES ");
 					if (moduleState == STATE_EDIT_OFFSETS)
 						snprintf (valueBuffer, 17, " OFFSETS");
+					module->greetingCycles = 0;
 				}
 			}
 			nvgFontFaceId (drawArgs.vg, pFont->handle);
