@@ -80,7 +80,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #define GREETING_HEAD  "-- Orange Line --"
 #define GREETING_VALUE " DEJAVU "
-#define GREETING_CYCLES	100
+#define GREETING_CYCLES	200
 //
 // Virtual Parameter Ids stored using Json
 //
