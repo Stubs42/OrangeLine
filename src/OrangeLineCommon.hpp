@@ -610,13 +610,12 @@ inline void reflectChanges () {
 			int channel;
 			for (channel = 0; channel < getOutPolyChannels (outputIdx); channel++) {
 				int cvOutPolyIdx = outputIdx * POLY_CHANNELS + channel;
-				if (OL_outStateChangePoly [cvOutPolyIdx]) {
-					if (getStateTypeOutput (outputIdx) == STATE_TYPE_VOLTAGE) {
-						outputs[outputIdx].setVoltage (OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cvOutPolyIdx], channel);    
-					}
-					else	// OL_stateType[stateIdx + channel] == STATE_TYPE_TRIGGER
+				if (getStateTypeOutput (outputIdx) == STATE_TYPE_VOLTAGE) 
+					outputs[outputIdx].setVoltage (OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cvOutPolyIdx], channel);    
+				else
+					if (OL_outStateChangePoly [cvOutPolyIdx])
 						((dsp::PulseGenerator*)(OL_outStateTriggerPoly[cvOutPolyIdx]))->trigger (0.001f);
-				}
+
 				/*
 					Pulse generators of active Trigger outputs have to be processed independently of changes in current process() run
 				*/
@@ -640,13 +639,11 @@ inline void reflectChanges () {
 			outputs[outputIdx].setChannels(channel);
 		}
 		else {
-			if (changeOutput (outputIdx)) {
-				if (getStateTypeOutput (outputIdx) == STATE_TYPE_VOLTAGE) {
-					outputs[outputIdx].setVoltage (getStateOutput (outputIdx));    
-				}
-				else	// OL_stateType[stateIdx] == STATE_TYPE_TRIGGER
+			if (getStateTypeOutput (outputIdx) == STATE_TYPE_VOLTAGE)
+				outputs[outputIdx].setVoltage (getStateOutput (outputIdx));    
+			else
+				if (changeOutput (outputIdx))
 					((dsp::PulseGenerator*)(OL_outStateTrigger[outputIdx]))->trigger (0.001f);
-			}
 			/*
 				Pulse generators of active Trigger outputs have to be processed independently of changes in current process() run
 			*/
