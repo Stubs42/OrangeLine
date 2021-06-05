@@ -310,7 +310,6 @@ void debugOutput (int channel, float value) {
 	Set all counters to 0 on reset
 */
 	void doReset () {
-		DEBUG("doReset(): called with changeInput (RST_INPUT) = %d, OL_initialized = %d, dataFromJosonCalled = %d", changeInput (RST_INPUT), OL_initialized, dataFromJsonCalled);
 		float seed = 0; 
 		if (getInputConnected (SEED_INPUT)) {
 			float seedFloat = getStateInput (SEED_INPUT) * SEED_INPUT_SCALE;
