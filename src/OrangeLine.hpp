@@ -53,7 +53,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define IDLESKIP	32
 
 #define MAX_TEXT_SIZE  64
-#define TEXT_SCROLL_DELAY   22050
+#define TEXT_SCROLL_DELAY   500
 #define TEXT_SCROLL_PRE_DELAY   TEXT_SCROLL_DELAY * 4
 
 #define PI            3.14159265
