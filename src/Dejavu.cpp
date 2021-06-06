@@ -304,7 +304,7 @@ void debugOutput (int channel, float value) {
 */
 
 void catchUpRandoms() {
-	DEBUG("catchUpRandoms(): called()");
+	// DEBUG("catchUpRandoms(): called()");
 	OrangeLineRandom *pRandom = &globalRandom;
 	int durPastLower = 0;
 	int lenPast = 0;
@@ -314,25 +314,25 @@ void catchUpRandoms() {
 		/// DEBUG("catchUpRandoms(): globalRandom initialized with seed = %08lX", globalRandom.latestSeed);
 		if (!rowActive(row))
 			continue;
-		DEBUG("catchUpRandoms(): row = %d", row);
+		// DEBUG("catchUpRandoms(): row = %d", row);
 		int randomGets = 0;
 		if (pRandom == &globalRandom) {
-			DEBUG("pRandom == &globalRandom");
+			// DEBUG("pRandom == &globalRandom");
 			randomGets = getStateJson(GLOBAL_RANDOM_GETS_JSON);
 		}
 		else
 			randomGets = durPastLower / effectiveCount[2 * row + DUR] + 1;
-		DEBUG("catchUpRandoms(): randomGets = %d", randomGets);
+		// DEBUG("catchUpRandoms(): randomGets = %d", randomGets);
 		initRandom(pRandom, pRandom->latestSeed);
 		repeatRandomGenerator[row].latestSeed = pRandom->latestSeed;
 		for (int i = 0; i < randomGets; i++)
 			repeatRandomGenerator[row].latestSeed = getRandomRaw(pRandom);
-		DEBUG("catchUpRandoms(): repeatRandomGenerator[%d].latestSeed = %08lX", row, repeatRandomGenerator[row].latestSeed);
+		// DEBUG("catchUpRandoms(): repeatRandomGenerator[%d].latestSeed = %08lX", row, repeatRandomGenerator[row].latestSeed);
 		pRandom = &(repeatRandomGenerator[row]);
 		initRandom (pRandom, repeatRandomGenerator[row].latestSeed);
 		durPastLower = effectiveCount[2 * row + DUR] - int(getStateJson (DUR_COUNTER_JSON + row));
 		lenPast = effectiveCount[2 * row + LEN] - int(getStateJson (LEN_COUNTER_JSON + row));
-		DEBUG("catchUpRandoms(): durPastLower = %d, lenPast = %d", durPastLower, lenPast);
+		// DEBUG("catchUpRandoms(): durPastLower = %d, lenPast = %d", durPastLower, lenPast);
 	}
 	unsigned long seed = 0;
 	if (pRandom == &globalRandom)
@@ -567,7 +567,7 @@ void processOutputChannels() {
 				if (effectiveCountsPrepared) {
 					int diff = value - effectiveCount[effectiveCountIndex];
 					if (diff != 0) {
-						DEBUG("prepareEffectivecount(): value = %d, effectiveCount[%d] = %d, diff = %d", value, effectiveCountIndex, effectiveCount[effectiveCountIndex], diff);
+						// DEBUG("prepareEffectivecount(): value = %d, effectiveCount[%d] = %d, diff = %d", value, effectiveCountIndex, effectiveCount[effectiveCountIndex], diff);
 						int jsonIdx = (lenOrDur == LEN ? LEN_COUNTER_JSON : DUR_COUNTER_JSON);
 						int cnt = getStateJson (jsonIdx + row) + diff;
 						if (cnt < 1)
@@ -703,8 +703,6 @@ void processOutputChannels() {
 							// dignal expiration event on trigger output
 							setStateOutPoly (TRG_OUTPUT, row * 2 + lenOrDur, 10.f);
 						}
-						else
-							flashEvent[(row*2)+lenOrDur] = false;
 					}
 					p_srcRandomGenerator = &(repeatRandomGenerator[row]);
 					setStateJson (DUR_COUNTER_JSON + row, durCnt);
@@ -990,11 +988,6 @@ struct LeftWidget : TransparentWidget {
 			char valueBuffer[18];
 			headBuffer[17] = '\0';
 			valueBuffer[17] = '\0';
-
-			//nvgBeginPath(drawArgs.vg);
-			//nvgFillColor (drawArgs.vg, nvgRGB(0, 0, 255));
-			//nvgRect(drawArgs.vg, 0, 0, box.size.x, box.size.y);
-			//nvgFill(drawArgs.vg);
 			if (module->paramChanged) {
 				paramDisplayCycles = PARAM_DISPLAY_CYCLES;
 				module->paramChanged = false;
@@ -1022,7 +1015,7 @@ struct LeftWidget : TransparentWidget {
 						if (moduleState == STATE_EDIT_RANGES)
 							snprintf (headBuffer, 17, "Max %s:", label);
 						else
-							snprintf (headBuffer, 17, "Offset %s:", label);
+							snprintf (headBuffer, 17, "Ofs %s:", label);
 					}
 				}
 
@@ -1151,22 +1144,12 @@ struct RigthWidget : TransparentWidget {
 	void draw (const DrawArgs &drawArgs) override {
 		if (module) {
 			
-//			if (module->getStateJson(MODULE_STATE_JSON) != STATE_ACTIVE)
-//				return;
-
 			float displayAlpha = module->getStateJson(DISPLAY_ALPHA_JSON);
 
 			nvgGlobalCompositeOperation(drawArgs.vg, NVG_SOURCE_OVER);
 			//nvgGlobalCompositeBlendFunc(drawArgs.vg, NVG_SRC_COLOR, NVG_ZERO);
 
 			clockwise = (module->getStateJson(DIRECTION_JSON) == DIRECTION_CLOCKWISE);
-
-			// float style = module->getStateJson(STYLE_JSON);
-
-			//nvgBeginPath(drawArgs.vg);
-			//nvgFillColor (drawArgs.vg, nvgRGB(0, 0, 255));
-			//nvgRect(drawArgs.vg, 0, 0, box.size.x, box.size.y);
-			//nvgFill(drawArgs.vg);
 
 			NVGcolor dotColor[4] = {
 				nvgRGB (0x00, 0xff, 0x00),
@@ -1186,20 +1169,17 @@ struct RigthWidget : TransparentWidget {
 				nvgRGB (0xff, 0x00, 0x00),
 				nvgRGB (0xff, 0x00, 0xff)
 			};
-			// NVGcolor midColor = nvgRGB (0x00, 0x00, 0xff);
 
 			int alpha = (displayAlpha / 100) * 255;
 			int dotAlpha = alpha;
 			int trkAlpha = alpha;
 			int armAlpha = alpha;
-			// int midAlpha = alpha;
 
 			float maxTrackRadius    = (box.size.x / 2) - mm2px(1.5f);
 			float radiusDistance    = mm2px(2.5f);
 			float trackStrokeWidth  = mm2px(0.25);
 			float armStrokeWidth[4] = { mm2px(0.75), mm2px(1), mm2px(1.5), mm2px(2) };
 
-			// float radiusMid = maxTrackRadius - (4 * radiusDistance);
 			Vec center = Vec(box.size.x / 2, box.size.y / 2);
 			float rowRadius = maxTrackRadius - (3 * radiusDistance);
 
@@ -1222,9 +1202,8 @@ struct RigthWidget : TransparentWidget {
 
 					bool durEnd = false;
 					if (module->flashEvent[(row*2)+DUR]) {
+						module->flashEvent[(row*2)+DUR] = false;
 						flashFrameCounter[(row*2)+DUR] = FLASH_FRAMES;
-						// if (row == topActive)
-						//	flashFrameCounter[8] = FLASH_FRAMES;	// flash the middle Circle also
 						durEnd = true;
 					}
 	
@@ -1235,19 +1214,14 @@ struct RigthWidget : TransparentWidget {
 						length = duration; // We have to avoid length > duration here!!!
 
 					if (module->flashEvent[(row*2)+LEN]) {
+						module->flashEvent[(row*2)+LEN] = false;
 						if (durEnd)
 							flashDot[row] = -1;	// flash all dots of circle just hit a durution end
-						else
+						else {
 							flashDot[row] = (duration - durCounter) / length;
+						}
 						flashFrameCounter[(row*2)+LEN] = FLASH_FRAMES;
 					}
-/*
-					// Draw middle circle representing the global random generator
-					if (row == topActive) {
-						color = nvgTransRGBA (midColor, flashAlpha (8, midAlpha));
-						drawCircle (drawArgs.vg, center.x, center.y, radiusMid, color, trackStrokeWidth);
-					}
-*/
 					float cycles = (float(duration) / float(length));
 
 					// reduce dot sized if too many dos on track
@@ -1255,12 +1229,12 @@ struct RigthWidget : TransparentWidget {
 					float u = rowRadius * 2 * PI;
 					if (u / cycles < radiusDot * 2)
 						radiusDot = u / cycles / 2;
-					bool onlyFlashDots = false;
+					bool drawFlashDots = true;
 					if (radiusDot <= trackStrokeWidth) {
 						trkAlpha *= 1.5;
 						if (trkAlpha > 255)
 							trkAlpha = 255;
-						onlyFlashDots = true;
+						drawFlashDots = false;
 					}
 
 					// Draw track circla
@@ -1275,7 +1249,7 @@ struct RigthWidget : TransparentWidget {
 						if (point == flashDot[row] || flashDot[row] == -1) {
 							color = nvgTransRGBA (color, flashAlpha ((row*2)+LEN, dotAlpha));
 						}
-						if (!(point == flashDot[row] || flashDot[row] == -1) && onlyFlashDots)
+						if (!(point == flashDot[row] || flashDot[row] == -1) && !drawFlashDots)
 							continue;
 						float x = xForAlpha (radAlpha * point) * rowRadius;
 						float y = yForAlpha (radAlpha * point) * rowRadius;
