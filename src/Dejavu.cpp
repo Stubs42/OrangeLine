@@ -35,11 +35,9 @@ struct Dejavu : Module {
 	*/
 	float oldClkInputVoltage = 0;
 
-	struct OrangeLineRandom repeatRandomGenerator[ NUM_ROWS];
-	unsigned long                      repeatSeed[ NUM_ROWS];
-
+	struct OrangeLineRandom repeatRandomGenerator[NUM_ROWS];
 	struct OrangeLineRandom channelRandomGeneratorGate[POLY_CHANNELS];
-	struct OrangeLineRandom   channelRandomGeneratorCv[POLY_CHANNELS];
+	struct OrangeLineRandom channelRandomGeneratorCv[POLY_CHANNELS];
 
 	#pragma GCC diagnostic push 
 	#pragma GCC diagnostic ignored "-Wwrite-strings"
@@ -54,8 +52,8 @@ struct Dejavu : Module {
 	bool flashEvent[8] = {false, false, false, false, false, false, false, false };
 	float oldModuleState = STATE_ACTIVE;
 	bool wobbleParamActive = false;
-	bool hadResetWithOffset = false;
 	int greetingCycles = 0;
+	bool effectiveCountsPrepared = false;
 
 // ********************************************************************************************************************************
 /*
@@ -176,6 +174,7 @@ struct Dejavu : Module {
 		setJsonLabel (RESET_DUR_OFFSET_JSON + 3, "ResetDurationOffset4");
 		setJsonLabel (ACTIVE_HEAT_PARAM_JSON, "ActiveHeatParam");
 		setJsonLabel (DISPLAY_ALPHA_JSON, "DisplayAlpha");
+		setJsonLabel (GLOBAL_RANDOM_GETS_JSON, "GlobalRandomGets");
 
 		#pragma GCC diagnostic pop
 	}
@@ -285,6 +284,7 @@ struct Dejavu : Module {
 
 		setStateJson (ACTIVE_HEAT_PARAM_JSON, DEFAULT_HEAT);
 		setStateJson (DISPLAY_ALPHA_JSON, INIT_DISPLAY_ALPHA);
+		setStateJson (GLOBAL_RANDOM_GETS_JSON, 0);
 
 		greetingCycles = GREETING_CYCLES;
 	}
@@ -302,6 +302,153 @@ void debugOutput (int channel, float value) {
 /*
 	Module specific utility methods
 */
+
+void catchUpRandoms() {
+	DEBUG("catchUpRandoms(): called()");
+	OrangeLineRandom *pRandom = &globalRandom;
+	int durPastLower = 0;
+	int lenPast = 0;
+	for (int row = NUM_ROWS - 1; row >= 0; row --) {
+		// initRandom (&(repeatRandomGenerator[row]), getRandomRaw(&globalRandom));
+		// initRandom (&globalRandom, globalRandom.latestSeed);
+		/// DEBUG("catchUpRandoms(): globalRandom initialized with seed = %08lX", globalRandom.latestSeed);
+		if (!rowActive(row))
+			continue;
+		DEBUG("catchUpRandoms(): row = %d", row);
+		int randomGets = 0;
+		if (pRandom == &globalRandom) {
+			DEBUG("pRandom == &globalRandom");
+			randomGets = getStateJson(GLOBAL_RANDOM_GETS_JSON);
+		}
+		else
+			randomGets = durPastLower / effectiveCount[2 * row + DUR] + 1;
+		DEBUG("catchUpRandoms(): randomGets = %d", randomGets);
+		initRandom(pRandom, pRandom->latestSeed);
+		repeatRandomGenerator[row].latestSeed = pRandom->latestSeed;
+		for (int i = 0; i < randomGets; i++)
+			repeatRandomGenerator[row].latestSeed = getRandomRaw(pRandom);
+		DEBUG("catchUpRandoms(): repeatRandomGenerator[%d].latestSeed = %08lX", row, repeatRandomGenerator[row].latestSeed);
+		pRandom = &(repeatRandomGenerator[row]);
+		initRandom (pRandom, repeatRandomGenerator[row].latestSeed);
+		durPastLower = effectiveCount[2 * row + DUR] - int(getStateJson (DUR_COUNTER_JSON + row));
+		lenPast = effectiveCount[2 * row + LEN] - int(getStateJson (LEN_COUNTER_JSON + row));
+		DEBUG("catchUpRandoms(): durPastLower = %d, lenPast = %d", durPastLower, lenPast);
+	}
+	unsigned long seed = 0;
+	if (pRandom == &globalRandom)
+		seed = globalRandom.latestSeed;
+	else {
+		for (int i = 0; i < lenPast; i++)
+			seed = getRandomRaw(pRandom);
+	}
+	for (int channel = 0; channel < POLY_CHANNELS; channel ++) {
+		initRandom (&(channelRandomGeneratorGate[channel]), seed);
+		initRandom (&(channelRandomGeneratorCv[channel]), getRandomRaw (&(channelRandomGeneratorGate[channel])));
+		seed = getRandomRaw (&(channelRandomGeneratorCv[channel]));
+	}
+	processOutputChannels();
+}
+
+void processOutputChannels() {
+	/*
+		Process output channels
+	*/
+	setOutPolyChannels(TRG_OUTPUT, 8);
+	setOutPolyChannels(GATE_OUTPUT, getStateJson(POLY_CHANNELS_JSON));
+	setOutPolyChannels(CV_OUTPUT, getStateJson(POLY_CHANNELS_JSON));
+	int heatPolyChannels = inputs[HEAT_INPUT].getChannels();
+	int ofsPolyChannels = inputs[OFS_INPUT].getChannels();
+	int sclPolyChannels = inputs[SCL_INPUT].getChannels();
+	int knbPolyChannels = inputs[HEAT_KNOB_ATT_INPUT].getChannels();
+	float lastHeatInput = 0;
+	float lastOfsInput = 0;
+	float lastSclInput = 0;
+	float lastKnbInput = 0;
+	float lastShValue = 0;
+	for (int channel = 0; channel < getStateJson(POLY_CHANNELS_JSON); channel ++) {
+		float gateRandom = getRandom (&(channelRandomGeneratorGate[channel]));
+		bool fired = false;
+
+		float heat = getStateParam(HEAT_PARAM) / 100.f;
+		if (getInputConnected(HEAT_KNOB_ATT_INPUT)) {
+			float knobAttInput = 1.f;
+			if (channel > knbPolyChannels)
+				knobAttInput = lastKnbInput;
+			else {
+				knobAttInput = OL_statePoly[HEAT_KNOB_ATT_INPUT * POLY_CHANNELS + channel] / 10.f;
+				lastKnbInput = knobAttInput;
+			}
+			heat *= knobAttInput;
+		}
+		float heatInput = 0.f;
+		if (getInputConnected(HEAT_INPUT)) {
+			if (channel > heatPolyChannels)
+				heatInput = lastHeatInput;
+			else {
+				heatInput = OL_statePoly[HEAT_INPUT * POLY_CHANNELS + channel] / 10.f;
+				lastHeatInput = heatInput;
+			}
+		}
+		heat += heatInput;
+
+		if (heat >= gateRandom) {
+			OL_statePoly[ (NUM_INPUTS + GATE_OUTPUT) * POLY_CHANNELS + channel] = 10.f;
+			OL_outStateChangePoly[GATE_OUTPUT * POLY_CHANNELS + channel] = true;
+			fired = true;
+		}
+		else {
+			OL_statePoly[ (NUM_INPUTS + GATE_OUTPUT) * POLY_CHANNELS + channel] = 0.f;
+			// Do not signal a output change, this will taken as a trigger !
+			// OL_outStateChangePoly[GATE_OUTPUT * POLY_CHANNELS + channel] = true;
+			outputs[GATE_OUTPUT].setVoltage (0.f, channel);
+		}
+		bool sh = false;
+		if (!fired) {
+			sh = (getStateJson(SH_JSON) == 1.f);
+			if (getInputConnected(SH_INPUT)) {
+				float value = lastShValue;
+				if (channel <= inputs[SH_INPUT].getChannels()) {
+					value = OL_statePoly[SH_INPUT * POLY_CHANNELS + channel];
+				}
+				lastShValue = value;
+				sh = (value > 5.f);
+			}
+		}
+		if (!sh || fired) {
+			float scl = getStateParam (SCL_PARAM) / 100.f;
+			if (getInputConnected (SCL_INPUT)) {
+				int sclInput = 0.f;
+				if (channel > sclPolyChannels)
+					sclInput = lastSclInput;
+				else {
+					sclInput = OL_statePoly[SCL_INPUT * POLY_CHANNELS + channel];
+					lastSclInput = sclInput;
+				}
+				scl += (getStateParam(SCL_ATT_PARAM) / 100.f) * sclInput / 10.f;
+			}
+			float cvRandom = getRandom (&(channelRandomGeneratorCv[channel]));
+			if (scl < 0)
+				cvRandom = (cvRandom - 0.5) * -scl * 20.f;		// bipolar scale
+			else
+				cvRandom *= scl * 10.f;							// unipolar scale
+			float ofs = getStateParam (OFS_PARAM);
+			if (getInputConnected (OFS_INPUT)) {
+				int ofsInput = 0.f;
+				if (channel > ofsPolyChannels)
+					ofsInput = lastOfsInput;
+				else {
+					ofsInput = OL_statePoly[OFS_INPUT * POLY_CHANNELS + channel];
+					lastOfsInput = ofsInput;
+				}
+				ofs += (getStateParam(OFS_ATT_PARAM) / 100.f) * ofsInput;
+			}
+			cvRandom += ofs;
+			cvRandom = clamp (cvRandom, -10.f, 10.f);
+			OL_statePoly[NUM_INPUTS * POLY_CHANNELS + CV_OUTPUT * POLY_CHANNELS + channel] = cvRandom;
+			OL_outStateChangePoly[CV_OUTPUT * POLY_CHANNELS + channel] = true;
+		}
+	}
+}
 
 // ********************************************************************************************************************************
 /*
@@ -323,9 +470,12 @@ void debugOutput (int channel, float value) {
 		else
 			seed = getStateParam (SEED_PARAM);
 		initRandom (&globalRandom, (unsigned long)seed);
+		p_srcRandomGenerator = &globalRandom;
 
 		int preOffset = 0;
 		for (int row = 0; row < NUM_ROWS; row ++) {
+			if (!rowActive(row))
+				continue;
 			// DEBUG("doReset (): resetting counters for row %d", row);
 			// DEBUG("doReset (): preOffset = %d", preOffset);
 			int offset = int(getStateJson(RESET_DUR_OFFSET_JSON + row));
@@ -350,54 +500,93 @@ void debugOutput (int channel, float value) {
 			// DEBUG("doReset (): Setting LEN_COUNTER_JSON for row to %d", lenCounter);
 			if (!dataFromJsonCalled)
 				setStateJson (LEN_COUNTER_JSON + row, lenCounter);
-
 			preOffset = offset;
-			initRandom (&(repeatRandomGenerator[row]), getRandomRaw(&globalRandom));
-
-			if (rowActive(row))
-				p_srcRandomGenerator = &(repeatRandomGenerator[row]);
 		}
-		if (preOffset > 0)
-			hadResetWithOffset = true;
-		if (dataFromJsonCalled)
+
+		for (int row = NUM_ROWS - 1; row >= 0; row --) {
+			if (!rowActive(row))
+				continue;
+			if (!dataFromJsonCalled && preOffset == 0) {
+				setStateJson (LEN_COUNTER_JSON + row,  effectiveCount[(row * 2) + LEN]);
+				setStateJson (DUR_COUNTER_JSON + row,  effectiveCount[(row * 2) + DUR]);
+			}
+			initRandom (&(repeatRandomGenerator[row]), getRandomRaw(p_srcRandomGenerator));
+
+			p_srcRandomGenerator = &(repeatRandomGenerator[row]);
+		}
+
+		if (dataFromJsonCalled || preOffset != 0) {		
+			catchUpRandoms();
 			greetingCycles = 0;
+		}
+		else {
+			for (int channel = 0; channel < getStateJson(POLY_CHANNELS_JSON); channel ++) {
+				outputs[GATE_OUTPUT].setVoltage (0.f, channel);
+				OL_statePoly[NUM_INPUTS * POLY_CHANNELS + CV_OUTPUT * POLY_CHANNELS + channel] = 0;
+				OL_outStateChangePoly[CV_OUTPUT * POLY_CHANNELS + channel] = true;
+			}
+		}
+		for (int row =  NUM_ROWS - 1; row >= 0; row --)
+			if (rowActive (row))
+				for (int lenOrDur = DUR; lenOrDur >= LEN; lenOrDur--) {
+					int counter = (lenOrDur == DUR ? int(getStateJson(DUR_COUNTER_JSON + row)) : int(getStateJson(LEN_COUNTER_JSON + row)));
+					if (effectiveCount[(row*2)+lenOrDur] == counter)
+						flashEvent[(row*2)+lenOrDur] = true;
+				}
 	}
 
 	void prepareEffectiveCounts() {
 		int effectiveCountIndex = 0;
 		int channels = inputs[REP_INPUT].getChannels();
+		bool rowActive = true;
 		for (int row = 0; row < NUM_ROWS; row ++) {
+			rowActive = (int(getStateJson (ONOFF_JSON + row)) == 1);
+
 			int multiple = (row == 0) ? 1 : effectiveCount[(row - 1) * 2 + DUR];
 			for (int lenOrDur = LEN; lenOrDur <= DUR; lenOrDur++) {
-				int value = 0;
-				if (getInputConnected (REP_INPUT)) {
-					for (int mode = RAW; mode >= COOKED; mode--) {
-						int inputScale = ( mode == RAW ? REP_INPUT_SCALE_RAW : REP_INPUT_SCALE_COOKED );
-						int channel = row * 2 + (mode * 8) + lenOrDur;
+				int value;
+				if (rowActive) {
+					value = 0;
+					if (getInputConnected (REP_INPUT)) {
+						int channel = row * 2 + lenOrDur;
 						if (channel < channels) {
-							int inputValue = floor(OL_statePoly[REP_INPUT * POLY_CHANNELS + channel] * inputScale + 0.5);
+							int inputValue = floor(OL_statePoly[REP_INPUT * POLY_CHANNELS + channel] * REP_INPUT_SCALE + 0.5);
 							if (inputValue >= 1) {
-								value = inputValue * ( mode == RAW ? 1 : multiple );
+								value = inputValue ;
 								break;
 							}
 						}
 					}
+					if (value == 0)
+						value = int(getStateJson (ACTIVE_PARAM_JSON + lenOrDur * 4 + row));
+					value *= multiple;
 				}
-				if (value == 0)
-					value = int(getStateJson (ACTIVE_PARAM_JSON + lenOrDur * 4 + row)) * multiple;
-				// DEBUG("prepareEffectiveCounts(): effectiveCount[%d] = %d", effectiveCountIndex, effectiveCount[effectiveCountIndex]);
+				else
+					value = multiple;
+
+				if (effectiveCountsPrepared) {
+					int diff = value - effectiveCount[effectiveCountIndex];
+					if (diff != 0) {
+						DEBUG("prepareEffectivecount(): value = %d, effectiveCount[%d] = %d, diff = %d", value, effectiveCountIndex, effectiveCount[effectiveCountIndex], diff);
+						int jsonIdx = (lenOrDur == LEN ? LEN_COUNTER_JSON : DUR_COUNTER_JSON);
+						int cnt = getStateJson (jsonIdx + row) + diff;
+						if (cnt < 1)
+							cnt = 1;
+						setStateJson(jsonIdx + row, cnt);
+					}
+				}
 				effectiveCount[effectiveCountIndex++] = value;
 			}
 		}
+		effectiveCountsPrepared = true;
 		for (int i = 0; i < NUM_ROWS * 2; i++) {
-			OL_statePoly[NUM_INPUTS * POLY_CHANNELS + REP_OUTPUT * POLY_CHANNELS + i] = float(effectiveCount[i]) / REP_INPUT_SCALE_RAW;
+			OL_statePoly[NUM_INPUTS * POLY_CHANNELS + REP_OUTPUT * POLY_CHANNELS + i] = float(effectiveCount[i]) / REP_INPUT_SCALE;
 			OL_outStateChangePoly[REP_OUTPUT * POLY_CHANNELS + i] = true;
-			// DEBUG("Set REP_OUTPUT[%d] to %lf", i, float(effectiveCount[i]) / REP_INPUT_SCALE_RAW);
 		}
 	}
 
 	bool rowActive (int row) {
-		if (int(getStateJson (ONOFF_PARAM + row)) == 0)
+		if (int(getStateJson (ONOFF_JSON + row)) == 0)
 			return false;
 		if (effectiveCount[row * 2 + LEN] == 1 && effectiveCount[row * 2 + DUR] == 1)
 			return false;
@@ -457,155 +646,75 @@ void debugOutput (int channel, float value) {
 				if (div > DIV_MAX) div = DIV_MAX;
 				setStateJson (DIVCOUNTER_JSON, float(div));
 				setOutPolyChannels(REP_OUTPUT, 8);
+				//
+				// Determine p_srcRandomGenerator
+				//
+				p_srcRandomGenerator = &globalRandom;
+				for (int row =  NUM_ROWS - 1; row >= 0; row --)
+					if (rowActive (row))
+						p_srcRandomGenerator = &(repeatRandomGenerator[row]);
+				// 
+				// get a new seed from the p_srcRandomGenerator to generate all outputs for this clock tick
+				// Reinitialize Gate and CV random generators using this seed
+				//
+				unsigned long seed = getRandomRaw (p_srcRandomGenerator);
+				// We intensionally do not use POLY_CHANNELS_JSON here but use POLY_CHANNELS constant 16 here to 
+				// not change random pattern due to changing the number of poly channels
+				for (int channel = 0; channel < POLY_CHANNELS; channel ++) {
+					initRandom (&(channelRandomGeneratorGate[channel]), seed);
+					initRandom (&(channelRandomGeneratorCv[channel]), getRandomRaw (&(channelRandomGeneratorGate[channel])));
+					// get the seed for the next one by advancing the last initialized one for diversity
+					// all generators would work in sync otherwise
+					seed = getRandomRaw (&(channelRandomGeneratorCv[channel]));
+				}
+				processOutputChannels();
+				//
+				// Now check whether counters have expired
+				// we checking from lower to upper rows because expirations on lower rows imply expirations on upper rows
+				//
+				bool cntExpired = false;
 				p_srcRandomGenerator = &globalRandom;
 				for (int row =  NUM_ROWS - 1; row >= 0; row --) {
 					if (!rowActive (row))
 						continue;	// Nothing to do here
-					if (hadResetWithOffset)
-						repeatSeed[row] = getRandomRaw (p_srcRandomGenerator);
+					//
+					//	Decrement counters for this row
+					//
+					int durCnt = getStateJson (DUR_COUNTER_JSON + row) - 1;
+					int lenCnt = getStateJson (LEN_COUNTER_JSON + row) - 1;
+
 					for (int lenOrDur = DUR; lenOrDur >= LEN; lenOrDur--) {
-						int counterJson;
-						if (lenOrDur == DUR)
-							counterJson = DUR_COUNTER_JSON;
-						else
-							counterJson = LEN_COUNTER_JSON;
-						int count = int(getStateJson (counterJson + row));
-						if (count == 1)
-							flashEvent[(row*2)+lenOrDur] = true;
-						if (count <= 0) {
+						int cnt = (lenOrDur == DUR) ? durCnt : lenCnt;
+						if (cntExpired || cnt <= 0) {	// should never be < 0 but just for safety <=
+							flashEvent[(row*2)+lenOrDur] = true;	// make the dots in the visual flash
 							if (lenOrDur == DUR) {
-								repeatSeed[row] = getRandomRaw (p_srcRandomGenerator);
-								setStateJson (LEN_COUNTER_JSON + row, 0.f);
-								if (row > 0)
-									setStateJson (DUR_COUNTER_JSON + (row - 1), 0.f);
+								repeatRandomGenerator[row].latestSeed = getRandomRaw (p_srcRandomGenerator);	// duration expired, we fetch a new seed from our srcRandomGenerator
+								cntExpired = true;	// signal expiration to further processing
 							}
 							else {
-								initRandom (&(repeatRandomGenerator[row]), repeatSeed[row]);
+								initRandom (&(repeatRandomGenerator[row]), repeatRandomGenerator[row].latestSeed);	// length expired, we reset our row random generator
 							}
-							count = effectiveCount[(row * 2) + lenOrDur];
+							// we are resetting out counter now
+							cnt = effectiveCount[(row * 2) + lenOrDur];
+							if (lenOrDur == DUR)
+								durCnt = cnt;
+							else
+								lenCnt = cnt;
+							// dignal expiration event on trigger output
 							setStateOutPoly (TRG_OUTPUT, row * 2 + lenOrDur, 10.f);
-							setStateJson (counterJson + row, float(count)); 
 						}
+						else
+							flashEvent[(row*2)+lenOrDur] = false;
 					}
 					p_srcRandomGenerator = &(repeatRandomGenerator[row]);
-					setStateJson (DUR_COUNTER_JSON + row, getStateJson (DUR_COUNTER_JSON + row) - 1);
-					setStateJson (LEN_COUNTER_JSON + row, getStateJson (LEN_COUNTER_JSON + row) - 1);
+					setStateJson (DUR_COUNTER_JSON + row, durCnt);
+					setStateJson (LEN_COUNTER_JSON + row, lenCnt);
 				}
-				// Reinitialize Gate and CV random generators
-				// ge a new seed from the srcRandomGenerator 
-				// DEBUG("channelRandomGenerator initialized from lengthRandomGenerator[0] seed : % 8lX", seed);
-				// get the seed for the next one by advancing the last initialized one for diversity
-				// all generators would work in sync otherwise
-				// We intensionally do not use POLY_CHANNELS_JSON here but use POLY_CHANNELS constan 16 here to 
-				// not change random pattern due to changing the number of poly channels
-				unsigned long seed = getRandomRaw (p_srcRandomGenerator);
-				for (int channel = 0; channel < POLY_CHANNELS; channel ++) {
-					initRandom (&(channelRandomGeneratorGate[channel]), seed);
-					initRandom (&(channelRandomGeneratorCv[channel]), getRandomRaw (&(channelRandomGeneratorGate[channel])));
-					seed = getRandomRaw (&(channelRandomGeneratorCv[channel]));
-				}
-				/*
-					Process output channels
-				*/
-				setOutPolyChannels(TRG_OUTPUT, 8);
-				setOutPolyChannels(GATE_OUTPUT, getStateJson(POLY_CHANNELS_JSON));
-				setOutPolyChannels(CV_OUTPUT, getStateJson(POLY_CHANNELS_JSON));
-				int heatPolyChannels = inputs[HEAT_INPUT].getChannels();
-				int ofsPolyChannels = inputs[OFS_INPUT].getChannels();
-				int sclPolyChannels = inputs[SCL_INPUT].getChannels();
-				int knbPolyChannels = inputs[HEAT_KNOB_ATT_INPUT].getChannels();
-				float lastHeatInput = 0;
-				float lastOfsInput = 0;
-				float lastSclInput = 0;
-				float lastKnbInput = 0;
-				float lastShValue = 0;
-				for (int channel = 0; channel < getStateJson(POLY_CHANNELS_JSON); channel ++) {
-					float gateRandom = getRandom (&(channelRandomGeneratorGate[channel]));
-					bool fired = false;
 
-					float heat = getStateParam(HEAT_PARAM) / 100.f;
-					if (getInputConnected(HEAT_KNOB_ATT_INPUT)) {
-						float knobAttInput = 1.f;
-						if (channel > knbPolyChannels)
-							knobAttInput = lastKnbInput;
-						else {
-							knobAttInput = OL_statePoly[HEAT_KNOB_ATT_INPUT * POLY_CHANNELS + channel] / 10.f;
-							lastKnbInput = knobAttInput;
-						}
-						heat *= knobAttInput;
-					}
-					float heatInput = 0.f;
-					if (getInputConnected(HEAT_INPUT)) {
-						if (channel > heatPolyChannels)
-							heatInput = lastHeatInput;
-						else {
-							heatInput = OL_statePoly[HEAT_INPUT * POLY_CHANNELS + channel] / 10.f;
-							lastHeatInput = heatInput;
-						}
-					}
-					heat += heatInput;
-
-					if (heat >= gateRandom) {
-						OL_statePoly[ (NUM_INPUTS + GATE_OUTPUT) * POLY_CHANNELS + channel] = 10.f;
-						OL_outStateChangePoly[GATE_OUTPUT * POLY_CHANNELS + channel] = true;
-						fired = true;
-					}
-					else {
-						OL_statePoly[ (NUM_INPUTS + GATE_OUTPUT) * POLY_CHANNELS + channel] = 0.f;
-						// Do not signal a output change, this will taken as a trigger !
-						// OL_outStateChangePoly[GATE_OUTPUT * POLY_CHANNELS + channel] = true;
-						outputs[GATE_OUTPUT].setVoltage (0.f, channel);
-					}
-					bool sh = false;
-					if (!fired) {
-						sh = (getStateJson(SH_JSON) == 1.f);
-						if (getInputConnected(SH_INPUT)) {
-							float value = lastShValue;
-							if (channel <= inputs[SH_INPUT].getChannels()) {
-								value = OL_statePoly[SH_INPUT * POLY_CHANNELS + channel];
-							}
-							lastShValue = value;
-							sh = (value > 5.f);
-						}
-					}
-					if (!sh || fired) {
-						float scl = getStateParam (SCL_PARAM) / 100.f;
-						if (getInputConnected (SCL_INPUT)) {
-							int sclInput = 0.f;
-							if (channel > sclPolyChannels)
-								sclInput = lastSclInput;
-							else {
-								sclInput = OL_statePoly[SCL_INPUT * POLY_CHANNELS + channel];
-								lastSclInput = sclInput;
-							}
-							scl += (getStateParam(SCL_ATT_PARAM) / 100.f) * sclInput / 10.f;
-						}
-						float cvRandom = getRandom (&(channelRandomGeneratorCv[channel]));
-						if (scl < 0)
-							cvRandom = (cvRandom - 0.5) * -scl * 20.f;		// bipolar scale
-						else
-							cvRandom *= scl * 10.f;							// unipolar scale
-						float ofs = getStateParam (OFS_PARAM);
-						if (getInputConnected (OFS_INPUT)) {
-							int ofsInput = 0.f;
-							if (channel > ofsPolyChannels)
-								ofsInput = lastOfsInput;
-							else {
-								ofsInput = OL_statePoly[OFS_INPUT * POLY_CHANNELS + channel];
-								lastOfsInput = ofsInput;
-							}
-							ofs += (getStateParam(OFS_ATT_PARAM) / 100.f) * ofsInput;
-						}
-						cvRandom += ofs;
-						cvRandom = clamp (cvRandom, -10.f, 10.f);
-						OL_statePoly[NUM_INPUTS * POLY_CHANNELS + CV_OUTPUT * POLY_CHANNELS + channel] = cvRandom;
-						OL_outStateChangePoly[CV_OUTPUT * POLY_CHANNELS + channel] = true;
-					}
-				}	
 			}	
 			setStateJson(DIVCOUNTER_JSON, getStateJson(DIVCOUNTER_JSON) - 1);
 		}
-		hadResetWithOffset = false;
+		setStateJson (GLOBAL_RANDOM_GETS_JSON, globalRandom.getCount);
 	}
 
 	void deWobbleParams() {
@@ -1000,17 +1109,11 @@ struct RigthWidget : TransparentWidget {
 	}
 
 	inline float xForAlpha(float alpha) {
-		if (!clockwise)
-			return sin(alpha+PI);
-		else
-			return cos(alpha-PI/2);
+		return sin (clockwise ? alpha : -alpha);
 	}
 
 	inline float yForAlpha(float alpha) {
-		if (!clockwise)
-			return cos(alpha+PI);
-		else
-			return sin(alpha-PI/2);
+		return cos (PI + (clockwise ? -alpha : alpha));
 	}
 
 	void drawCircle(NVGcontext *nvg, float x, float y, float radius, NVGcolor color, float strokeWidth) {
@@ -1093,7 +1196,6 @@ struct RigthWidget : TransparentWidget {
 
 			float maxTrackRadius    = (box.size.x / 2) - mm2px(1.5f);
 			float radiusDistance    = mm2px(2.5f);
-			float radiusDot         = mm2px(1);
 			float trackStrokeWidth  = mm2px(0.25);
 			float armStrokeWidth[4] = { mm2px(0.75), mm2px(1), mm2px(1.5), mm2px(2) };
 
@@ -1118,36 +1220,27 @@ struct RigthWidget : TransparentWidget {
 					NVGcolor colorArm =   armColor[reverse ? NUM_ROWS - 1 - row : row];
 					NVGcolor color;
 
-					int durCounter = int(module->getStateJson(DUR_COUNTER_JSON + row));
-					// int lenCounter = int(module->getStateJson(LEN_COUNTER_JSON + row));
-
-					int duration = module->effectiveCount[row * 2 + DUR];
-					int length   = module->effectiveCount[row * 2 + LEN];
-
-					float cycles = (float(duration) / float(length));
-
 					bool durEnd = false;
-					// if (durCounter > oldCounter[row]) {
 					if (module->flashEvent[(row*2)+DUR]) {
 						flashFrameCounter[(row*2)+DUR] = FLASH_FRAMES;
-						if (row == topActive)
-							flashFrameCounter[8] = FLASH_FRAMES;	// flash the middle Circle also
+						// if (row == topActive)
+						//	flashFrameCounter[8] = FLASH_FRAMES;	// flash the middle Circle also
 						durEnd = true;
-						module->flashEvent[(row*2)+DUR] = false;
 					}
-					// oldCounter[row] = durCounter;
 	
-					// if (lenCounter > oldCounter[row+NUM_ROWS]) { // lenCounter was reset
+					int duration   = module->effectiveCount[row * 2 + DUR];
+					int durCounter = int(module->getStateJson(DUR_COUNTER_JSON + row));
+					int length     = module->effectiveCount[row * 2 + LEN];
+					if (length > duration)
+						length = duration; // We have to avoid length > duration here!!!
+
 					if (module->flashEvent[(row*2)+LEN]) {
 						if (durEnd)
 							flashDot[row] = -1;	// flash all dots of circle just hit a durution end
 						else
 							flashDot[row] = (duration - durCounter) / length;
 						flashFrameCounter[(row*2)+LEN] = FLASH_FRAMES;
-						module->flashEvent[(row*2)+LEN] = false;
 					}
-					// oldCounter[row+NUM_ROWS] = lenCounter;
-
 /*
 					// Draw middle circle representing the global random generator
 					if (row == topActive) {
@@ -1155,7 +1248,10 @@ struct RigthWidget : TransparentWidget {
 						drawCircle (drawArgs.vg, center.x, center.y, radiusMid, color, trackStrokeWidth);
 					}
 */
-					// Draw track circla
+					float cycles = (float(duration) / float(length));
+
+					// reduce dot sized if too many dos on track
+					float radiusDot         = mm2px(1);
 					float u = rowRadius * 2 * PI;
 					if (u / cycles < radiusDot * 2)
 						radiusDot = u / cycles / 2;
@@ -1166,10 +1262,14 @@ struct RigthWidget : TransparentWidget {
 							trkAlpha = 255;
 						onlyFlashDots = true;
 					}
+
+					// Draw track circla
 					color = nvgTransRGBA (colorTrk, trkAlpha);
 					drawCircle (drawArgs.vg, center.x, center.y, rowRadius, color, trackStrokeWidth);
+
 					// Draw dots on track circle
-					float radAlpha  = (2 * PI) / cycles;
+					float durAlpha = (2 * PI) / float(duration);
+					float radAlpha = length * durAlpha;
 					for (int point = 0; point < cycles; point ++) {
 						color = nvgTransRGBA (colorDot, dotAlpha);
 						if (point == flashDot[row] || flashDot[row] == -1) {
@@ -1186,10 +1286,9 @@ struct RigthWidget : TransparentWidget {
 					// Draw the Arm of the clock for this row
 					nvgBeginPath (drawArgs.vg);
 					nvgMoveTo (drawArgs.vg, center.x, center.y);
-					float progress = 1 - (float(durCounter) / float(duration));
-					radAlpha = (2 * PI) * progress;
+					int progress = float(duration) - float(durCounter);
+					radAlpha = durAlpha * float(progress);
 					nvgLineTo (drawArgs.vg, center.x + (xForAlpha(radAlpha) * rowRadius), center.y + (yForAlpha(radAlpha) * rowRadius));
-					// nvgClosePath(NVGcontext* ctx);
 					nvgLineCap (drawArgs.vg, NVG_ROUND);
 					color = nvgTransRGBA (colorArm, flashAlpha ((row*2)+DUR, armAlpha));
 					nvgStrokeColor (drawArgs.vg, color);

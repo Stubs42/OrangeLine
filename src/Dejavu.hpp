@@ -22,9 +22,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 // #define USE_DEBUG_OUTPUT
 
-#define REP_INPUT_SCALE_COOKED   100
-#define REP_INPUT_SCALE_RAW    10000
-#define REP_INPUT_MAX          99999
+#define REP_INPUT_SCALE   100
+#define REP_INPUT_MAX   99999
 
 // Seed CV 10V = 10.000
 #define SEED_INPUT_SCALE 1000
@@ -52,10 +51,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 // DO NOT CHANGE LEN or DUR because they are used in integer calculations !
 #define LEN 0
 #define DUR 1
-
-// DO NOT CHANGE RAW or COOKED because they are used in integer calculations !
-#define COOKED 0
-#define RAW 1
 
 #define STATE_ACTIVE             0
 #define STATE_EDIT_RANGES        1
@@ -109,6 +104,7 @@ enum jsonIds {
 	RESET_DUR_OFFSET_JSON,
 	RESET_DUR_OFFSET_JSON_END = RESET_DUR_OFFSET_JSON + NUM_ROWS - 1,
 	ACTIVE_HEAT_PARAM_JSON,
+	GLOBAL_RANDOM_GETS_JSON,
 	DISPLAY_ALPHA_JSON,
 
 	NUM_JSONS

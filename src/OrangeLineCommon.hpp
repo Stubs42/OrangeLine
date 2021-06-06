@@ -95,6 +95,7 @@ void initRandom (OrangeLineRandom *rnd, unsigned long s)
         /* for >32 bit machines */
     }
 	rnd->getCount = 0;
+	if (rnd == &globalRandom) DEBUG("initRandom(globalRandom, %08lX):", s);
 }
 unsigned long getRandomRaw (OrangeLineRandom *rnd)
 {
@@ -123,6 +124,7 @@ unsigned long getRandomRaw (OrangeLineRandom *rnd)
     y ^= (y << 15) & 0xefc60000UL;
     y ^= (y >> 18);
 	rnd->getCount++;
+	if (rnd == &globalRandom) DEBUG("getRandomRaw(globalRandom): globalRandom.getCount is now %d", rnd->getCount);
     return y;
 }
 
