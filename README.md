@@ -167,6 +167,7 @@ If you are familiar with Frozen Wastelands 'Seeds of Change' and 'The Gardener',
 On the bottom end, Dejavu is logically a chain of 4 'Gardeners' with its respective 'Seeds Of Change' seed source plus all the cabeling and 
 logical processing to sample and hold cv and trigger outputs. Thus Dejavu can free up a whole row some patches and frees a lot of CPU so.
 
+
 ### The Panel
 
 #### Top Left Section
@@ -181,7 +182,7 @@ DIV Knob: Selects the clock division Dejavu should run with, if DIV input is not
 
 SEED CV Input: Global Seed to initialize Dejavu an Reset. Scales by factor 1000 (9.999V represent the max seed of 9999) The resultig seed is clamped to [0..9999]
 
-SEED Knob: Defines the starting seed Dejavu should reset to on RST trigger input
+SEED Knob: Defines the starting seed Dejavu should reset to on RST und TRG trigger input
 
 #### Left Display
 
@@ -221,26 +222,29 @@ Channels:
 
 2/3, 4/5, 6/7 as above LEN/DUR for repeater rows 2,3 and 4
 
-Channels 0 to 7 are interpreted in the same way as the knobs and scaled by a factor of 100 (0.64V represents a length of 64 clockticks or multiples).
-
-Channels 8 to 15 follow the same layout as channels 1 to 7 but interpreted as raw length values and are 
-scaled by a factor of 10.000 (10V represents a length of 10.000 clockticks.
+REP input CVs are interpreted in the same way as the knobs and scaled by a factor of 100 (0.64V represents a length of 64 clockticks or multiples).
 
 All channels with cv < 1V and are ignored but allow any other length as long the effective length does not exceed max float.
 
-TRG input: Polyphonic trigger inputs to force an end of length or end of duration for rows 1 (channel 0) to row 4 (channel 3)
+TRG input: trigger input to reset all counters to 0 ignorin any offset settings , not the same than reset, because reset sets offsets if configured
 
-REP output: Polyphonic cv outputs for the effective DUR/LEN of each row. Updated whenever the respective end of duration or end of length trigger is triggert.
+REP output: Polyphonic cv outputs for the effective DUR/LEN of each row.
 
-Channel 0 = DUR 1, Channel 1 = LEN 1, Channel 2 = DUR 2, ... . Values are scaled by a factor 10.000. so 10V represents an effective length of 100.000 clockticks.
+Channel 0 = DUR 1, Channel 1 = LEN 1, Channel 2 = DUR 2, ... . Values are scaled by a factor 10.000. so 10V represents an length of 100.000 clockticks.
 
 TRG output: Polyphonic trigger output for end of length (channel 0,2,4,6) and duration (channel 1,3,5,7) for the 4 repeater rows.
 
 #### Right Display
 
-A visualisation of Dejavus repeat state. All active repeater rows ware represented by a circle of dots and an assotiated clock hand.
-Whenever the hand reaches a dot, an end of length event has occured. Whenever the hand reaches 12:00 an end of duraction event has occured for
-this row. Row 1 of repeater is the outer ring, row 4 the inner ring. inactive rows are not displayed
+A visualisation of Dejavus repeat state. All active repeater rows are represented by a circle of dots and an assotiated clock hand.
+Inactive rows (switched off or both LEN and DUR of the row is 1) will not get displayed.
+The outermost active ring is associated to the uppermost active REP row which feeds and resets the random generators producing all outputs 
+for triggers/gates and CV to its current active seed.
+The inner rings are associated with the lower active REP rows, which feed and reset the random generator of the next active outer ring with its current active seed.
+Whenever it hits the 12:00 dot an end of duration event has occured and a new seed is fetched from the random generator of the next inner active ring 
+or the global never repeating random generator if it is the innermost ring. 
+After fetching the next seed from the next inner ring, the next outer ring is reset to the seed just fetched and an it will start a new random sequence.
+Whenever the hand reaches another dot, an end of length event has occured and the random generator of the next outer ring is reset to its starting seed and its random sequence starts to reapeat.
 
 #### Heat Section
 
@@ -249,6 +253,13 @@ HEAT Knob: The HEAT knob defines the global probability of output triggers to be
 Left CV input: Polyphonic input for probabilities for the GATE output channels (bottom right output).
 
 Right CV input: Attenuation input for the HEAT Knob (NOT the CV input!). defined how the HEAT knob will change the value given by the LEFT CV input.
+
+The HEAT knob is kind of a macro knob for trigger probabilities of all channels. If no cv input connected it defines the probability from 0 to 100% for all channels the same.
+When the polyphonic HEAT offset cv is connected (left of HEAT knob) the HEAT knob is just added to the cv given for each channel. Putting Heat to 0, and connect a Knoly Pobs to the HEAT offset gives you 12 HEAT knobs for each channel.
+When the polyphonic HEAT scale cv is connected (right of HEAT knob), it defines the amount of probabilities the HEAT knob is adding to the probabilities for each channel. So if no HEAT offset cv is connected it defines the maximum probability for each channel when the HEAT knob is put to 100%.
+Both knobs cv inputs for offset and scale can be combined. If scale is negative, raising the HEAT knob will in fact reduce the probbility for that channel.
+
+Normally if you have a cv input, you have two knobs to dial in the offset and scale for the cv input. With DEJAVU HEAT it's just the other way around. The cv inputs for offset and scale tell DEJAVU for each polyphonic channel the offset and scale for the HEAT knob.
 
 #### Output Section
 
@@ -262,7 +273,7 @@ SCL Knob: Scale of the CV output to be generated
 
 SCL CV input: Polyphonic input to set SCL per cv output channel
 
-SCL Attenuation Trimpod: Attenuator for the CV input
+SCL Attenuation Trimpod: Attenuator for the CV input, positiv (unipolar), negative (bipolar) 
 
 S&H Button. Switches whether a cv change on output should occur on evry clock tick (S&H off) or only when a trigger output on that channel occured.
 
