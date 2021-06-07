@@ -54,7 +54,7 @@ struct Dejavu : Module {
 	bool wobbleParamActive = false;
 	int greetingCycles = 0;
 	bool effectiveCountsPrepared = false;
-
+	bool resetFromTrigger = false;
 // ********************************************************************************************************************************
 /*
 	Initialization
@@ -478,8 +478,10 @@ void processOutputChannels() {
 				continue;
 			// DEBUG("doReset (): resetting counters for row %d", row);
 			// DEBUG("doReset (): preOffset = %d", preOffset);
-			int offset = int(getStateJson(RESET_DUR_OFFSET_JSON + row));
-			// DEBUG("doReset (): offset = %d", offset);
+			int offset = 0;
+			if (!resetFromTrigger)
+				 offset = int(getStateJson(RESET_DUR_OFFSET_JSON + row));
+			// DoffsetEBUG("doReset (): offset = %d", offset);
 			int effDurCnt = effectiveCount[2 * row + DUR];
 			// DEBUG("doReset (): effDurCnt (duration of row) = %d", effDurCnt);
 			int multiple = (row == 0 ? 1 : effectiveCount[2 * (row - 1) + DUR]);
@@ -502,6 +504,7 @@ void processOutputChannels() {
 				setStateJson (LEN_COUNTER_JSON + row, lenCounter);
 			preOffset = offset;
 		}
+		resetFromTrigger = false;
 
 		for (int row = NUM_ROWS - 1; row >= 0; row --) {
 			if (!rowActive(row))
@@ -629,10 +632,8 @@ void processOutputChannels() {
 		}
 
 		if (changeInput (TRG_INPUT)) {
-			for (int row = 0; row < NUM_ROWS; row++) {
-				setStateJson(LEN_COUNTER_JSON + row, 0);
-				setStateJson(DUR_COUNTER_JSON + row, 0);
-			}
+			resetFromTrigger = true;
+			doReset();
 		}
 
 		if (changeInput (CLK_INPUT)) {
