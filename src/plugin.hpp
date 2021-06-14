@@ -13,4 +13,5 @@ extern Model *modelSwing;
 extern Model *modelMother;
 extern Model *modelPhrase;
 extern Model *modelDejavu;
+extern Model *modelGator;
 

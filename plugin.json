@@ -42,8 +42,7 @@
       "tags": [
         "Quantizer",
 	      "Sequencer",
-	      "Polyphonic", 
-        "Poly"
+	      "Polyphonic"
       ]
     },
     {
@@ -66,6 +65,16 @@
         "Random",
         "Sequencer",
         "Visual"
+      ]
+    },
+    {
+      "slug": "Gator",
+      "name": "Gator",
+      "description": "Phased Based Microtimimg, Ratcheting and Strumming",
+      "tags": [
+        "Utility",
+        "Polyphonic",
+        "Clock Modulator"
       ]
     }
   ]

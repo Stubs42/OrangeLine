@@ -1279,17 +1279,6 @@ struct RigthWidget : TransparentWidget {
 /**
 	Main Module Widget
 */
-#define PANELHEIGHT 128.5f
-#define OFFSET_PJ301MPort 4.2
-#define OFFSET_Trimpot 3.15
-#define OFFSET_RoundSmallBlackKnob 4.0
-#define OFFSET_RoundHugeBlackKnob 9.5
-#define OFFSET_LargeLight 4.762 / 2
-#define OFFSET_LEDButton 4.762 / 2
-#define OFFSET_RoundLargeBlackKnob 12.7 / 2
-
-#define calculateCoordinates(x, y, offset) mm2px (Vec (x + offset ,  y + offset))
-
 struct DejavuWidget : ModuleWidget {
 
 	DejavuWidget(Dejavu *module) {

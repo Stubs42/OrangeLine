@@ -314,12 +314,12 @@ inline void OL_setOutState (int stateIdx, float value) {
 	}
 }
 inline void OL_setOutStatePoly (int stateIdx, int channel, float value) {
-	if (OL_statePoly[(NUM_INPUTS + stateIdx) * POLY_CHANNELS + channel] != value) {
+	// if (OL_statePoly[(NUM_INPUTS + stateIdx) * POLY_CHANNELS + channel] != value) {
 		OL_statePoly[(NUM_INPUTS + stateIdx) * POLY_CHANNELS + channel] = value;
 		if (stateIdxOutput (stateIdx) != STATE_TYPE_TRIGGER || value > 0.) {
 			OL_outStateChangePoly[stateIdx * POLY_CHANNELS + channel] = true;
 		}
-	}
+	// }
 }
 /**
 	Method to configure json labels
