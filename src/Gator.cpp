@@ -218,6 +218,7 @@ struct Gator : Module {
                 channelActive[channel] = false;
                 gateProcessed[channel] = false;
                 ratCnt[channel] = 0;
+                setStateOutPoly (GATE_OUTPUT, channel, 0.f);
             }
         }
 
@@ -308,7 +309,7 @@ struct Gator : Module {
                         float len = getStateParam (LEN_PARAM);
                         if (getInputConnected (LEN_INPUT)) {
                             if (channel < lenChannels)
-                                lastLen = OL_statePoly[LEN_INPUT * POLY_CHANNELS + channel];
+                                lastLen = OL_statePoly[LEN_INPUT * POLY_CHANNELS + channel] * 10;
                             len += lastLen;
                         }
                         if (len < MIN_LEN) len = MIN_LEN;
