@@ -286,3 +286,56 @@ GATE INPUT: Polyphonic GATE input. Defines GATE/TRG for each polychannel
 CV Output: (Upper bottom right) Polyphonic CV output
 
 GATE_Output: (Bottom right) Polyphonic Trigger/Gate output.
+
+## Gator
+
+<p align="center"><img src="res/GatorWork.svg"></p>
+
+### Short Description
+
+Gator is a polyphonic, phase based gate generator. For all of its timing it uses a phase which is a ramp from -10V to 10V of the length of your sequencers clock resolution.
+For example running on 1/16 (clock x 4) the phase is assumed to start 1/32 befor the 1/16 clock at -10V and end 1/32 after the 1/16 clock at 10V. The zero crossing is assumed to be in time with your 1/16 clock. To generate a trigger at the output, an input gate is required. So when just patching 10V to the GATE input of Gator and connect the phase from Swing, Gator will produce 1/16 beats in sync with your clock. Typically you run a gate sequencer on the early clock of Swing to select the 1/16 steps to play. THE Len Knob allows to set the Gate length of the gates Gator generates. The LEN input allows to controll the gate length per step using a step sequencer, best runing on the early clock of Swing. Notable is, that a gate LEN can span multiple phases to play longer notes up 100 phase lengths. 
+
+The TIME input allows to offset the threshold value used to detect a gate to generate in the range of -95% to +95% of a half phase length. So shifting notes nearly 1/32 foreard and backward in time is possible. I decided to avoid the 100% because it would be very easy to generate missing notes due to overlapping gates. Needless to say that this CV can also be sequenced to achieve a per step timing of the gates.
+
+The JIT CV input and knob allow to humanize the gates by applying a random offset to the threshold making the gates out of sync by the amount given by those parameters and inputs.
+
+The Rachet section with its knobs and inputs (RAT/DLY) controlls the ratcheting. RAT is the number of additional gates to produce and DLY the time between the gates in phase lengths. The delay itself can not be as large as the Gate LEN but about two phase lengths are possible. The number of ratchets selected by the RAT knob and input can be up to 10.
+
+Important to say that GATE, LEN, TIME, JTR, RAT and DLY inputs are polyphonic with the GATE input defining the number of the output channels Gator will run. Gator is able to control the timing, gate length, jitter as well as the ratcheting for up to 16 voices independently.
+
+As an additional feature, Gator can apply a strum timing to the gates of the polyphonic output. The time and direction (negative values strum up, positiv values strum down) can be controlled by the STR knob and input. This is not polyphonic by nature because it already influences all polyphonic channels. Note that also strumming can span cross phase borders.
+
+Any strumming or ratcheting is aborted if a later gate on the same channel starts a new gate event when crossing its give tie theshold.
+
+### The Panel
+
+PHS input: Clock Phase typical easiest to get from OrangeLie Swing
+
+CMP input: Global threshold for general timing like swinging also best take from Swing 
+
+GATE input: [polyphonic] The phase crossing the timing threshold will generate a gate (or more due to ratcheting) only if the GATE of the channel is high.
+
+LEN knob: Gate length in units of phase length [0(min trg len) up to 100 phases] (ignored if LEN input is connected).
+
+LEN input: [polyphonic] CV input for gate length 0.1 V is one phase. 10V is 100 phases.
+
+JTR knob: humanizastion jitter applied to gate threshold 0%, accurate timeing , 100% very sloppy. (ignored if JTR input is connected).
+
+JTR input: [polyphonic] Jitter input. values < 0 are ignored 10V is 100% sloppyness.
+
+RAT Knob: Number of additional gates to generate [0..10]. (ignored if RAT input is connected).
+
+RAT input: [polyphonic] cv input for the number gates to generate 1V is 1.
+
+DLY Knob: Time between additional gates to generate [0..10]. (ignored if RAT input is connected).
+
+DLY input: [polyphonic] cv input for the time between the gates to generate 1V is 1.
+
+STR knob: Controls strumming. 0 position no strum timing is applied. All bates of the polyphonic output channels are offseted to each other by a strummin offset given by the knob value. If positive the lower channels will get gates first and higher channels latest. If negative its vice versa.
+
+STR input: strum controll CV input
+
+RST input: Reset. clears all ongoing gates, ratchetings and strumming.
+
+Output: [polyphonic] The gate output of Gator
