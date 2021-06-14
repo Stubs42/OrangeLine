@@ -64,7 +64,7 @@ enum InputIds {
      JTR_INPUT,  // Jitter Input [poly]
      RAT_INPUT,  // Ratched Input [poly]
      DLY_INPUT,  // Ratchet Delay [poly]
-     STR_INPUT,  // Strum Input [poly]
+     STR_INPUT,  // Strum Input [mono]
      RST_INPUT,  // Reset
 
 	NUM_INPUTS

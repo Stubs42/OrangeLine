@@ -40,7 +40,6 @@ struct Gator : Module {
     int   offPhsCnt[POLY_CHANNELS];
     float offCmp[POLY_CHANNELS];
     float rnd[POLY_CHANNELS] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
-    float startCmp[POLY_CHANNELS];
     int   ratCnt[POLY_CHANNELS] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
     float ratDly[POLY_CHANNELS];
     float ratCmp[POLY_CHANNELS];
@@ -87,7 +86,6 @@ struct Gator : Module {
 		setInPoly  (JTR_INPUT,  true);
 		setInPoly  (RAT_INPUT,  true);
 		setInPoly  (DLY_INPUT,  true);
-		setInPoly  (STR_INPUT,  true);
 
 		setStateTypeInput (RST_INPUT, STATE_TYPE_TRIGGER);
 
@@ -215,110 +213,70 @@ struct Gator : Module {
         int ratChannels = inputs[RAT_INPUT].getChannels();
         float lastRat = 0;
         float cmpInput = 0;
+        float strum = getStateParam (STR_PARAM) / 10;
+        if (getInputConnected (STR_INPUT))
+            strum = getStateInput(STR_INPUT);
         if (getInputConnected (CMP_INPUT))
             cmpInput = getStateInput (CMP_INPUT);
-        float str = getStateParam (STR_PARAM) / 10;
-        if (getInputConnected (STR_INPUT)) {
-            str = getStateInput (STR_INPUT);
-        }
-        float strCmp = 0;
-        int strPhsCnt = 0;
-        // Detect new event
-        float strLen  = MIN_LEN;
-        int startChannel = 0;
-        int channelStep = 1;
-        if (str < 0) {
-            startChannel = channels - 1;
-            channelStep = -1;
-        }
-        for (int channel = startChannel; channel >= 0 && channel < channels; channel += channelStep) {
-            float cmp = cmpInput;
+        for (int channel = 0; channel < channels; channel++) {
             if (!gateProcessed[channel]) {
                 if (OL_statePoly[GATE_INPUT * POLY_CHANNELS + channel] >= 5.f) {
+                    gateProcessed[channel] = true;
+                    float cmp = cmpInput;
                     if (getInputConnected (TIME_INPUT)) {
-                        if (int(str) == 0) {
-                            if (channel < timeChannels)
-                                lastTime = OL_statePoly[TIME_INPUT * POLY_CHANNELS + channel];
-                            cmp += lastTime;
-                        }
-                        else {
-                            cmp += OL_statePoly[TIME_INPUT * POLY_CHANNELS];    // we take the time of channel 1 when strumming
-                        }
+                        if (channel < timeChannels)
+                            lastTime = OL_statePoly[TIME_INPUT * POLY_CHANNELS + channel];
+                        cmp += lastTime;
                     }
-                    // apply jitter only on channel 1 if strumming
-                    if (int(str) == 0 || channel == 0) {
-                        float jtr = getStateParam (JTR_PARAM) / 10;
-                        if (getInputConnected (JTR_INPUT)) {
-                            if (channel < jtrChannels)
-                                lastJtr = OL_statePoly[JTR_INPUT * POLY_CHANNELS + channel];
-                            jtr += lastJtr;
-                        }
-                        if (jtr < 0 ) jtr =  0;
-                        if (jtr > 10) jtr = 10;
-                        cmp += jtr * rnd[channel];
+                    float jtr = getStateParam (JTR_PARAM) / 10;
+                    if (getInputConnected (JTR_INPUT)) {
+                        if (channel < jtrChannels)
+                            lastJtr = OL_statePoly[JTR_INPUT * POLY_CHANNELS + channel];
+                        jtr += lastJtr;
                     }
-                    if (cmp > MAX_CMP) cmp = MAX_CMP;
-                    if (cmp < MIN_CMP) cmp = MIN_CMP;
-
-                    if (cmp <= phs) {
-                        gateProcessed[channel] = true;
-                        if (int(str) == 0 || channel == 0) {
-                            channelActive[channel] = true;
-                            startCmp[channel] = cmp;
-                            float len = getStateParam (LEN_PARAM);
-                            if (getInputConnected (LEN_INPUT)) {
-                                if (channel < lenChannels)
-                                    lastLen = OL_statePoly[LEN_INPUT * POLY_CHANNELS + channel];
-                                len += lastLen;
-                            }
-                            if (len < MIN_LEN) len = MIN_LEN;
-                            gateLen[channel] = len;
-                            strLen = len;
-                            offPhsCnt[channel] = int (len);
-                            offCmp[channel] = phs + (len - offPhsCnt[channel]) * 20;
-                            if (offCmp[channel] >= 10) {
-                                offPhsCnt[channel] ++;
-                                offCmp[channel] -= 20;
-                            }
-                            if (int(str) == 0) {
-                                // right now no racheing when strumming
-                                float rat = getStateParam (RAT_PARAM);
-                                if (getInputConnected (RAT_INPUT)) {
-                                    if (channel < ratChannels)
-                                        lastRat = OL_statePoly[RAT_INPUT * POLY_CHANNELS + channel];
-                                    rat = lastRat;
-                                }
-                                ratCnt[channel] = rat;
-                                if (rat != 0) {
-                                    float dly = getStateParam (DLY_PARAM) / 5;
-                                    if (getInputConnected (DLY_INPUT)) {
-                                        if (channel < dlyChannels)
-                                            lastDly = OL_statePoly[DLY_INPUT * POLY_CHANNELS + channel];
-                                        dly = lastDly;
-                                    }
-                                    ratDly[channel] = dly;
-                                    ratCmp[channel] = cmp + dly;
-                                    if (ratCmp[channel] >= 10) {
-                                        ratPhsCnt[channel] ++;
-                                        ratCmp[channel] -= 20;
-                                    }
-                                }
-                            }
-                        }
-                        else {
-                            gateLen[channel] = strLen;
-                            ratCnt[channel] = 1;
-                            cmp += strCmp;
-                            while (cmp >= 10) {
-                                strPhsCnt ++;
-                                cmp -= 20;
-                            }
-                            ratCmp[channel] = cmp;
-                            ratPhsCnt[channel] = strPhsCnt;
-                        }
+                    if (jtr < 0 ) jtr =  0;
+                    if (jtr > 10) jtr = 10;
+                    cmp += jtr * rnd[channel];
+                    if (cmp < MIN_CMP)
+                        cmp = MIN_CMP;
+                    // Add strumming
+                    if (strum >= 0) {
+                        cmp += channel * strum;
                     }
+                    else {
+                        cmp -= (channels - channel - 1) * strum;
+                    }
+                    float cmpPhsCnt = 0;
+                    while (cmp > MAX_CMP) {
+                        cmpPhsCnt++;
+                        cmp -= 20;
+                    }
+                    ratCnt[channel] = 1;
+                    ratPhsCnt[channel] = cmpPhsCnt;
+                    ratCmp[channel] = cmp;
+                    float len = getStateParam (LEN_PARAM);
+                    if (getInputConnected (LEN_INPUT)) {
+                        if (channel < lenChannels)
+                            lastLen = OL_statePoly[LEN_INPUT * POLY_CHANNELS + channel];
+                        len += lastLen;
+                    }
+                    if (len < MIN_LEN) len = MIN_LEN;
+                    gateLen[channel] = len;
+                    float rat = getStateParam (RAT_PARAM);
+                    if (getInputConnected (RAT_INPUT)) {
+                        if (channel < ratChannels)
+                            lastRat = OL_statePoly[RAT_INPUT * POLY_CHANNELS + channel];
+                        rat = lastRat;
+                    }
+                    ratCnt[channel] += rat;
+                    float dly = getStateParam (DLY_PARAM) / 5;
+                    if (getInputConnected (DLY_INPUT)) {
+                        if (channel < dlyChannels)
+                            lastDly = OL_statePoly[DLY_INPUT * POLY_CHANNELS + channel];
+                        dly = lastDly;
+                    }
+                    ratDly[channel] = dly;
                 }
-                strCmp += fabs(str);
             }
             // this phase gate was already processed but there might be ratchets going on to handle
             if (ratCnt[channel] > 0 && ratPhsCnt[channel] == 0 && ratCmp[channel] <= phs) {
