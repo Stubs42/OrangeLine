@@ -689,6 +689,10 @@ struct Mother : Module {
 			float semiAmt = getStateParam (FATE_AMT_PARAM) / 12.f;
 			float shp = getStateParam (FATE_SHP_PARAM);
 			float d;
+
+			if (getStateJson(ROOT_BASED_DISPLAY_JSON) == 1.f)
+			 	lightIdx = (lightIdx + effectiveChild) % NUM_NOTES;
+
 			if (lightIdx < NUM_NOTES / 2)
 				d = fabs ((5.5f - lightIdx) / 12.f);
 			else
@@ -825,12 +829,12 @@ struct Mother : Module {
 					color = 0x000000;
 				}
 			}
+			if (getStateJson(ROOT_BASED_DISPLAY_JSON) == 1.f)
+				lightIdx = (lightIdx  + effectiveChild + NUM_NOTES) % NUM_NOTES;
+			else
+				if (getStateJson(C_BASED_DISPLAY_JSON) == 1.f)
+					lightIdx = (lightIdx + effectiveChild + effectiveRoot) % NUM_NOTES;
 		}
-		if (getStateJson(ROOT_BASED_DISPLAY_JSON) == 1.f)
-			lightIdx = (lightIdx + effectiveChild) % NUM_NOTES;
-		else
-			if (getStateJson(C_BASED_DISPLAY_JSON) == 1.f)
-				lightIdx = (lightIdx + effectiveChild + effectiveRoot) % NUM_NOTES;
 
 		setRgbLight (NOTE_LIGHT_01_RGB + 3 * lightIdx, color);
 	}	
