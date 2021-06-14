@@ -87,6 +87,9 @@ struct Gator : Module {
 		setInPoly  (JTR_INPUT,  true);
 		setInPoly  (RAT_INPUT,  true);
 		setInPoly  (DLY_INPUT,  true);
+		setInPoly  (STR_INPUT,  true);
+
+		setStateTypeInput (RST_INPUT, STATE_TYPE_TRIGGER);
 
 		setOutPoly (GATE_OUTPUT, true);
 	}
@@ -170,6 +173,14 @@ struct Gator : Module {
 			}
 			styleChanged = false;
 		}
+
+        if (changeInput (RST_INPUT)) {
+            // TODO: reset all pending ratchets and strums
+        }
+
+        // TODO: Strumming
+        // 1. Eigener durchlauf zur berechnung aller paramas und input inkl. strumming
+
         float phs = getStateInput (PHS_INPUT);
 
         bool newPhs = (oldPhs > phs);
@@ -402,18 +413,19 @@ struct GatorWidget : ModuleWidget {
         addParam  (createParamCentered<RoundSmallBlackKnob> (calculateCoordinates (13.780,  27.497, OFFSET_RoundSmallBlackKnob), module,  LEN_PARAM ));
 		addInput  (createInputCentered<PJ301MPort>          (calculateCoordinates ( 3.415,  37.452, OFFSET_PJ301MPort),          module, TIME_INPUT ));
 		addInput  (createInputCentered<PJ301MPort>          (calculateCoordinates (13.575,  37.452, OFFSET_PJ301MPort),          module,  LEN_INPUT ));
-		addInput  (createInputCentered<PJ301MPort>          (calculateCoordinates ( 3.415,  50.152, OFFSET_PJ301MPort),          module,  JTR_INPUT ));
-        addParam  (createParamCentered<RoundSmallBlackKnob> (calculateCoordinates (13.780,  50.358, OFFSET_RoundSmallBlackKnob), module,  JTR_PARAM ));
+		addInput  (createInputCentered<PJ301MPort>          (calculateCoordinates ( 3.415,  49.644, OFFSET_PJ301MPort),          module,  JTR_INPUT ));
+        addParam  (createParamCentered<RoundSmallBlackKnob> (calculateCoordinates (13.780,  49.849, OFFSET_RoundSmallBlackKnob), module,  JTR_PARAM ));
         RoundSmallBlackKnob *knob = 
-                   createParamCentered<RoundSmallBlackKnob> (calculateCoordinates ( 3.620,  68.391, OFFSET_RoundSmallBlackKnob), module,  RAT_PARAM );
+                   createParamCentered<RoundSmallBlackKnob> (calculateCoordinates ( 3.620,  66.867, OFFSET_RoundSmallBlackKnob), module,  RAT_PARAM );
         knob->snap = true;
         addParam  (knob);
-        addParam  (createParamCentered<RoundSmallBlackKnob> (calculateCoordinates (13.780,  68.391, OFFSET_RoundSmallBlackKnob), module,  DLY_PARAM ));
-		addInput  (createInputCentered<PJ301MPort>          (calculateCoordinates ( 3.415,  78.487, OFFSET_PJ301MPort),          module,  RAT_INPUT ));
-		addInput  (createInputCentered<PJ301MPort>          (calculateCoordinates (13.575,  78.487, OFFSET_PJ301MPort),          module,  DLY_INPUT ));
-		addInput  (createInputCentered<PJ301MPort>          (calculateCoordinates ( 3.415,  94.602, OFFSET_PJ301MPort),          module,  STR_INPUT ));
-        addParam  (createParamCentered<RoundSmallBlackKnob> (calculateCoordinates (13.780,  94.807, OFFSET_RoundSmallBlackKnob), module,  STR_PARAM ));
+        addParam  (createParamCentered<RoundSmallBlackKnob> (calculateCoordinates (13.780,  66.867, OFFSET_RoundSmallBlackKnob), module,  DLY_PARAM ));
+		addInput  (createInputCentered<PJ301MPort>          (calculateCoordinates ( 3.415,  76.963, OFFSET_PJ301MPort),          module,  RAT_INPUT ));
+		addInput  (createInputCentered<PJ301MPort>          (calculateCoordinates (13.575,  76.963, OFFSET_PJ301MPort),          module,  DLY_INPUT ));
+		addInput  (createInputCentered<PJ301MPort>          (calculateCoordinates ( 3.415,  93.078, OFFSET_PJ301MPort),          module,  STR_INPUT ));
+        addParam  (createParamCentered<RoundSmallBlackKnob> (calculateCoordinates (13.780,  93.283, OFFSET_RoundSmallBlackKnob), module,  STR_PARAM ));
 		addOutput (createOutputCentered<PJ301MPort>		    (calculateCoordinates (13.780, 109.842, OFFSET_PJ301MPort),          module, GATE_OUTPUT));
+		addInput  (createInputCentered<PJ301MPort>          (calculateCoordinates ( 3.415, 109.842, OFFSET_PJ301MPort),          module,  RST_INPUT ));
 	}
 
 	struct GatorStyleItem : MenuItem {

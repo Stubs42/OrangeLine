@@ -32,7 +32,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #define CLOCK_MULT  getStateParam (DIV_PARAM)
 
-#define FIRST_TCLK_DELAY 44
+#define FIRST_TCLK_DELAY 42
 //
 // Defaults
 //
