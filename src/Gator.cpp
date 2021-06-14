@@ -150,6 +150,46 @@ struct Gator : Module {
 /*
 	Methods called directly or indirectly called from process () in OrangeLineCommon.hpp
 */
+    void checkRatchets (float phs) {
+        for (int channel = 0; channel < POLY_CHANNELS; channel ++) {
+            if (ratCnt[channel] > 0 && ratPhsCnt[channel] == 0 && ratCmp[channel] <= phs) {
+                channelActive[channel] = true;
+                offPhsCnt[channel] = int (gateLen[channel]);
+                offCmp[channel] = phs + (gateLen[channel] - offPhsCnt[channel]) * 20;
+                while (offCmp[channel] >= 10) {
+                    offPhsCnt[channel] ++;
+                    offCmp[channel] -= 20;
+                }
+                ratCnt[channel]--;
+                if (ratCnt[channel] > 0) {
+                    ratCmp[channel] += ratDly[channel];
+                    while (ratCmp[channel] >= 10) {
+                        ratPhsCnt[channel] ++;
+                        ratCmp[channel] -= 20;
+                    }
+                }
+            }
+        }
+    }
+
+    void processActiveGates (float phs) {
+        // process active gates
+        int channels = inputs[GATE_INPUT].getChannels();
+        for (int channel = 0; channel < channels; channel++) {
+            if (!channelActive[channel]) {
+                setStateOutPoly (GATE_OUTPUT, channel, 0.f);
+                continue;
+            }
+            if (offPhsCnt[channel] == 0 && offCmp[channel] <= phs) {
+                setStateOutPoly (GATE_OUTPUT, channel, 0.f);
+                channelActive[channel] = false;
+            }
+            else {
+                setStateOutPoly (GATE_OUTPUT, channel, 10.f);
+            }
+        }
+    }
+
 	/**
 		Module specific process method called from process () in OrangeLineCommon.hpp
 	*/
@@ -173,16 +213,23 @@ struct Gator : Module {
 		}
 
         if (changeInput (RST_INPUT)) {
-            // TODO: reset all pending ratchets and strums
+            for (int channel = 0; channel < POLY_CHANNELS; channel ++) {
+                oldPhs = 10;
+                channelActive[channel] = false;
+                gateProcessed[channel] = false;
+                ratCnt[channel] = 0;
+            }
         }
-
-        // TODO: Strumming
-        // 1. Eigener durchlauf zur berechnung aller paramas und input inkl. strumming
 
         float phs = getStateInput (PHS_INPUT);
 
         bool newPhs = (oldPhs > phs);
         if (newPhs) {
+            // catch missen events around 10V me have nevver seen 10V as phase in process
+            // fire them now as latest possible time
+            checkRatchets (20);
+            processActiveGates (20);
+
             for (int channel = 0; channel < POLY_CHANNELS; channel ++) {
                 // reset gates processed for this new phase
                 gateProcessed[channel] = false;
@@ -221,7 +268,6 @@ struct Gator : Module {
         for (int channel = 0; channel < channels; channel++) {
             if (!gateProcessed[channel]) {
                 if (OL_statePoly[GATE_INPUT * POLY_CHANNELS + channel] >= 5.f) {
-                    gateProcessed[channel] = true;
                     float cmp = cmpInput;
                     if (getInputConnected (TIME_INPUT)) {
                         if (channel < timeChannels)
@@ -237,8 +283,11 @@ struct Gator : Module {
                     if (jtr < 0 ) jtr =  0;
                     if (jtr > 10) jtr = 10;
                     cmp += jtr * rnd[channel];
+                    // clamp here, strumming might cross borders, thtas ok 
                     if (cmp < MIN_CMP)
                         cmp = MIN_CMP;
+                    if (cmp > MAX_CMP)
+                        cmp = MAX_CMP;
                     // Add strumming
                     if (strum >= 0) {
                         cmp += channel * strum;
@@ -246,71 +295,44 @@ struct Gator : Module {
                     else {
                         cmp -= (channels - channel - 1) * strum;
                     }
-                    float cmpPhsCnt = 0;
-                    while (cmp > MAX_CMP) {
+                    int cmpPhsCnt = 0;
+                    while (cmp >= 10) {
                         cmpPhsCnt++;
                         cmp -= 20;
                     }
-                    ratCnt[channel] = 1;
-                    ratPhsCnt[channel] = cmpPhsCnt;
-                    ratCmp[channel] = cmp;
-                    float len = getStateParam (LEN_PARAM);
-                    if (getInputConnected (LEN_INPUT)) {
-                        if (channel < lenChannels)
-                            lastLen = OL_statePoly[LEN_INPUT * POLY_CHANNELS + channel];
-                        len += lastLen;
-                    }
-                    if (len < MIN_LEN) len = MIN_LEN;
-                    gateLen[channel] = len;
-                    float rat = getStateParam (RAT_PARAM);
-                    if (getInputConnected (RAT_INPUT)) {
-                        if (channel < ratChannels)
-                            lastRat = OL_statePoly[RAT_INPUT * POLY_CHANNELS + channel];
-                        rat = lastRat;
-                    }
-                    ratCnt[channel] += rat;
-                    float dly = getStateParam (DLY_PARAM) / 5;
-                    if (getInputConnected (DLY_INPUT)) {
-                        if (channel < dlyChannels)
-                            lastDly = OL_statePoly[DLY_INPUT * POLY_CHANNELS + channel];
-                        dly = lastDly;
-                    }
-                    ratDly[channel] = dly;
-                }
-            }
-            // this phase gate was already processed but there might be ratchets going on to handle
-            if (ratCnt[channel] > 0 && ratPhsCnt[channel] == 0 && ratCmp[channel] <= phs) {
-                channelActive[channel] = true;
-                offPhsCnt[channel] = int (gateLen[channel]);
-                offCmp[channel] = phs + (gateLen[channel] - offPhsCnt[channel]) * 20;
-                if (offCmp[channel] >= 10) {
-                    offPhsCnt[channel] ++;
-                    offCmp[channel] -= 20;
-                }
-                ratCnt[channel]--;
-                if (ratCnt[channel] > 0) {
-                    ratCmp[channel] += ratDly[channel];
-                    if (ratCmp[channel] >= 10) {
-                        ratPhsCnt[channel] ++;
-                        ratCmp[channel] -= 20;
+                    if ((cmpPhsCnt == 0 && cmp <= phs) || cmpPhsCnt > 0) {
+                        gateProcessed[channel] = true;
+                        ratCnt[channel] = 1;
+                        ratPhsCnt[channel] = cmpPhsCnt;
+                        ratCmp[channel] = cmp;
+                        float len = getStateParam (LEN_PARAM);
+                        if (getInputConnected (LEN_INPUT)) {
+                            if (channel < lenChannels)
+                                lastLen = OL_statePoly[LEN_INPUT * POLY_CHANNELS + channel];
+                            len += lastLen;
+                        }
+                        if (len < MIN_LEN) len = MIN_LEN;
+                        gateLen[channel] = len;
+                        float rat = getStateParam (RAT_PARAM);
+                        if (getInputConnected (RAT_INPUT)) {
+                            if (channel < ratChannels)
+                                lastRat = OL_statePoly[RAT_INPUT * POLY_CHANNELS + channel];
+                            rat = lastRat;
+                        }
+                        ratCnt[channel] += rat;
+                        float dly = getStateParam (DLY_PARAM) / 3;
+                        if (getInputConnected (DLY_INPUT)) {
+                            if (channel < dlyChannels)
+                                lastDly = OL_statePoly[DLY_INPUT * POLY_CHANNELS + channel] * 4;
+                            dly = lastDly;
+                        }
+                        ratDly[channel] = dly;
                     }
                 }
             }
+            checkRatchets (phs);
         }
-        // process active gates
-        for (int channel = 0; channel < channels; channel++) {
-            if (!channelActive[channel]) {
-                setStateOutPoly (GATE_OUTPUT, channel, 0.f);
-                continue;
-            }
-            if (offPhsCnt[channel] == 0 && offCmp[channel] <= phs) {
-                setStateOutPoly (GATE_OUTPUT, channel, 0.f);
-                channelActive[channel] = false;
-            }
-            else {
-                setStateOutPoly (GATE_OUTPUT, channel, 10.f);
-            }
-        }
+        processActiveGates (phs);
 	}
 
 	inline void moduleCustomInitialize () {

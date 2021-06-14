@@ -22,8 +22,7 @@
         "Utility",
         "Distortion",
         "WaveShaper",
-	      "Polyphonic", 
-        "Poly"
+	      "Polyphonic"
       ]
     },
     {
@@ -32,7 +31,8 @@
       "description": "Micro Timing Sequencer",
       "tags": [
         "Sequencer",
-        "Clock"
+        "Clock",
+        "Clock modulator"
       ]
     },
     {
