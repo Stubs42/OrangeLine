@@ -417,7 +417,7 @@ void processOutputChannels() {
 		if (!sh || fired) {
 			float scl = getStateParam (SCL_PARAM) / 100.f;
 			if (getInputConnected (SCL_INPUT)) {
-				int sclInput = 0.f;
+				float sclInput = 0.f;
 				if (channel > sclPolyChannels)
 					sclInput = lastSclInput;
 				else {
@@ -433,7 +433,7 @@ void processOutputChannels() {
 				cvRandom *= scl * 10.f;							// unipolar scale
 			float ofs = getStateParam (OFS_PARAM);
 			if (getInputConnected (OFS_INPUT)) {
-				int ofsInput = 0.f;
+				float ofsInput = 0.f;
 				if (channel > ofsPolyChannels)
 					ofsInput = lastOfsInput;
 				else {
