@@ -275,7 +275,7 @@ SCL CV input: Polyphonic input to set SCL per cv output channel
 
 SCL Attenuation Trimpod: Attenuator for the CV input, positiv (unipolar), negative (bipolar) 
 
-S&H Button. Switches whether a cv change on output should occur on evry clock tick (S&H off) or only when a trigger output on that channel occured.
+S&H Button. Switches whether a cv change on output should occur on evry clock tick (S&H off) or only when a trigger output or new gate on that channel occured.
 
 S&H Input: Polyphonic input for S&H per channel. If S&H input channel n is > 5V. cv output channel n is set to s&h.
 

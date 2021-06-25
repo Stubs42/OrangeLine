@@ -43,6 +43,7 @@ bool OL_isGate [NUM_OUTPUTS];
 bool OL_wasTriggered [NUM_OUTPUTS];		// remember whether we triggered once at all only set when triggerd but never reset
 bool OL_isPoly [NUM_INPUTS + NUM_OUTPUTS];
 float OL_isGatePoly [NUM_OUTPUTS * POLY_CHANNELS];
+bool OL_isSteadyGate[NUM_OUTPUTS];
 int  OL_polyChannels[NUM_OUTPUTS];
 
 /*
@@ -157,6 +158,7 @@ inline void initializeInstance () {
 	memset (          OL_isPoly, false, sizeof (OL_isPoly));	// Must be before initStateTypes ()!
 	memset (OL_customChangeMask,    0L, sizeof (OL_customChangeMask));	// Initialie customChangeMasks to 0s
 
+	memset (    OL_isSteadyGate, false, sizeof (OL_isSteadyGate));		// Initialize SteadyGateFlags
 	initStateTypes ();			//	Initialize state types to defaults
 	moduleInitStateTypes ();	//	Method to overwrite defaults by module specific settings 
 	allocateTriggers();			//	Allocate triggers and pulse generators for trigger I/O
@@ -167,7 +169,7 @@ inline void initializeInstance () {
 	memset (          OL_isGate, false, sizeof (OL_isGate));			// Initialize trg outputs to TRIGGER = false (GATE = true)
 	memset (    OL_wasTriggered, false, sizeof (OL_wasTriggered));		// Initialize trg outputs to TRIGGER = false (GATE = true)
 	memset (    OL_polyChannels,     0, sizeof (OL_polyChannels));		// Initialize number of poly channels for outputs
-	memset (      OL_isGatePoly, false, sizeof (OL_isGatePoly));		// Initialize number isGate definitions of poly channels for outputs
+	memset (      OL_isGatePoly,     0, sizeof (OL_isGatePoly));		// Initialize number isGate definitions of poly channels for outputs
 
 	memset (          OL_statePoly,   0.f, sizeof (OL_statePoly));
 	memset (  OL_inStateChangePoly, false, sizeof (OL_inStateChangePoly));
@@ -557,8 +559,13 @@ inline void processActiveOutputTriggers () {
 					if (OL_isGatePoly[outputIdx * POLY_CHANNELS + channel] > 5.f)
 						isGate = true;
 
-					if (isGate && OL_wasTriggeredPoly[cvOutPolyIdx])
-						trgActive = !trgActive;
+					if (isGate && OL_wasTriggeredPoly[cvOutPolyIdx]) {
+						OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cvOutPolyIdx] = 10.f;
+						if (OL_isSteadyGate[outputIdx])
+							trgActive = true;
+						else
+							trgActive = !trgActive;
+					}
 					outputs[outputIdx].setVoltage (trgActive ? 10.f : 0.f, channel);
 				}
 			}
@@ -575,8 +582,12 @@ inline void processActiveOutputTriggers () {
 				}
 				else 
 					setStateOutput (outputIdx, 0.f);
-				if (OL_isGate[outputIdx] && OL_wasTriggered[outputIdx])
-					trgActive = !trgActive;
+				if (OL_isGate[outputIdx] && OL_wasTriggered[outputIdx]) {
+					if (OL_isSteadyGate[outputIdx])
+						trgActive = true;
+					else
+						trgActive = !trgActive;
+				}
 				outputs[outputIdx].setVoltage (trgActive ? 10.f : 0.f);
 			}
 		}
@@ -631,8 +642,12 @@ inline void reflectChanges () {
 					bool isGate = OL_isGate[outputIdx];
 					if (OL_isGatePoly[outputIdx * POLY_CHANNELS + channel] > 5.f)
 						isGate = true;
-					if (isGate && OL_wasTriggeredPoly[cvOutPolyIdx])
-						trgActive = !trgActive;
+					if (isGate && OL_wasTriggeredPoly[cvOutPolyIdx]) {
+						if (OL_isSteadyGate[outputIdx])
+							trgActive = true;
+						else
+							trgActive = !trgActive;
+					}
 					outputs[outputIdx].setVoltage (trgActive ? 10.f : 0.f, channel);
 				}
 			}
@@ -655,8 +670,12 @@ inline void reflectChanges () {
 				}
 				else 
 					setStateOutput (outputIdx, 0.f);
-				if (OL_isGate[outputIdx] && OL_wasTriggered[outputIdx])
-					trgActive = !trgActive;
+				if (OL_isGate[outputIdx] && OL_wasTriggered[outputIdx]) {
+					if (OL_isSteadyGate[outputIdx])
+						trgActive = true;
+					else
+						trgActive = !trgActive;
+				}
 				outputs[outputIdx].setVoltage (trgActive ? 10.f : 0.f);
 			}
 		}

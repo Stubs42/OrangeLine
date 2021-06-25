@@ -55,6 +55,7 @@ struct Dejavu : Module {
 	int greetingCycles = 0;
 	bool effectiveCountsPrepared = false;
 	bool resetFromTrigger = false;
+	bool gateActive[POLY_CHANNELS] = {false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false };
 // ********************************************************************************************************************************
 /*
 	Initialization
@@ -113,6 +114,7 @@ struct Dejavu : Module {
 
      	setStateTypeOutput (GATE_OUTPUT, STATE_TYPE_TRIGGER);
 		setOutPoly         (GATE_OUTPUT, true);
+		OL_isSteadyGate[GATE_OUTPUT] = true;
 
 		setOutPoly         (CV_OUTPUT, true);
 
@@ -394,25 +396,29 @@ void processOutputChannels() {
 		if (heat >= gateRandom) {
 			OL_statePoly[ (NUM_INPUTS + GATE_OUTPUT) * POLY_CHANNELS + channel] = 10.f;
 			OL_outStateChangePoly[GATE_OUTPUT * POLY_CHANNELS + channel] = true;
-			fired = true;
+			if (isGate (GATE_OUTPUT) || OL_isGatePoly[GATE_OUTPUT * POLY_CHANNELS + channel] >= 5.f) {
+				if (gateActive[channel] == false)
+					fired = true;
+			}
+			else
+				fired = true;
+			gateActive[channel] = true;
 		}
 		else {
 			OL_statePoly[ (NUM_INPUTS + GATE_OUTPUT) * POLY_CHANNELS + channel] = 0.f;
 			// Do not signal a output change, this will taken as a trigger !
 			// OL_outStateChangePoly[GATE_OUTPUT * POLY_CHANNELS + channel] = true;
 			outputs[GATE_OUTPUT].setVoltage (0.f, channel);
+			gateActive[channel] = false;
 		}
-		bool sh = false;
-		if (!fired) {
-			sh = (getStateJson(SH_JSON) == 1.f);
-			if (getInputConnected(SH_INPUT)) {
-				float value = lastShValue;
-				if (channel <= inputs[SH_INPUT].getChannels()) {
-					value = OL_statePoly[SH_INPUT * POLY_CHANNELS + channel];
-				}
-				lastShValue = value;
-				sh = (value > 5.f);
+		bool sh = (getStateJson(SH_JSON) == 1.f);
+		if (getInputConnected(SH_INPUT)) {
+			float value = lastShValue;
+			if (channel <= inputs[SH_INPUT].getChannels()) {
+				value = OL_statePoly[SH_INPUT * POLY_CHANNELS + channel];
 			}
+			lastShValue = value;
+			sh = (value > 5.f);
 		}
 		if (!sh || fired) {
 			float scl = getStateParam (SCL_PARAM) / 100.f;
