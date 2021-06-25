@@ -285,10 +285,10 @@ struct Gator : Module {
                     if (jtr > 10) jtr = 10;
                     cmp += jtr * rnd[channel];
                     // clamp here, strumming might cross borders, thtas ok 
-                    if (cmp < MIN_CMP)
-                        cmp = MIN_CMP;
-                    if (cmp > MAX_CMP)
-                        cmp = MAX_CMP;
+                    if (cmp < -10)
+                        cmp = -10;
+                    if (cmp > 9.99)
+                        cmp = 9.99;
                     // Add strumming
                     if (strum >= 0) {
                         cmp += channel * strum;
