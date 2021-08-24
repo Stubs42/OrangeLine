@@ -464,7 +464,7 @@ void processOutputChannels() {
 	initializerepeatRandomGenerators
 	Set all counters to 0 on reset
 */
-	void doReset () {
+	long getGlobalSeed() {
 		float seed = 0; 
 		if (getInputConnected (SEED_INPUT)) {
 			float seedFloat = getStateInput (SEED_INPUT) * SEED_INPUT_SCALE;
@@ -477,6 +477,11 @@ void processOutputChannels() {
 		}
 		else
 			seed = getStateParam (SEED_PARAM);
+		return seed;
+	}
+
+	void doReset () {
+		float seed = getGlobalSeed(); 
 		initRandom (&globalRandom, (unsigned long)seed);
 		p_srcRandomGenerator = &globalRandom;
 
@@ -697,8 +702,11 @@ void processOutputChannels() {
 						if (cntExpired || cnt <= 0) {	// should never be < 0 but just for safety <=
 							flashEvent[(row*2)+lenOrDur] = true;	// make the dots in the visual flash
 							if (lenOrDur == DUR) {
-								if (p_srcRandomGenerator != &globalRandom || getStateJson(LOOP_JSON) == 0.f)
-									repeatRandomGenerator[row].latestSeed = getRandomRaw (p_srcRandomGenerator);	// duration expired, we fetch a new seed from our srcRandomGenerator
+								if (p_srcRandomGenerator == &globalRandom && getStateJson(LOOP_JSON) == 1.f) {
+									float seed = getGlobalSeed(); 
+									initRandom (&globalRandom, (unsigned long)seed);
+								}
+								repeatRandomGenerator[row].latestSeed = getRandomRaw (p_srcRandomGenerator);	// duration expired, we fetch a new seed from our srcRandomGenerator
 								cntExpired = true;	// signal expiration to further processing
 							}
 							else {
