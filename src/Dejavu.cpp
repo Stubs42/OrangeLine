@@ -177,6 +177,7 @@ struct Dejavu : Module {
 		setJsonLabel (ACTIVE_HEAT_PARAM_JSON, "ActiveHeatParam");
 		setJsonLabel (DISPLAY_ALPHA_JSON, "DisplayAlpha");
 		setJsonLabel (GLOBAL_RANDOM_GETS_JSON, "GlobalRandomGets");
+		setJsonLabel (LOOP_JSON, "Loop");
 
 		#pragma GCC diagnostic pop
 	}
@@ -287,6 +288,7 @@ struct Dejavu : Module {
 		setStateJson (ACTIVE_HEAT_PARAM_JSON, DEFAULT_HEAT);
 		setStateJson (DISPLAY_ALPHA_JSON, INIT_DISPLAY_ALPHA);
 		setStateJson (GLOBAL_RANDOM_GETS_JSON, 0);
+		setStateJson (LOOP_JSON, 0.f);
 
 		greetingCycles = GREETING_CYCLES;
 	}
@@ -695,7 +697,8 @@ void processOutputChannels() {
 						if (cntExpired || cnt <= 0) {	// should never be < 0 but just for safety <=
 							flashEvent[(row*2)+lenOrDur] = true;	// make the dots in the visual flash
 							if (lenOrDur == DUR) {
-								repeatRandomGenerator[row].latestSeed = getRandomRaw (p_srcRandomGenerator);	// duration expired, we fetch a new seed from our srcRandomGenerator
+								if (p_srcRandomGenerator != &globalRandom || getStateJson(LOOP_JSON) == 0.f)
+									repeatRandomGenerator[row].latestSeed = getRandomRaw (p_srcRandomGenerator);	// duration expired, we fetch a new seed from our srcRandomGenerator
 								cntExpired = true;	// signal expiration to further processing
 							}
 							else {
@@ -1412,6 +1415,23 @@ struct DejavuWidget : ModuleWidget {
 				rightText = (module != nullptr && module->getStateJson(DIRECTION_JSON) == direction) ? "✔" : "";
 		}
 	};
+	struct LoopItem : MenuItem {
+		Dejavu *module;
+		float loop;
+		void onAction(const event::Action &e) override {
+			float l = module->getStateJson(LOOP_JSON);
+			if (l == 0.f)
+				l = 1.f;
+			else
+				l = 0.f;
+			module->setStateJson(LOOP_JSON, l);
+		}
+		void step() override {
+			if (module)
+				rightText = (module != nullptr && module->getStateJson(LOOP_JSON) == 1.f) ? "✔" : "";
+		}
+	};
+
 
 	struct ModuleStateItem : MenuItem {
 		Dejavu *module;
@@ -1454,6 +1474,12 @@ struct DejavuWidget : ModuleWidget {
 			polyChannelsItem->text = "Poly Channels";
 			polyChannelsItem->rightText = RIGHT_ARROW;
 			menu->addChild(polyChannelsItem);
+
+			LoopItem *loopItem = new LoopItem();
+			loopItem->module = module;
+			loopItem->loop = 0;
+			loopItem->text = "Loop";
+			menu->addChild(loopItem);
 
 			spacerLabel = new MenuLabel();
 			menu->addChild(spacerLabel);
