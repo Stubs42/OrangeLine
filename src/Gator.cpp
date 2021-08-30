@@ -41,6 +41,7 @@ struct Gator : Module {
     float offCmp[POLY_CHANNELS];
     float rnd[POLY_CHANNELS] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
     int   ratCnt[POLY_CHANNELS] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+    int   ratNum[POLY_CHANNELS] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
     float ratDly[POLY_CHANNELS];
     float ratCmp[POLY_CHANNELS];
     int   ratPhsCnt[POLY_CHANNELS];
@@ -185,7 +186,10 @@ struct Gator : Module {
                 channelActive[channel] = false;
             }
             else {
-                setStateOutPoly (GATE_OUTPUT, channel, 10.f);
+				if (ratCnt[channel] != ratNum[channel])
+	                setStateOutPoly (GATE_OUTPUT, channel, 9.5f);
+				else
+	                setStateOutPoly (GATE_OUTPUT, channel, 10.f);
             }
         }
     }
@@ -320,6 +324,7 @@ struct Gator : Module {
                                 lastRat = OL_statePoly[RAT_INPUT * POLY_CHANNELS + channel];
                             rat = lastRat;
                         }
+						ratNum[channel] = rat;
                         ratCnt[channel] += rat;
                         float dly = getStateParam (DLY_PARAM) / 3;
                         if (getInputConnected (DLY_INPUT)) {
