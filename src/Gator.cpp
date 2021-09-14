@@ -117,8 +117,8 @@ struct Gator : Module {
 	inline void moduleParamConfig () {	
 		configParam (LEN_PARAM,    0.f, 100.f, 0.f, "Gate Length",               "" , 0.f, 1.f, 0.f);
 		configParam (JTR_PARAM,    0.f, 100.f, 0.f, "Jitter Amount",             "%", 0.f, 1.f, 0.f);
-		configParam (RAT_PARAM,    0.f,  10.f, 0.f, "Ratchets",                  "" , 0.f, 1.f, 0.f);
-		configParam (DLY_PARAM,    0.f, 100.f, 0.f, "Ratchet Delay",             "%", 0.f, 1.f, 0.f);
+		configParam (RAT_PARAM,  -10.f,  10.f, 0.f, "Ratchets",                  "" , 0.f, 1.f, 0.f);
+		configParam (DLY_PARAM,    0.f,  10.f, 0.f, "Ratchet Delay",             "" , 0.f, 1.f, 0.f);
 		configParam (STR_PARAM, -100.f, 100.f, 0.f, "Strum Direction and Delay", "%", 0.f, 1.f, 0.f);
 	}
 		
@@ -163,7 +163,7 @@ struct Gator : Module {
                 }
                 ratCnt[channel]--;
                 if (ratCnt[channel] > 0) {
-                    ratCmp[channel] += ratDly[channel];
+                    ratCmp[channel] += ratDly[channel] * 20.f;
                     while (ratCmp[channel] >= 10) {
                         ratPhsCnt[channel] ++;
                         ratCmp[channel] -= 20;
@@ -230,10 +230,10 @@ struct Gator : Module {
 
         bool newPhs = (oldPhs > phs);
         if (newPhs) {
-            // catch missen events around 10V me have nevver seen 10V as phase in process
+            // catch missen events around 10V me have never seen 10V as phase in process
             // fire them now as latest possible time
-            checkRatchets (20);
-            processActiveGates (20);
+            checkRatchets (10);
+            processActiveGates (10);
 
             for (int channel = 0; channel < POLY_CHANNELS; channel ++) {
                 // reset gates processed for this new phase
@@ -288,11 +288,11 @@ struct Gator : Module {
                     if (jtr < 0 ) jtr =  0;
                     if (jtr > 10) jtr = 10;
                     cmp += jtr * rnd[channel];
-                    // clamp here, strumming might cross borders, thtas ok 
+                    // clamp here, strumming might cross borders, thats ok 
                     if (cmp < -10)
                         cmp = -10;
-                    if (cmp > 9.99)
-                        cmp = 9.99;
+                    if (cmp > 9.95)
+                        cmp = 9.95;
                     // Add strumming
                     if (strum >= 0) {
                         cmp += channel * strum;
@@ -305,6 +305,29 @@ struct Gator : Module {
                         cmpPhsCnt++;
                         cmp -= 20;
                     }
+                    float rat = getStateParam (RAT_PARAM);
+					if (getInputConnected (RAT_INPUT)) {
+						if (channel < ratChannels)
+							lastRat = OL_statePoly[RAT_INPUT * POLY_CHANNELS + channel];
+						rat = lastRat;
+					}
+					float dly = getStateParam (DLY_PARAM);
+					if (getInputConnected (DLY_INPUT)) {
+						if (channel < dlyChannels)
+							lastDly = OL_statePoly[DLY_INPUT * POLY_CHANNELS + channel];
+						dly = lastDly;
+					}
+					if (dly == 0.f)
+						rat = 0.f;
+					if (rat < 0) {
+						rat *= -1;
+						// DEBUG("before: rat = %lf, dly = %lf, cmp = %lf", rat, dly, cmp);
+						while (cmp - dly * 20.f * int(rat) < -10.f) {
+							rat --;
+						}
+						cmp -= dly * 20.f * int(rat);
+						// DEBUG("after: rat = %lf, dly = %lf, cmp = %lf", rat, dly, cmp);
+					}
                     if ((cmpPhsCnt == 0 && cmp <= phs) || cmpPhsCnt > 0) {
                         gateProcessed[channel] = true;
                         ratCnt[channel] = 1;
@@ -316,22 +339,11 @@ struct Gator : Module {
                                 lastLen = OL_statePoly[LEN_INPUT * POLY_CHANNELS + channel] * 10;
                             len += lastLen;
                         }
-                        if (len < MIN_LEN) len = MIN_LEN;
+                        if (len < MIN_LEN)
+							len = MIN_LEN;
                         gateLen[channel] = len;
-                        float rat = getStateParam (RAT_PARAM);
-                        if (getInputConnected (RAT_INPUT)) {
-                            if (channel < ratChannels)
-                                lastRat = OL_statePoly[RAT_INPUT * POLY_CHANNELS + channel];
-                            rat = lastRat;
-                        }
 						ratNum[channel] = rat;
                         ratCnt[channel] += rat;
-                        float dly = getStateParam (DLY_PARAM) / 3;
-                        if (getInputConnected (DLY_INPUT)) {
-                            if (channel < dlyChannels)
-                                lastDly = OL_statePoly[DLY_INPUT * POLY_CHANNELS + channel] * 4;
-                            dly = lastDly;
-                        }
                         ratDly[channel] = dly;
                     }
                 }
