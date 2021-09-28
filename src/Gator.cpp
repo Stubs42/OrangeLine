@@ -33,6 +33,7 @@ struct Gator : Module {
 		Module member variables
 	*/
     float oldPhs = 10;
+    float oldPhsSkip = 10;
 
     bool  channelActive[POLY_CHANNELS] = { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false };
     bool  gateProcessed[POLY_CHANNELS] = { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false };
@@ -74,6 +75,12 @@ struct Gator : Module {
 		We must not do a trigger process here but just check if the clock trigger input changed
 	*/
 	bool moduleSkipProcess() {
+		float phs = getStateInput (PHS_INPUT);
+		// Make sure that whe skip when a ne phase behins because the cv inputs
+		// from sequencers might not be ready yet !
+		if (phs < oldPhsSkip) 
+			idleSkipCounter = IDLESKIP;
+		oldPhsSkip = phs;
 		return (idleSkipCounter != 0);
 	}
 	/**
