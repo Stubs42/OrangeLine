@@ -152,8 +152,17 @@ typedef struct OrangeLineRandom {
 	pq->minValue = minVal; \
 	pq->maxValue = maxVal; \
 	pq->defaultValue = defaultVal; \
+}
+
+/*
+#define reConfigParam(paramId, minVal, maxVal, defaultVal, pLabel) { \
+	ParamQuantity *pq = paramQuantities[paramId]; \
+	pq->minValue = minVal; \
+	pq->maxValue = maxVal; \
+	pq->defaultValue = defaultVal; \
 	pq->label = pLabel; \
 }
+*/
 
 #define reConfigParamDefault(paramId, defaultVal) { \
 	ParamQuantity *pq = paramQuantities[paramId]; \
@@ -196,8 +205,6 @@ typedef struct OrangeLineRandom {
 */
 struct NumberWidget : TransparentWidget {
 
-	std::shared_ptr<Font> pFont;
-
 	Module     *module = nullptr;
 	float      *pValue = nullptr;
  	const char *format = nullptr;
@@ -209,7 +216,6 @@ struct NumberWidget : TransparentWidget {
 	static NumberWidget* create (Vec pos, Module *module, float *pValue, float defaultValue, const char *format, char *buffer, int length) {
 		NumberWidget *w = new NumberWidget();
 
-		w->pFont    = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
 		w->box.pos  = pos;
 		w->box.size = mm2px (Vec (4 * length, 7));
 		w->module   = module;
@@ -227,6 +233,8 @@ struct NumberWidget : TransparentWidget {
 	}
 
 	void draw (const DrawArgs &drawArgs) override {
+		std::shared_ptr<Font> pFont;
+		pFont    = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
 		nvgFontFaceId (drawArgs.vg, pFont->handle);
 		nvgFontSize (drawArgs.vg, 18);
 		nvgFillColor (drawArgs.vg, (pStyle == nullptr || *pStyle == STYLE_ORANGE) ? ORANGE : WHITE);
@@ -242,8 +250,6 @@ struct NumberWidget : TransparentWidget {
 */
 struct TextWidget : TransparentWidget {
 
-	std::shared_ptr<Font> pFont;
-
 	Module     *module = nullptr;
 	const char *text   = nullptr;
 	int	    length = 0;
@@ -256,7 +262,6 @@ struct TextWidget : TransparentWidget {
 	static TextWidget* create (Vec pos, Module *module, const char *text, const char * defaultText, int length, int *pTimer) {
 		TextWidget *w = new TextWidget();
 
-		w->pFont    = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
 		w->box.pos  = pos;
 		w->box.pos.y  -= mm2px (5);
 		w->box.size = mm2px (Vec (4 * length, 7));
@@ -276,6 +281,8 @@ struct TextWidget : TransparentWidget {
 	}
 
 	void draw (const DrawArgs &drawArgs) override {
+		std::shared_ptr<Font> pFont;
+		pFont = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
 		const char *delimiter = " - ";
 		char buf[MAX_TEXT_SIZE * 2 + 1 + 3 /* delimiter length */];
         	const char* str = (text != nullptr ? text : defaultText);

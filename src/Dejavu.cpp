@@ -768,7 +768,7 @@ void processOutputChannels() {
 		}
 		else {
 			deWobbleParams();
-			paramsToJson();
+			dejavuParamsToJson();
 		}
 	}
 
@@ -804,7 +804,7 @@ void processOutputChannels() {
 		}
 	}
 
-	void paramsToJson () {
+	void dejavuParamsToJson () {
 		if (getStateJson(MODULE_STATE_JSON) == STATE_ACTIVE) {
 			int activeParamIdx = 0;
 			for (int i = 0; i < NUM_ROWS; i++, activeParamIdx++)
@@ -1017,7 +1017,8 @@ struct LeftWidget : TransparentWidget {
 			if (paramDisplayCycles > 0) {
 				module->greetingCycles = 0;
 				ParamQuantity *pq = module->paramQuantities[param];
-				const char *label = pq->label.data();
+				// const char *label = pq->label.data();
+				const char *label = pq->getLabel().c_str();
 				const char *unit  = pq->unit.data();
 
 				if (!redParam (param)) {
