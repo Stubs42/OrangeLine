@@ -275,7 +275,7 @@ SCL CV input: Polyphonic input to set SCL per cv output channel
 
 SCL Attenuation Trimpod: Attenuator for the CV input, positiv (unipolar), negative (bipolar) 
 
-S&H Button. Switches whether a cv change on output should occur on evry clock tick (S&H off) or only when a trigger output on that channel occured.
+S&H Button. Switches whether a cv change on output should occur on evry clock tick (S&H off) or only when a trigger output or new gate on that channel occured.
 
 S&H Input: Polyphonic input for S&H per channel. If S&H input channel n is > 5V. cv output channel n is set to s&h.
 
@@ -296,7 +296,7 @@ GATE_Output: (Bottom right) Polyphonic Trigger/Gate output.
 Gator is a polyphonic, phase based gate generator. For all of its timing it uses a phase which is a ramp from -10V to 10V of the length of your sequencers clock resolution.
 For example running on 1/16 (clock x 4) the phase is assumed to start 1/32 befor the 1/16 clock at -10V and end 1/32 after the 1/16 clock at 10V. The zero crossing is assumed to be in time with your 1/16 clock. To generate a trigger at the output, an input gate is required. So when just patching 10V to the GATE input of Gator and connect the phase from Swing, Gator will produce 1/16 beats in sync with your clock. Typically you run a gate sequencer on the early clock of Swing to select the 1/16 steps to play. THE Len Knob allows to set the Gate length of the gates Gator generates. The LEN input allows to controll the gate length per step using a step sequencer, best runing on the early clock of Swing. Notable is, that a gate LEN can span multiple phases to play longer notes up 100 phase lengths. 
 
-The TIME input allows to offset the threshold value used to detect a gate to generate in the range of -95% to +95% of a half phase length. So shifting notes nearly 1/32 forward and backward in time is possible. I decided to avoid the 100% because it would be very easy to generate missing notes due to overlapping gates. Needless to say that this CV can also be sequenced to achieve a per step timing of the gates.
+The TIME input allows to offset the threshold value used to detect a gate to generate in the range of -95% to +95% of a half phase length. So shifting notes nearly 1/32 foreard and backward in time is possible. I decided to avoid the 100% because it would be very easy to generate missing notes due to overlapping gates. Needless to say that this CV can also be sequenced to achieve a per step timing of the gates.
 
 The JIT CV input and knob allow to humanize the gates by applying a random offset to the threshold making the gates out of sync by the amount given by those parameters and inputs.
 
@@ -306,7 +306,7 @@ Important to say that GATE, LEN, TIME, JTR, RAT and DLY inputs are polyphonic wi
 
 As an additional feature, Gator can apply a strum timing to the gates of the polyphonic output. The time and direction (negative values strum up, positiv values strum down) can be controlled by the STR knob and input. This is not polyphonic by nature because it already influences all polyphonic channels. Note that also strumming can span cross phase borders.
 
-Any strumming or ratcheting is aborted if a later gate on the same channel starts a new gate event when crossing its phase theshold.
+Any strumming or ratcheting is aborted if a later gate on the same channel starts a new gate event when crossing its give tie theshold.
 
 ### The Panel
 

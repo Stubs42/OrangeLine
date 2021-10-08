@@ -41,7 +41,9 @@ dsp::SchmittTrigger *OL_inStateTrigger  [NUM_TRIGGERS];	//	trigger objects for p
 dsp::PulseGenerator *OL_outStateTrigger [NUM_OUTPUTS];	//	pulse generator objects for outputs (triggers)
 bool OL_isGate [NUM_OUTPUTS];
 bool OL_wasTriggered [NUM_OUTPUTS];		// remember whether we triggered once at all only set when triggerd but never reset
-bool OL_isPoly[NUM_INPUTS + NUM_OUTPUTS];
+bool OL_isPoly [NUM_INPUTS + NUM_OUTPUTS];
+float OL_isGatePoly [NUM_OUTPUTS * POLY_CHANNELS];
+bool OL_isSteadyGate[NUM_OUTPUTS];
 int  OL_polyChannels[NUM_OUTPUTS];
 
 /*
@@ -69,89 +71,65 @@ const char *channelNumbers[16] = {
 
 int    idleSkipCounter = 0;
 int    samplesSkipped  = 0;
-/*
-	Got random implementation from Frozen Wastland Seeds of Change
-*/
-unsigned long mt[N]; /* the array for the state vector  */
-int mti=N+1; /* mti==N+1 means mt[N] is not initialized */
-int latest_seed = 0;
 
-/* initializes mt[N] with a seed */
-void init_genrand(unsigned long s)
-{
+int    lastParamChanged = 0;
+bool   paramChanged = false;
+bool   dataFromJsonCalled = false;
+/*
+	Random implementation derived from the one used in Frozen Wastland Seeds of Change
+*/
+OrangeLineRandom globalRandom;
 	
-	latest_seed = s;
-    mt[0]= s & 0xffffffffUL;
-    for (mti=1; mti<N; mti++) {
-        mt[mti] = 
-	    (1812433253UL * (mt[mti-1] ^ (mt[mti-1] >> 30)) + mti); 
+void initRandom (OrangeLineRandom *rnd, unsigned long s)
+{
+	rnd->mti=N+1; /* mti==N+1 means mt[N] is not initialized */
+	rnd->latestSeed = s;
+    rnd->mt[0]= s & 0xffffffffUL;
+    for (rnd->mti=1; rnd->mti<N; rnd->mti++) {
+        rnd->mt[rnd->mti] = 
+	    (1812433253UL * (rnd->mt[rnd->mti-1] ^ (rnd->mt[rnd->mti-1] >> 30)) + rnd->mti); 
         /* See Knuth TAOCP Vol2. 3rd Ed. P.106 for multiplier. */
         /* In the previous versions, MSBs of the seed affect   */
         /* only MSBs of the array mt[].                        */
         /* 2002/01/09 modified by Makoto Matsumoto             */
-        mt[mti] &= 0xffffffffUL;
+        rnd->mt[rnd->mti] &= 0xffffffffUL;
         /* for >32 bit machines */
     }
+	rnd->getCount = 0;
 }
-
-/* generates a random number on [0,0xffffffff]-interval */
-unsigned long genrand_int32()
+unsigned long getRandomRaw (OrangeLineRandom *rnd)
 {
     unsigned long y;
     static unsigned long mag01[2]={0x0UL, MATRIX_A};
     /* mag01[x] = x * MATRIX_A  for x=0,1 */
 
-    if (mti >= N) { /* generate N words at one time */
+    if (rnd->mti >= N) { /* generate N words at one time */
         int kk;
-
-        if (mti == N+1)   /* if init_genrand() has not been called, */
-            init_genrand(5489UL); /* a default initial seed is used */
-
         for (kk=0;kk<N-M;kk++) {
-            y = (mt[kk]&UPPER_MASK)|(mt[kk+1]&LOWER_MASK);
-            mt[kk] = mt[kk+M] ^ (y >> 1) ^ mag01[y & 0x1UL];
+            y = (rnd->mt[kk]&UPPER_MASK)|(rnd->mt[kk+1]&LOWER_MASK);
+            rnd->mt[kk] = rnd->mt[kk+M] ^ (y >> 1) ^ mag01[y & 0x1UL];
         }
         for (;kk<N-1;kk++) {
-            y = (mt[kk]&UPPER_MASK)|(mt[kk+1]&LOWER_MASK);
-            mt[kk] = mt[kk+(M-N)] ^ (y >> 1) ^ mag01[y & 0x1UL];
+            y = (rnd->mt[kk]&UPPER_MASK)|(rnd->mt[kk+1]&LOWER_MASK);
+            rnd->mt[kk] = rnd->mt[kk+(M-N)] ^ (y >> 1) ^ mag01[y & 0x1UL];
         }
-        y = (mt[N-1]&UPPER_MASK)|(mt[0]&LOWER_MASK);
-        mt[N-1] = mt[M-1] ^ (y >> 1) ^ mag01[y & 0x1UL];
-
-        mti = 0;
+        y = (rnd->mt[N-1]&UPPER_MASK)|(rnd->mt[0]&LOWER_MASK);
+        rnd->mt[N-1] = rnd->mt[M-1] ^ (y >> 1) ^ mag01[y & 0x1UL];
+       rnd->mti = 0;
     }
-  
-    y = mt[mti++];
-
+    y = rnd->mt[rnd->mti++];
     /* Tempering */
     y ^= (y >> 11);
     y ^= (y << 7) & 0x9d2c5680UL;
     y ^= (y << 15) & 0xefc60000UL;
     y ^= (y >> 18);
-
+	rnd->getCount++;
     return y;
 }
 
-/* generates a random number on [0,1)-real-interval */
-double genrand_real()
+double getRandom (OrangeLineRandom *rnd)
 {
-    return genrand_int32()*(1.0/4294967296.0); 
-    /* divided by 2^32 */
-}
-
-float normal_number() {
-	const double x1 = .68;
-	const double x2 = .92;
-	double x = genrand_real();
-	double y = genrand_real();
-	double s = (y<.5) ? .5 : -.5;
-	if (x<x1) {
-		return y*.333*s + .5;
-	} else if (x<x2) {
-		return (y*.333+.333)*s + .5;		
-	} else {
-		return (y*.333+.666)*s + .5;
-	}
+	return getRandomRaw (rnd) * (1.0/4294967296.0);
 }
 
 // ********************************************************************************************************************************
@@ -159,7 +137,7 @@ float normal_number() {
 	Initialization
 	Constructor has to create a valid and consistent initial state to present to the dataToJson call
 	right after adding the module.
-	Now to cases:
+	Now two cases:
 	1.	dataToJson is called first:	module added to the patch
 	2.	dataFromJson is called first: patch was (re)loaded or a preset was loaded
 	In both cases we may have to init non persistent state of the module after both actions.
@@ -180,6 +158,7 @@ inline void initializeInstance () {
 	memset (          OL_isPoly, false, sizeof (OL_isPoly));	// Must be before initStateTypes ()!
 	memset (OL_customChangeMask,    0L, sizeof (OL_customChangeMask));	// Initialie customChangeMasks to 0s
 
+	memset (    OL_isSteadyGate, false, sizeof (OL_isSteadyGate));		// Initialize SteadyGateFlags
 	initStateTypes ();			//	Initialize state types to defaults
 	moduleInitStateTypes ();	//	Method to overwrite defaults by module specific settings 
 	allocateTriggers();			//	Allocate triggers and pulse generators for trigger I/O
@@ -190,6 +169,7 @@ inline void initializeInstance () {
 	memset (          OL_isGate, false, sizeof (OL_isGate));			// Initialize trg outputs to TRIGGER = false (GATE = true)
 	memset (    OL_wasTriggered, false, sizeof (OL_wasTriggered));		// Initialize trg outputs to TRIGGER = false (GATE = true)
 	memset (    OL_polyChannels,     0, sizeof (OL_polyChannels));		// Initialize number of poly channels for outputs
+	memset (      OL_isGatePoly,     0, sizeof (OL_isGatePoly));		// Initialize number isGate definitions of poly channels for outputs
 
 	memset (          OL_statePoly,   0.f, sizeof (OL_statePoly));
 	memset (  OL_inStateChangePoly, false, sizeof (OL_inStateChangePoly));
@@ -207,6 +187,10 @@ inline void initializeInstance () {
 	*/
 	config (NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 	moduleParamConfig ();
+	/*
+		Initialize globalRandomGeneratorInstance with zero seed
+	*/
+	initRandom (&globalRandom, 0);
 }
 
 /**
@@ -311,6 +295,16 @@ inline void OL_setInState (int stateIdx, float value) {
 		OL_outStateChange[stateIdx] = OL_inStateChange[stateIdx] = true;
 	}
 }
+
+inline void OL_setInStatePoly (int stateIdx, int channel, float value) {
+	if (OL_statePoly[(NUM_INPUTS + stateIdx) * POLY_CHANNELS + channel] != value) {
+		OL_statePoly[(NUM_INPUTS + stateIdx) * POLY_CHANNELS + channel] = value;
+		if (stateIdxOutput (stateIdx) != STATE_TYPE_TRIGGER || value > 0.) {
+			OL_inStateChangePoly[stateIdx * POLY_CHANNELS + channel] = true;
+			OL_outStateChangePoly[stateIdx * POLY_CHANNELS + channel] = true;
+		}
+	}
+}
 /**
 	Method to set the outgoing state of params
 	output state change is flagged
@@ -320,6 +314,14 @@ inline void OL_setOutState (int stateIdx, float value) {
 		OL_state[stateIdx]  = value;
 		OL_outStateChange[stateIdx] = true;
 	}
+}
+inline void OL_setOutStatePoly (int stateIdx, int channel, float value) {
+	// if (OL_statePoly[(NUM_INPUTS + stateIdx) * POLY_CHANNELS + channel] != value) {
+		OL_statePoly[(NUM_INPUTS + stateIdx) * POLY_CHANNELS + channel] = value;
+		if (stateIdxOutput (stateIdx) != STATE_TYPE_TRIGGER || value > 0.) {
+			OL_outStateChangePoly[stateIdx * POLY_CHANNELS + channel] = true;
+		}
+	// }
 }
 /**
 	Method to configure json labels
@@ -337,7 +339,6 @@ inline NVGcolor getTextColor () {
 	Generic process() Method
 */
 void process (const ProcessArgs &args) override {
-
 	bool skip = moduleSkipProcess();
 	idleSkipCounter = (idleSkipCounter + 1) % IDLESKIP;
 	if (skip) {
@@ -357,6 +358,7 @@ void process (const ProcessArgs &args) override {
 
 	OL_initialized = true;
 	samplesSkipped = 0;
+	dataFromJsonCalled = false;
 }
 
 /**
@@ -441,8 +443,11 @@ inline void processParamsAndInputs () {
 		}
 		else {
 			setInStateParam (paramIdx, params[paramIdx].getValue ());
-			if (inChangeParam (paramIdx))
+			if (inChangeParam (paramIdx) && OL_initialized) {
 				OL_customChangeBits |= getCustomChangeMaskParam (paramIdx);
+				lastParamChanged = paramIdx;
+				paramChanged = true;
+			}
 		}
 	}
 	/*
@@ -549,8 +554,18 @@ inline void processActiveOutputTriggers () {
 					}
 					else 
 						OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cvOutPolyIdx] = 0.f;
-					if (OL_isGate[outputIdx] && OL_wasTriggeredPoly[cvOutPolyIdx])
-						trgActive = !trgActive;
+					
+					bool isGate = OL_isGate[outputIdx];
+					if (OL_isGatePoly[outputIdx * POLY_CHANNELS + channel] > 5.f)
+						isGate = true;
+
+					if (isGate && OL_wasTriggeredPoly[cvOutPolyIdx]) {
+						OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cvOutPolyIdx] = 10.f;
+						if (OL_isSteadyGate[outputIdx])
+							trgActive = true;
+						else
+							trgActive = !trgActive;
+					}
 					outputs[outputIdx].setVoltage (trgActive ? 10.f : 0.f, channel);
 				}
 			}
@@ -567,8 +582,12 @@ inline void processActiveOutputTriggers () {
 				}
 				else 
 					setStateOutput (outputIdx, 0.f);
-				if (OL_isGate[outputIdx] && OL_wasTriggered[outputIdx])
-					trgActive = !trgActive;
+				if (OL_isGate[outputIdx] && OL_wasTriggered[outputIdx]) {
+					if (OL_isSteadyGate[outputIdx])
+						trgActive = true;
+					else
+						trgActive = !trgActive;
+				}
 				outputs[outputIdx].setVoltage (trgActive ? 10.f : 0.f);
 			}
 		}
@@ -602,13 +621,12 @@ inline void reflectChanges () {
 			int channel;
 			for (channel = 0; channel < getOutPolyChannels (outputIdx); channel++) {
 				int cvOutPolyIdx = outputIdx * POLY_CHANNELS + channel;
-				if (OL_outStateChangePoly [cvOutPolyIdx]) {
-					if (getStateTypeOutput (outputIdx) == STATE_TYPE_VOLTAGE) {
-						outputs[outputIdx].setVoltage (OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cvOutPolyIdx], channel);    
-					}
-					else	// OL_stateType[stateIdx + channel] == STATE_TYPE_TRIGGER
+				if (getStateTypeOutput (outputIdx) == STATE_TYPE_VOLTAGE) 
+					outputs[outputIdx].setVoltage (OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cvOutPolyIdx], channel);    
+				else
+					if (OL_outStateChangePoly [cvOutPolyIdx])
 						((dsp::PulseGenerator*)(OL_outStateTriggerPoly[cvOutPolyIdx]))->trigger (0.001f);
-				}
+
 				/*
 					Pulse generators of active Trigger outputs have to be processed independently of changes in current process() run
 				*/
@@ -618,23 +636,29 @@ inline void reflectChanges () {
 						OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cvOutPolyIdx] = 10.f;
 						OL_wasTriggeredPoly[cvOutPolyIdx] = true;
 					}
-					else 
+					else {
 						OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cvOutPolyIdx] = 0.f;
-					if (OL_isGate[outputIdx] && OL_wasTriggeredPoly[cvOutPolyIdx])
-						trgActive = !trgActive;
+					}
+					bool isGate = OL_isGate[outputIdx];
+					if (OL_isGatePoly[outputIdx * POLY_CHANNELS + channel] > 5.f)
+						isGate = true;
+					if (isGate && OL_wasTriggeredPoly[cvOutPolyIdx]) {
+						if (OL_isSteadyGate[outputIdx])
+							trgActive = true;
+						else
+							trgActive = !trgActive;
+					}
 					outputs[outputIdx].setVoltage (trgActive ? 10.f : 0.f, channel);
 				}
 			}
 			outputs[outputIdx].setChannels(channel);
 		}
 		else {
-			if (changeOutput (outputIdx)) {
-				if (getStateTypeOutput (outputIdx) == STATE_TYPE_VOLTAGE) {
-					outputs[outputIdx].setVoltage (getStateOutput (outputIdx));    
-				}
-				else	// OL_stateType[stateIdx] == STATE_TYPE_TRIGGER
+			if (getStateTypeOutput (outputIdx) == STATE_TYPE_VOLTAGE)
+				outputs[outputIdx].setVoltage (getStateOutput (outputIdx));    
+			else
+				if (changeOutput (outputIdx))
 					((dsp::PulseGenerator*)(OL_outStateTrigger[outputIdx]))->trigger (0.001f);
-			}
 			/*
 				Pulse generators of active Trigger outputs have to be processed independently of changes in current process() run
 			*/
@@ -646,8 +670,12 @@ inline void reflectChanges () {
 				}
 				else 
 					setStateOutput (outputIdx, 0.f);
-				if (OL_isGate[outputIdx] && OL_wasTriggered[outputIdx])
-					trgActive = !trgActive;
+				if (OL_isGate[outputIdx] && OL_wasTriggered[outputIdx]) {
+					if (OL_isSteadyGate[outputIdx])
+						trgActive = true;
+					else
+						trgActive = !trgActive;
+				}
 				outputs[outputIdx].setVoltage (trgActive ? 10.f : 0.f);
 			}
 		}
@@ -671,7 +699,6 @@ inline void reflectChanges () {
 	Create a json object for VCV to store as preset or when saving a patch (including autosave)
 */
 json_t *dataToJson () override {
-
 	json_t *rootJ = json_object ();
 	int jsonIdx;
 	for (jsonIdx = 0; jsonIdx < NUM_JSONS; jsonIdx ++) {
@@ -688,8 +715,8 @@ void dataFromJson (json_t *rootJ) override {
 	for (int jsonIdx = 0; jsonIdx < NUM_JSONS; jsonIdx ++)
 		if ((pJson = json_object_get (rootJ, OL_jsonLabel[jsonIdx])) != nullptr)
 			setStateJson (jsonIdx, json_real_value (pJson));
-
-	OL_initialized = false;	//  indiacte that we have to reinitialize
+	OL_initialized = false;		// indiacte that we have to reinitialize
+	dataFromJsonCalled = true;	// indicate that we reloaded a patch or a preset
 }
 
 /**

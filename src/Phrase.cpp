@@ -128,18 +128,7 @@ struct Phrase : Module {
 		#pragma GCC diagnostic pop
 
 		setStateJson (STYLE_JSON, float(STYLE_ORANGE));
-		setStateJson (RESET_JSON, 0.f);
-		setStateJson (PHRASELENCOUNTER_JSON, 0.f);
-		setStateJson (PHRASEDURCOUNTER_JSON, 0.f);
-		setStateJson (SLAVELENCOUNTER_JSON, 0.f);
-		setStateJson (SLAVEPATTERN_JSON, 0.f);
-		setStateJson (MASTERDELAYCOUNTER_JSON, 0.f);
-		setStateJson (TROWAFIX_JSON, 0.f);
-		setStateJson (DIVCOUNTER_JSON, 0.f);
-		setStateJson (CLOCKDELAYCOUNTER_JSON, 0.f);
-		setStateJson (CLOCKWITHRESET_JSON, 0.f);
-		setStateJson (CLOCKWITHSPA_JSON, 0.f);
-		setStateJson (CLOCKWITHSPH_JSON, 0.f);
+		moduleReset();
 	}
 
 	/**
@@ -153,6 +142,9 @@ struct Phrase : Module {
 		configParam (MASTER_PTN_PARAM, -10.f, 10.f,  0.f, "Master Input Pattern Offset", "",  0.f, 1.f, 0.f);
 		configParam (MASTER_PTN_PARAM, -10.f, 10.f,  0.f, "Master Input Pattern Offset", "",  0.f, 1.f, 0.f);
 		configParam (CLK_DLY_PARAM,  0.f,  32.f,  0.f, "Slave Clock Delay", " Samples", 0.f, 1.f, 0.f);
+	}
+
+	inline void moduleCustomInitialize () {
 	}
 
 	/**
@@ -419,9 +411,6 @@ struct Phrase : Module {
 		setStateJson (CLOCKWITHSPH_JSON,       float(clockWithSph));
 		setStateJson (SLAVEPATTERN_JSON,       slavePattern);
 		setStateJson (DIVCOUNTER_JSON,         divCounter);
-	}
-
-	inline void moduleCustomInitialize () {
 	}
 
 	/**
