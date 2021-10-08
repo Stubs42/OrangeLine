@@ -761,7 +761,7 @@ void processOutputChannels() {
 
 	void syncParams () {
 		if (oldModuleState != getStateJson (MODULE_STATE_JSON)) {
-			paramsFromJson ();
+			dejavuParamsFromJson ();
 			reconfigureForState ();
 			wobbleParams ();
 			oldModuleState = getStateJson (MODULE_STATE_JSON);
@@ -772,7 +772,7 @@ void processOutputChannels() {
 		}
 	}
 
-	void paramsFromJson () {
+	void dejavuParamsFromJson () {
 		if ((getStateJson(MODULE_STATE_JSON) == STATE_EDIT_RANGES || getStateJson(MODULE_STATE_JSON) == STATE_EDIT_OFFSETS)
 		    && oldModuleState == STATE_ACTIVE) {
 			setStateParam (HEAT_PARAM, getStateJson(DISPLAY_ALPHA_JSON));
