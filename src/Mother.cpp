@@ -294,6 +294,7 @@ struct Mother : Module {
 		Module specific process method called from process () in OrangeLineCommon.hpp
 	*/
 	inline void moduleProcess (const ProcessArgs &args) {
+		if (!widgetReady) return;	// do not strt processing before the widget is ready
 		int reflectDecrement = (1 + samplesSkipped);
 		if (reflectCounter >= 0 )
 			reflectCounter -= reflectDecrement;
@@ -303,7 +304,7 @@ struct Mother : Module {
 
 		checkTmpHead ();
 
-		if (styleChanged && widgetReady) {
+		if (styleChanged) {
 			switch (int(getStateJson(STYLE_JSON))) {
 				case STYLE_ORANGE:
 					brightPanel->visible = false;
