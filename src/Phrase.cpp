@@ -46,6 +46,7 @@ struct Phrase : Module {
 	float oldClkInputVoltage = 0;
 	int   oldClockDelayCounter = 0;
 	int   oldMasterDelayCounter = 0;
+	bool  widgetReady = false;
 
 
 // ********************************************************************************************************************************
@@ -188,7 +189,7 @@ struct Phrase : Module {
 	Methods called directly or indirectly called from process () in OrangeLineCommon.hpp
 */
 	void handleStyleChange () {
-		if (styleChanged) {
+		if (styleChanged && widgetReady) {
 			switch (int(getStateJson (STYLE_JSON))) {
 				case STYLE_ORANGE:
 					brightPanel->visible = false;
@@ -349,7 +350,6 @@ struct Phrase : Module {
 		Module specific process method called from process () in OrangeLineCommon.hpp
 	*/
 	inline void moduleProcess (const ProcessArgs &args) {
-
 		phraseDurCounter   = int(getStateJson (PHRASEDURCOUNTER_JSON));
 		phraseLenCounter   = int(getStateJson (PHRASELENCOUNTER_JSON));
 		slaveLenCounter    = int(getStateJson (SLAVELENCOUNTER_JSON));
@@ -495,6 +495,8 @@ struct PhraseWidget : ModuleWidget {
         addOutput (createOutputCentered<PJ301MPort>	(mm2px (Vec ( 33.737 + 4.2 , /* 128.5 - */ 90.410 + 4.2)),  module, SLAVE_RST_OUTPUT));
         addOutput (createOutputCentered<PJ301MPort>	(mm2px (Vec ( 33.737 + 4.2 , /* 128.5 - */100.093 + 4.2)),  module, SLAVE_CLK_OUTPUT));
         addOutput (createOutputCentered<PJ301MPort>	(mm2px (Vec ( 33.737 + 4.2 , /* 128.5 - */109.777 + 4.2)),  module, SLAVE_PTN_OUTPUT));
+
+  	    if (module) module->widgetReady = true;
 	}        
 
 	struct PhraseStyleItem : MenuItem {

@@ -40,6 +40,7 @@ struct Swing : Module {
     float   cmp = 0;
     bool    tClkFired = true;
 	int		tClkDelay = -1;
+	bool  	widgetReady = false;
 
 // ********************************************************************************************************************************
 /*
@@ -139,7 +140,7 @@ struct Swing : Module {
 		Module specific process method called from process () in OrangeLineCommon.hpp
 	*/
 	inline void moduleProcess (const ProcessArgs &args) {
-		if (styleChanged) {
+		if (styleChanged && widgetReady) {
 			switch (int(getStateJson(STYLE_JSON))) {
 				case STYLE_ORANGE:
 					brightPanel->visible = false;
@@ -296,7 +297,9 @@ struct SwingWidget : ModuleWidget {
             Vec pos = Vec (3.169 + 4 + x * (13.621 - 3.169), 128.5 - 85.535 - 4 + y * (13.621 - 3.169));
             addParam (createParamCentered<RoundSmallBlackKnob> (mm2px (pos), module, TIM_PARAM_01 +  i));
 		}
-	}
+  	    
+  	    if (module) module->widgetReady = true;
+}
 
 	struct SwingStyleItem : MenuItem {
 		Swing *module;

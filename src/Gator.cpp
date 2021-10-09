@@ -46,7 +46,7 @@ struct Gator : Module {
     float ratDly[POLY_CHANNELS];
     float ratCmp[POLY_CHANNELS];
     int   ratPhsCnt[POLY_CHANNELS];
-
+	bool  widgetReady = false;
 
 	/*
 		Variables used speed up processing
@@ -205,7 +205,7 @@ struct Gator : Module {
 		Module specific process method called from process () in OrangeLineCommon.hpp
 	*/
 	inline void moduleProcess (const ProcessArgs &args) {
-		if (styleChanged) {
+		if (styleChanged && widgetReady) {
 			switch (int(getStateJson(STYLE_JSON))) {
 				case STYLE_ORANGE:
 					brightPanel->visible = false;
@@ -431,6 +431,8 @@ struct GatorWidget : ModuleWidget {
         addParam  (createParamCentered<RoundSmallBlackKnob> (calculateCoordinates (13.780,  93.283, OFFSET_RoundSmallBlackKnob), module,  STR_PARAM ));
 		addOutput (createOutputCentered<PJ301MPort>		    (calculateCoordinates (13.780, 109.842, OFFSET_PJ301MPort),          module, GATE_OUTPUT));
 		addInput  (createInputCentered<PJ301MPort>          (calculateCoordinates ( 3.415, 109.842, OFFSET_PJ301MPort),          module,  RST_INPUT ));
+  	    
+  	    if (module) module->widgetReady = true;
 	}
 
 	struct GatorStyleItem : MenuItem {

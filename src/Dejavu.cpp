@@ -56,6 +56,8 @@ struct Dejavu : Module {
 	bool effectiveCountsPrepared = false;
 	bool resetFromTrigger = false;
 	bool gateActive[POLY_CHANNELS] = {false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false };
+	bool  widgetReady = false;
+
 // ********************************************************************************************************************************
 /*
 	Initialization
@@ -620,7 +622,7 @@ void processOutputChannels() {
 		Module specific process method called from process () in OrangeLineCommon.hpp
 	*/
 	inline void moduleProcess (const ProcessArgs &args) {
-		if (styleChanged) {
+		if (styleChanged && widgetReady) {
 			switch (int(getStateJson(STYLE_JSON))) {
 				case STYLE_ORANGE:
 					brightPanel->visible = false;
@@ -1381,6 +1383,8 @@ struct DejavuWidget : ModuleWidget {
 #ifdef USE_DEBUG_OUTPUT
 		addOutput (createOutputCentered<PJ301MPort>	(calculateCoordinates (0, 0, OFFSET_PJ301MPort),  module, DEBUG_OUTPUT));
 #endif
+  	    
+  	    if (module) module->widgetReady = true;
 	}
 
     struct PolyChannelsItem : MenuItem {

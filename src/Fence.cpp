@@ -68,7 +68,7 @@ struct Fence : Module {
 	float cvOut = 0.f;
 
 	int   trgChannels = 0;
-
+	bool  widgetReady = false;
 
 	/*
 		Variables used speed up processing
@@ -358,7 +358,7 @@ struct Fence : Module {
 		Module specific process method called from process () in OrangeLineCommon.hpp
 	*/
 	inline void moduleProcess (const ProcessArgs &args) {
-		if (styleChanged) {
+		if (styleChanged && widgetReady) {
 			switch (int(getStateJson(STYLE_JSON))) {
 				case STYLE_ORANGE:
 					brightPanel->visible = false;
@@ -984,6 +984,8 @@ struct FenceWidget : ModuleWidget {
 
 		addOutput (createOutputCentered<PJ301MPort>		(mm2px (Vec (18.02  + 4.2 , 128.5 - 29.609 - 4.2)),  module, TRG_OUTPUT));
 		addOutput (createOutputCentered<PJ301MPort>		(mm2px (Vec (18.02  + 4.2 , 128.5 - 11.829 - 4.2)),  module, CV_OUTPUT));
+  	    
+  	    if (module) module->widgetReady = true;
 	}
 
 	struct FenceStyleItem : MenuItem {

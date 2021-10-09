@@ -79,7 +79,8 @@ struct Mother : Module {
 	bool	cBasedDisplayChanged = false;
 	bool	disableGrabChanged = false;
 	bool	disableDnaChanged = false;
-	
+	bool  widgetReady = false;
+
 	#include "MotherJsonLabels.hpp"
 	#include "MotherScales.hpp"
 
@@ -302,7 +303,7 @@ struct Mother : Module {
 
 		checkTmpHead ();
 
-		if (styleChanged) {
+		if (styleChanged && widgetReady) {
 			switch (int(getStateJson(STYLE_JSON))) {
 				case STYLE_ORANGE:
 					brightPanel->visible = false;
@@ -1026,6 +1027,8 @@ struct MotherWidget : ModuleWidget {
 		childWidget = TextWidget::create (mm2px (Vec(26.742 - 0.25, 128.5 - 86.537)), module, text, "C", 2, nullptr);
 		childWidget->pStyle = (module == nullptr ? nullptr : &(module->OL_state[STYLE_JSON]));
 		addChild (childWidget);
+  	    
+  	    if (module) module->widgetReady = true;
 	}
 
 	struct MotherScalesItem : MenuItem {
