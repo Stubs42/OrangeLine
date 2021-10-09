@@ -352,9 +352,7 @@ void process (const ProcessArgs &args) override {
 	initialize ();
 	processParamsAndInputs ();
 	moduleProcessState ();
-	DEBUG("start module Process");
 	moduleProcess (args);
-	DEBUG("end module Process");
 	moduleReflectChanges ();
 	reflectChanges();
 
