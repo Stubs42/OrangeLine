@@ -275,13 +275,13 @@ SCL CV input: Polyphonic input to set SCL per cv output channel
 
 SCL Attenuation Trimpod: Attenuator for the CV input, positiv (unipolar), negative (bipolar) 
 
-S&H Button. Switches whether a cv change on output should occur on evry clock tick (S&H off) or only when a trigger output or new gate on that channel occured.
+S&H Button. Switches whether a cv change on output should occur on evry clock tick (S&H off), on each step if a trigger or gate is generated (S&H yellow) or only when a trigger output or new gate on that channel occured (s&h red).
 
-S&H Input: Polyphonic input for S&H per channel. If S&H input channel n is > 5V. cv output channel n is set to s&h.
+S&H Input: Polyphonic input for S&H per channel. If the S&H input channel is < 1V, the cv output for this channel changes on on evry clock tick. If the S&H input channel is >= 1V and < 2V, the cv output for this channel changes for every trigger or gate generated only. If the S&H input channel is >= 2V, the cv output for this channel changes for every trigger or a new gate generated only. 
 
-GATE Button: Defines whether the trigger output generates triggers (off) or gates (on).
+GATE Button: Defines whether the trigger output generates triggers (off), gates (yello) or contignous gates(red)).
 
-GATE INPUT: Polyphonic GATE input. Defines GATE/TRG for each polychannel
+GATE INPUT: Polyphonic GATE input. Defines GATE/TRG for each polychannel. < 1V is trigger mode, >=1 and < 2 is gate mode (new gate on every clock tick) and on >=2 the gate stays on contignously for postitiv following gates.
 
 CV Output: (Upper bottom right) Polyphonic CV output
 
