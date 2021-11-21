@@ -1196,7 +1196,11 @@ struct RigthWidget : TransparentWidget {
 				flashFrameCounter[i]--;
 	}
 
-	void draw (const DrawArgs &drawArgs) override {
+	void drawLayer (const DrawArgs &drawArgs, int layer) override {
+		if (layer != 1) {
+			Widget::drawLayer(drawArgs, layer);
+			return;
+		}
 		if (module) {
 			
 			float displayAlpha = module->getStateJson(DISPLAY_ALPHA_JSON);
@@ -1328,6 +1332,7 @@ struct RigthWidget : TransparentWidget {
 			}
 			decrementFlashCounters();
 		}
+		Widget::drawLayer(drawArgs, 1);
 	}
 };
 /**
