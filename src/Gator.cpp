@@ -415,11 +415,11 @@ struct GatorWidget : ModuleWidget {
 		addInput  (createInputCentered<PJ301MPort>          (calculateCoordinates ( 3.415,   9.512, OFFSET_PJ301MPort),          module,  PHS_INPUT ));
 		addInput  (createInputCentered<PJ301MPort>          (calculateCoordinates (13.575,   9.512, OFFSET_PJ301MPort),          module,  CMP_INPUT ));
 		addInput  (createInputCentered<PJ301MPort>          (calculateCoordinates ( 3.415,  27.292, OFFSET_PJ301MPort),          module, GATE_INPUT ));
-        addParam  (createParamCentered<RoundSmallBlackKnob> (calculateCoordinates (13.780,  27.497, OFFSET_RoundSmallBlackKnob), module,  LEN_PARAM ));
-		addInput  (createInputCentered<PJ301MPort>          (calculateCoordinates ( 3.415,  37.452, OFFSET_PJ301MPort),          module, TIME_INPUT ));
-		addInput  (createInputCentered<PJ301MPort>          (calculateCoordinates (13.575,  37.452, OFFSET_PJ301MPort),          module,  LEN_INPUT ));
-		addInput  (createInputCentered<PJ301MPort>          (calculateCoordinates ( 3.415,  49.644, OFFSET_PJ301MPort),          module,  JTR_INPUT ));
-        addParam  (createParamCentered<RoundSmallBlackKnob> (calculateCoordinates (13.780,  49.849, OFFSET_RoundSmallBlackKnob), module,  JTR_PARAM ));
+        addParam  (createParamCentered<RoundSmallBlackKnob> (calculateCoordinates ( 3.620,  39.689, OFFSET_RoundSmallBlackKnob), module,  LEN_PARAM ));
+		addInput  (createInputCentered<PJ301MPort>          (calculateCoordinates (13.575,  27.292, OFFSET_PJ301MPort),          module, TIME_INPUT ));
+		addInput  (createInputCentered<PJ301MPort>          (calculateCoordinates ( 3.415,  49.644, OFFSET_PJ301MPort),          module,  LEN_INPUT ));
+		addInput  (createInputCentered<PJ301MPort>          (calculateCoordinates (13.575,  49.644, OFFSET_PJ301MPort),          module,  JTR_INPUT ));
+        addParam  (createParamCentered<RoundSmallBlackKnob> (calculateCoordinates (13.781,  39.689, OFFSET_RoundSmallBlackKnob), module,  JTR_PARAM ));
         RoundSmallBlackKnob *knob = 
                    createParamCentered<RoundSmallBlackKnob> (calculateCoordinates ( 3.620,  66.867, OFFSET_RoundSmallBlackKnob), module,  RAT_PARAM );
         knob->snap = true;
