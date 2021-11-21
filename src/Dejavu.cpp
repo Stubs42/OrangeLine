@@ -254,8 +254,8 @@ struct Dejavu : Module {
 		setStateJson (DUR_COUNTER_JSON + 1, 0.f);
 		setStateJson (DUR_COUNTER_JSON + 2, 0.f);
 		setStateJson (DUR_COUNTER_JSON + 3, 0.f);
-		setStateJson (GATE_JSON, TRIGGER_MODE);
-		setStateJson (SH_JSON, 0.f);
+		setStateJson (GATE_JSON, GATE_OFF);
+		setStateJson (SH_JSON, SH_OFF);
 		setStateJson (DIVCOUNTER_JSON, 0.f);
 		setStateJson (POLY_CHANNELS_JSON, 1.f);
 		setStateJson (MODULE_STATE_JSON, STATE_ACTIVE);
@@ -400,12 +400,9 @@ void processOutputChannels() {
 		if (heat >= gateRandom) {
 			OL_statePoly[ (NUM_INPUTS + GATE_OUTPUT) * POLY_CHANNELS + channel] = 10.f;
 			OL_outStateChangePoly[GATE_OUTPUT * POLY_CHANNELS + channel] = true;
-			if (isGate (GATE_OUTPUT) || OL_isGatePoly[GATE_OUTPUT * POLY_CHANNELS + channel] >= 5.f) {
-				if (gateActive[channel] == false)
-					fired = true;
-			}
-			else
+			if (gateActive[channel] == false) {
 				fired = true;
+			}
 			gateActive[channel] = true;
 		}
 		else {
@@ -415,16 +412,28 @@ void processOutputChannels() {
 			outputs[GATE_OUTPUT].setVoltage (0.f, channel);
 			gateActive[channel] = false;
 		}
-		bool sh = (getStateJson(SH_JSON) == 1.f);
+		bool sh = false;
+		if (getStateJson(SH_JSON) == SH_OFF)
+		    sh = true;
+		if (getStateJson(SH_JSON) == SH_ON && gateActive[channel])
+			sh = true;
+		if (getStateJson(SH_JSON) == SH_CONT && fired)
+			sh = true;
 		if (getInputConnected(SH_INPUT)) {
 			float value = lastShValue;
 			if (channel <= inputs[SH_INPUT].getChannels()) {
 				value = OL_statePoly[SH_INPUT * POLY_CHANNELS + channel];
 			}
 			lastShValue = value;
-			sh = (value > 5.f);
+			sh = false;
+			if (value < SH_ON)
+				sh = true;
+			else if (value >= SH_CONT)
+				sh = fired;
+			else
+				sh = gateActive[channel];
 		}
-		if (!sh || fired) {
+		if (sh) {
 			float scl = getStateParam (SCL_PARAM) / 100.f;
 			if (getInputConnected (SCL_INPUT)) {
 				float sclInput = 0.f;
@@ -622,7 +631,9 @@ void processOutputChannels() {
 		Module specific process method called from process () in OrangeLineCommon.hpp
 	*/
 	inline void moduleProcess (const ProcessArgs &args) {
-		if (!widgetReady) return;	// do not strt processing before the widget is ready
+		if (!widgetReady) {
+			return;	// do not strt processing before the widget is ready
+		}
 		if (styleChanged) {
 			switch (int(getStateJson(STYLE_JSON))) {
 				case STYLE_ORANGE:
@@ -878,11 +889,7 @@ void processOutputChannels() {
 	*/
 	inline void moduleProcessState () {
 		if (inChangeParam (GATE_PARAM)) {	//	User clicked on tr/gt button
-			if (getStateJson (GATE_JSON) == 0.f)
-				setStateJson (GATE_JSON, 1.f);
-			else {
-				setStateJson (GATE_JSON, 0.f);
-			}
+		    setStateJson (GATE_JSON, float((int(getStateJson (GATE_JSON)) + 1) % 3));
 		}
 
 		if (getStateJson (GATE_JSON) > 0.f && !getInputConnected(GATE_INPUT))
@@ -896,7 +903,7 @@ void processOutputChannels() {
 		}
 
 		if (inChangeParam (SH_PARAM))	{
-			setStateJson (SH_JSON, float((int(getStateJson (SH_JSON)) + 1) % 2));
+			setStateJson (SH_JSON, float((int(getStateJson (SH_JSON)) + 1) % 3));
 		}
 	}
 
@@ -907,20 +914,43 @@ void processOutputChannels() {
 
 		if (getInputConnected (GATE_INPUT)) {
 			int channels = inputs[GATE_INPUT].getChannels();
-			float lastValue = 0;
+			int lastValue = 0;
 			for (int channel = 0; channel < POLY_CHANNELS; channel ++) {
-				float value;
+				int value;
 				if (channel > channels)
 					value = lastValue;
 				else {
-					value = OL_statePoly[GATE_INPUT * POLY_CHANNELS + channel];
+					value = int(OL_statePoly[GATE_INPUT * POLY_CHANNELS + channel]);
 				}
-				OL_isGatePoly[GATE_OUTPUT * POLY_CHANNELS + channel] = value;
+				if (value < GATE_ON) {
+					OL_isGatePoly[GATE_OUTPUT * POLY_CHANNELS + channel] =  false;
+					OL_isSteadyGate[GATE_OUTPUT * POLY_CHANNELS + channel] = false;
+				}
+				else if (value >= GATE_CONT) {
+					OL_isGatePoly[GATE_OUTPUT * POLY_CHANNELS + channel] = true;
+					OL_isSteadyGate[GATE_OUTPUT * POLY_CHANNELS + channel]= true;
+				}
+				else {
+					OL_isGatePoly[GATE_OUTPUT * POLY_CHANNELS + channel] = true;
+					OL_isSteadyGate[GATE_OUTPUT * POLY_CHANNELS + channel]= false;
+				}
 				lastValue = value;
 			}
 		} else {
-			for (int channel = 0; channel < POLY_CHANNELS; channel ++)
-				OL_isGatePoly[GATE_OUTPUT * POLY_CHANNELS + channel] = 0.f;
+			for (int channel = 0; channel < POLY_CHANNELS; channel ++) {
+				if (getStateJson(GATE_JSON) == GATE_OFF) {
+					OL_isGatePoly[GATE_OUTPUT * POLY_CHANNELS + channel] = false;
+					OL_isSteadyGate[GATE_OUTPUT * POLY_CHANNELS + channel] = false;
+				}
+				else if (getStateJson(GATE_JSON) == GATE_ON) {
+					OL_isGatePoly[GATE_OUTPUT * POLY_CHANNELS + channel] = true;
+					OL_isSteadyGate[GATE_OUTPUT * POLY_CHANNELS + channel]= false;
+				}
+				else {
+					OL_isGatePoly[GATE_OUTPUT * POLY_CHANNELS + channel] = true;
+					OL_isSteadyGate[GATE_OUTPUT * POLY_CHANNELS + channel]= true;
+				}
+			}
 		}
 
 		for (int row = 0; row < NUM_ROWS; row++) {
@@ -935,15 +965,19 @@ void processOutputChannels() {
 				setRgbLight (REP_LIGHT_RGB + (3 * row), ONOFF_COLOR_OFF);
 		}
 
-		if (getStateJson (GATE_JSON) == 1.)
-			setRgbLight (GATE_LIGHT_RGB, GATE_COLOR_ON);
-		else
+		if (getStateJson (GATE_JSON) == GATE_OFF)
 			setRgbLight (GATE_LIGHT_RGB, GATE_COLOR_OFF);
+		if (getStateJson (GATE_JSON) == GATE_ON)
+			setRgbLight (GATE_LIGHT_RGB, GATE_COLOR_ON);
+		if (getStateJson (GATE_JSON) == GATE_CONT)
+			setRgbLight (GATE_LIGHT_RGB, GATE_COLOR_CONT);
 
-		if (getStateJson (SH_JSON) == 1.)
-			setRgbLight (SH_LIGHT_RGB, SH_COLOR_ON);
-		else
+		if (getStateJson (SH_JSON) == SH_OFF)
 			setRgbLight (SH_LIGHT_RGB, SH_COLOR_OFF);
+		if (getStateJson (SH_JSON) == SH_ON)
+			setRgbLight (SH_LIGHT_RGB, SH_COLOR_ON);
+		if (getStateJson (SH_JSON) == SH_CONT)
+			setRgbLight (SH_LIGHT_RGB, SH_COLOR_CONT);
 	}
 };
 
@@ -1020,7 +1054,6 @@ struct LeftWidget : TransparentWidget {
 			if (paramDisplayCycles > 0) {
 				module->greetingCycles = 0;
 				ParamQuantity *pq = module->paramQuantities[param];
-				// const char *label = pq->label.data();
 				const char *label = pq->getLabel().c_str();
 				const char *unit  = pq->unit.data();
 
@@ -1385,7 +1418,9 @@ struct DejavuWidget : ModuleWidget {
 		addOutput (createOutputCentered<PJ301MPort>	(calculateCoordinates (0, 0, OFFSET_PJ301MPort),  module, DEBUG_OUTPUT));
 #endif
   	    
-  	    if (module) module->widgetReady = true;
+		if (module) {
+			module->widgetReady = true;
+		}
 	}
 
     struct PolyChannelsItem : MenuItem {

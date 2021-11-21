@@ -42,8 +42,8 @@ dsp::PulseGenerator *OL_outStateTrigger [NUM_OUTPUTS];	//	pulse generator object
 bool OL_isGate [NUM_OUTPUTS];
 bool OL_wasTriggered [NUM_OUTPUTS];		// remember whether we triggered once at all only set when triggerd but never reset
 bool OL_isPoly [NUM_INPUTS + NUM_OUTPUTS];
-float OL_isGatePoly [NUM_OUTPUTS * POLY_CHANNELS];
-bool OL_isSteadyGate[NUM_OUTPUTS];
+bool OL_isGatePoly [NUM_OUTPUTS * POLY_CHANNELS];
+bool OL_isSteadyGate[NUM_OUTPUTS * POLY_CHANNELS];
 int  OL_polyChannels[NUM_OUTPUTS];
 
 /*
@@ -556,12 +556,12 @@ inline void processActiveOutputTriggers () {
 						OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cvOutPolyIdx] = 0.f;
 					
 					bool isGate = OL_isGate[outputIdx];
-					if (OL_isGatePoly[outputIdx * POLY_CHANNELS + channel] > 5.f)
+					if (OL_isGatePoly[outputIdx * POLY_CHANNELS + channel])
 						isGate = true;
 
 					if (isGate && OL_wasTriggeredPoly[cvOutPolyIdx]) {
 						OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cvOutPolyIdx] = 10.f;
-						if (OL_isSteadyGate[outputIdx])
+						if (OL_isSteadyGate[outputIdx * POLY_CHANNELS + channel])
 							trgActive = true;
 						else
 							trgActive = !trgActive;
@@ -583,7 +583,7 @@ inline void processActiveOutputTriggers () {
 				else 
 					setStateOutput (outputIdx, 0.f);
 				if (OL_isGate[outputIdx] && OL_wasTriggered[outputIdx]) {
-					if (OL_isSteadyGate[outputIdx])
+					if (OL_isSteadyGate[outputIdx * POLY_CHANNELS])
 						trgActive = true;
 					else
 						trgActive = !trgActive;
@@ -640,10 +640,10 @@ inline void reflectChanges () {
 						OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cvOutPolyIdx] = 0.f;
 					}
 					bool isGate = OL_isGate[outputIdx];
-					if (OL_isGatePoly[outputIdx * POLY_CHANNELS + channel] > 5.f)
+					if (OL_isGatePoly[outputIdx * POLY_CHANNELS + channel])
 						isGate = true;
 					if (isGate && OL_wasTriggeredPoly[cvOutPolyIdx]) {
-						if (OL_isSteadyGate[outputIdx])
+						if (OL_isSteadyGate[outputIdx * POLY_CHANNELS + channel])
 							trgActive = true;
 						else
 							trgActive = !trgActive;
@@ -671,7 +671,7 @@ inline void reflectChanges () {
 				else 
 					setStateOutput (outputIdx, 0.f);
 				if (OL_isGate[outputIdx] && OL_wasTriggered[outputIdx]) {
-					if (OL_isSteadyGate[outputIdx])
+					if (OL_isSteadyGate[outputIdx * POLY_CHANNELS])
 						trgActive = true;
 					else
 						trgActive = !trgActive;

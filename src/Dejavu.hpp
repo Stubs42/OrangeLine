@@ -37,16 +37,23 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define HEAT_LOW   0.f
 #define HEAT_HIGH 10.f
 
-#define GATE_COLOR_ON   0xffff00
 #define GATE_COLOR_OFF  0x000000
-#define SH_COLOR_ON     0xffff00
+#define GATE_COLOR_ON   0xffff00
+#define GATE_COLOR_CONT 0xff0000
 #define SH_COLOR_OFF    0x000000
+#define SH_COLOR_ON     0xffff00
+#define SH_COLOR_CONT   0xff0000
 #define ONOFF_COLOR_ON  0x00ff00
 #define ONOFF_COLOR_OFF 0x000000
 #define ONOFF_COLOR_ON_INACTIVE 0x001100
 
-#define GATE_MODE    1
-#define TRIGGER_MODE 0
+#define GATE_OFF  0
+#define GATE_ON   1
+#define GATE_CONT 2
+
+#define SH_OFF  0
+#define SH_ON   1
+#define SH_CONT 2
 
 // DO NOT CHANGE LEN or DUR because they are used in integer calculations !
 #define LEN 0

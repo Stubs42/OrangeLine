@@ -265,42 +265,41 @@ struct SwingWidget : ModuleWidget {
 		addInput (createInputCentered<PJ301MPort>		(mm2px (Vec ( 3.89  + 4.2 , 128.5 - 10.559 - 4.2)),  module, CLK_INPUT));
 		addInput (createInputCentered<PJ301MPort>		(mm2px (Vec ( 3.89  + 4.2 , 128.5 - 20.242 - 4.2)),  module, BPM_INPUT));
 		addInput (createInputCentered<PJ301MPort>		(mm2px (Vec ( 3.89  + 4.2 , 128.5 - 29.926 - 4.2)),  module, RST_INPUT));
-        addParam (createParamCentered<LEDButton>		(mm2px (Vec ( 5.712 + 2.38, 128.5 - 41.423 - 2.38)), module, RST_PARAM));
+		addParam (createParamCentered<LEDButton>		(mm2px (Vec ( 5.712 + 2.38, 128.5 - 41.423 - 2.38)), module, RST_PARAM));
 
 		addOutput (createOutputCentered<PJ301MPort>		(mm2px (Vec (33.419 + 4.2 , 128.5 - 39.61  - 4.2)),  module,  PHS_OUTPUT));
 		addOutput (createOutputCentered<PJ301MPort>		(mm2px (Vec (33.419 + 4.2 , 128.5 - 29.926 - 4.2)),  module,  CMP_OUTPUT));
 		addOutput (createOutputCentered<PJ301MPort>		(mm2px (Vec (33.419 + 4.2 , 128.5 - 20.24  - 4.2)),  module, ECLK_OUTPUT));
 		addOutput (createOutputCentered<PJ301MPort>		(mm2px (Vec (33.419 + 4.2 , 128.5 - 10.559 - 4.2)),  module, TCLK_OUTPUT));
 
-        RoundSmallBlackKnob *knob = createParamCentered<RoundSmallBlackKnob>		(mm2px (Vec ( 3.141 + 4,    128.5 - 99.019 - 4)),    module, DIV_PARAM);
-        knob->snap = true;
+		RoundSmallBlackKnob *knob = createParamCentered<RoundSmallBlackKnob>		(mm2px (Vec ( 3.141 + 4,    128.5 - 99.019 - 4)),    module, DIV_PARAM);
+		knob->snap = true;
    		addParam (knob);
 
-        pValue  = (module != nullptr ? &(module->getStateParam (DIV_PARAM)) : nullptr);
-        numberWidget = NumberWidget::create (mm2px (Vec(3.65, 128.5 - 110.35)), module, pValue, 0.f, "%2.0f", divBuffer, 2);
+		pValue  = (module != nullptr ? &(module->getStateParam (DIV_PARAM)) : nullptr);
+		numberWidget = NumberWidget::create (mm2px (Vec(3.65, 128.5 - 110.35)), module, pValue, 0.f, "%2.0f", divBuffer, 2);
 		numberWidget->pStyle = (module == nullptr ? nullptr : &(module->OL_state[STYLE_JSON]));
-        addChild (numberWidget);
+		addChild (numberWidget);
 
-        knob = createParamCentered<RoundSmallBlackKnob>		(mm2px (Vec (34.576 + 4,    128.5 - 99.019 - 4)),    module, LEN_PARAM);
-        knob->snap = true;
+		knob = createParamCentered<RoundSmallBlackKnob>		(mm2px (Vec (34.576 + 4,    128.5 - 99.019 - 4)),    module, LEN_PARAM);
+		knob->snap = true;
    		addParam (knob);
 
-        pValue  = (module != nullptr ? &(module->getStateParam (LEN_PARAM)) : nullptr);
-        numberWidget = NumberWidget::create (mm2px (Vec(35.2, 128.5 - 110.35)), module, pValue, 0.f, "%2.0f", lenBuffer, 2);
+		pValue  = (module != nullptr ? &(module->getStateParam (LEN_PARAM)) : nullptr);
+		numberWidget = NumberWidget::create (mm2px (Vec(35.2, 128.5 - 110.35)), module, pValue, 0.f, "%2.0f", lenBuffer, 2);
 		numberWidget->pStyle = (module == nullptr ? nullptr : &(module->OL_state[STYLE_JSON]));
-        addChild (numberWidget);
+		addChild (numberWidget);
 
-        addParam (createParamCentered<RoundLargeBlackKnob>		(mm2px (Vec (16.51 + 6.35,    128.5 - 102.553 - 6.35)),    module, AMT_PARAM));
+		addParam (createParamCentered<RoundLargeBlackKnob>		(mm2px (Vec (16.51 + 6.35,    128.5 - 102.553 - 6.35)),    module, AMT_PARAM));
 
-        for (int i = 0; i < 16; i ++) {
-            int x = i % 4;
-            int y = i / 4;
-            Vec pos = Vec (3.169 + 4 + x * (13.621 - 3.169), 128.5 - 85.535 - 4 + y * (13.621 - 3.169));
-            addParam (createParamCentered<RoundSmallBlackKnob> (mm2px (pos), module, TIM_PARAM_01 +  i));
+		for (int i = 0; i < 16; i ++) {
+			int x = i % 4;
+			int y = i / 4;
+			Vec pos = Vec (3.169 + 4 + x * (13.621 - 3.169), 128.5 - 85.535 - 4 + y * (13.621 - 3.169));
+			addParam (createParamCentered<RoundSmallBlackKnob> (mm2px (pos), module, TIM_PARAM_01 +  i));
 		}
-  	    
   	    if (module) module->widgetReady = true;
-}
+	}
 
 	struct SwingStyleItem : MenuItem {
 		Swing *module;
