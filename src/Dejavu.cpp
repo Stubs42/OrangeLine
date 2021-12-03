@@ -995,15 +995,12 @@ void processOutputChannels() {
 */
 struct LeftWidget : TransparentWidget {
 
-	std::shared_ptr<Font> pFont;
-
 	Dejavu     *module = nullptr;
 	int       paramDisplayCycles = 0;
 
 	static LeftWidget* create (Dejavu *module) {
 		LeftWidget *w = new LeftWidget();
 
-		w->pFont    = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
 		w->box.pos  = mm2px (Vec (1.524, 36.831));
 		w->box.size = mm2px (Vec (32.512, 10.668));
 		// w->box.pos.y += w->box.size.y;
@@ -1038,6 +1035,7 @@ struct LeftWidget : TransparentWidget {
 
 	void draw (const DrawArgs &drawArgs) override {
 		if (module) {
+			std::shared_ptr<Font> pFont = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
 			float style = module->getStateJson(STYLE_JSON);
 			char headBuffer[18];
 			char valueBuffer[18];
@@ -1125,8 +1123,6 @@ struct LeftWidget : TransparentWidget {
 
 struct RigthWidget : TransparentWidget {
 
-	std::shared_ptr<Font> pFont;
-
 	Dejavu     *module = nullptr;
 
 	int flashFrameCounter[NUM_FLASHES] = 
@@ -1142,7 +1138,6 @@ struct RigthWidget : TransparentWidget {
 	static RigthWidget* create (Dejavu *module) {
 		RigthWidget *w = new RigthWidget();
 
-		w->pFont    = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
 		w->box.pos  = mm2px (Vec (37.084, 8.891));
 		w->box.size = mm2px (Vec (32.512, 38.608));
 		w->module   = module;
@@ -1202,7 +1197,6 @@ struct RigthWidget : TransparentWidget {
 			return;
 		}
 		if (module) {
-			
 			float displayAlpha = module->getStateJson(DISPLAY_ALPHA_JSON);
 
 			nvgGlobalCompositeOperation(drawArgs.vg, NVG_SOURCE_OVER);

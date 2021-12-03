@@ -233,8 +233,7 @@ struct NumberWidget : TransparentWidget {
 	}
 
 	void draw (const DrawArgs &drawArgs) override {
-		std::shared_ptr<Font> pFont;
-		pFont    = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
+		std::shared_ptr<Font> pFont = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
 		nvgFontFaceId (drawArgs.vg, pFont->handle);
 		nvgFontSize (drawArgs.vg, 18);
 		nvgFillColor (drawArgs.vg, (pStyle == nullptr || *pStyle == STYLE_ORANGE) ? ORANGE : WHITE);
@@ -281,8 +280,7 @@ struct TextWidget : TransparentWidget {
 	}
 
 	void draw (const DrawArgs &drawArgs) override {
-		std::shared_ptr<Font> pFont;
-		pFont = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
+		std::shared_ptr<Font> pFont = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
 		const char *delimiter = " - ";
 		char buf[MAX_TEXT_SIZE * 2 + 1 + 3 /* delimiter length */];
         	const char* str = (text != nullptr ? text : defaultText);

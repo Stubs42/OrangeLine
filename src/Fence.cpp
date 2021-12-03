@@ -828,8 +828,6 @@ struct VOctWidget : TransparentWidget {
 	static constexpr const char*  notes = "CCDDEFFGGAAB";
 	static constexpr const char* sharps = " # #  # # # ";
 
-	std::shared_ptr<Font> pFont;
-
 	float *pValue = NULL;
 	float  defaultValue = 0;
 	float *pMode = NULL;
@@ -843,7 +841,6 @@ struct VOctWidget : TransparentWidget {
 	*/
 	VOctWidget() {
 		box.size = mm2px (Vec(26, 7));
-		pFont = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
 		module = nullptr;
 	}
 	/**
@@ -882,6 +879,7 @@ struct VOctWidget : TransparentWidget {
 	}
 
 	void draw (const DrawArgs &drawArgs) override {
+		std::shared_ptr<Font> pFont = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
 		/*
 			Knob rescale hack
 		*/
