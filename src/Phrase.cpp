@@ -189,7 +189,7 @@ struct Phrase : Module {
 	Methods called directly or indirectly called from process () in OrangeLineCommon.hpp
 */
 	void handleStyleChange () {
-		if (styleChanged) {
+		if (styleChanged && widgetReady) {
 			switch (int(getStateJson (STYLE_JSON))) {
 				case STYLE_ORANGE:
 					brightPanel->visible = false;
@@ -350,7 +350,7 @@ struct Phrase : Module {
 		Module specific process method called from process () in OrangeLineCommon.hpp
 	*/
 	inline void moduleProcess (const ProcessArgs &args) {
-		if (!widgetReady) return;	// do not strt processing before the widget is ready
+		// if (!widgetReady) return;	// do not strt processing before the widget is ready
 
 		phraseDurCounter   = int(getStateJson (PHRASEDURCOUNTER_JSON));
 		phraseLenCounter   = int(getStateJson (PHRASELENCOUNTER_JSON));

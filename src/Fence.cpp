@@ -358,8 +358,8 @@ struct Fence : Module {
 		Module specific process method called from process () in OrangeLineCommon.hpp
 	*/
 	inline void moduleProcess (const ProcessArgs &args) {
-		if (!widgetReady) return;	// do not strt processing before the widget is ready
-		if (styleChanged) {
+		// if (!widgetReady) return;	// do not strt processing before the widget is ready
+		if (styleChanged && widgetReady) {
 			switch (int(getStateJson(STYLE_JSON))) {
 				case STYLE_ORANGE:
 					brightPanel->visible = false;
@@ -537,12 +537,10 @@ struct Fence : Module {
 
 		if (inChangeParam (MODE_PARAM))	{ //	User clicked on mode button
 			setStateJson (MODE_JSON, float((int(getStateJson (MODE_JSON)) + 1) % 3));
-//			fprintf (stderr, "inChangeParam (MODE_PARAM)\n");
 		}
 
 		if (inChangeParam (LINK_PARAM))	{ //	User clicked on link button
 			setStateJson (LINK_JSON, float((int(getStateJson (LINK_JSON)) + 1) % 3));
-//			fprintf (stderr, "inChangeParam (LINK_PARAM)\n");
 		}
 		if (inChangeParam (GATE_PARAM)) {	//	User clicked on tr/gt button
 			if (getStateJson (GATE_JSON) == 0.f)
@@ -550,12 +548,9 @@ struct Fence : Module {
 			else {
 				setStateJson (GATE_JSON, 0.f);
 			}
-//			fprintf (stderr, "inChangeParam (GATE_PARAM)\n");
 		}
 
 		if (changeJson (MODE_JSON)) {	//	Mode has changed. Restore low, high, step and link for new mode
-//			fprintf (stderr, "changeJson (MODE_JSON)\n");
-			//
 			switch (int(getStateJson (MODE_JSON))) {
 				case MODE_RAW_INT:
 					setStateParam ( LOW_PARAM, getStateJson ( LOW_RAW_JSON));

@@ -475,13 +475,13 @@ void processOutputChannels() {
 	initializerepeatRandomGenerators
 	Set all counters to 0 on reset
 */
-	long getGlobalSeed() {
-		float seed = 0; 
+	unsigned long getGlobalSeed() {
+		unsigned long seed = 0; 
 		if (getInputConnected (SEED_INPUT)) {
 			float seedFloat = getStateInput (SEED_INPUT) * SEED_INPUT_SCALE;
 			if (seedFloat < 0)
 				seedFloat *= -1;
-			unsigned long seed = (unsigned long)seedFloat;
+			seed = (unsigned long)seedFloat;
 			if (seed > SEED_MAX)
 				seed = SEED_MAX;
 			setStateParam (SEED_PARAM, float(seed));
@@ -631,10 +631,8 @@ void processOutputChannels() {
 		Module specific process method called from process () in OrangeLineCommon.hpp
 	*/
 	inline void moduleProcess (const ProcessArgs &args) {
-		if (!widgetReady) {
-			return;	// do not strt processing before the widget is ready
-		}
-		if (styleChanged) {
+		// if (!widgetReady) return;	// do not strt processing before the widget is ready
+		if (styleChanged && widgetReady) {
 			switch (int(getStateJson(STYLE_JSON))) {
 				case STYLE_ORANGE:
 					brightPanel->visible = false;
