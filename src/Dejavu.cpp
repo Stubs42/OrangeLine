@@ -476,18 +476,16 @@ void processOutputChannels() {
 	Set all counters to 0 on reset
 */
 	unsigned long getGlobalSeed() {
-		unsigned long seed = 0; 
+		unsigned long seed = 0;
+		float seedParam = getStateParam(SEED_PARAM);
 		if (getInputConnected (SEED_INPUT)) {
-			float seedFloat = getStateInput (SEED_INPUT) * SEED_INPUT_SCALE;
-			if (seedFloat < 0)
-				seedFloat *= -1;
-			seed = (unsigned long)seedFloat;
-			if (seed > SEED_MAX)
-				seed = SEED_MAX;
-			setStateParam (SEED_PARAM, float(seed));
+			seedParam += getStateInput (SEED_INPUT) * SEED_INPUT_SCALE;
 		}
-		else
-			seed = getStateParam (SEED_PARAM);
+		if (seedParam < 0)
+			seedParam *= -1;
+		seed = (unsigned long)seedParam;
+		if (seed > SEED_MAX)
+			seed = SEED_MAX;
 		return seed;
 	}
 
