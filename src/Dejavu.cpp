@@ -97,7 +97,7 @@ struct Dejavu : Module {
 		setInPoly          (REP_INPUT, true);
 		setOutPoly         (REP_OUTPUT, true);
 
-		setStateTypeOutput (TRG_INPUT, STATE_TYPE_TRIGGER);
+		setStateTypeInput (TRG_INPUT, STATE_TYPE_TRIGGER);
 
 		setStateTypeOutput (TRG_OUTPUT, STATE_TYPE_TRIGGER);
 		setOutPoly         (TRG_OUTPUT, true);
