@@ -543,10 +543,25 @@ struct Mother : Module {
 
 		This method should not do dsp or other logic processing.
 	*/
+
+	float getClampedInput(int input) {
+		float value = 0.0;
+		if (getInputConnected(input)) {
+			value = getStateInput (input);
+		}
+		if (value < 0) {
+			value *= -1;
+		}
+		if (value > 10.0) {
+			value = 10.0;
+		}
+		return value;
+	} 
+
 	inline void moduleProcessState () {
-		effectiveScale = (int(getStateParam (SCL_PARAM)) - 1 + note (getStateInput (SCL_INPUT))) % NUM_NOTES;
+		effectiveScale = (int(getStateParam (SCL_PARAM)) - 1 + note (getClampedInput(SCL_INPUT))) % NUM_NOTES;
 		effectiveScaleDisplay = float(effectiveScale + 1);
-		effectiveChild = (int(getStateParam (CHLD_PARAM)) + note (getStateInput (CHLD_INPUT))) % NUM_NOTES;
+		effectiveChild = (int(getStateParam (CHLD_PARAM)) + note (getClampedInput(CHLD_INPUT))) % NUM_NOTES;
 		/*
 			quantize down to next lower active note if effectiveChild is not in scale
 		*/
@@ -555,8 +570,7 @@ struct Mother : Module {
 				break;
 			effectiveChild --;			
 		}
-
-		effectiveRoot  = (int(getStateParam (ROOT_PARAM)) + note (getStateInput (ROOT_INPUT))) % NUM_NOTES;
+		effectiveRoot  = (int(getStateParam (ROOT_PARAM)) + note (getClampedInput(ROOT_INPUT))) % NUM_NOTES;
 
 		jsonOnOffBaseIdx = ONOFF_JSON + effectiveScale * NUM_NOTES;
 		int jsonIdx;

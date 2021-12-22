@@ -576,6 +576,12 @@ void processOutputChannels() {
 						int channel = row * 2 + lenOrDur;
 						if (channel < channels) {
 							int inputValue = floor(OL_statePoly[REP_INPUT * POLY_CHANNELS + channel] * REP_INPUT_SCALE + 0.5);
+							if (inputValue < 0) {
+								inputValue *= -1;
+							}
+							if (inputValue > REP_INPUT_MAX) {
+								inputValue = REP_INPUT_MAX;
+							}
 							if (inputValue >= 1) {
 								value = inputValue ;
 								break;

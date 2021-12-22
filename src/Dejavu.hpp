@@ -26,7 +26,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define REP_INPUT_MAX   99999
 
 // Seed CV 10V = 10.000
-#define SEED_INPUT_SCALE 1000
+#define SEED_INPUT_SCALE 10000
 #define DEFAULT_SEED	   66	// = 0x42 ;-)
 #define SEED_MAX 		 99999
 #define DIV_MAX 64
