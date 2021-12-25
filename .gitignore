@@ -4,3 +4,4 @@ dist/
 *.swp
 .vscode/
 plugin.dll
+token.git
