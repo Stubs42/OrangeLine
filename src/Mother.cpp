@@ -549,11 +549,13 @@ struct Mother : Module {
 		if (getInputConnected(input)) {
 			value = getStateInput (input);
 		}
-		if (value < 0) {
-			value *= -1;
-		}
 		if (value > 10.0) {
 			value = 10.0;
+		}
+		else {
+			if (value < -10.0) {
+				value = -10.0;
+			}
 		}
 		return value;
 	} 
@@ -570,7 +572,7 @@ struct Mother : Module {
 				break;
 			effectiveChild --;			
 		}
-		effectiveRoot  = (int(getStateParam (ROOT_PARAM)) + note (getClampedInput(ROOT_INPUT))) % NUM_NOTES;
+		effectiveRoot = (int(getStateParam (ROOT_PARAM)) + note (getClampedInput(ROOT_INPUT))) % NUM_NOTES;
 
 		jsonOnOffBaseIdx = ONOFF_JSON + effectiveScale * NUM_NOTES;
 		int jsonIdx;
