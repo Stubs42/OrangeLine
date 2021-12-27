@@ -103,6 +103,16 @@ struct Swing : Module {
         for (int i = 0; i < 16; i ++) {
     		configParam (TIM_PARAM_01 + i,  -100.f, 100.f, 0.f, "Timing", "%", 0.f, 1.f, 0.f);
         }
+
+		configInput ( RST_INPUT, "Reset");
+		configInput ( CLK_INPUT, "Clock");
+		configInput ( BPM_INPUT, "BPM");
+
+		configOutput ( PHS_OUTPUT, "Phase");
+		configOutput ( CMP_OUTPUT, "Compare (micro timing)");
+		configOutput (ECLK_OUTPUT, "Early clock");
+		configOutput (TCLK_OUTPUT, "Timed clock");
+
 	}
 
 	inline void moduleCustomInitialize () {

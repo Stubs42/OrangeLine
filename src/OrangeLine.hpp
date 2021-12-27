@@ -232,7 +232,11 @@ struct NumberWidget : TransparentWidget {
 	NumberWidget () {
 	}
 
-	void draw (const DrawArgs &drawArgs) override {
+	void drawLayer (const DrawArgs &drawArgs, int layer) override {
+		if (layer != 1) {
+			Widget::drawLayer(drawArgs, layer);
+			return;
+		}
 		std::shared_ptr<Font> pFont = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
 		nvgFontFaceId (drawArgs.vg, pFont->handle);
 		nvgFontSize (drawArgs.vg, 18);
@@ -241,6 +245,7 @@ struct NumberWidget : TransparentWidget {
 		snprintf (buffer, length + 1, format, value);
 		buffer[length] = '\0';
 		nvgText (drawArgs.vg, 0, 0, buffer, nullptr);
+		Widget::drawLayer(drawArgs, 1);
 	}
 };
 
@@ -279,7 +284,11 @@ struct TextWidget : TransparentWidget {
 	TextWidget () {
 	}
 
-	void draw (const DrawArgs &drawArgs) override {
+	void drawLayer (const DrawArgs &drawArgs, int layer) override {
+		if (layer != 1) {
+			Widget::drawLayer(drawArgs, layer);
+			return;
+		}
 		std::shared_ptr<Font> pFont = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
 		const char *delimiter = " - ";
 		char buf[MAX_TEXT_SIZE * 2 + 1 + 3 /* delimiter length */];
@@ -319,6 +328,7 @@ struct TextWidget : TransparentWidget {
 			buf[scrollPos + length] = '\0';
 			nvgText (drawArgs.vg, 0, mm2px (5), buf + scrollPos, nullptr);
 		}
+		Widget::drawLayer(drawArgs, 1);
 	}
 };
 

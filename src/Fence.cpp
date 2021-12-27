@@ -195,6 +195,18 @@ struct Fence : Module {
 		configParam (         LINK_PARAM,            0.f,           1.f,               0.f, "Toggle Link");
 		configParam (         MODE_PARAM,            0.f,           1.f,               0.f, "Toggle Mode");
 		configParam (         GATE_PARAM,            0.f,           1.f,               0.f, "Toggle Trg/Gate");
+
+		configInput ( LOW_INPUT, "Range lower bound / spread");
+		configInput (HIGH_INPUT, "Range upper bound / center");
+		configInput (STEP_INPUT, "Step");
+		configInput ( TRG_INPUT, "Trigger");
+		configInput (  CV_INPUT, "CV");
+
+		configOutput ( TRG_OUTPUT, "Trigger");
+		configOutput (  CV_OUTPUT, "CV");
+
+		configBypass(TRG_INPUT, TRG_OUTPUT);
+		configBypass( CV_INPUT, CV_OUTPUT);
 	}
 
 	/**
@@ -873,7 +885,11 @@ struct VOctWidget : TransparentWidget {
 		return pStr;
 	}
 
-	void draw (const DrawArgs &drawArgs) override {
+	void drawLayer (const DrawArgs &drawArgs, int layer) override {
+		if (layer != 1) {
+			Widget::drawLayer(drawArgs, layer);
+			return;
+		}
 		std::shared_ptr<Font> pFont = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
 		/*
 			Knob rescale hack
@@ -895,6 +911,7 @@ struct VOctWidget : TransparentWidget {
 		}
 
 		nvgText (drawArgs.vg, xOffset, 0, cv2Str (str, value, mode, type), NULL);
+		Widget::drawLayer(drawArgs, 1);
 	}
 };
 

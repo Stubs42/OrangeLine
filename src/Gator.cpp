@@ -127,6 +127,18 @@ struct Gator : Module {
 		configParam (RAT_PARAM,  -10.f,  10.f, 0.f, "Ratchets",                  "" , 0.f, 1.f, 0.f);
 		configParam (DLY_PARAM,    0.f,  10.f, 0.f, "Ratchet Delay",             "" , 0.f, 1.f, 0.f);
 		configParam (STR_PARAM, -100.f, 100.f, 0.f, "Strum Direction and Delay", "%", 0.f, 1.f, 0.f);
+
+		configInput ( PHS_INPUT, "Phase (from Swing)");
+		configInput ( CMP_INPUT, "Compare (micro timing from Swing)");
+		configInput (GATE_INPUT, "Gate");
+		configInput (TIME_INPUT, "Time (micro timing offset)");
+		configInput ( LEN_INPUT, "Gate length");
+		configInput ( JTR_INPUT, "Jitter");
+		configInput ( RAT_INPUT, "Ratchet count");
+		configInput ( DLY_INPUT, "Ratchet delay (time distance)");
+		configInput ( STR_INPUT, "Strum direction & delay (time distance)");
+		configInput ( RST_INPUT, "Reset");
+		configOutput (GATE_OUTPUT, "Gate");
 	}
 		
 	/**

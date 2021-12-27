@@ -143,6 +143,25 @@ struct Phrase : Module {
 		configParam (MASTER_PTN_PARAM, -10.f, 10.f,  0.f, "Master Input Pattern Offset", "",  0.f, 1.f, 0.f);
 		configParam (MASTER_PTN_PARAM, -10.f, 10.f,  0.f, "Master Input Pattern Offset", "",  0.f, 1.f, 0.f);
 		configParam (CLK_DLY_PARAM,  0.f,  32.f,  0.f, "Slave Clock Delay", " Samples", 0.f, 1.f, 0.f);
+
+		configInput ( RST_INPUT, "Reset");
+		configInput ( CLK_INPUT, "Clock");
+		configInput ( PTN_INPUT, "Pattern (master sequencer)");
+		configInput (DLEN_INPUT, "Default pattern length");
+		configInput (MASTER_PTN_INPUT, "Master pattern");
+		configInput (MASTER_LEN_INPUT, "Master length");
+		configInput (MASTER_DUR_INPUT, "Master duration");
+
+		configOutput (ELEN_OUTPUT, "Effective default pattern length");
+		configOutput (MASTER_RST_OUTPUT, "Master reset");
+		configOutput (MASTER_CLK_OUTPUT, "Master clock");
+		configOutput (MASTER_PTN_OUTPUT, "Master pattern");
+		configOutput (SPH_OUTPUT, "Start phrase trigger");
+		configOutput (SPA_OUTPUT, "Start pattern trigger");
+		configOutput (SLAVE_RST_OUTPUT, "Slave reset");
+		configOutput (SLAVE_PTN_OUTPUT, "Slave pattern");
+		configOutput (SLAVE_CLK_OUTPUT, "Slave clock");
+
 	}
 
 	inline void moduleCustomInitialize () {

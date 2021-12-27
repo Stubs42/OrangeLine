@@ -190,6 +190,20 @@ struct Mother : Module {
 		setCustomChangeMaskInput (CHLD_INPUT, CHG_CHLD);
 		setCustomChangeMaskInput (ROOT_INPUT, CHG_ROOT);
 		isGate (GATE_OUTPUT) = true;
+
+		configInput ( SCL_INPUT, "Scale");
+		configInput (CHLD_INPUT, "Child");
+		configInput (ROOT_INPUT, "Root");
+		configInput (  CV_INPUT, "CV");
+		configInput ( TRG_INPUT, "Trigger (clock)");
+		configInput ( RND_INPUT, "Random seed");
+
+		configOutput (GATE_OUTPUT, "Gate");
+		configOutput (  CV_OUTPUT, "CV");
+		configOutput ( POW_OUTPUT, "Power (weight)");
+
+		configBypass( CV_INPUT, CV_OUTPUT);
+
 	}
 
 	inline void moduleCustomInitialize () {
@@ -917,7 +931,11 @@ struct KeysWidget : TransparentWidget {
 	KeysWidget () {
 	}
 
-	void draw (const DrawArgs &drawArgs) override { 
+	void drawLayer (const DrawArgs &drawArgs, int layer) override {
+		if (layer != 1) {
+			Widget::drawLayer(drawArgs, layer);
+			return;
+		}
 		int offset;		
 		int whites = 0b101010110101;
 		if (module) {
@@ -945,6 +963,7 @@ struct KeysWidget : TransparentWidget {
 			nvgStrokeColor (drawArgs.vg, color);
 			nvgStroke(drawArgs.vg);
 		}
+		Widget::drawLayer(drawArgs, 1);
 	}
 };
 /**

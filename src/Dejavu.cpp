@@ -218,6 +218,26 @@ struct Dejavu : Module {
 
    		configParam (SH_PARAM,              0.f,         1.f,   0.f,  "Toggle CV S&H",       "", 0.f, 1.f, 0.f);
    		configParam (GATE_PARAM,            0.f,         1.f,   0.f,  "Toggle Trigger/Gate", "", 0.f, 1.f, 0.f);
+
+		configInput ( RST_INPUT, "Reset");
+		configInput ( CLK_INPUT, "Clock");
+		configInput ( DIV_INPUT, "Clock Division");
+		configInput (SEED_INPUT, "Seed");
+		configInput ( REP_INPUT, "Repetitions");
+		configInput ( TRG_INPUT, "Trigger (reset without applying offset)");
+		configInput (HEAT_INPUT, "Heat offset");
+		configInput (HEAT_KNOB_ATT_INPUT, "Heat scale");
+		configInput ( OFS_INPUT, "CV offset");
+		configInput ( SCL_INPUT, "CV scale");
+		configInput (GATE_INPUT, "Gate mode");
+		configInput (  SH_INPUT, "CV s&h mode");
+
+		configOutput ( REP_OUTPUT, "Repetitions");
+		configOutput ( TRG_OUTPUT, "Trigger (End of Length/Duration)");
+		configOutput (  CV_OUTPUT, "CV");
+		configOutput (GATE_OUTPUT, "Trigger/Gate");
+
+		configBypass (CLK_INPUT,GATE_OUTPUT);
 	}
 	
 	inline void moduleCustomInitialize () {
@@ -1035,7 +1055,11 @@ struct LeftWidget : TransparentWidget {
 		return false;
 	}
 
-	void draw (const DrawArgs &drawArgs) override {
+	void drawLayer (const DrawArgs &drawArgs, int layer) override {
+		if (layer != 1) {
+			Widget::drawLayer(drawArgs, layer);
+			return;
+		}
 		if (module) {
 			std::shared_ptr<Font> pFont = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
 			float style = module->getStateJson(STYLE_JSON);
@@ -1120,6 +1144,7 @@ struct LeftWidget : TransparentWidget {
 			nvgText (drawArgs.vg, mm2px(0.5), mm2px(0.5) + mm2px(2.406), headBuffer, nullptr);
 			//nvgText (drawArgs.vg, mm2px(2.447) - box.pos.x + mm2px(0.5), mm2px(41.283) - box.pos.y + mm2px(4.812), valueBuffer, nullptr);
 		}
+		Widget::drawLayer(drawArgs, 1);
 	}
 };
 
@@ -1583,14 +1608,7 @@ struct DejavuWidget : ModuleWidget {
 			moduleStateItem3->text = "Edit Offsets";
 			moduleStateItem3->setSize (Vec(50, 20));
 			menu->addChild(moduleStateItem3);
-/*
-			ModuleStateItem *moduleStateItem4 = new ModuleStateItem ();
-			moduleStateItem4->module = module;
-			moduleStateItem4->state = STATE_EDIT_OFFSET_RANGES;
-			moduleStateItem4->text = "Edit Offsets Ranges";
-			moduleStateItem4->setSize (Vec(50, 20));
-			menu->addChild(moduleStateItem4);
-*/
+
 			spacerLabel = new MenuLabel();
 			menu->addChild(spacerLabel);
 
