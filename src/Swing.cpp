@@ -100,9 +100,23 @@ struct Swing : Module {
 		configParam (LEN_PARAM, 1.f,  16.f,  16.f, "Length",         "",  0.f, 1.f, 0.f);
 		configParam (AMT_PARAM, 0.f, 100.f, 100.f, "Amount",         "%", 0.f, 1.f, 0.f);
 
-        for (int i = 0; i < 16; i ++) {
-    		configParam (TIM_PARAM_01 + i,  -100.f, 100.f, 0.f, "Timing", "%", 0.f, 1.f, 0.f);
-        }
+		int i = 0;
+   		configParam (TIM_PARAM_01 + i++,  -100.f, 100.f, 0.f, "Micro Timing Step 1", "%", 0.f, 1.f, 0.f);
+   		configParam (TIM_PARAM_01 + i++,  -100.f, 100.f, 0.f, "Micro Timing Step 2", "%", 0.f, 1.f, 0.f);
+   		configParam (TIM_PARAM_01 + i++,  -100.f, 100.f, 0.f, "Micro Timing Step 3", "%", 0.f, 1.f, 0.f);
+   		configParam (TIM_PARAM_01 + i++,  -100.f, 100.f, 0.f, "Micro Timing Step 4", "%", 0.f, 1.f, 0.f);
+   		configParam (TIM_PARAM_01 + i++,  -100.f, 100.f, 0.f, "Micro Timing Step 5", "%", 0.f, 1.f, 0.f);
+   		configParam (TIM_PARAM_01 + i++,  -100.f, 100.f, 0.f, "Micro Timing Step 6", "%", 0.f, 1.f, 0.f);
+   		configParam (TIM_PARAM_01 + i++,  -100.f, 100.f, 0.f, "Micro Timing Step 7", "%", 0.f, 1.f, 0.f);
+   		configParam (TIM_PARAM_01 + i++,  -100.f, 100.f, 0.f, "Micro Timing Step 8", "%", 0.f, 1.f, 0.f);
+   		configParam (TIM_PARAM_01 + i++,  -100.f, 100.f, 0.f, "Micro Timing Step 9", "%", 0.f, 1.f, 0.f);
+   		configParam (TIM_PARAM_01 + i++,  -100.f, 100.f, 0.f, "Micro Timing Step 10", "%", 0.f, 1.f, 0.f);
+   		configParam (TIM_PARAM_01 + i++,  -100.f, 100.f, 0.f, "Micro Timing Step 11", "%", 0.f, 1.f, 0.f);
+   		configParam (TIM_PARAM_01 + i++,  -100.f, 100.f, 0.f, "Micro Timing Step 12", "%", 0.f, 1.f, 0.f);
+   		configParam (TIM_PARAM_01 + i++,  -100.f, 100.f, 0.f, "Micro Timing Step 13", "%", 0.f, 1.f, 0.f);
+   		configParam (TIM_PARAM_01 + i++,  -100.f, 100.f, 0.f, "Micro Timing Step 14", "%", 0.f, 1.f, 0.f);
+   		configParam (TIM_PARAM_01 + i++,  -100.f, 100.f, 0.f, "Micro Timing Step 15", "%", 0.f, 1.f, 0.f);
+   		configParam (TIM_PARAM_01 + i++,  -100.f, 100.f, 0.f, "Micro Timing Step 16", "%", 0.f, 1.f, 0.f);
 
 		configInput ( RST_INPUT, "Reset");
 		configInput ( CLK_INPUT, "Clock");
