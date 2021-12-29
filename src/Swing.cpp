@@ -118,6 +118,8 @@ struct Swing : Module {
    		configParam (TIM_PARAM_01 + i++,  -100.f, 100.f, 0.f, "Micro Timing Step 15", "%", 0.f, 1.f, 0.f);
    		configParam (TIM_PARAM_01 + i++,  -100.f, 100.f, 0.f, "Micro Timing Step 16", "%", 0.f, 1.f, 0.f);
 
+		configParam (RST_PARAM, 0.f, 1.f, 0.f, "Reset", "", 0.f, 1.f, 0.f);
+
 		configInput ( RST_INPUT, "Reset");
 		configInput ( CLK_INPUT, "Clock");
 		configInput ( BPM_INPUT, "BPM");

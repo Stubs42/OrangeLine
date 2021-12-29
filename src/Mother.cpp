@@ -619,10 +619,16 @@ struct Mother : Module {
 		if (customChangeBits & CHG_ONOFF) {
 			if (effectiveChild == 0) {
 				for (int paramIdx = ONOFF_PARAM, i = 0; paramIdx <= ONOFF_PARAM_LAST; paramIdx ++, i++) {
-					if ((inChangeParam (paramIdx) && paramIdx - ONOFF_PARAM != 0) || didSelectScale) {
-						jsonIdx = jsonOnOffBaseIdx + i;
+					if (getStateJson(ROOT_BASED_DISPLAY_JSON) == 1.f)
+						jsonIdx = jsonOnOffBaseIdx + ((i + NUM_NOTES - effectiveChild) % NUM_NOTES);
+					else
+						if (getStateJson(C_BASED_DISPLAY_JSON) == 1.f)
+							jsonIdx = jsonOnOffBaseIdx + ((i + 2 * NUM_NOTES - effectiveChild - effectiveRoot) % NUM_NOTES);
+						else
+							jsonIdx = jsonOnOffBaseIdx + i;
+					if ((inChangeParam (paramIdx) && jsonIdx != jsonOnOffBaseIdx) || didSelectScale) {
 						if (didSelectScale)
-							f = selectedNotes[i];
+							f = selectedNotes[jsonIdx - jsonOnOffBaseIdx];
 						else {
 							f = getStateJson (jsonIdx);
 							if (f == 0.f)
@@ -642,7 +648,6 @@ struct Mother : Module {
 			int pct;
 			for (int paramIdx = WEIGHT_PARAM, i = 0; paramIdx <= WEIGHT_PARAM_LAST; paramIdx ++, i++) {
 				if (inChangeParam (paramIdx)) {
-					jsonIdx = jsonWeightBaseIdx + i;
 					weight = getStateParam (paramIdx);
 					if (getStateJson(ROOT_BASED_DISPLAY_JSON) == 1.f)
 						jsonIdx = jsonWeightBaseIdx + ((i + NUM_NOTES - effectiveChild) % NUM_NOTES);

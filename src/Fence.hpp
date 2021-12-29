@@ -41,6 +41,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define LINK_CENTER     2.f
 #define LINK_CENTER_INT 2
 
+#define TRIGGER			0.f
+#define GATE			1.f
+
 #define LINK_COLOR_NONE   0x000000
 #define LINK_COLOR_RANGE  0x00ff00
 #define LINK_COLOR_CENTER 0x0000ff
@@ -86,15 +89,15 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 //
 //	Dynamic Labels
 //
-#define LABEL_LOW_LINK_NONE    "Low"
-#define LABEL_HIGH_LINK_NONE   "High"
-#define LABEL_STEP_LINK_NONE   "Step"
-#define LABEL_LOW_LINK_RANGE   "Low"
-#define LABEL_HIGH_LINK_RANGE  "High"
-#define LABEL_STEP_LINK_RANGE  "Step"
-#define LABEL_LOW_LINK_CENTER  "Spread"
-#define LABEL_HIGH_LINK_CENTER "Center"
-#define LABEL_STEP_LINK_CENTER "Step"
+#define LABEL_LOW_LINK_NONE    "Range lower bound / spread"
+#define LABEL_HIGH_LINK_NONE   "Range upper bound / center"
+#define LABEL_STEP_LINK_NONE   "Step / Fallback for Quantized mode"
+#define LABEL_LOW_LINK_RANGE   "Range lower bound / spread"
+#define LABEL_HIGH_LINK_RANGE  "Range upper bound / center"
+#define LABEL_STEP_LINK_RANGE  "Step / Fallback for Quantized mode"
+#define LABEL_LOW_LINK_CENTER  "Range lower bound / spread"
+#define LABEL_HIGH_LINK_CENTER "Range upper bound / center"
+#define LABEL_STEP_LINK_CENTER "Step / Fallback for Quantized mode"
 
 //
 // Defaults

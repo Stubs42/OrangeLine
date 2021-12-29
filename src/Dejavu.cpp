@@ -91,9 +91,6 @@ struct Dejavu : Module {
    		setStateTypeInput  (CLK_INPUT, STATE_TYPE_TRIGGER);
    		setStateTypeInput  (RST_INPUT, STATE_TYPE_TRIGGER);
 
-		for (int row = 0; row < NUM_ROWS;row ++)
-			setStateTypeParam  (ONOFF_PARAM + row, STATE_TYPE_TRIGGER);
-
 		setInPoly          (REP_INPUT, true);
 		setOutPoly         (REP_OUTPUT, true);
 
@@ -108,10 +105,8 @@ struct Dejavu : Module {
 		setInPoly          (OFS_INPUT, true);
 		setInPoly          (SCL_INPUT, true);
 
-		setStateTypeParam  (SH_PARAM, STATE_TYPE_TRIGGER);
 		setInPoly          (SH_INPUT, true);
 
-		setStateTypeParam  (GATE_PARAM, STATE_TYPE_TRIGGER);
 		setInPoly          (GATE_INPUT, true);
 
      	setStateTypeOutput (GATE_OUTPUT, STATE_TYPE_TRIGGER);
@@ -196,10 +191,10 @@ struct Dejavu : Module {
 		configParam (LEN_PARAM + 2,       1.f,  RANGE_INIT,   1.f, "Length 3",               "", 0.f, 1.f, 0.f);
 		configParam (LEN_PARAM + 3,       1.f,  RANGE_INIT,   1.f, "Length 4",               "", 0.f, 1.f, 0.f);		
  
-   		configParam (ONOFF_PARAM + 0,     0.f,         1.f,   0.f, "Repeater 1 On/Offf",     "", 0.f, 1.f, 0.f);
-   		configParam (ONOFF_PARAM + 1,     0.f,         1.f,   0.f, "Repeater 2 On/Offf",     "", 0.f, 1.f, 0.f);
-   		configParam (ONOFF_PARAM + 2,     0.f,         1.f,   0.f, "Repeater 3 On/Offf",     "", 0.f, 1.f, 0.f);
-   		configParam (ONOFF_PARAM + 3,     0.f,         1.f,   0.f, "Repeater 4 On/Offf",     "", 0.f, 1.f, 0.f);
+ 		configSwitch(ONOFF_PARAM + 0, 0.0f, 1.0f, 0.0f, "Repeater 1", {"Off", "On"});
+ 		configSwitch(ONOFF_PARAM + 1, 0.0f, 1.0f, 0.0f, "Repeater 2", {"Off", "On"});
+ 		configSwitch(ONOFF_PARAM + 2, 0.0f, 1.0f, 0.0f, "Repeater 3", {"Off", "On"});
+ 		configSwitch(ONOFF_PARAM + 3, 0.0f, 1.0f, 0.0f, "Repeater 4", {"Off", "On"});
 
 		configParam (DUR_PARAM + 0,       1.f,  RANGE_INIT,   1.f, "Duration 1",             "", 0.f, 1.f, 0.f);
 		configParam (DUR_PARAM + 1,       1.f,  RANGE_INIT,   1.f, "Duration 2",             "", 0.f, 1.f, 0.f);
@@ -216,8 +211,8 @@ struct Dejavu : Module {
 
 		configParam (CHN_PARAM,             1.f,        16.f,   1.f, "# of Output Channels", "", 0.f, 1.f, 0.f);
 
-   		configParam (SH_PARAM,              0.f,         1.f,   0.f,  "Toggle CV S&H",       "", 0.f, 1.f, 0.f);
-   		configParam (GATE_PARAM,            0.f,         1.f,   0.f,  "Toggle Trigger/Gate", "", 0.f, 1.f, 0.f);
+ 		configSwitch(  SH_PARAM, 0.0f, 2.0f, 0.0f, "Sample & Hold", {"Off", "Retrigger", "Gate"});
+ 		configSwitch(GATE_PARAM, 0.0f, 2.0f, 0.0f, "Gate mode", {"Trigger", "Retrigger", "Gate"});
 
 		configInput ( RST_INPUT, "Reset");
 		configInput ( CLK_INPUT, "Clock");
@@ -910,8 +905,8 @@ void processOutputChannels() {
 		This method should not do dsp or other logic processing.
 	*/
 	inline void moduleProcessState () {
-		if (inChangeParam (GATE_PARAM)) {	//	User clicked on tr/gt button
-		    setStateJson (GATE_JSON, float((int(getStateJson (GATE_JSON)) + 1) % 3));
+		if (inChangeParam (GATE_PARAM)) {
+			setStateJson (GATE_JSON, getStateParam (GATE_PARAM));
 		}
 
 		if (getStateJson (GATE_JSON) > 0.f && !getInputConnected(GATE_INPUT))
@@ -921,11 +916,11 @@ void processOutputChannels() {
 
 		for (int row = 0; row <  NUM_ROWS; row++) {
 			if (inChangeParam (ONOFF_PARAM + row))
-				setStateJson (ONOFF_JSON + row, float((int(getStateJson (ONOFF_JSON + row)) + 1) % 2));
+				setStateJson (ONOFF_JSON + row, getStateParam (ONOFF_PARAM + row));
 		}
 
-		if (inChangeParam (SH_PARAM))	{
-			setStateJson (SH_JSON, float((int(getStateJson (SH_JSON)) + 1) % 3));
+		if (inChangeParam (SH_PARAM)) {
+			setStateJson (SH_JSON, getStateParam (SH_PARAM));
 		}
 	}
 
@@ -1398,7 +1393,7 @@ struct DejavuWidget : ModuleWidget {
 			knob = createParamCentered<RoundSmallBlackKnob> (calculateCoordinates (3.62, y, OFFSET_RoundSmallBlackKnob),  module, LEN_PARAM + i);
 	        knob->snap = true;
 			addParam (knob);
-			addParam (createParamCentered<LEDButton> (calculateCoordinates (15.399, yb, OFFSET_LEDButton), module, ONOFF_PARAM + i));
+			addParam (createParamCentered<VCVLatch> (calculateCoordinates (15.399, yb, OFFSET_LEDButton), module, ONOFF_PARAM + i));
 			light = createLightCentered<LargeLight<RedGreenBlueLight>> (calculateCoordinates (15.399, yb, OFFSET_LargeLight), module, REP_LIGHT_RGB + (3 * i));
 			light->bgColor = nvgRGBA(0, 0, 0, 255);
 			addChild (light);
@@ -1427,12 +1422,12 @@ struct DejavuWidget : ModuleWidget {
 		addOutput (createOutputCentered<PJ301MPort>	(calculateCoordinates (59.295, 99.682, OFFSET_PJ301MPort),  module, CV_OUTPUT));
 		addOutput (createOutputCentered<PJ301MPort>	(calculateCoordinates (59.295, 109.842, OFFSET_PJ301MPort),  module, GATE_OUTPUT));
 
-		addParam (createParamCentered<LEDButton>                   (calculateCoordinates (61.210, 81.186, OFFSET_LEDButton), module, SH_PARAM));
+		addParam (createParamCentered<VCVLatch>                   (calculateCoordinates (61.210, 81.186, OFFSET_LEDButton), module, SH_PARAM));
 		light = createLightCentered<LargeLight<RedGreenBlueLight>> (calculateCoordinates (61.120, 81.186, OFFSET_LargeLight), module, SH_LIGHT_RGB);
 		light->bgColor = nvgRGBA(0, 0, 0, 255);
 	 	addChild (light);
 
-		addParam (createParamCentered<LEDButton>                   (calculateCoordinates (40.800, 111.666, OFFSET_LEDButton), module, GATE_PARAM));
+		addParam (createParamCentered<VCVLatch>                   (calculateCoordinates (40.800, 111.666, OFFSET_LEDButton), module, GATE_PARAM));
 		light = createLightCentered<LargeLight<RedGreenBlueLight>> (calculateCoordinates (40.800, 111.666, OFFSET_LargeLight), module, GATE_LIGHT_RGB);
 		light->bgColor = nvgRGBA(0, 0, 0, 255);
 	 	addChild (light);
