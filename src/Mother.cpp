@@ -254,6 +254,7 @@ struct Mother : Module {
 		setStateJson (GRAB_DISABLED_JSON, 0.f);
 		setStateJson (ROOT_BASED_DISPLAY_JSON, 0.f);
 		setStateJson (C_BASED_DISPLAY_JSON, 0.f);
+		setStateJson (POW_IS_SCALE_JSON, 0.f);
 	}
 
 // ********************************************************************************************************************************
@@ -360,7 +361,9 @@ struct Mother : Module {
 				channels = autoChannels;
 			setOutPolyChannels (CV_OUTPUT, channels);
 			setOutPolyChannels (GATE_OUTPUT, channels);
-			setOutPolyChannels (POW_OUTPUT, channels);
+			if (getStateJson(POW_IS_SCALE_JSON) == 0.f) {
+				setOutPolyChannels (POW_OUTPUT, channels);
+			}
 			for (int channel = 0; channel < channels; channel++) {
 				weight = 0;
 				grab = false;
@@ -533,8 +536,10 @@ struct Mother : Module {
 								weight = getStateParam (WEIGHT_PARAM + noteIdx);
 						if (weight == 0.5f && effectiveChild > 0 && getStateJson (DNA_DISABLED_JSON) == 0.f)
 							weight = motherWeights[noteIdx];
-						OL_statePoly[NUM_INPUTS * POLY_CHANNELS + powOutPolyIdx] = weight * 10.f;
-						OL_outStateChangePoly[powOutPolyIdx] = true;
+						if (getStateJson(POW_IS_SCALE_JSON) == 0.f) {
+							OL_statePoly[NUM_INPUTS * POLY_CHANNELS + powOutPolyIdx] = weight * 10.f;
+							OL_outStateChangePoly[powOutPolyIdx] = true;
+						}
 					}
 					if (OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cvOutPolyIdx] != cvOut) {
 						OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cvOutPolyIdx]  = cvOut;
@@ -544,6 +549,19 @@ struct Mother : Module {
 				}
 				else
 					lastWasTrigger = false;
+			}
+		}
+		if (getStateJson(POW_IS_SCALE_JSON) == 1.f) {
+			setOutPolyChannels (POW_OUTPUT, NUM_NOTES);
+			int onOffJsonBaseIdx = ONOFF_JSON + effectiveScale * NUM_NOTES;
+			for (int i = 0; i < NUM_NOTES; i++) {
+				if (getStateJson (onOffJsonBaseIdx + (NUM_NOTES + i - effectiveRoot) % NUM_NOTES) > 0.f) {
+					OL_statePoly[NUM_INPUTS * POLY_CHANNELS + POW_OUTPUT * POLY_CHANNELS + i] = 10.f;
+				}
+				else {	
+					OL_statePoly[NUM_INPUTS * POLY_CHANNELS + POW_OUTPUT * POLY_CHANNELS + i] =  0.f;
+				}
+				OL_outStateChangePoly[POW_OUTPUT * POLY_CHANNELS + i] = true;
 			}
 		}
 	}
@@ -1240,6 +1258,22 @@ struct MotherWidget : ModuleWidget {
 		}
 	};
 
+	struct MotherPowIsScaleItem : MenuItem {
+		Mother *module;
+		void onAction(const event::Action &e) override {
+			if (module->OL_state[POW_IS_SCALE_JSON] == 0.f) {
+				module->OL_setOutState(POW_IS_SCALE_JSON, 1.f);
+			}
+			else {
+				module->OL_setOutState(POW_IS_SCALE_JSON, 0.f);
+			}
+		}
+		void step() override {
+			if (module)
+				rightText = (module != nullptr && module->OL_state[POW_IS_SCALE_JSON] == 1.0f) ? "✔" : "";
+		}
+	};
+
 	void appendContextMenu(Menu *menu) override {
 		if (module) {
 			MenuLabel *spacerLabel = new MenuLabel();
@@ -1289,6 +1323,11 @@ struct MotherWidget : ModuleWidget {
 			motherCBasedDisplayItem->module = module;		
 			motherCBasedDisplayItem->text = "C Based Display";
 			menu->addChild(motherCBasedDisplayItem);
+
+			MotherPowIsScaleItem *motherPowIsScaleItem = new MotherPowIsScaleItem();
+			motherPowIsScaleItem->module = module;
+			motherPowIsScaleItem->text = "POW output is scale";
+			menu->addChild(motherPowIsScaleItem);
 
 			spacerLabel = new MenuLabel();
 			menu->addChild(spacerLabel);
