@@ -220,6 +220,7 @@ struct NumberWidget : TransparentWidget {
 		w->box.size = mm2px (Vec (4 * length, 7));
 		w->module   = module;
 		w->pValue   = pValue;
+		w->defaultValue = defaultValue;
 		w->format   = format;
 		w->buffer   = buffer;
 		w->length   = length;
@@ -292,7 +293,7 @@ struct TextWidget : TransparentWidget {
 		std::shared_ptr<Font> pFont = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
 		const char *delimiter = " - ";
 		char buf[MAX_TEXT_SIZE * 2 + 1 + 3 /* delimiter length */];
-        	const char* str = (text != nullptr ? text : defaultText);
+        const char* str = (text != nullptr ? text : defaultText);
 		int len = strlen(str);
 		if (len > MAX_TEXT_SIZE)
 			len = MAX_TEXT_SIZE;
