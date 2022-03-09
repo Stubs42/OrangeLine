@@ -564,6 +564,20 @@ struct Mother : Module {
 				OL_outStateChangePoly[POW_OUTPUT * POLY_CHANNELS + i] = true;
 			}
 		}
+		if (getStateJson(POW_IS_SCALE_JSON) == 2.f) {
+			setOutPolyChannels (POW_OUTPUT, NUM_NOTES);
+			int onOffJsonBaseIdx = ONOFF_JSON + effectiveScale * NUM_NOTES;
+			int scaleNotes = 0;
+			for (int i = 0; i < NUM_NOTES; i++) {
+				if (getStateJson (onOffJsonBaseIdx + (NUM_NOTES + i - effectiveRoot) % NUM_NOTES) > 0.f) {
+					float pitch = float (effectiveRoot + i)  / 12;
+					OL_statePoly[NUM_INPUTS * POLY_CHANNELS + POW_OUTPUT * POLY_CHANNELS + scaleNotes] = pitch;
+					scaleNotes++;
+				}
+				OL_outStateChangePoly[POW_OUTPUT * POLY_CHANNELS + scaleNotes] = true;
+				setOutPolyChannels (POW_OUTPUT, scaleNotes);
+			}
+		}
 	}
 
 	/**
@@ -1260,9 +1274,10 @@ struct MotherWidget : ModuleWidget {
 
 	struct MotherPowIsScaleItem : MenuItem {
 		Mother *module;
+		float value;
 		void onAction(const event::Action &e) override {
-			if (module->OL_state[POW_IS_SCALE_JSON] == 0.f) {
-				module->OL_setOutState(POW_IS_SCALE_JSON, 1.f);
+			if (module->OL_state[POW_IS_SCALE_JSON] != value) {
+				module->OL_setOutState(POW_IS_SCALE_JSON, value);
 			}
 			else {
 				module->OL_setOutState(POW_IS_SCALE_JSON, 0.f);
@@ -1270,7 +1285,7 @@ struct MotherWidget : ModuleWidget {
 		}
 		void step() override {
 			if (module)
-				rightText = (module != nullptr && module->OL_state[POW_IS_SCALE_JSON] == 1.0f) ? "✔" : "";
+				rightText = (module != nullptr && module->OL_state[POW_IS_SCALE_JSON] == value) ? "✔" : "";
 		}
 	};
 
@@ -1324,10 +1339,17 @@ struct MotherWidget : ModuleWidget {
 			motherCBasedDisplayItem->text = "C Based Display";
 			menu->addChild(motherCBasedDisplayItem);
 
-			MotherPowIsScaleItem *motherPowIsScaleItem = new MotherPowIsScaleItem();
-			motherPowIsScaleItem->module = module;
-			motherPowIsScaleItem->text = "POW output is scale";
-			menu->addChild(motherPowIsScaleItem);
+			MotherPowIsScaleItem *motherPowIsScaleItemGates = new MotherPowIsScaleItem();
+			motherPowIsScaleItemGates->module = module;
+			motherPowIsScaleItemGates->value = 1.0;
+			motherPowIsScaleItemGates->text = "POW Scale Gates";
+			menu->addChild(motherPowIsScaleItemGates);
+
+			MotherPowIsScaleItem *motherPowIsScaleItemCv = new MotherPowIsScaleItem();
+			motherPowIsScaleItemCv->module = module;
+			motherPowIsScaleItemCv->value = 2.0;
+			motherPowIsScaleItemCv->text = "POW Scale Cv";
+			menu->addChild(motherPowIsScaleItemCv);
 
 			spacerLabel = new MenuLabel();
 			menu->addChild(spacerLabel);
