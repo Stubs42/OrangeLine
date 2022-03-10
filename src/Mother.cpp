@@ -578,6 +578,26 @@ struct Mother : Module {
 				setOutPolyChannels (POW_OUTPUT, scaleNotes);
 			}
 		}
+		if (getStateJson(POW_IS_SCALE_JSON) == 3.f) {
+			setOutPolyChannels (POW_OUTPUT, NUM_NOTES);
+			int onOffJsonBaseIdx = ONOFF_JSON + effectiveScale * NUM_NOTES;
+			int scaleNotes = 0;
+			for (int i = 0; i < NUM_NOTES; i++) {
+				float oct = 0.f;
+				int j = i + effectiveChild;
+				if (j >= NUM_NOTES) {
+					j = j % NUM_NOTES;
+					oct = 1.f;
+				}
+				if (getStateJson (onOffJsonBaseIdx + (NUM_NOTES + j - effectiveRoot) % NUM_NOTES) > 0.f) {
+					float pitch = oct + float (effectiveRoot + j)  / 12;
+					OL_statePoly[NUM_INPUTS * POLY_CHANNELS + POW_OUTPUT * POLY_CHANNELS + scaleNotes] = pitch;
+					scaleNotes++;
+				}
+				OL_outStateChangePoly[POW_OUTPUT * POLY_CHANNELS + scaleNotes] = true;
+				setOutPolyChannels (POW_OUTPUT, scaleNotes);
+			}
+		}
 	}
 
 	/**
@@ -1348,8 +1368,14 @@ struct MotherWidget : ModuleWidget {
 			MotherPowIsScaleItem *motherPowIsScaleItemCv = new MotherPowIsScaleItem();
 			motherPowIsScaleItemCv->module = module;
 			motherPowIsScaleItemCv->value = 2.0;
-			motherPowIsScaleItemCv->text = "POW Scale Cv";
+			motherPowIsScaleItemCv->text = "POW Scale Cv (Root)";
 			menu->addChild(motherPowIsScaleItemCv);
+
+			MotherPowIsScaleItem *motherPowIsScaleItemCvChild = new MotherPowIsScaleItem();
+			motherPowIsScaleItemCvChild->module = module;
+			motherPowIsScaleItemCvChild->value = 3.0;
+			motherPowIsScaleItemCvChild->text = "POW Scale Cv (Child)";
+			menu->addChild(motherPowIsScaleItemCvChild);
 
 			spacerLabel = new MenuLabel();
 			menu->addChild(spacerLabel);
