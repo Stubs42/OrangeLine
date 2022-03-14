@@ -32,6 +32,11 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define REFLECT_FATE_DURATION   4 * SECOND
 #define GREETING_DURATION      10 * SECOND
 
+#define POW_MODE_POW 0.f
+#define POW_MODE_GATES 1.f
+#define POW_MODE_SCALE 2.f
+#define POW_SCALE_BASE_ROOT  0.f
+#define POW_SCALE_BASE_CHILD 1.f
 #define CHG_ONOFF   1
 #define CHG_WEIGHT  (1 << 1)
 #define CHG_SCL     (1 << 2)
@@ -63,7 +68,10 @@ enum jsonIds {
 	ONOFF_JSON_LAST = ONOFF_JSON + (NUM_SCALES * NUM_NOTES) - 1,
 	WEIGHT_JSON,
 	WEIGHT_JSON_LAST = WEIGHT_JSON + (NUM_SCALES * NUM_CHLD * NUM_NOTES) - 1,
-	POW_IS_SCALE_JSON,
+	POW_MODE_JSON,
+	POW_SCALE_BASE_JSON,
+	POW_SCALE_STEP_JSON,
+	POW_PACK_SCALE_JSON,
 	NUM_JSONS
 };
 

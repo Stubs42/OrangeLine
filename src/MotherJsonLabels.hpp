@@ -211,7 +211,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 		"s12c09w00", "s12c09w01", "s12c09w02", "s12c09w03", "s12c09w04", "s12c09w05", "s12c09w06", "s12c09w07", "s12c09w08", "s12c09w09", "s12c09w10", "s12c09w11",
 		"s12c10w00", "s12c10w01", "s12c10w02", "s12c10w03", "s12c10w04", "s12c10w05", "s12c10w06", "s12c10w07", "s12c10w08", "s12c10w09", "s12c10w10", "s12c10w11",
 		"s12c11w00", "s12c11w01", "s12c11w02", "s12c11w03", "s12c11w04", "s12c11w05", "s12c11w06", "s12c11w07", "s12c11w08", "s12c11w09", "s12c11w10", "s12c11w11",
-		"powIsScale"
+		"powMode", "powScaleBase", "powScaleStep", "powPackScale"
 	};
 	#pragma GCC diagnostic pop
 
