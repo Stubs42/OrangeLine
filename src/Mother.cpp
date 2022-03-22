@@ -50,6 +50,7 @@ struct Mother : Module
 		"1", "2", "3", "4", "5", "6", "7"};
 
 	int effectiveRoot = 0;
+	int effectiveRootOct = 0;
 	int effectiveScale = 0;
 	float effectiveScaleDisplay = 0.f;
 	int effectiveChild = 0;
@@ -246,6 +247,7 @@ struct Mother : Module
 		strcpy(rootText, notes[int(round(getStateParam(ROOT_PARAM)))]);
 
 		strcpy(headDisplayText, headText);
+		updateMotherWeights();
 	}
 
 	/**
@@ -672,7 +674,7 @@ struct Mother : Module
 						{
 							pitchIdx %= 12;
 						}
-						float pitch = float(pitchIdx) / NUM_NOTES;
+						float pitch = float(pitchIdx) / NUM_NOTES + effectiveRootOct;
 						// DEBUG("pitchIdx = %d, note = %s", pitchIdx, notes[note(pitch)]);
 						OL_statePoly[NUM_INPUTS * POLY_CHANNELS + POW_OUTPUT * POLY_CHANNELS + chn] = pitch;
 						OL_outStateChangePoly[POW_OUTPUT * POLY_CHANNELS + chn] = true;
@@ -739,9 +741,10 @@ struct Mother : Module
 			effectiveChild--;
 		}
 		effectiveRoot = (int(getStateParam (ROOT_PARAM)) + note (getClampedInput(ROOT_INPUT))) % NUM_NOTES;
+		effectiveRootOct = floor(getClampedInput(ROOT_INPUT) / 12);
 
 		jsonOnOffBaseIdx = ONOFF_JSON + effectiveScale * NUM_NOTES;
-		int jsonIdx;
+		int jsonIdx = 0;
 		float f;
 
 		bool didSelectScale = false;
@@ -812,15 +815,22 @@ struct Mother : Module
 				if (inChangeParam(paramIdx))
 				{
 					weight = getStateParam(paramIdx);
+					// DEBUG("paramIdx = %d", paramIdx);
+					// DEBUG("paramIdx  = %d", paramIdx);
+					// DEBUG("effectiveScale = %d", effectiveScale);
+					// DEBUG("effectiveRoot = %d", effectiveRoot);
+					// DEBUG("effectiveChild = %d", effectiveChild);
+					jsonIdx = i;
 					if (getStateJson(ROOT_BASED_DISPLAY_JSON) == 1.f)
-						jsonIdx = jsonWeightBaseIdx + ((i + NUM_NOTES - effectiveChild) % NUM_NOTES);
+						jsonIdx = (i + NUM_NOTES - effectiveChild) % NUM_NOTES;
 					else if (getStateJson(C_BASED_DISPLAY_JSON) == 1.f)
-						jsonIdx = jsonWeightBaseIdx + ((i + 2 * NUM_NOTES - effectiveChild - effectiveRoot) % NUM_NOTES);
-					else
-						jsonIdx = jsonWeightBaseIdx + i;
-					setStateJson(jsonIdx, weight);
+						jsonIdx = (i + 2 * NUM_NOTES - effectiveChild - effectiveRoot) % NUM_NOTES;
+					// DEBUG("jsonIdx = %d", jsonIdx);
+					// DEBUG("jsonIdx  + effectiveChild = %d", jsonIdx + effectiveChild);
+					// jsonIdx -= 1;
+					setStateJson(jsonWeightBaseIdx + jsonIdx, weight);
 					pct = int(round(weight * 100.f));
-					if (getStateJson(jsonOnOffBaseIdx + (i + effectiveChild) % NUM_NOTES) == 0.f)
+					if (getStateJson(jsonOnOffBaseIdx + jsonIdx + effectiveChild) == 0.f)
 						snprintf(tmpHeadText, sizeof(tmpHeadText), "Wgt. %02d  n/a", paramIdx - WEIGHT_PARAM + 1);
 					else if (pct == 50 && getStateParam(CHLD_PARAM) > 0.f && getStateJson(DNA_DISABLED_JSON) == 0.f)
 						snprintf(tmpHeadText, sizeof(tmpHeadText), "Wgt. %02d  DNA", paramIdx - WEIGHT_PARAM + 1);
