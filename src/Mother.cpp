@@ -44,7 +44,7 @@ struct Mother : Module
 	char rootText[3];
 	char childText[3];
 
-	const char *notes[NUM_NOTES] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
+	const char *notes[NUM_NOTES] = {"C ", "C#", "D ", "D#", "E ", "F ", "F#", "G ", "G#", "A ", "A#", "B "};
 	const char *interval = "0123456789ABO";
 	const char *stepNumbers[7] = {
 		"1", "2", "3", "4", "5", "6", "7"};
@@ -386,7 +386,10 @@ struct Mother : Module
 		bool fromMother = false;
 		bool lastWasTrigger = false;
 
-		if ((customChangeBits & CHG_TRG_IN) || (!trgConnected && (customChangeBits & CHG_CV_IN)))
+		if ((customChangeBits & CHG_TRG_IN) ||
+		    (!trgConnected && (customChangeBits & CHG_CV_IN)) || 
+		    (customChangeBits & (CHG_SCL | CHG_CHLD | CHG_ROOT))
+		   )
 		{
 			cvChannels = inputs[CV_INPUT].getChannels();
 			trgChannels = inputs[TRG_INPUT].getChannels();
@@ -413,7 +416,11 @@ struct Mother : Module
 				int cvOutPolyIdx = CV_OUTPUT * POLY_CHANNELS + channel;
 				int powOutPolyIdx = POW_OUTPUT * POLY_CHANNELS + channel;
 
-				if ((!trgConnected && OL_inStateChangePoly[cvInPolyIdx]) || OL_inStateChangePoly[trgInPolyIdx] || (channel >= trgChannels && lastWasTrigger))
+				if ((!trgConnected && OL_inStateChangePoly[cvInPolyIdx]) || 
+				    OL_inStateChangePoly[trgInPolyIdx] || 
+					(channel >= trgChannels && lastWasTrigger)  || 
+				    (customChangeBits & (CHG_SCL | CHG_CHLD | CHG_ROOT))
+				   )
 				{
 					if (channel < trgChannels)
 						lastWasTrigger = OL_inStateChangePoly[trgInPolyIdx];
@@ -729,7 +736,7 @@ struct Mother : Module
 		effectiveScale = (int(getStateParam(SCL_PARAM)) - 1 + note(getClampedInput(SCL_INPUT))) % NUM_NOTES;
 		effectiveScaleDisplay = float(effectiveScale + 1);
 		effectiveChild = (int(getStateParam (CHLD_PARAM)) + note (getClampedInput(CHLD_INPUT))) % NUM_NOTES;
-/*
+		/*
 			quantize down to next lower active note if effectiveChild is not in scale
 		*/
 		while (effectiveChild > 0)
@@ -815,29 +822,22 @@ struct Mother : Module
 				if (inChangeParam(paramIdx))
 				{
 					weight = getStateParam(paramIdx);
-					// DEBUG("paramIdx = %d", paramIdx);
-					// DEBUG("paramIdx  = %d", paramIdx);
-					// DEBUG("effectiveScale = %d", effectiveScale);
-					// DEBUG("effectiveRoot = %d", effectiveRoot);
-					// DEBUG("effectiveChild = %d", effectiveChild);
 					jsonIdx = i;
 					if (getStateJson(ROOT_BASED_DISPLAY_JSON) == 1.f)
 						jsonIdx = (i + NUM_NOTES - effectiveChild) % NUM_NOTES;
 					else if (getStateJson(C_BASED_DISPLAY_JSON) == 1.f)
 						jsonIdx = (i + 2 * NUM_NOTES - effectiveChild - effectiveRoot) % NUM_NOTES;
-					// DEBUG("jsonIdx = %d", jsonIdx);
-					// DEBUG("jsonIdx  + effectiveChild = %d", jsonIdx + effectiveChild);
-					// jsonIdx -= 1;
 					setStateJson(jsonWeightBaseIdx + jsonIdx, weight);
 					pct = int(round(weight * 100.f));
+					const char *note = notes[(jsonIdx + effectiveRoot + effectiveChild) % NUM_NOTES];
 					if (getStateJson(jsonOnOffBaseIdx + jsonIdx + effectiveChild) == 0.f)
-						snprintf(tmpHeadText, sizeof(tmpHeadText), "Wgt. %02d  n/a", paramIdx - WEIGHT_PARAM + 1);
+						snprintf(tmpHeadText, sizeof(tmpHeadText), "Wgt. %s  n/a", note);
 					else if (pct == 50 && getStateParam(CHLD_PARAM) > 0.f && getStateJson(DNA_DISABLED_JSON) == 0.f)
-						snprintf(tmpHeadText, sizeof(tmpHeadText), "Wgt. %02d  DNA", paramIdx - WEIGHT_PARAM + 1);
+						snprintf(tmpHeadText, sizeof(tmpHeadText), "Wgt. %s  DNA", note);
 					else if (pct == 100 && getStateJson(GRAB_DISABLED_JSON) == 0.f)
-						snprintf(tmpHeadText, sizeof(tmpHeadText), "Wgt. %02d GRAB", paramIdx - WEIGHT_PARAM + 1);
+						snprintf(tmpHeadText, sizeof(tmpHeadText), "Wgt. %s GRAB", note);
 					else
-						snprintf(tmpHeadText, sizeof(tmpHeadText), "Wgt. %02d %3d%%", paramIdx - WEIGHT_PARAM + 1, pct);
+						snprintf(tmpHeadText, sizeof(tmpHeadText), "Wgt. %s %3d%%", note, pct);
 					setTmpHead(tmpHeadText);
 				}
 			}
