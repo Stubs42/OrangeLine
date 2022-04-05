@@ -339,3 +339,27 @@ STR input: strum controll CV input
 RST input: Reset. clears all ongoing gates, ratchetings and strumming.
 
 Output: [polyphonic] The gate output of Gator
+
+## Resc
+
+<p align="center"><img src="res/RescWork.svg"></p>
+
+### Short Description
+
+Resc is a polyphonic, pitch transposer, transposing a pitch given in a source scale to a target scale/child harmonically by determing the pitch position in the source scale and outputting the pitch at the position of the target scale.
+
+### The Panel
+
+IN input: [polyphinic] Pitch given in the source scale to transpose to the target scale.
+
+SCALE[Cmaj] input: [polyphonic] Source Scale. The channels contains the pitches of the scale. 
+
+TARGET SCALE input: [polyphonic] Target Scale. The channels contains the pitches of the scale.
+
+TARGET CHILD input: [polyphonic] Child of Target Scale to use as effective Target Scale. The channels contains the pitches of the scale.
+
+OUT BASE ROOT: [polyphonic] Transposed pitch based on the Root TARGET SCALE without respecting the TARGET CHILD input. 
+
+OUT BASE CHILD: [polyphonic] Transposed pitch based on the TARGET child SCALE respecting the TARGET CHILD input. 
+
+CHILD SCALE: [polyphonic] Pitches of the TARGET child SCALE (TARGET root Scale rotated by TARGET CHILD.
