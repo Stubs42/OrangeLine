@@ -353,11 +353,14 @@ struct Gator : Module {
                         ratCnt[channel] = 1;
                         ratPhsCnt[channel] = cmpPhsCnt;
                         ratCmp[channel] = cmp;
-                        float len = getStateParam (LEN_PARAM);
+                        float len = getStateParam (LEN_PARAM);;
                         if (getInputConnected (LEN_INPUT)) {
-                            if (channel < lenChannels)
-                                lastLen = OL_statePoly[LEN_INPUT * POLY_CHANNELS + channel] * 10;
-                            len += lastLen;
+                            if (channel < lenChannels) {
+								lastLen = OL_statePoly[LEN_INPUT * POLY_CHANNELS + channel] * 10;
+							}
+							if (lastLen > 0.f) {
+								len = lastLen;
+							}
                         }
                         if (len < MIN_LEN)
 							len = MIN_LEN;
