@@ -46,6 +46,8 @@ bool OL_isGatePoly [NUM_OUTPUTS * POLY_CHANNELS];
 bool OL_isSteadyGate[NUM_OUTPUTS * POLY_CHANNELS];
 int  OL_polyChannels[NUM_OUTPUTS];
 
+const char *notes[NUM_NOTES] = {"C ", "C#", "D ", "D#", "E ", "F ", "F#", "G ", "G#", "A ", "A#", "B "};
+	
 /*
 	Poly data
 */

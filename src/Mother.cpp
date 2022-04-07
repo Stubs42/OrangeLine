@@ -44,7 +44,6 @@ struct Mother : Module
 	char rootText[3];
 	char childText[3];
 
-	const char *notes[NUM_NOTES] = {"C ", "C#", "D ", "D#", "E ", "F ", "F#", "G ", "G#", "A ", "A#", "B "};
 	const char *interval = "0123456789ABO";
 	const char *stepNumbers[7] = {
 		"1", "2", "3", "4", "5", "6", "7"};

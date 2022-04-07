@@ -45,6 +45,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define LIGHT_TYPE_SINGLE  0
 #define LIGHT_TYPE_RGB     1
 
+#define NUM_NOTES   12
+
 #define NUM_STATES			(NUM_JSONS + NUM_PARAMS + NUM_INPUTS + NUM_OUTPUTS + NUM_LIGHTS)
 #define NUM_TRIGGERS			(NUM_PARAMS + NUM_INPUTS)
 
