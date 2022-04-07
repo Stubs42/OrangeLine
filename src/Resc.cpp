@@ -249,23 +249,31 @@ int trgCld = 0;
         if (run || (customChangeBits & CHG_IN)) {
             for (int channel = 0; channel < inputs[IN_INPUT].getChannels(); channel++) {
                 float srcPitch = OL_statePoly[IN_INPUT * POLY_CHANNELS + channel];
-                float srcNote = float(note(srcPitch)) / 12.f;
-                float oct = round(srcPitch - srcNote);
+				// DEBUG(" srcPitch = %lf", srcPitch);
+				// DEBUG("     note = %s", notes[note(srcPitch)]);
+                float oct = floor(srcPitch - srcScale[0]);
+				// DEBUG("      oct = %lf", oct);
+				float srcNote = float(note(srcPitch)) / 12.f;
                 while (srcNote < srcScale[0]) {
                     srcNote += 1.f;
                 }
-                // find position in srcScale
+                // DEBUG(" srcPitch = %lf (normalized to srcScale)", srcPitch);
+				// find position in srcScale
                 int position;
                 for (position = srcScaleNotes - 1;position > 0; position--) {
                     if (srcScale[position] <= srcNote) {
                         break;
                     }
                 }
+				// DEBUG("position = %d", position);
+
                 int cvRootBasedPolyIdx = ROOTBASED_OUTPUT * POLY_CHANNELS + channel;
+				// DEBUG("cvRootBasedPolyIdx = %d", cvRootBasedPolyIdx);
                 OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cvRootBasedPolyIdx] = trgScale[position % srcScaleNotes] + oct;
                 OL_outStateChangePoly[cvRootBasedPolyIdx] = true;
 
                 int cvCldBasedPolyIdx  = CLDBASED_OUTPUT * POLY_CHANNELS + channel;
+				// DEBUG("cvCldBasedPolyIdx = %d", cvCldBasedPolyIdx);
                 OL_statePoly[NUM_INPUTS * POLY_CHANNELS +  cvCldBasedPolyIdx] = trgScale[(position + trgCld) % trgScaleNotes] + oct;
                 OL_outStateChangePoly[cvCldBasedPolyIdx] = true;
             }
