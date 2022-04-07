@@ -209,7 +209,7 @@ int trgCld = 0;
         */
         if (getInputConnected(TRGCLD_INPUT)) {
             if (!initialized || changeInput(TRGCLD_INPUT)) {
-                float cld = float(note(getStateInput(TRGCLD_INPUT))) / 12.f;
+                float cld = quantize(fmod(getStateInput(TRGCLD_INPUT), 1.0));
                 while (cld < srcScale[0]) {
                     cld += 1.f;
                 }
