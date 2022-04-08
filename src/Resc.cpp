@@ -306,10 +306,10 @@ struct Resc : Module
 		{
 			for (int channel = 0; channel < inputs[IN_INPUT].getChannels(); channel++)
 			{
-				float srcPitch = OL_statePoly[IN_INPUT * POLY_CHANNELS + channel];
+				float srcPitch = quantize(OL_statePoly[IN_INPUT * POLY_CHANNELS + channel]);
 				// DEBUG(" srcPitch = %lf", srcPitch);
 				// DEBUG("     note = %s", notes[note(srcPitch)]);
-				float oct = floor(srcPitch - srcScale[0]);
+				float oct = floor(srcPitch - quantize(srcScale[0]) + PRECISION);
 				// DEBUG("      oct = %lf", oct);
 				float srcNote = float(note(srcPitch)) / 12.f;
 				while (srcNote < srcScale[0])
@@ -327,10 +327,10 @@ struct Resc : Module
 					}
 				}
 				// DEBUG("position = %d", position);
-
 				int cvRootBasedPolyIdx = ROOTBASED_OUTPUT * POLY_CHANNELS + channel;
 				// DEBUG("cvRootBasedPolyIdx = %d", cvRootBasedPolyIdx);
-				OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cvRootBasedPolyIdx] = trgScale[position % srcScaleNotes] + oct;
+
+				OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cvRootBasedPolyIdx] = trgScale[position % trgScaleNotes] + oct;
 				OL_outStateChangePoly[cvRootBasedPolyIdx] = true;
 
 				int cvCldBasedPolyIdx = CLDBASED_OUTPUT * POLY_CHANNELS + channel;
