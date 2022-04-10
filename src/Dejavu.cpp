@@ -698,6 +698,12 @@ void processOutputChannels() {
 				for (int row =  NUM_ROWS - 1; row >= 0; row --)
 					if (rowActive (row))
 						p_srcRandomGenerator = &(repeatRandomGenerator[row]);
+						
+				if (p_srcRandomGenerator == &globalRandom && getStateJson(LOOP_JSON) == 1.f) {
+					float seed = getGlobalSeed(); 
+					initRandom (&globalRandom, (unsigned long)seed);
+				}
+
 				// 
 				// get a new seed from the p_srcRandomGenerator to generate all outputs for this clock tick
 				// Reinitialize Gate and CV random generators using this seed
