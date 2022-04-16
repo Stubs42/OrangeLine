@@ -21,7 +21,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "OrangeLine.hpp"
 
 // Number of poly inputs and outputs
-// #define NUM_POLYS	4
 
 #define AUDIO_VOLTAGE  5.f
 

@@ -20,8 +20,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 #include "OrangeLine.hpp"
 
-#define NUM_POLYS	1   // 0 produces lots of compiler warnings
-
 #define DEFAULT_LEN 16
 
 #define PHASE_LOW   -10.f
