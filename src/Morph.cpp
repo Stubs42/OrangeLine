@@ -418,7 +418,8 @@ struct Morph : Module
                             cv = rndCvRnd * rndSclInp * 10.f + rndOffInp;
                         }
                         else {
-                            cv = rndCvRnd * -rndSclInp * 20.f - 10.f + rndOffInp;
+                            float sign = (getRandom(&globalRandom) > 0.5f) ? 1.f : -1.f;
+                            cv = rndCvRnd * -rndSclInp * 10.f * sign + rndOffInp;
                         }
                     }
                     // write back change to loop
