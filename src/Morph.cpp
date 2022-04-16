@@ -39,6 +39,8 @@ struct Morph : Module
 	*/
 	bool widgetReady = false;
 
+#include "MorphJsonLabels.hpp"
+
 	// ********************************************************************************************************************************
 	/*
 		Initialization
@@ -103,19 +105,15 @@ struct Morph : Module
 	*/
 	inline void moduleInitJsonConfig()
 	{
-
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wwrite-strings"
-
 		//
 		// Config internal Parameters not bound to a user interface object
 		//
-
-		setJsonLabel(STYLE_JSON, "style");
-		setJsonLabel(POLY_CHANNELS_JSON, "polyChannels");
-
-#include "MorphJsonLoopLabels.hpp"
-
+		for (int i = 0; i < NUM_JSONS; i++)
+		{
+			setJsonLabel(i, jsonLabel[i]);
+		}
 #pragma GCC diagnostic pop
 	}
 
@@ -319,6 +317,7 @@ struct Morph : Module
                 // get Loop length
                 int loopLen = getFromParamOrInput(LOOP_LEN_PARAM, LOOP_LEN_INPUT, channel, 10.f);
                 if (loopLen < 1) { loopLen = 1; }
+                if (loopLen > MAX_LOOP_LEN) { loopLen = MAX_LOOP_LEN; }
                 // clear if requested
                 if (clear[channel]) {
                     for (int step = 0; step < loopLen; step ++) {
