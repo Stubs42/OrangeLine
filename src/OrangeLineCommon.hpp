@@ -77,6 +77,7 @@ int    samplesSkipped  = 0;
 int    lastParamChanged = 0;
 bool   paramChanged = false;
 bool   dataFromJsonCalled = false;
+bool   moduleInitJsonCalled = false;
 /*
 	Random implementation derived from the one used in Frozen Wastland Seeds of Change
 */
@@ -165,6 +166,7 @@ inline void initializeInstance () {
 	moduleInitStateTypes ();	//	Method to overwrite defaults by module specific settings 
 	allocateTriggers();			//	Allocate triggers and pulse generators for trigger I/O
 	moduleInitJsonConfig ();	//	Initialize json configuration like setting the json labels for json state attributes
+	moduleInitJsonCalled = true;
 	memset (           OL_state,   0.f, sizeof (OL_state));				// Initialize state values
 	memset (   OL_inStateChange, false, sizeof (OL_inStateChange));		// Initialize incoming state changes
 	memset (  OL_outStateChange, false, sizeof (OL_outStateChange));	// Initialize outgoing state changes
@@ -704,6 +706,7 @@ inline void reflectChanges () {
 */
 json_t *dataToJson () override {
 	json_t *rootJ = json_object ();
+	if (!moduleInitJsonCalled) return rootJ;
 	int jsonIdx;
 	for (jsonIdx = 0; jsonIdx < NUM_JSONS; jsonIdx ++) {
 		json_object_set_new (rootJ, OL_jsonLabel[jsonIdx], json_real (getStateJson (jsonIdx)));
@@ -715,6 +718,7 @@ json_t *dataToJson () override {
 	Restore json state values after loading a preset or (re)loading a patch
 */
 void dataFromJson (json_t *rootJ) override {
+	if (!moduleInitJsonCalled) return;
 	json_t *pJson;
 	for (int jsonIdx = 0; jsonIdx < NUM_JSONS; jsonIdx ++)
 		if ((pJson = json_object_get (rootJ, OL_jsonLabel[jsonIdx])) != nullptr)
