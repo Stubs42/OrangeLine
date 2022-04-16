@@ -190,9 +190,11 @@ inline void initializeInstance () {
 	config (NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 	moduleParamConfig ();
 	/*
-		Initialize globalRandomGeneratorInstance with zero seed
+		Initialize globalRandomGeneratorInstance with zero random seed
 	*/
-	initRandom (&globalRandom, 0);
+	rack::random::init ();
+	uint64_t seed = rack::random::u64 ();	
+	initRandom (&globalRandom, seed);
 }
 
 /**
