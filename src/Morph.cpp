@@ -415,10 +415,10 @@ struct Morph : Module
                         float rndCvRnd = getRandom(&globalRandom);
                         if (rndSclInp >= 0) {
                             // unipolar cv
-                            cv = rndCvRnd * rndSclInp + rndOffInp;
+                            cv = rndCvRnd * rndSclInp * 10.f + rndOffInp;
                         }
                         else {
-                            cv = rndCvRnd * -rndSclInp * 2 - 10.f + rndOffInp;
+                            cv = rndCvRnd * -rndSclInp * 20.f - 10.f + rndOffInp;
                         }
                     }
                     // write back change to loop
