@@ -27,6 +27,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 struct Morph : Module
 {
 	float oldClkInputVoltage = 0;
+    int polyChannels = 1;
+    int shift[POLY_CHANNELS];
+    bool clear[POLY_CHANNELS];
 
 #include "OrangeLineCommon.hpp"
 
@@ -111,6 +114,8 @@ struct Morph : Module
 		setJsonLabel(STYLE_JSON, "style");
 		setJsonLabel(POLY_CHANNELS_JSON, "polyChannels");
 
+#include "MorphJsonLoopLabels.hpp"
+
 #pragma GCC diagnostic pop
 	}
 
@@ -131,7 +136,7 @@ struct Morph : Module
         configParam (SHIFT_RIGHT_PARAM, 0.f,   1.f,  0.f, "Shift Right (Skip Loop) one step",    "", 0.f, 1.f, 0.f);
         configParam (CLR_PARAM,         0.f,   1.f,  0.f, "Clear Loop (no Gates, CV 0V)",        "", 0.f, 1.f, 0.f);
 
-   		configParam (LOOP_LEN_PARAM,    1.f,  64.f, 16.f, "Loop Length", "", 0.f, 1.f, 0.f);
+   		configParam (LOOP_LEN_PARAM,    1.f,  MAX_LOOP_LEN, 16.f, "Loop Length", "", 0.f, 1.f, 0.f);
         paramQuantities[LOOP_LEN_PARAM]->snapEnabled = true;
 
    		configParam (RND_GATE_PARAM,    0.f, 100.f, 50.f, "Random Gate Probability", "%", 0.f, 1.f, 0.f);
@@ -188,6 +193,16 @@ struct Morph : Module
 	{
         setStateJson(POLY_CHANNELS_JSON, 0.f);
 
+        for (int i = STEPS_JSON; i < STEPS_JSON + POLY_CHANNELS * MAX_LOOP_LEN * 2; i++) {
+            setStateJson(i, 0.f);
+        }
+        for (int i = HEAD_JSON; i < HEAD_JSON + POLY_CHANNELS; i++) {
+            setStateJson(i, 0.f);
+        }
+        for (int i = 0; i < POLY_CHANNELS; i ++) {
+            shift[i] = 0;
+            clear[i] = 0;
+        }
 		styleChanged = true;
 	}
 
@@ -224,6 +239,252 @@ struct Morph : Module
 			}
 			styleChanged = false;
 		}
+
+        // Collect shifts and Clears
+
+        for (int channel = 0; channel < polyChannels; channel ++) { 
+            
+            // get shifts
+            if (!getInputConnected(SHIFT_LEFT_INPUT)) {
+                if(changeParam(SHIFT_LEFT_PARAM) && getStateParam(SHIFT_LEFT_PARAM) > 0.f) {
+                    shift[channel] -= 1;
+                }
+            }
+            else {
+                if (channel < inputs[SHIFT_LEFT_INPUT].getChannels() && 
+                    OL_statePoly[SHIFT_LEFT_INPUT * POLY_CHANNELS + channel] > 0.f) {
+                    shift[channel] -= 1;
+                }
+            }
+            if (!getInputConnected(SHIFT_RIGHT_INPUT)) {
+                if(changeParam(SHIFT_RIGHT_PARAM) && getStateParam(SHIFT_RIGHT_PARAM) > 0.f) {
+                    shift[channel] += 1;
+                }
+            }
+            else {
+                if (channel < inputs[SHIFT_RIGHT_INPUT].getChannels() && 
+                    OL_statePoly[SHIFT_RIGHT_INPUT * POLY_CHANNELS + channel] > 0.f) {
+                    shift[channel] += 1;
+                }
+            } 
+
+            // get clears
+            if (!getInputConnected(CLR_INPUT)) {
+                if(changeParam(CLR_PARAM) && getStateParam(CLR_PARAM) > 0.f) {
+                    clear[channel] = true;
+                }
+            }
+            else {
+                if (channel < inputs[CLR_INPUT].getChannels() && 
+                    OL_statePoly[CLR_INPUT * POLY_CHANNELS + channel] > 0.f) {
+                    clear[channel] = true;
+                }
+            }   
+        }
+
+        // No furuther Action if no clock arrived
+        if (changeInput (CLK_INPUT) && getStateInput(CLK_INPUT) > 0.f) {
+
+// DEBUG("CLK");
+
+            // get polyChannels
+            polyChannels = getStateJson(POLY_CHANNELS_JSON);
+            if (polyChannels == 0) {
+                polyChannels = 1;
+                // channels is auto, derive maximum channels of all polyphonic inputs
+                for (int i = SRC_GATE_INPUT; i <= RND_OFF_INPUT; i ++) {
+                    if (getInputConnected(i)) {
+                        int channels = inputs[i].getChannels();
+                        if (channels > polyChannels) {
+                            polyChannels = channels;
+                        }
+                    }
+                }
+            }
+
+// DEBUG("polyChannels = %d", polyChannels);
+
+            // proces for each channel
+            for (int channel = 0; channel < polyChannels; channel ++) { 
+                // get Loop length
+                int loopLen = getStateParam(LOOP_LEN_PARAM);
+                if (getInputConnected(LOOP_LEN_INPUT)) {
+                    if (channel < inputs[LOOP_LEN_INPUT].getChannels()) {
+                        loopLen = OL_statePoly[LOOP_LEN_INPUT * POLY_CHANNELS + channel];
+                    }
+                }
+// DEBUG("[%d] loopLen = %d", channel, loopLen);
+                // clear if requested
+                if (clear[channel]) {
+                    for (int step = 0; step < loopLen; step ++) {
+                        setStateJson(STEPS_JSON + channel * MAX_LOOP_LEN * 2 + step * 2, 0.f);
+                        setStateJson(STEPS_JSON + channel * MAX_LOOP_LEN * 2 + step * 2 + 1, 0.f);
+                        setStateJson(HEAD_JSON + channel, 0.f);
+                    }
+// DEBUG("[%d] CLR", channel);
+                    clear[channel] = false;
+                    shift[channel] = 0;
+                }
+                // Do shift
+                int head = getStateJson(HEAD_JSON + channel);
+                head += shift[channel];
+                shift[channel] = 0;
+                while (head < 0) {
+                    head += loopLen;
+                }
+                head %= loopLen;
+
+                // read from loop
+                float gate = getStateJson(STEPS_JSON + channel * MAX_LOOP_LEN * 2 + head * 2);
+                float cv   = getStateJson(STEPS_JSON + channel * MAX_LOOP_LEN * 2 + head * 2 + 1);
+
+// DEBUG("[%d] from loop [%lf,%lf], head = %d", channel, gate, cv, head);
+
+                // get force
+                bool force = false;
+                if (getInputConnected(SRC_FORCE_INPUT)) {
+                    if (channel < inputs[SRC_FORCE_INPUT].getChannels()) {
+                        if (OL_statePoly[SRC_FORCE_INPUT * POLY_CHANNELS + channel] >= 5.f) {
+                            force = true;
+                        }
+                    }
+                } 
+                // get and evaluate lock values
+                float lockGate = getStateParam(LOCK_GATE_PARAM);
+                if (getInputConnected(LOCK_GATE_INPUT)) {
+                    if (channel < inputs[LOCK_GATE_INPUT].getChannels()) {
+                        lockGate = OL_statePoly[LOCK_GATE_INPUT * POLY_CHANNELS + channel];
+                    }
+                }
+                float lockCv = getStateParam(LOCK_CV_PARAM);
+                if (getInputConnected(LOCK_CV_INPUT)) {
+                    if (channel < inputs[LOCK_CV_INPUT].getChannels()) {
+                        lockCv = OL_statePoly[LOCK_CV_INPUT * POLY_CHANNELS + channel];
+                    }
+                }
+                float lockBoth = getStateParam(LOCK_BOTH_PARAM);
+                if (getInputConnected(LOCK_BOTH_INPUT)) {
+                    if (channel < inputs[LOCK_BOTH_INPUT].getChannels()) {
+                        lockBoth = OL_statePoly[LOCK_BOTH_INPUT * POLY_CHANNELS + channel];
+                    }
+                }
+                float srcRnd = -1.f;
+                // process gates
+                lockGate += lockBoth;
+                float rndGate = getRandom(&globalRandom);
+// DEBUG("[%d] rndGate = %lf, lockGate = %lf]", channel, rndGate, lockGate);
+                if (rndGate * 100 > lockGate || force) {
+// DEBUG("[%d] Gate Morph", channel);
+                    // We have to get the gate from src or random
+                    srcRnd = getStateParam(SRC_RND_PARAM);
+                    if (getInputConnected(SRC_RND_INPUT)) {
+                        if (channel < inputs[SRC_RND_INPUT].getChannels()) {
+                            srcRnd = OL_statePoly[SRC_RND_INPUT * POLY_CHANNELS + channel];
+                        }
+                    }
+                    // check where to go
+                    float rndSrcRnd = getRandom(&globalRandom);
+                    if (rndSrcRnd * 100 > srcRnd || force) {
+// DEBUG("[%d] from Source", channel);
+                        // we go src
+                        if (getInputConnected(SRC_GATE_INPUT) && inputs[SRC_GATE_INPUT].getChannels() > channel) {
+                            if (OL_statePoly[SRC_GATE_INPUT * POLY_CHANNELS + channel] < 5.0) {
+                                gate = 0.f;
+                            }
+                            else {
+                                gate = 10.f;
+                            }
+                        }
+                    }
+                    else {
+// DEBUG("[%d] from Random", channel);
+                        // we go random
+                        float rndGateInp = getStateParam(RND_GATE_PARAM);
+                        if (getInputConnected(RND_GATE_INPUT)) {
+                            if (channel < inputs[RND_GATE_INPUT].getChannels()) {
+                                rndGateInp = OL_statePoly[RND_GATE_INPUT * POLY_CHANNELS + channel];
+                            }
+                        }
+                        float rndGateRnd = getRandom(&globalRandom);
+// DEBUG("[%d] rndGateRnd = %lf, rndGateInp = %lf", channel, rndGateRnd, rndGateInp);
+                        if (rndGateRnd * 100.f > rndGateInp) {
+                            gate = 0.f;
+                        }
+                        else {
+                            gate = 10.f;
+                        }
+                    }
+                    // write back to loop
+// DEBUG("[%d] setStateJson(%d, %lf), head = %d", channel, STEPS_JSON + channel * MAX_LOOP_LEN * 2 + head * 2, gate, head);
+                    setStateJson(STEPS_JSON + channel * MAX_LOOP_LEN * 2 + head * 2, gate);
+               }
+
+                // process cvs
+                lockCv += lockBoth;
+                float rndCv = getRandom(&globalRandom);
+                if (rndCv * 100 > lockCv || force) {
+                    // We have to get the cv from src or random
+                    if (srcRnd == -1.f) {
+                        srcRnd = getStateParam(SRC_RND_PARAM);
+                        if (getInputConnected(SRC_RND_INPUT)) {
+                            if (channel < inputs[SRC_RND_INPUT].getChannels()) {
+                                srcRnd = OL_statePoly[SRC_RND_INPUT * POLY_CHANNELS + channel];
+                            }
+                        }
+                    }
+                    // check where to go
+                    float rndSrcRnd = getRandom(&globalRandom);
+                    if (rndSrcRnd * 100 > srcRnd || force) {
+                        // we go src
+                        if (getInputConnected(SRC_CV_INPUT) && inputs[SRC_CV_INPUT].getChannels() > channel) {
+                            cv = OL_statePoly[SRC_CV_INPUT * POLY_CHANNELS + channel];
+                        }
+                    }
+                    else {
+                        // we go random
+                        float rndSclInp = getStateParam(RND_SCL_PARAM) * 10.f;
+                        if (getInputConnected(RND_SCL_INPUT)) {
+                            if (channel < inputs[RND_SCL_INPUT].getChannels()) {
+                                rndSclInp = OL_statePoly[RND_SCL_INPUT * POLY_CHANNELS + channel];
+                            }
+                        }
+                        float rndOffInp = getStateParam(RND_OFF_PARAM);
+                        if (getInputConnected(RND_OFF_INPUT)) {
+                            if (channel < inputs[RND_OFF_INPUT].getChannels()) {
+                                rndOffInp = OL_statePoly[RND_OFF_INPUT * POLY_CHANNELS + channel];
+                            }
+                        }
+
+                        float rndCvRnd = getRandom(&globalRandom);
+                        if (rndSclInp >= 0) {
+                            // unipolar cv
+                            cv = rndCvRnd * rndSclInp + rndOffInp;
+                        }
+                        else {
+                            cv = rndCvRnd * -rndSclInp * 2 - 10.f + rndOffInp;
+                        }
+                    }
+                    // write back change to loop
+// DEBUG("[%d] setStateJson(%d, %lf), head = %d", channel, STEPS_JSON + channel * MAX_LOOP_LEN * 2 + head * 2 + 1, gate, head);
+                    setStateJson(STEPS_JSON + channel * MAX_LOOP_LEN * 2 + head * 2 + 1, cv);
+                }
+
+                // further processing here
+
+                // write outputs
+// DEBUG("[%d] final [%lf,%lf]", channel, gate, cv);
+
+                setStateOutPoly(GATE_OUTPUT, channel, gate);
+                setStateOutPoly(CV_OUTPUT, channel, cv);
+
+                // Advance head
+                head ++;
+                head %= loopLen;
+                setStateJson(HEAD_JSON + channel, head);
+            }
+            setOutPolyChannels(GATE_OUTPUT, polyChannels);
+            setOutPolyChannels(CV_OUTPUT, polyChannels);
+        } 
 	}
 
 	/**

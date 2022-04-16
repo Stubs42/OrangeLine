@@ -20,8 +20,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 #include "OrangeLine.hpp"
 
-#define NUM_POLYS	1   // 0 produces lots of compiler warnings
-
+#define MAX_LOOP_LEN    64
 //
 // Defaults
 //
@@ -35,6 +34,10 @@ enum jsonIds {
 	//
     STYLE_JSON,
     POLY_CHANNELS_JSON,
+	STEPS_JSON,
+	STEPS_JSON_LAST = STEPS_JSON + POLY_CHANNELS * MAX_LOOP_LEN * 2 - 1,
+    HEAD_JSON,
+	HEAD_JSON_LAST = HEAD_JSON + POLY_CHANNELS - 1,
 
 	NUM_JSONS
 };
