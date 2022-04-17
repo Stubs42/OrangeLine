@@ -353,7 +353,7 @@ struct Morph : Module
 
                 // get and evaluate lock values
                 float lockGate = getFromParamOrInput(LOCK_GATE_PARAM, LOCK_GATE_INPUT, channel, 10.f);
-                float lockCv   = getFromParamOrInput(LOCK_CV_PARAM, LOCK_BOTH_INPUT, channel, 10.f);
+                float lockCv   = getFromParamOrInput(LOCK_CV_PARAM, LOCK_CV_INPUT, channel, 10.f);
                 float lockBoth = getFromParamOrInput(LOCK_BOTH_PARAM, LOCK_BOTH_INPUT, channel, 10.f);
 
                 float srcRnd = -1.f;
