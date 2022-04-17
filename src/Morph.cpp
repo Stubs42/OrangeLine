@@ -361,21 +361,24 @@ struct Morph : Module
                 // process gates
                 lockGate += lockBoth;
                 float rndGate = getRandom(&globalRandom);
+				bool useSrcGate = (getInputConnected(SRC_GATE_INPUT) && inputs[SRC_GATE_INPUT].getChannels() > channel);
                 if (rndGate * 100 > lockGate || force) {
                     // We have to get the gate from src or random
                     srcRnd = getFromParamOrInput(SRC_RND_PARAM, SRC_RND_INPUT, channel, 10.f);
                     // check where to go
                     float rndSrcRnd = getRandom(&globalRandom);
-                    if (rndSrcRnd * 100 > srcRnd || force) {
+                    if ((rndSrcRnd * 100 > srcRnd || force) && useSrcGate) {
                         // we go src
-                        if (getInputConnected(SRC_GATE_INPUT) && inputs[SRC_GATE_INPUT].getChannels() > channel) {
-                            if (OL_statePoly[SRC_GATE_INPUT * POLY_CHANNELS + channel] < 5.0) {
-                                gate = 0.f;
-                            }
-                            else {
-                                gate = 10.f;
-                            }
-                        }
+
+						// if (OL_statePoly[SRC_GATE_INPUT * POLY_CHANNELS + channel] < 5.0) {
+						// 	gate = 0.f;
+						// }
+						// else {
+						// 	gate = 10.f;
+						// }
+						// We allow the gate port to also carry cv because there may be a use for this and MORPH
+						// doesn't do anything with this value anyway
+						gate = OL_statePoly[SRC_GATE_INPUT * POLY_CHANNELS + channel];
                     }
                     else {
                         // we go random
@@ -395,6 +398,7 @@ struct Morph : Module
                 // process cvs
                 lockCv += lockBoth;
                 float rndCv = getRandom(&globalRandom);
+				bool useSrcCv   = (getInputConnected(SRC_CV_INPUT) && inputs[SRC_CV_INPUT].getChannels() > channel);
                 if (rndCv * 100 > lockCv || force) {
                     // We have to get the cv from src or random
                     if (srcRnd == -1.f) {
@@ -402,11 +406,9 @@ struct Morph : Module
                     }
                     // check where to go
                     float rndSrcRnd = getRandom(&globalRandom);
-                    if (rndSrcRnd * 100 > srcRnd || force) {
+                    if ((rndSrcRnd * 100 > srcRnd || force) && useSrcCv) {
                         // we go src
-                        if (getInputConnected(SRC_CV_INPUT) && inputs[SRC_CV_INPUT].getChannels() > channel) {
-                            cv = OL_statePoly[SRC_CV_INPUT * POLY_CHANNELS + channel];
-                        }
+                        cv = OL_statePoly[SRC_CV_INPUT * POLY_CHANNELS + channel];
                     }
                     else {
                         // we go random
