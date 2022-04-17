@@ -215,7 +215,7 @@ struct Morph : Module
 	*/
     float getFromParamOrInput(int param, int input, int channel, float inputScale) {
         float value = getStateParam(param);
-        if (getInputConnected(LOCK_BOTH_INPUT)) {
+        if (getInputConnected(input)) {
             int channels = inputs[input].getChannels();
             if (channel < channels) {
                 value = OL_statePoly[input * POLY_CHANNELS + channel] * inputScale;
