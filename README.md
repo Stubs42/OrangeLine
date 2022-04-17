@@ -420,3 +420,9 @@ RNDSCL input: [polyphonic] [-10-10V] scale/10 for random cvs. Negative values bi
 RND OFF knob,
 RND OFF input: [-10-10V] offset to add to the scaled random cv.
 
+#### Outputs
+
+GATE output: [polyphonic] Gate output
+
+CV output: [polyphonic] CV output
+
