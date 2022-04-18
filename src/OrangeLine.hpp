@@ -60,6 +60,14 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #define PI            3.14159265
 
+#define VALUE_MODE_REPLACE 0
+#define VALUE_MODE_ADD     1
+#define VALUE_MODE_SCALE   2
+
+#define NORMAL_MODE_NONE   0
+#define NORMAL_MODE_ONE    1
+#define NORMAL_MODE_LAST   2
+
 /*
 	Random implementation derived from the one used in Frozen Wastland Seeds of Change
 */

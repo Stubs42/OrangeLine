@@ -336,6 +336,22 @@ inline NVGcolor getTextColor () {
 	return (OL_state[STYLE_JSON] == STYLE_ORANGE ? ORANGE : WHITE);
 }
 
+float getFromParamOrPolyInput(int param, int input, int channel, float inputScale, int valueMode, int normalMode) {
+	float value = getStateParam(param);
+	if (getInputConnected(input)) {
+		int channels = inputs[input].getChannels();
+		if (channel < channels) {
+			value = OL_statePoly[input * POLY_CHANNELS + channel] * inputScale;
+		}
+		else {
+			if (channels == 1) {
+				value = OL_statePoly[input * POLY_CHANNELS] * inputScale;
+			}
+		}
+	}
+	return value;
+}
+
 // ********************************************************************************************************************************
 /*
 	Methods called from process ()

@@ -213,21 +213,6 @@ struct Morph : Module
 	/*
 		Methods called directly or indirectly called from process () in OrangeLineCommon.hpp
 	*/
-    float getFromParamOrInput(int param, int input, int channel, float inputScale) {
-        float value = getStateParam(param);
-        if (getInputConnected(input)) {
-            int channels = inputs[input].getChannels();
-            if (channel < channels) {
-                value = OL_statePoly[input * POLY_CHANNELS + channel] * inputScale;
-            }
-            else {
-                if (channels == 1) {
-                    value = OL_statePoly[LOCK_BOTH_INPUT * POLY_CHANNELS] * inputScale;
-                }
-            }
-        }
-        return value;
-    }
 
 	/**
 		Module specific process method called from process () in OrangeLineCommon.hpp
@@ -315,7 +300,7 @@ struct Morph : Module
             // proces for each channel
             for (int channel = 0; channel < polyChannels; channel ++) { 
                 // get Loop length
-                int loopLen = getFromParamOrInput(LOOP_LEN_PARAM, LOOP_LEN_INPUT, channel, 10.f);
+                int loopLen = getFromParamOrPolyInput(LOOP_LEN_PARAM, LOOP_LEN_INPUT, channel, 10.f, VALUE_MODE_ADD, NORMAL_MODE_ONE);
                 if (loopLen < 1) { loopLen = 1; }
                 if (loopLen > MAX_LOOP_LEN) { loopLen = MAX_LOOP_LEN; }
                 // clear if requested
@@ -352,9 +337,9 @@ struct Morph : Module
                 } 
 
                 // get and evaluate lock values
-                float lockGate = getFromParamOrInput(LOCK_GATE_PARAM, LOCK_GATE_INPUT, channel, 10.f);
-                float lockCv   = getFromParamOrInput(LOCK_CV_PARAM, LOCK_CV_INPUT, channel, 10.f);
-                float lockBoth = getFromParamOrInput(LOCK_BOTH_PARAM, LOCK_BOTH_INPUT, channel, 10.f);
+                float lockGate = getFromParamOrPolyInput(LOCK_GATE_PARAM, LOCK_GATE_INPUT, channel, 10.f, VALUE_MODE_ADD, NORMAL_MODE_ONE);
+                float lockCv   = getFromParamOrPolyInput(LOCK_CV_PARAM, LOCK_CV_INPUT, channel, 10.f, VALUE_MODE_ADD, NORMAL_MODE_ONE);
+                float lockBoth = getFromParamOrPolyInput(LOCK_BOTH_PARAM, LOCK_BOTH_INPUT, channel, 10.f, VALUE_MODE_ADD, NORMAL_MODE_ONE);
 
                 float srcRnd = -1.f;
 
@@ -364,7 +349,7 @@ struct Morph : Module
 				bool useSrcGate = (getInputConnected(SRC_GATE_INPUT) && inputs[SRC_GATE_INPUT].getChannels() > channel);
                 if (rndGate * 100 > lockGate || force) {
                     // We have to get the gate from src or random
-                    srcRnd = getFromParamOrInput(SRC_RND_PARAM, SRC_RND_INPUT, channel, 10.f);
+                    srcRnd = getFromParamOrPolyInput(SRC_RND_PARAM, SRC_RND_INPUT, channel, 10.f, VALUE_MODE_ADD, NORMAL_MODE_ONE);
                     // check where to go
                     float rndSrcRnd = getRandom(&globalRandom);
                     if ((rndSrcRnd * 100 > srcRnd || force) && useSrcGate) {
@@ -382,7 +367,7 @@ struct Morph : Module
                     }
                     else {
                         // we go random
-                        float rndGateInp = getFromParamOrInput(RND_GATE_PARAM, RND_GATE_INPUT, channel, 10.f);
+                        float rndGateInp = getFromParamOrPolyInput(RND_GATE_PARAM, RND_GATE_INPUT, channel, 10.f, VALUE_MODE_ADD, NORMAL_MODE_ONE);
                         float rndGateRnd = getRandom(&globalRandom);
                         if (rndGateRnd * 100.f > rndGateInp) {
                             gate = 0.f;
@@ -402,7 +387,7 @@ struct Morph : Module
                 if (rndCv * 100 > lockCv || force) {
                     // We have to get the cv from src or random
                     if (srcRnd == -1.f) {
-                        srcRnd = getFromParamOrInput(SRC_RND_PARAM, SRC_RND_INPUT, channel, 10.f);
+                        srcRnd = getFromParamOrPolyInput(SRC_RND_PARAM, SRC_RND_INPUT, channel, 10.f, VALUE_MODE_ADD, NORMAL_MODE_ONE);
                     }
                     // check where to go
                     float rndSrcRnd = getRandom(&globalRandom);
@@ -412,8 +397,8 @@ struct Morph : Module
                     }
                     else {
                         // we go random
-                        float rndSclInp = getFromParamOrInput(RND_SCL_PARAM, RND_SCL_INPUT, channel, 0.1f);
-                        float rndOffInp = getFromParamOrInput(RND_OFF_PARAM, RND_OFF_INPUT, channel, 1.f);
+                        float rndSclInp = getFromParamOrPolyInput(RND_SCL_PARAM, RND_SCL_INPUT, channel, 0.1f, VALUE_MODE_ADD, NORMAL_MODE_ONE);
+                        float rndOffInp = getFromParamOrPolyInput(RND_OFF_PARAM, RND_OFF_INPUT, channel, 1.f, VALUE_MODE_ADD, NORMAL_MODE_ONE);
                         float rndCvRnd = getRandom(&globalRandom);
                         if (rndSclInp >= 0) {
                             // unipolar cv
