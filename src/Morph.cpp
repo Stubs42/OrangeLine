@@ -300,7 +300,7 @@ struct Morph : Module
             // proces for each channel
             for (int channel = 0; channel < polyChannels; channel ++) { 
                 // get Loop length
-                int loopLen = getFromParamOrPolyInput(LOOP_LEN_PARAM, LOOP_LEN_INPUT, channel, 10.f, VALUE_MODE_ADD, NORMAL_MODE_ONE);
+                int loopLen = getFromParamOrPolyInput(LOOP_LEN_PARAM, LOOP_LEN_INPUT, channel, 10.f, VALUE_MODE_REPLACE, NORMAL_MODE_ONE);
                 if (loopLen < 1) { loopLen = 1; }
                 if (loopLen > MAX_LOOP_LEN) { loopLen = MAX_LOOP_LEN; }
                 // clear if requested

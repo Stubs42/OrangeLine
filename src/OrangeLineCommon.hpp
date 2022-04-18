@@ -337,17 +337,41 @@ inline NVGcolor getTextColor () {
 }
 
 float getFromParamOrPolyInput(int param, int input, int channel, float inputScale, int valueMode, int normalMode) {
-	float value = getStateParam(param);
+	float paramValue = getStateParam(param);
+	float inputValue = paramValue;
 	if (getInputConnected(input)) {
 		int channels = inputs[input].getChannels();
 		if (channel < channels) {
-			value = OL_statePoly[input * POLY_CHANNELS + channel] * inputScale;
+			inputValue = OL_statePoly[input * POLY_CHANNELS + channel] * inputScale;
 		}
 		else {
-			if (channels == 1) {
-				value = OL_statePoly[input * POLY_CHANNELS] * inputScale;
+			switch (normalMode) {
+				case NORMAL_MODE_NONE:
+					break;
+				case NORMAL_MODE_ONE:
+					if (channels == 1) {
+						inputValue = OL_statePoly[input * POLY_CHANNELS];
+					}
+					break;
+				case NORMAL_MODE_LAST:
+					inputValue = OL_statePoly[input * POLY_CHANNELS + channels - 1];
+					break;
 			}
+			inputValue *= inputScale;
 		}
+	}
+	else {
+		return paramValue;
+	}
+	float value = paramValue;
+	switch (valueMode) {
+		case VALUE_MODE_REPLACE:
+			return inputValue;
+		case VALUE_MODE_ADD:
+			return paramValue + inputValue;
+		case VALUE_MODE_SCALE:
+			// The value range of the parameter has to be in [-1:1] for this to work correctly
+			return inputValue * paramValue;
 	}
 	return value;
 }
