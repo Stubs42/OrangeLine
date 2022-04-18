@@ -184,12 +184,18 @@ struct Dejavu : Module {
 	*/
 	inline void moduleParamConfig () {
 		configParam (DIV_PARAM,             1.f,   DIV_MAX,   1.f, "Clock Division",       "", 0.f, 1.f, 0.f);
+        paramQuantities[DIV_PARAM]->snapEnabled = true;
 		configParam (SEED_PARAM,            0.f,  SEED_MAX,   DEFAULT_SEED, "Seed",                 "", 0.f, 1.f, 0.f);
+        paramQuantities[SEED_PARAM]->snapEnabled = true;
 		
 		configParam (LEN_PARAM + 0,       1.f,  RANGE_INIT,   1.f, "Length 1",               "", 0.f, 1.f, 0.f);
+        paramQuantities[LEN_PARAM + 0]->snapEnabled = true;
 		configParam (LEN_PARAM + 1,       1.f,  RANGE_INIT,   1.f, "Length 2",               "", 0.f, 1.f, 0.f);
+        paramQuantities[LEN_PARAM + 1]->snapEnabled = true;
 		configParam (LEN_PARAM + 2,       1.f,  RANGE_INIT,   1.f, "Length 3",               "", 0.f, 1.f, 0.f);
+        paramQuantities[LEN_PARAM + 2]->snapEnabled = true;
 		configParam (LEN_PARAM + 3,       1.f,  RANGE_INIT,   1.f, "Length 4",               "", 0.f, 1.f, 0.f);		
+        paramQuantities[LEN_PARAM + 3]->snapEnabled = true;
  
  		configSwitch(ONOFF_PARAM + 0, 0.0f, 1.0f, 0.0f, "Repeater 1", {"Off", "On"});
  		configSwitch(ONOFF_PARAM + 1, 0.0f, 1.0f, 0.0f, "Repeater 2", {"Off", "On"});
@@ -197,9 +203,13 @@ struct Dejavu : Module {
  		configSwitch(ONOFF_PARAM + 3, 0.0f, 1.0f, 0.0f, "Repeater 4", {"Off", "On"});
 
 		configParam (DUR_PARAM + 0,       1.f,  RANGE_INIT,   1.f, "Duration 1",             "", 0.f, 1.f, 0.f);
+        paramQuantities[DUR_PARAM + 0]->snapEnabled = true;
 		configParam (DUR_PARAM + 1,       1.f,  RANGE_INIT,   1.f, "Duration 2",             "", 0.f, 1.f, 0.f);
+        paramQuantities[DUR_PARAM + 1]->snapEnabled = true;
 		configParam (DUR_PARAM + 2,       1.f,  RANGE_INIT,   1.f, "Duration 3",             "", 0.f, 1.f, 0.f);
+        paramQuantities[DUR_PARAM + 2]->snapEnabled = true;
 		configParam (DUR_PARAM + 3,       1.f,  RANGE_INIT,   1.f, "Duration 4",             "", 0.f, 1.f, 0.f);		
+        paramQuantities[DUR_PARAM + 3]->snapEnabled = true;
 
 		configParam (HEAT_PARAM,            0.f,       100.f,  DEFAULT_HEAT, "Heat",                 "%", 0.f, 1.f, 0.f);
 		
@@ -208,8 +218,6 @@ struct Dejavu : Module {
 		
 		configParam (SCL_PARAM,          -100.f,       100.f, 100.f, "Scale",                "",  0.f, 1.f, 0.f);
 		configParam (SCL_ATT_PARAM,      -100.f,       100.f,   0.f, "Scale Attenuation",    "%", 0.f, 1.f, 0.f);
-
-		configParam (CHN_PARAM,             1.f,        16.f,   1.f, "# of Output Channels", "", 0.f, 1.f, 0.f);
 
  		configSwitch(  SH_PARAM, 0.0f, 2.0f, 0.0f, "Sample & Hold", {"Off", "Retrigger", "Gate"});
  		configSwitch(GATE_PARAM, 0.0f, 2.0f, 0.0f, "Gate mode", {"Trigger", "Retrigger", "Gate"});

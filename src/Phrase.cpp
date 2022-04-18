@@ -137,12 +137,16 @@ struct Phrase : Module {
 	*/
 	inline void moduleParamConfig () {	
 		configParam (DIV_PARAM,  1.f, 256.f,  1.f, "Clock Division", "",  0.f, 1.f, 0.f);
+        paramQuantities[DIV_PARAM]->snapEnabled = true;
 		configParam (DLY_PARAM,  0.f,  32.f,  1.f, "Master Response Delay", " Samples", 0.f, 1.f, 0.f);
+        paramQuantities[DLY_PARAM]->snapEnabled = true;
 		configParam (LEN_PARAM,  1.f,  64.f, 16.f, "Slave Sequencer Pattern Length", " Steps",  0.f, 1.f, 0.f);
+        paramQuantities[LEN_PARAM]->snapEnabled = true;
 		configParam (INC_PARAM,  MIN_INC, MAX_INC, DEFAULT_INC, "Next Slave Pattern Increment");
 		configParam (MASTER_PTN_PARAM, -10.f, 10.f,  0.f, "Master Input Pattern Offset", "",  0.f, 1.f, 0.f);
 		configParam (MASTER_PTN_PARAM, -10.f, 10.f,  0.f, "Master Input Pattern Offset", "",  0.f, 1.f, 0.f);
 		configParam (CLK_DLY_PARAM,  0.f,  32.f,  0.f, "Slave Clock Delay", " Samples", 0.f, 1.f, 0.f);
+        paramQuantities[CLK_DLY_PARAM]->snapEnabled = true;
 
 		configInput ( RST_INPUT, "Reset");
 		configInput ( CLK_INPUT, "Clock");

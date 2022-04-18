@@ -97,7 +97,9 @@ struct Swing : Module {
 	*/
 	inline void moduleParamConfig () {
 		configParam (DIV_PARAM, 1.f,  16.f,   4.f, "Clock Division", "",  0.f, 1.f, 0.f);
+        paramQuantities[DIV_PARAM]->snapEnabled = true;
 		configParam (LEN_PARAM, 1.f,  16.f,  16.f, "Length",         "",  0.f, 1.f, 0.f);
+        paramQuantities[LEN_PARAM]->snapEnabled = true;
 		configParam (AMT_PARAM, 0.f, 100.f, 100.f, "Amount",         "%", 0.f, 1.f, 0.f);
 
 		int i = 0;
