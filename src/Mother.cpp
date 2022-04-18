@@ -185,11 +185,17 @@ struct Mother : Module
 	inline void moduleParamConfig()
 	{
 		configParam(ROOT_PARAM, 0.f, 11.f, 0.f, "Root", "", 0.f, 1.f / 12.f, 0.f);
+        paramQuantities[ROOT_PARAM]->snapEnabled = true;
 		setCustomChangeMaskParam(ROOT_PARAM, CHG_ROOT);
+
 		configParam(SCL_PARAM, 1.f, 12.f, 1.f, "Mother Scale", "", 0.f, 1.f / 12.f, -1.f / 12.f);
+        paramQuantities[SCL_PARAM]->snapEnabled = true;
 		setCustomChangeMaskParam(SCL_PARAM, CHG_SCL);
+
 		configParam(CHLD_PARAM, 0.f, 11.f, 0.f, "Child Scale", "", 0.f, 1.f / 12.f, 0.f);
+        paramQuantities[CHLD_PARAM]->snapEnabled = true;
 		setCustomChangeMaskParam(CHLD_PARAM, CHG_CHLD);
+
 		configParam(FATE_AMT_PARAM, 0.f, 6.f, 0.f, "Amount", "", 0.f, 1.f, 0.f);
 		configParam(FATE_SHP_PARAM, 0.f, 1.f, 0.5f, "Shape", "", 0.f, 1.f, 0.f);
 
