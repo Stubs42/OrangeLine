@@ -397,7 +397,7 @@ struct Morph : Module
                     }
                     else {
                         // we go random
-						cv = getRandom(&globalRandom);
+						cv = (getRandom(&globalRandom) - 0.5) * 2.f * 10.f ; // make bipolar 
                     }
                     // write back change to loop
                     setStateJson(STEPS_JSON + channel * MAX_LOOP_LEN * 2 + head * 2 + 1, cv);
@@ -407,16 +407,11 @@ struct Morph : Module
 				// we go random
 				float rndSclInp = getFromParamOrPolyInput(RND_SCL_PARAM, RND_SCL_INPUT, channel, 0.1f, VALUE_MODE_ADD, NORMAL_MODE_ONE);
 				float rndOffInp = getFromParamOrPolyInput(RND_OFF_PARAM, RND_OFF_INPUT, channel, 1.f, VALUE_MODE_ADD, NORMAL_MODE_ONE);
-				float rndCvRnd = getRandom(&globalRandom);
+				cv = cv * rndSclInp + rndOffInp;
 				if (rndSclInp >= 0) {
-					// unipolar cv
-					cv = rndCvRnd * rndSclInp * 10.f + rndOffInp;
+					// make it unipolar
+					cv = abs(cv);
 				}
-				else {
-					float sign = (getRandom(&globalRandom) > 0.5f) ? 1.f : -1.f;
-					cv = rndCvRnd * -rndSclInp * 10.f * sign + rndOffInp;
-				}
-
                 // write outputs
                 setStateOutPoly(GATE_OUTPUT, channel, gate);
                 setStateOutPoly(CV_OUTPUT, channel, cv);
