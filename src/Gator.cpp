@@ -47,6 +47,7 @@ struct Gator : Module {
     float ratCmp[POLY_CHANNELS];
     int   ratPhsCnt[POLY_CHANNELS];
 	bool  widgetReady = false;
+	bool  reseted = false;
 
 	/*
 		Variables used speed up processing
@@ -75,7 +76,7 @@ struct Gator : Module {
 		We must not do a trigger process here but just check if the clock trigger input changed
 	*/
 	bool moduleSkipProcess() {
-		float phs = getStateInput (PHS_INPUT);
+		float phs = inputs[PHS_INPUT].getVoltage();
 		// Make sure that whe skip when a ne phase behins because the cv inputs
 		// from sequencers might not be ready yet !
 		if (phs < oldPhsSkip) 
@@ -236,17 +237,27 @@ struct Gator : Module {
 			styleChanged = false;
 		}
 
+        float phs = getStateInput (PHS_INPUT);
+
         if (changeInput (RST_INPUT)) {
+			phs = 0.f; 
             for (int channel = 0; channel < POLY_CHANNELS; channel ++) {
-                oldPhs = 10;
+                oldPhs = 0.f;
                 channelActive[channel] = false;
                 gateProcessed[channel] = false;
                 ratCnt[channel] = 0;
                 setStateOutPoly (GATE_OUTPUT, channel, 0.f);
             }
+			reseted = true;
         }
-
-        float phs = getStateInput (PHS_INPUT);
+		if (reseted) {
+			if (phs > 0.f) {
+				reseted = false;
+			}
+			else {
+				return;
+			}
+		}
 
         bool newPhs = (oldPhs > phs);
         if (newPhs) {
