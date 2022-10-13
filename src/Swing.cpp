@@ -39,8 +39,9 @@ struct Swing : Module {
     int     tPos = -1;
     float   cmp = 0;
     bool    tClkFired = true;
-	int		tClkDelay = -1;
+	int		tClkDelay = FIRST_TCLK_DELAY;
 	bool  	widgetReady = false;
+	bool	running = false;
 
 // ********************************************************************************************************************************
 /*
@@ -199,42 +200,45 @@ struct Swing : Module {
             eClkFired = false;
             tClkFired = true;
 			tClkDelay = FIRST_TCLK_DELAY;
-            phase = 0.f;
+            phase = -10.f;
             tPos = -1;
+			running = false;
         }
 		if (changeInput (CLK_INPUT)) {
 			clkMultCnt = CLOCK_MULT;
+			running = true;
 			phase = 0.f;
 		}
 
-		if (phase < 0.f || clkMultCnt > 0) {
-			phase += phaseStep * (1 + samplesSkipped);
-			if (phase > PHASE_HIGH) {
-				clkMultCnt --;
-				phase = PHASE_LOW;
-				eClkFired = false;
+		if (running) {
+			if (phase < 0.f || clkMultCnt > 0) {
+				phase += phaseStep * (1 + samplesSkipped);
+				if (phase > PHASE_HIGH) {
+					clkMultCnt --;
+					phase = PHASE_LOW;
+					eClkFired = false;
+				}
+				if (!eClkFired) {
+					tPos ++;
+					if (tPos >= getStateParam (LEN_PARAM))
+						tPos = 0;
+					cmp = getStateParam (TIM_PARAM_01 + tPos) * getStateParam (AMT_PARAM) / 100 / 10.f;
+					cmp = clamp(cmp, MIN_CMP, MAX_CMP);
+					setStateOutput (CMP_OUTPUT, cmp);
+					setStateOutput (ECLK_OUTPUT, 10.f);
+					eClkFired = true;
+					tClkFired = false;
+				}
 			}
-			if (!eClkFired && phase >= PHASE_LOW) {
-				tPos ++;
-				if (tPos >= getStateParam (LEN_PARAM))
-					tPos = 0;
-				cmp = getStateParam (TIM_PARAM_01 + tPos) * getStateParam (AMT_PARAM) / 100 / 10.f;
-				cmp = clamp(cmp, MIN_CMP, MAX_CMP);
-				setStateOutput (CMP_OUTPUT, cmp);
-				setStateOutput (ECLK_OUTPUT, 10.f);
-				eClkFired = true;
-				tClkFired = false;
-			}
-		}
-		setStateOutput (PHS_OUTPUT, phase);
-		if ((!tClkFired && phase >= cmp) || tClkDelay == 0) {
-			if (tClkDelay >= 0)
-				tClkDelay --;
-			else {
+			if (tClkDelay > 0)
+				tClkDelay -= IDLESKIP;
+
+			if (!tClkFired && phase >= cmp && tClkDelay <= 0) {
 				setStateOutput (TCLK_OUTPUT, 10.f);
 				tClkFired = true;
 			}
 		}
+		setStateOutput (PHS_OUTPUT, phase);
 	}
 
 	/**
