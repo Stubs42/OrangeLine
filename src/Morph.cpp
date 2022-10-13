@@ -219,6 +219,8 @@ struct Morph : Module
 	*/
 	inline void moduleProcess(const ProcessArgs &args)
 	{
+		bool lastForce = false;
+		
 		if (styleChanged && widgetReady)
 		{
 			switch (int(getStateJson(STYLE_JSON)))
@@ -281,7 +283,7 @@ struct Morph : Module
             }   
         }
 
-        // No furuther Action if no clock arrived
+        // No further Action if no clock arrived
         if (changeInput (CLK_INPUT) && getStateInput(CLK_INPUT) > 0.f) {
             // get polyChannels
             polyChannels = getStateJson(POLY_CHANNELS_JSON);
@@ -297,7 +299,7 @@ struct Morph : Module
                     }
                 }
             }
-            // proces for each channel
+            // process for each channel
             for (int channel = 0; channel < polyChannels; channel ++) { 
                 // get Loop length
                 int loopLen = getFromParamOrPolyInput(LOOP_LEN_PARAM, LOOP_LEN_INPUT, channel, 10.f, VALUE_MODE_REPLACE, NORMAL_MODE_ONE);
@@ -323,8 +325,8 @@ struct Morph : Module
                 head %= loopLen;
 
                 // read from loop
-                float gate = getStateJson(STEPS_JSON + channel * MAX_LOOP_LEN * 2 + head * 2);
-                float cv   = getStateJson(STEPS_JSON + channel * MAX_LOOP_LEN * 2 + head * 2 + 1);
+                float gateCv = getStateJson(STEPS_JSON + channel * MAX_LOOP_LEN * 2 + head * 2);
+                float cv     = getStateJson(STEPS_JSON + channel * MAX_LOOP_LEN * 2 + head * 2 + 1);
 
                 // get force
                 bool force = false;
@@ -333,7 +335,11 @@ struct Morph : Module
                         if (OL_statePoly[SRC_FORCE_INPUT * POLY_CHANNELS + channel] >= 5.f) {
                             force = true;
                         }
+						lastForce = force;
                     }
+					else {
+						force = lastForce;
+					}
                 } 
 
                 // get and evaluate lock values
@@ -354,30 +360,16 @@ struct Morph : Module
                     float rndSrcRnd = getRandom(&globalRandom);
                     if ((rndSrcRnd * 100 > srcRnd || force) && useSrcGate) {
                         // we go src
-
-						// if (OL_statePoly[SRC_GATE_INPUT * POLY_CHANNELS + channel] < 5.0) {
-						// 	gate = 0.f;
-						// }
-						// else {
-						// 	gate = 10.f;
-						// }
 						// We allow the gate port to also carry cv because there may be a use for this and MORPH
 						// doesn't do anything with this value anyway
-						gate = OL_statePoly[SRC_GATE_INPUT * POLY_CHANNELS + channel];
+						gateCv = OL_statePoly[SRC_GATE_INPUT * POLY_CHANNELS + channel];
                     }
                     else {
                         // we go random
-                        float rndGateInp = getFromParamOrPolyInput(RND_GATE_PARAM, RND_GATE_INPUT, channel, 10.f, VALUE_MODE_ADD, NORMAL_MODE_ONE);
-                        float rndGateRnd = getRandom(&globalRandom);
-                        if (rndGateRnd * 100.f > rndGateInp) {
-                            gate = 0.f;
-                        }
-                        else {
-                            gate = 10.f;
-                        }
+                        gateCv = getRandom(&globalRandom) * 10.f;
                     }
                     // write back to loop
-                    setStateJson(STEPS_JSON + channel * MAX_LOOP_LEN * 2 + head * 2, gate);
+                    setStateJson(STEPS_JSON + channel * MAX_LOOP_LEN * 2 + head * 2, gateCv);
                 }
 
                 // process cvs
@@ -404,14 +396,20 @@ struct Morph : Module
                 }
 
                 // further processing here
-				// we go random
 				float rndSclInp = getFromParamOrPolyInput(RND_SCL_PARAM, RND_SCL_INPUT, channel, 0.1f, VALUE_MODE_ADD, NORMAL_MODE_ONE);
 				float rndOffInp = getFromParamOrPolyInput(RND_OFF_PARAM, RND_OFF_INPUT, channel, 1.f, VALUE_MODE_ADD, NORMAL_MODE_ONE);
-				cv = cv * rndSclInp + rndOffInp;
+				cv = cv * rndSclInp;
 				if (rndSclInp >= 0) {
 					// make it unipolar
 					cv = abs(cv);
 				}
+				cv +=  + rndOffInp;
+				float rndGateInp = getFromParamOrPolyInput(RND_GATE_PARAM, RND_GATE_INPUT, channel, 10.f, VALUE_MODE_ADD, NORMAL_MODE_ONE);
+				float gate = 0.f;
+				if (gateCv * 10.f <= rndGateInp) {
+					gate = 10.f;
+				}
+
                 // write outputs
                 setStateOutPoly(GATE_OUTPUT, channel, gate);
                 setStateOutPoly(CV_OUTPUT, channel, cv);
