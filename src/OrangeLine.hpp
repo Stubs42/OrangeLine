@@ -55,8 +55,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define IDLESKIP	32
 
 #define MAX_TEXT_SIZE  64
-#define TEXT_SCROLL_DELAY   500
-#define TEXT_SCROLL_PRE_DELAY   TEXT_SCROLL_DELAY * 4
+#define TEXT_SCROLL_DELAY   0.5f
+#define TEXT_SCROLL_PRE_DELAY   TEXT_SCROLL_DELAY * 4.f
 
 #define PI            3.14159265
 
@@ -317,11 +317,11 @@ struct TextWidget : TransparentWidget {
 		else {
 			if (pTimer != nullptr && len > length) {
 				if (*pTimer <= 0) {
-					*pTimer = TEXT_SCROLL_DELAY;
+					*pTimer = int(TEXT_SCROLL_DELAY  * APP->engine->getSampleRate ());
 					scrollPos = (scrollPos + 1) % (len + 3);
 				}
 				else {
-					if (*pTimer > TEXT_SCROLL_DELAY) {
+					if (*pTimer > int(TEXT_SCROLL_DELAY * APP->engine->getSampleRate ())) {
 						if (!reset) {
 							reset = true;
 							scrollPos = 0;

@@ -25,11 +25,11 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define NUM_CHLD    NUM_NOTES
 #define SEMITONE    (1.f / 12.f)
 
-#define SECOND                  44100
+#define SECOND                  APP->engine->getSampleRate ()
 #define TMP_HEAD_DURATION       4 * SECOND
-#define REFLECT_DURATION        4 * SECOND
-#define REFLECT_FATE_DURATION   4 * SECOND
-#define GREETING_DURATION      10 * SECOND
+#define REFLECT_DURATION        2 * SECOND
+#define REFLECT_FATE_DURATION   2 * SECOND
+#define GREETING_DURATION       5 * SECOND
 
 #define POW_MODE_POW 0.f
 #define POW_MODE_GATES 1.f

@@ -317,20 +317,20 @@ struct Mother : Module
 		}
 		strcpy(headText, buf);
 		strcpy(headDisplayText, buf);
-		headScrollTimer = TEXT_SCROLL_PRE_DELAY;
+		headScrollTimer = int(TEXT_SCROLL_PRE_DELAY * APP->engine->getSampleRate ());
 	}
 
 	inline void setTmpHead(const char *tmpHead)
 	{
 		strcpy(headDisplayText, tmpHead);
-		tmpHeadCounter = TMP_HEAD_DURATION;
+		tmpHeadCounter = int(TMP_HEAD_DURATION * APP->engine->getSampleRate ());
 	}
 
 	inline void checkTmpHead()
 	{
 		if (tmpHeadCounter >= 0 - IDLESKIP)
 		{
-			if (tmpHeadCounter >= 0 - IDLESKIP && tmpHeadCounter <= 0)
+			if (tmpHeadCounter <= 0)
 			{
 				strcpy(headDisplayText, headText);
 			}
@@ -1131,7 +1131,7 @@ struct Mother : Module
 			}
 		}
 		if (headScrollTimer > 0)
-			headScrollTimer--;
+			headScrollTimer -= 1 + samplesSkipped;
 	}
 };
 
