@@ -1,5 +1,5 @@
 /*
-	Swing.hpp
+	Resc.hpp
  	
 	Author: Dieter Stubler
 
@@ -20,17 +20,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 #include "OrangeLine.hpp"
 
-#define DEFAULT_LEN 16
+#define CHG_IN     1
+#define CHG_SRCSCL 2
+#define CHG_TRGSCL 4
 
-#define PHASE_LOW   -10.f
-#define PHASE_HIGH   10.f
-
-#define MIN_CMP      -9.5f
-#define MAX_CMP       9.5f
-
-#define CLOCK_MULT  getStateParam (DIV_PARAM)
-
-#define FIRST_TCLK_DELAY 42
 //
 // Defaults
 //
@@ -53,36 +46,18 @@ enum ParamIds {
 	//
 	// Paramater for user interface components
 	//
-    RST_PARAM,
-    DIV_PARAM,
-    LEN_PARAM,
-    AMT_PARAM,
-    TIM_PARAM_01,
-    TIM_PARAM_02,
-    TIM_PARAM_03,
-    TIM_PARAM_04,
-    TIM_PARAM_05,
-    TIM_PARAM_06,
-    TIM_PARAM_07,
-    TIM_PARAM_08,
-    TIM_PARAM_09,
-    TIM_PARAM_10,
-    TIM_PARAM_11,
-    TIM_PARAM_12,
-    TIM_PARAM_13,
-    TIM_PARAM_14,
-    TIM_PARAM_15,
-    TIM_PARAM_16,
-    NUM_PARAMS,
+    NUM_PARAMS
 };
 
 //
 // Input Ids
 //
 enum InputIds {
-	BPM_INPUT,				// BPM from Clock
-	CLK_INPUT,				// Clock Input to sync
-	RST_INPUT,				// Clock Reset
+	IN_INPUT,
+	SRCSCL_INPUT,
+	TRGSCL_INPUT,
+	TRGCLD_INPUT,
+
 	NUM_INPUTS
 };
 
@@ -90,10 +65,10 @@ enum InputIds {
 // Output Ids
 //
 enum OutputIds {
-    PHS_OUTPUT,
-    ECLK_OUTPUT,
-    CMP_OUTPUT,
-    TCLK_OUTPUT,
+    ROOTBASED_OUTPUT,
+    CLDBASED_OUTPUT,
+    CLDSCL_OUTPUT,
+
 	NUM_OUTPUTS
 };
 

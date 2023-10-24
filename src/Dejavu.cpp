@@ -91,13 +91,10 @@ struct Dejavu : Module {
    		setStateTypeInput  (CLK_INPUT, STATE_TYPE_TRIGGER);
    		setStateTypeInput  (RST_INPUT, STATE_TYPE_TRIGGER);
 
-		for (int row = 0; row < NUM_ROWS;row ++)
-			setStateTypeParam  (ONOFF_PARAM + row, STATE_TYPE_TRIGGER);
-
 		setInPoly          (REP_INPUT, true);
 		setOutPoly         (REP_OUTPUT, true);
 
-		setStateTypeOutput (TRG_INPUT, STATE_TYPE_TRIGGER);
+		setStateTypeInput (TRG_INPUT, STATE_TYPE_TRIGGER);
 
 		setStateTypeOutput (TRG_OUTPUT, STATE_TYPE_TRIGGER);
 		setOutPoly         (TRG_OUTPUT, true);
@@ -108,10 +105,8 @@ struct Dejavu : Module {
 		setInPoly          (OFS_INPUT, true);
 		setInPoly          (SCL_INPUT, true);
 
-		setStateTypeParam  (SH_PARAM, STATE_TYPE_TRIGGER);
 		setInPoly          (SH_INPUT, true);
 
-		setStateTypeParam  (GATE_PARAM, STATE_TYPE_TRIGGER);
 		setInPoly          (GATE_INPUT, true);
 
      	setStateTypeOutput (GATE_OUTPUT, STATE_TYPE_TRIGGER);
@@ -189,22 +184,32 @@ struct Dejavu : Module {
 	*/
 	inline void moduleParamConfig () {
 		configParam (DIV_PARAM,             1.f,   DIV_MAX,   1.f, "Clock Division",       "", 0.f, 1.f, 0.f);
+        paramQuantities[DIV_PARAM]->snapEnabled = true;
 		configParam (SEED_PARAM,            0.f,  SEED_MAX,   DEFAULT_SEED, "Seed",                 "", 0.f, 1.f, 0.f);
+        paramQuantities[SEED_PARAM]->snapEnabled = true;
 		
 		configParam (LEN_PARAM + 0,       1.f,  RANGE_INIT,   1.f, "Length 1",               "", 0.f, 1.f, 0.f);
+        paramQuantities[LEN_PARAM + 0]->snapEnabled = true;
 		configParam (LEN_PARAM + 1,       1.f,  RANGE_INIT,   1.f, "Length 2",               "", 0.f, 1.f, 0.f);
+        paramQuantities[LEN_PARAM + 1]->snapEnabled = true;
 		configParam (LEN_PARAM + 2,       1.f,  RANGE_INIT,   1.f, "Length 3",               "", 0.f, 1.f, 0.f);
+        paramQuantities[LEN_PARAM + 2]->snapEnabled = true;
 		configParam (LEN_PARAM + 3,       1.f,  RANGE_INIT,   1.f, "Length 4",               "", 0.f, 1.f, 0.f);		
+        paramQuantities[LEN_PARAM + 3]->snapEnabled = true;
  
-   		configParam (ONOFF_PARAM + 0,     0.f,         1.f,   0.f, "Repeater 1 On/Offf",     "", 0.f, 1.f, 0.f);
-   		configParam (ONOFF_PARAM + 1,     0.f,         1.f,   0.f, "Repeater 2 On/Offf",     "", 0.f, 1.f, 0.f);
-   		configParam (ONOFF_PARAM + 2,     0.f,         1.f,   0.f, "Repeater 3 On/Offf",     "", 0.f, 1.f, 0.f);
-   		configParam (ONOFF_PARAM + 3,     0.f,         1.f,   0.f, "Repeater 4 On/Offf",     "", 0.f, 1.f, 0.f);
+ 		configSwitch(ONOFF_PARAM + 0, 0.0f, 1.0f, 0.0f, "Repeater 1", {"Off", "On"});
+ 		configSwitch(ONOFF_PARAM + 1, 0.0f, 1.0f, 0.0f, "Repeater 2", {"Off", "On"});
+ 		configSwitch(ONOFF_PARAM + 2, 0.0f, 1.0f, 0.0f, "Repeater 3", {"Off", "On"});
+ 		configSwitch(ONOFF_PARAM + 3, 0.0f, 1.0f, 0.0f, "Repeater 4", {"Off", "On"});
 
 		configParam (DUR_PARAM + 0,       1.f,  RANGE_INIT,   1.f, "Duration 1",             "", 0.f, 1.f, 0.f);
+        paramQuantities[DUR_PARAM + 0]->snapEnabled = true;
 		configParam (DUR_PARAM + 1,       1.f,  RANGE_INIT,   1.f, "Duration 2",             "", 0.f, 1.f, 0.f);
+        paramQuantities[DUR_PARAM + 1]->snapEnabled = true;
 		configParam (DUR_PARAM + 2,       1.f,  RANGE_INIT,   1.f, "Duration 3",             "", 0.f, 1.f, 0.f);
+        paramQuantities[DUR_PARAM + 2]->snapEnabled = true;
 		configParam (DUR_PARAM + 3,       1.f,  RANGE_INIT,   1.f, "Duration 4",             "", 0.f, 1.f, 0.f);		
+        paramQuantities[DUR_PARAM + 3]->snapEnabled = true;
 
 		configParam (HEAT_PARAM,            0.f,       100.f,  DEFAULT_HEAT, "Heat",                 "%", 0.f, 1.f, 0.f);
 		
@@ -214,10 +219,28 @@ struct Dejavu : Module {
 		configParam (SCL_PARAM,          -100.f,       100.f, 100.f, "Scale",                "",  0.f, 1.f, 0.f);
 		configParam (SCL_ATT_PARAM,      -100.f,       100.f,   0.f, "Scale Attenuation",    "%", 0.f, 1.f, 0.f);
 
-		configParam (CHN_PARAM,             1.f,        16.f,   1.f, "# of Output Channels", "", 0.f, 1.f, 0.f);
+ 		configSwitch(  SH_PARAM, 0.0f, 2.0f, 0.0f, "Sample & Hold", {"Off", "Retrigger", "Gate"});
+ 		configSwitch(GATE_PARAM, 0.0f, 2.0f, 0.0f, "Gate mode", {"Trigger", "Retrigger", "Gate"});
 
-   		configParam (SH_PARAM,              0.f,         1.f,   0.f,  "Toggle CV S&H",       "", 0.f, 1.f, 0.f);
-   		configParam (GATE_PARAM,            0.f,         1.f,   0.f,  "Toggle Trigger/Gate", "", 0.f, 1.f, 0.f);
+		configInput ( RST_INPUT, "Reset");
+		configInput ( CLK_INPUT, "Clock");
+		configInput ( DIV_INPUT, "Clock Division");
+		configInput (SEED_INPUT, "Seed");
+		configInput ( REP_INPUT, "Repetitions");
+		configInput ( TRG_INPUT, "Trigger (reset without applying offset)");
+		configInput (HEAT_INPUT, "Heat offset");
+		configInput (HEAT_KNOB_ATT_INPUT, "Heat scale");
+		configInput ( OFS_INPUT, "CV offset");
+		configInput ( SCL_INPUT, "CV scale");
+		configInput (GATE_INPUT, "Gate mode");
+		configInput (  SH_INPUT, "CV s&h mode");
+
+		configOutput ( REP_OUTPUT, "Repetitions");
+		configOutput ( TRG_OUTPUT, "Trigger (End of Length/Duration)");
+		configOutput (  CV_OUTPUT, "CV");
+		configOutput (GATE_OUTPUT, "Trigger/Gate");
+
+		configBypass (CLK_INPUT,GATE_OUTPUT);
 	}
 	
 	inline void moduleCustomInitialize () {
@@ -475,19 +498,17 @@ void processOutputChannels() {
 	initializerepeatRandomGenerators
 	Set all counters to 0 on reset
 */
-	long getGlobalSeed() {
-		float seed = 0; 
+	unsigned long getGlobalSeed() {
+		unsigned long seed = 0;
+		float seedParam = getStateParam(SEED_PARAM);
 		if (getInputConnected (SEED_INPUT)) {
-			float seedFloat = getStateInput (SEED_INPUT) * SEED_INPUT_SCALE;
-			if (seedFloat < 0)
-				seedFloat *= -1;
-			unsigned long seed = (unsigned long)seedFloat;
-			if (seed > SEED_MAX)
-				seed = SEED_MAX;
-			setStateParam (SEED_PARAM, float(seed));
+			seedParam += getStateInput (SEED_INPUT) * SEED_INPUT_SCALE;
 		}
-		else
-			seed = getStateParam (SEED_PARAM);
+		if (seedParam < 0)
+			seedParam *= -1;
+		seed = (unsigned long)seedParam;
+		if (seed > SEED_MAX)
+			seed = SEED_MAX;
 		return seed;
 	}
 
@@ -578,6 +599,12 @@ void processOutputChannels() {
 						int channel = row * 2 + lenOrDur;
 						if (channel < channels) {
 							int inputValue = floor(OL_statePoly[REP_INPUT * POLY_CHANNELS + channel] * REP_INPUT_SCALE + 0.5);
+							if (inputValue < 0) {
+								inputValue *= -1;
+							}
+							if (inputValue > REP_INPUT_MAX) {
+								inputValue = REP_INPUT_MAX;
+							}
 							if (inputValue >= 1) {
 								value = inputValue ;
 								break;
@@ -631,10 +658,8 @@ void processOutputChannels() {
 		Module specific process method called from process () in OrangeLineCommon.hpp
 	*/
 	inline void moduleProcess (const ProcessArgs &args) {
-		if (!widgetReady) {
-			return;	// do not strt processing before the widget is ready
-		}
-		if (styleChanged) {
+		// if (!widgetReady) return;	// do not strt processing before the widget is ready
+		if (styleChanged && widgetReady) {
 			switch (int(getStateJson(STYLE_JSON))) {
 				case STYLE_ORANGE:
 					brightPanel->visible = false;
@@ -681,6 +706,12 @@ void processOutputChannels() {
 				for (int row =  NUM_ROWS - 1; row >= 0; row --)
 					if (rowActive (row))
 						p_srcRandomGenerator = &(repeatRandomGenerator[row]);
+						
+				if (p_srcRandomGenerator == &globalRandom && getStateJson(LOOP_JSON) == 1.f) {
+					float seed = getGlobalSeed(); 
+					initRandom (&globalRandom, (unsigned long)seed);
+				}
+
 				// 
 				// get a new seed from the p_srcRandomGenerator to generate all outputs for this clock tick
 				// Reinitialize Gate and CV random generators using this seed
@@ -888,8 +919,8 @@ void processOutputChannels() {
 		This method should not do dsp or other logic processing.
 	*/
 	inline void moduleProcessState () {
-		if (inChangeParam (GATE_PARAM)) {	//	User clicked on tr/gt button
-		    setStateJson (GATE_JSON, float((int(getStateJson (GATE_JSON)) + 1) % 3));
+		if (inChangeParam (GATE_PARAM)) {
+			setStateJson (GATE_JSON, getStateParam (GATE_PARAM));
 		}
 
 		if (getStateJson (GATE_JSON) > 0.f && !getInputConnected(GATE_INPUT))
@@ -899,11 +930,11 @@ void processOutputChannels() {
 
 		for (int row = 0; row <  NUM_ROWS; row++) {
 			if (inChangeParam (ONOFF_PARAM + row))
-				setStateJson (ONOFF_JSON + row, float((int(getStateJson (ONOFF_JSON + row)) + 1) % 2));
+				setStateJson (ONOFF_JSON + row, getStateParam (ONOFF_PARAM + row));
 		}
 
-		if (inChangeParam (SH_PARAM))	{
-			setStateJson (SH_JSON, float((int(getStateJson (SH_JSON)) + 1) % 3));
+		if (inChangeParam (SH_PARAM)) {
+			setStateJson (SH_JSON, getStateParam (SH_PARAM));
 		}
 	}
 
@@ -995,15 +1026,12 @@ void processOutputChannels() {
 */
 struct LeftWidget : TransparentWidget {
 
-	std::shared_ptr<Font> pFont;
-
 	Dejavu     *module = nullptr;
 	int       paramDisplayCycles = 0;
 
 	static LeftWidget* create (Dejavu *module) {
 		LeftWidget *w = new LeftWidget();
 
-		w->pFont    = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
 		w->box.pos  = mm2px (Vec (1.524, 36.831));
 		w->box.size = mm2px (Vec (32.512, 10.668));
 		// w->box.pos.y += w->box.size.y;
@@ -1036,8 +1064,13 @@ struct LeftWidget : TransparentWidget {
 		return false;
 	}
 
-	void draw (const DrawArgs &drawArgs) override {
+	void drawLayer (const DrawArgs &drawArgs, int layer) override {
+		if (layer != 1) {
+			Widget::drawLayer(drawArgs, layer);
+			return;
+		}
 		if (module) {
+			std::shared_ptr<Font> pFont = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
 			float style = module->getStateJson(STYLE_JSON);
 			char headBuffer[18];
 			char valueBuffer[18];
@@ -1120,12 +1153,11 @@ struct LeftWidget : TransparentWidget {
 			nvgText (drawArgs.vg, mm2px(0.5), mm2px(0.5) + mm2px(2.406), headBuffer, nullptr);
 			//nvgText (drawArgs.vg, mm2px(2.447) - box.pos.x + mm2px(0.5), mm2px(41.283) - box.pos.y + mm2px(4.812), valueBuffer, nullptr);
 		}
+		Widget::drawLayer(drawArgs, 1);
 	}
 };
 
 struct RigthWidget : TransparentWidget {
-
-	std::shared_ptr<Font> pFont;
 
 	Dejavu     *module = nullptr;
 
@@ -1142,7 +1174,6 @@ struct RigthWidget : TransparentWidget {
 	static RigthWidget* create (Dejavu *module) {
 		RigthWidget *w = new RigthWidget();
 
-		w->pFont    = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
 		w->box.pos  = mm2px (Vec (37.084, 8.891));
 		w->box.size = mm2px (Vec (32.512, 38.608));
 		w->module   = module;
@@ -1196,9 +1227,12 @@ struct RigthWidget : TransparentWidget {
 				flashFrameCounter[i]--;
 	}
 
-	void draw (const DrawArgs &drawArgs) override {
+	void drawLayer (const DrawArgs &drawArgs, int layer) override {
+		if (layer != 1) {
+			Widget::drawLayer(drawArgs, layer);
+			return;
+		}
 		if (module) {
-			
 			float displayAlpha = module->getStateJson(DISPLAY_ALPHA_JSON);
 
 			nvgGlobalCompositeOperation(drawArgs.vg, NVG_SOURCE_OVER);
@@ -1328,6 +1362,7 @@ struct RigthWidget : TransparentWidget {
 			}
 			decrementFlashCounters();
 		}
+		Widget::drawLayer(drawArgs, 1);
 	}
 };
 /**
@@ -1372,7 +1407,7 @@ struct DejavuWidget : ModuleWidget {
 			knob = createParamCentered<RoundSmallBlackKnob> (calculateCoordinates (3.62, y, OFFSET_RoundSmallBlackKnob),  module, LEN_PARAM + i);
 	        knob->snap = true;
 			addParam (knob);
-			addParam (createParamCentered<LEDButton> (calculateCoordinates (15.399, yb, OFFSET_LEDButton), module, ONOFF_PARAM + i));
+			addParam (createParamCentered<VCVLatch> (calculateCoordinates (15.399, yb, OFFSET_LEDButton), module, ONOFF_PARAM + i));
 			light = createLightCentered<LargeLight<RedGreenBlueLight>> (calculateCoordinates (15.399, yb, OFFSET_LargeLight), module, REP_LIGHT_RGB + (3 * i));
 			light->bgColor = nvgRGBA(0, 0, 0, 255);
 			addChild (light);
@@ -1401,12 +1436,12 @@ struct DejavuWidget : ModuleWidget {
 		addOutput (createOutputCentered<PJ301MPort>	(calculateCoordinates (59.295, 99.682, OFFSET_PJ301MPort),  module, CV_OUTPUT));
 		addOutput (createOutputCentered<PJ301MPort>	(calculateCoordinates (59.295, 109.842, OFFSET_PJ301MPort),  module, GATE_OUTPUT));
 
-		addParam (createParamCentered<LEDButton>                   (calculateCoordinates (61.210, 81.186, OFFSET_LEDButton), module, SH_PARAM));
+		addParam (createParamCentered<VCVLatch>                   (calculateCoordinates (61.210, 81.186, OFFSET_LEDButton), module, SH_PARAM));
 		light = createLightCentered<LargeLight<RedGreenBlueLight>> (calculateCoordinates (61.120, 81.186, OFFSET_LargeLight), module, SH_LIGHT_RGB);
 		light->bgColor = nvgRGBA(0, 0, 0, 255);
 	 	addChild (light);
 
-		addParam (createParamCentered<LEDButton>                   (calculateCoordinates (40.800, 111.666, OFFSET_LEDButton), module, GATE_PARAM));
+		addParam (createParamCentered<VCVLatch>                   (calculateCoordinates (40.800, 111.666, OFFSET_LEDButton), module, GATE_PARAM));
 		light = createLightCentered<LargeLight<RedGreenBlueLight>> (calculateCoordinates (40.800, 111.666, OFFSET_LargeLight), module, GATE_LIGHT_RGB);
 		light->bgColor = nvgRGBA(0, 0, 0, 255);
 	 	addChild (light);
@@ -1582,14 +1617,7 @@ struct DejavuWidget : ModuleWidget {
 			moduleStateItem3->text = "Edit Offsets";
 			moduleStateItem3->setSize (Vec(50, 20));
 			menu->addChild(moduleStateItem3);
-/*
-			ModuleStateItem *moduleStateItem4 = new ModuleStateItem ();
-			moduleStateItem4->module = module;
-			moduleStateItem4->state = STATE_EDIT_OFFSET_RANGES;
-			moduleStateItem4->text = "Edit Offsets Ranges";
-			moduleStateItem4->setSize (Vec(50, 20));
-			menu->addChild(moduleStateItem4);
-*/
+
 			spacerLabel = new MenuLabel();
 			menu->addChild(spacerLabel);
 

@@ -45,6 +45,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define LIGHT_TYPE_SINGLE  0
 #define LIGHT_TYPE_RGB     1
 
+#define NUM_NOTES   12
+
 #define NUM_STATES			(NUM_JSONS + NUM_PARAMS + NUM_INPUTS + NUM_OUTPUTS + NUM_LIGHTS)
 #define NUM_TRIGGERS			(NUM_PARAMS + NUM_INPUTS)
 
@@ -53,10 +55,18 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define IDLESKIP	32
 
 #define MAX_TEXT_SIZE  64
-#define TEXT_SCROLL_DELAY   500
-#define TEXT_SCROLL_PRE_DELAY   TEXT_SCROLL_DELAY * 4
+#define TEXT_SCROLL_DELAY   0.5f
+#define TEXT_SCROLL_PRE_DELAY   TEXT_SCROLL_DELAY * 4.f
 
 #define PI            3.14159265
+
+#define VALUE_MODE_REPLACE 0
+#define VALUE_MODE_ADD     1
+#define VALUE_MODE_SCALE   2
+
+#define NORMAL_MODE_NONE   0
+#define NORMAL_MODE_ONE    1
+#define NORMAL_MODE_LAST   2
 
 /*
 	Random implementation derived from the one used in Frozen Wastland Seeds of Change
@@ -220,6 +230,7 @@ struct NumberWidget : TransparentWidget {
 		w->box.size = mm2px (Vec (4 * length, 7));
 		w->module   = module;
 		w->pValue   = pValue;
+		w->defaultValue = defaultValue;
 		w->format   = format;
 		w->buffer   = buffer;
 		w->length   = length;
@@ -232,9 +243,12 @@ struct NumberWidget : TransparentWidget {
 	NumberWidget () {
 	}
 
-	void draw (const DrawArgs &drawArgs) override {
-		std::shared_ptr<Font> pFont;
-		pFont    = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
+	void drawLayer (const DrawArgs &drawArgs, int layer) override {
+		if (layer != 1) {
+			Widget::drawLayer(drawArgs, layer);
+			return;
+		}
+		std::shared_ptr<Font> pFont = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
 		nvgFontFaceId (drawArgs.vg, pFont->handle);
 		nvgFontSize (drawArgs.vg, 18);
 		nvgFillColor (drawArgs.vg, (pStyle == nullptr || *pStyle == STYLE_ORANGE) ? ORANGE : WHITE);
@@ -242,6 +256,7 @@ struct NumberWidget : TransparentWidget {
 		snprintf (buffer, length + 1, format, value);
 		buffer[length] = '\0';
 		nvgText (drawArgs.vg, 0, 0, buffer, nullptr);
+		Widget::drawLayer(drawArgs, 1);
 	}
 };
 
@@ -280,12 +295,15 @@ struct TextWidget : TransparentWidget {
 	TextWidget () {
 	}
 
-	void draw (const DrawArgs &drawArgs) override {
-		std::shared_ptr<Font> pFont;
-		pFont = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
+	void drawLayer (const DrawArgs &drawArgs, int layer) override {
+		if (layer != 1) {
+			Widget::drawLayer(drawArgs, layer);
+			return;
+		}
+		std::shared_ptr<Font> pFont = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
 		const char *delimiter = " - ";
 		char buf[MAX_TEXT_SIZE * 2 + 1 + 3 /* delimiter length */];
-        	const char* str = (text != nullptr ? text : defaultText);
+        const char* str = (text != nullptr ? text : defaultText);
 		int len = strlen(str);
 		if (len > MAX_TEXT_SIZE)
 			len = MAX_TEXT_SIZE;
@@ -299,11 +317,11 @@ struct TextWidget : TransparentWidget {
 		else {
 			if (pTimer != nullptr && len > length) {
 				if (*pTimer <= 0) {
-					*pTimer = TEXT_SCROLL_DELAY;
+					*pTimer = int(TEXT_SCROLL_DELAY  * APP->engine->getSampleRate ());
 					scrollPos = (scrollPos + 1) % (len + 3);
 				}
 				else {
-					if (*pTimer > TEXT_SCROLL_DELAY) {
+					if (*pTimer > int(TEXT_SCROLL_DELAY * APP->engine->getSampleRate ())) {
 						if (!reset) {
 							reset = true;
 							scrollPos = 0;
@@ -321,6 +339,7 @@ struct TextWidget : TransparentWidget {
 			buf[scrollPos + length] = '\0';
 			nvgText (drawArgs.vg, 0, mm2px (5), buf + scrollPos, nullptr);
 		}
+		Widget::drawLayer(drawArgs, 1);
 	}
 };
 

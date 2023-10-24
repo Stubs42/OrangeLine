@@ -39,8 +39,9 @@ struct Swing : Module {
     int     tPos = -1;
     float   cmp = 0;
     bool    tClkFired = true;
-	int		tClkDelay = -1;
+	int		tClkDelay = FIRST_TCLK_DELAY;
 	bool  	widgetReady = false;
+	bool	running = false;
 
 // ********************************************************************************************************************************
 /*
@@ -97,12 +98,40 @@ struct Swing : Module {
 	*/
 	inline void moduleParamConfig () {
 		configParam (DIV_PARAM, 1.f,  16.f,   4.f, "Clock Division", "",  0.f, 1.f, 0.f);
+        paramQuantities[DIV_PARAM]->snapEnabled = true;
 		configParam (LEN_PARAM, 1.f,  16.f,  16.f, "Length",         "",  0.f, 1.f, 0.f);
+        paramQuantities[LEN_PARAM]->snapEnabled = true;
 		configParam (AMT_PARAM, 0.f, 100.f, 100.f, "Amount",         "%", 0.f, 1.f, 0.f);
 
-        for (int i = 0; i < 16; i ++) {
-    		configParam (TIM_PARAM_01 + i,  -100.f, 100.f, 0.f, "Timing", "%", 0.f, 1.f, 0.f);
-        }
+		int i = 0;
+   		configParam (TIM_PARAM_01 + i++,  -100.f, 100.f, 0.f, "Micro Timing Step 1", "%", 0.f, 1.f, 0.f);
+   		configParam (TIM_PARAM_01 + i++,  -100.f, 100.f, 0.f, "Micro Timing Step 2", "%", 0.f, 1.f, 0.f);
+   		configParam (TIM_PARAM_01 + i++,  -100.f, 100.f, 0.f, "Micro Timing Step 3", "%", 0.f, 1.f, 0.f);
+   		configParam (TIM_PARAM_01 + i++,  -100.f, 100.f, 0.f, "Micro Timing Step 4", "%", 0.f, 1.f, 0.f);
+   		configParam (TIM_PARAM_01 + i++,  -100.f, 100.f, 0.f, "Micro Timing Step 5", "%", 0.f, 1.f, 0.f);
+   		configParam (TIM_PARAM_01 + i++,  -100.f, 100.f, 0.f, "Micro Timing Step 6", "%", 0.f, 1.f, 0.f);
+   		configParam (TIM_PARAM_01 + i++,  -100.f, 100.f, 0.f, "Micro Timing Step 7", "%", 0.f, 1.f, 0.f);
+   		configParam (TIM_PARAM_01 + i++,  -100.f, 100.f, 0.f, "Micro Timing Step 8", "%", 0.f, 1.f, 0.f);
+   		configParam (TIM_PARAM_01 + i++,  -100.f, 100.f, 0.f, "Micro Timing Step 9", "%", 0.f, 1.f, 0.f);
+   		configParam (TIM_PARAM_01 + i++,  -100.f, 100.f, 0.f, "Micro Timing Step 10", "%", 0.f, 1.f, 0.f);
+   		configParam (TIM_PARAM_01 + i++,  -100.f, 100.f, 0.f, "Micro Timing Step 11", "%", 0.f, 1.f, 0.f);
+   		configParam (TIM_PARAM_01 + i++,  -100.f, 100.f, 0.f, "Micro Timing Step 12", "%", 0.f, 1.f, 0.f);
+   		configParam (TIM_PARAM_01 + i++,  -100.f, 100.f, 0.f, "Micro Timing Step 13", "%", 0.f, 1.f, 0.f);
+   		configParam (TIM_PARAM_01 + i++,  -100.f, 100.f, 0.f, "Micro Timing Step 14", "%", 0.f, 1.f, 0.f);
+   		configParam (TIM_PARAM_01 + i++,  -100.f, 100.f, 0.f, "Micro Timing Step 15", "%", 0.f, 1.f, 0.f);
+   		configParam (TIM_PARAM_01 + i++,  -100.f, 100.f, 0.f, "Micro Timing Step 16", "%", 0.f, 1.f, 0.f);
+
+		configParam (RST_PARAM, 0.f, 1.f, 0.f, "Reset", "", 0.f, 1.f, 0.f);
+
+		configInput ( RST_INPUT, "Reset");
+		configInput ( CLK_INPUT, "Clock");
+		configInput ( BPM_INPUT, "BPM");
+
+		configOutput ( PHS_OUTPUT, "Phase");
+		configOutput ( CMP_OUTPUT, "Compare (micro timing)");
+		configOutput (ECLK_OUTPUT, "Early clock");
+		configOutput (TCLK_OUTPUT, "Timed clock");
+
 	}
 
 	inline void moduleCustomInitialize () {
@@ -140,8 +169,8 @@ struct Swing : Module {
 		Module specific process method called from process () in OrangeLineCommon.hpp
 	*/
 	inline void moduleProcess (const ProcessArgs &args) {
-		if (!widgetReady) return;	// do not strt processing before the widget is ready
-		if (styleChanged) {
+		// if (!widgetReady) return;	// do not strt processing before the widget is ready
+		if (styleChanged && widgetReady) {
 			switch (int(getStateJson(STYLE_JSON))) {
 				case STYLE_ORANGE:
 					brightPanel->visible = false;
@@ -171,42 +200,45 @@ struct Swing : Module {
             eClkFired = false;
             tClkFired = true;
 			tClkDelay = FIRST_TCLK_DELAY;
-            phase = 0.f;
+            phase = -10.f;
             tPos = -1;
+			running = false;
         }
 		if (changeInput (CLK_INPUT)) {
 			clkMultCnt = CLOCK_MULT;
+			running = true;
 			phase = 0.f;
 		}
 
-		if (phase < 0.f || clkMultCnt > 0) {
-			phase += phaseStep * (1 + samplesSkipped);
-			if (phase > PHASE_HIGH) {
-				clkMultCnt --;
-				phase = PHASE_LOW;
-				eClkFired = false;
+		if (running) {
+			if (phase < 0.f || clkMultCnt > 0) {
+				phase += phaseStep * (1 + samplesSkipped);
+				if (phase > PHASE_HIGH) {
+					clkMultCnt --;
+					phase = PHASE_LOW;
+					eClkFired = false;
+				}
+				if (!eClkFired) {
+					tPos ++;
+					if (tPos >= getStateParam (LEN_PARAM))
+						tPos = 0;
+					cmp = getStateParam (TIM_PARAM_01 + tPos) * getStateParam (AMT_PARAM) / 100 / 10.f;
+					cmp = clamp(cmp, MIN_CMP, MAX_CMP);
+					setStateOutput (CMP_OUTPUT, cmp);
+					setStateOutput (ECLK_OUTPUT, 10.f);
+					eClkFired = true;
+					tClkFired = false;
+				}
 			}
-			if (!eClkFired && phase >= PHASE_LOW) {
-				tPos ++;
-				if (tPos >= getStateParam (LEN_PARAM))
-					tPos = 0;
-				cmp = getStateParam (TIM_PARAM_01 + tPos) * getStateParam (AMT_PARAM) / 100 / 10.f;
-				cmp = clamp(cmp, MIN_CMP, MAX_CMP);
-				setStateOutput (CMP_OUTPUT, cmp);
-				setStateOutput (ECLK_OUTPUT, 10.f);
-				eClkFired = true;
-				tClkFired = false;
-			}
-		}
-		setStateOutput (PHS_OUTPUT, phase);
-		if ((!tClkFired && phase >= cmp) || tClkDelay == 0) {
-			if (tClkDelay >= 0)
-				tClkDelay --;
-			else {
+			if (tClkDelay > 0)
+				tClkDelay -= IDLESKIP;
+
+			if (!tClkFired && phase >= cmp && tClkDelay <= 0) {
 				setStateOutput (TCLK_OUTPUT, 10.f);
 				tClkFired = true;
 			}
 		}
+		setStateOutput (PHS_OUTPUT, phase);
 	}
 
 	/**

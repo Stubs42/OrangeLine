@@ -1,14 +1,14 @@
 {
   "slug": "OrangeLine",
   "name": "OrangeLine",
-  "version": "2.3.9",
+  "version": "2.4.2",
   "license": "GPL-3.0-only",
   "brand": "",
   "author": "Dieter Stubler",
   "authorEmail": "dieter.stubler@googlemail.com",
   "authorUrl": "https://github.com/Stubs42/OrangeLine",
   "pluginUrl": "https://github.com/Stubs42/OrangeLine",
-  "manualUrl": "https://github.com/Stubs42/OrangeLine/blob/master/README.md",
+  "manualUrl": "https://github.com/Stubs42/OrangeLine/blob/2.0/README.md",
   "sourceUrl": "https://github.com/Stubs42/OrangeLine",
   "donateUrl": "https://paypal.me/DieterStubler?locale.x=de_DE",
   "modules": [
@@ -75,6 +75,26 @@
         "Utility",
         "Polyphonic",
         "Clock Modulator"
+      ]
+    },
+    {
+      "slug": "Resc",
+      "name": "Resc",
+      "description": "Utility to harmonicaly rescales pitch from one scale to another scale",
+      "tags": [
+        "Utility",
+        "Polyphonic"
+      ]
+    },
+    {
+      "slug": "Morph",
+      "name": "Morph",
+      "description": "Morphing of given or random sequences with turing machine functionality",
+      "tags": [
+        "Utility",
+        "Sequencer",
+        "Random",
+        "Polyphonic"
       ]
     }
   ]

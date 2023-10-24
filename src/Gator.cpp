@@ -47,6 +47,7 @@ struct Gator : Module {
     float ratCmp[POLY_CHANNELS];
     int   ratPhsCnt[POLY_CHANNELS];
 	bool  widgetReady = false;
+	bool  reseted = false;
 
 	/*
 		Variables used speed up processing
@@ -75,7 +76,7 @@ struct Gator : Module {
 		We must not do a trigger process here but just check if the clock trigger input changed
 	*/
 	bool moduleSkipProcess() {
-		float phs = getStateInput (PHS_INPUT);
+		float phs = inputs[PHS_INPUT].getVoltage();
 		// Make sure that whe skip when a ne phase behins because the cv inputs
 		// from sequencers might not be ready yet !
 		if (phs < oldPhsSkip) 
@@ -127,6 +128,18 @@ struct Gator : Module {
 		configParam (RAT_PARAM,  -10.f,  10.f, 0.f, "Ratchets",                  "" , 0.f, 1.f, 0.f);
 		configParam (DLY_PARAM,    0.f,  10.f, 0.f, "Ratchet Delay",             "" , 0.f, 1.f, 0.f);
 		configParam (STR_PARAM, -100.f, 100.f, 0.f, "Strum Direction and Delay", "%", 0.f, 1.f, 0.f);
+
+		configInput ( PHS_INPUT, "Phase (from Swing)");
+		configInput ( CMP_INPUT, "Compare (micro timing from Swing)");
+		configInput (GATE_INPUT, "Gate");
+		configInput (TIME_INPUT, "Time (micro timing offset)");
+		configInput ( LEN_INPUT, "Gate length");
+		configInput ( JTR_INPUT, "Jitter");
+		configInput ( RAT_INPUT, "Ratchet count");
+		configInput ( DLY_INPUT, "Ratchet delay (time distance)");
+		configInput ( STR_INPUT, "Strum direction & delay (time distance)");
+		configInput ( RST_INPUT, "Reset");
+		configOutput (GATE_OUTPUT, "Gate");
 	}
 		
 	/**
@@ -205,8 +218,8 @@ struct Gator : Module {
 		Module specific process method called from process () in OrangeLineCommon.hpp
 	*/
 	inline void moduleProcess (const ProcessArgs &args) {
-		if (!widgetReady) return;	// do not strt processing before the widget is ready
-		if (styleChanged) {
+		// if (!widgetReady) return;	// do not strt processing before the widget is ready
+		if (styleChanged && widgetReady) {
 			switch (int(getStateJson(STYLE_JSON))) {
 				case STYLE_ORANGE:
 					brightPanel->visible = false;
@@ -224,17 +237,27 @@ struct Gator : Module {
 			styleChanged = false;
 		}
 
+        float phs = getStateInput (PHS_INPUT);
+
         if (changeInput (RST_INPUT)) {
+			phs = 0.f; 
             for (int channel = 0; channel < POLY_CHANNELS; channel ++) {
-                oldPhs = 10;
+                oldPhs = 0.f;
                 channelActive[channel] = false;
                 gateProcessed[channel] = false;
                 ratCnt[channel] = 0;
                 setStateOutPoly (GATE_OUTPUT, channel, 0.f);
             }
+			reseted = true;
         }
-
-        float phs = getStateInput (PHS_INPUT);
+		if (reseted) {
+			if (phs > 0.f) {
+				reseted = false;
+			}
+			else {
+				return;
+			}
+		}
 
         bool newPhs = (oldPhs > phs);
         if (newPhs) {
@@ -341,11 +364,14 @@ struct Gator : Module {
                         ratCnt[channel] = 1;
                         ratPhsCnt[channel] = cmpPhsCnt;
                         ratCmp[channel] = cmp;
-                        float len = getStateParam (LEN_PARAM);
+                        float len = getStateParam (LEN_PARAM);;
                         if (getInputConnected (LEN_INPUT)) {
-                            if (channel < lenChannels)
-                                lastLen = OL_statePoly[LEN_INPUT * POLY_CHANNELS + channel] * 10;
-                            len += lastLen;
+                            if (channel < lenChannels) {
+								lastLen = OL_statePoly[LEN_INPUT * POLY_CHANNELS + channel] * 10;
+							}
+							if (lastLen > 0.f) {
+								len = lastLen;
+							}
                         }
                         if (len < MIN_LEN)
 							len = MIN_LEN;

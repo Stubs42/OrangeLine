@@ -275,13 +275,13 @@ SCL CV input: Polyphonic input to set SCL per cv output channel
 
 SCL Attenuation Trimpod: Attenuator for the CV input, positiv (unipolar), negative (bipolar) 
 
-S&H Button. Switches whether a cv change on output should occur on evry clock tick (S&H off) or only when a trigger output or new gate on that channel occured.
+S&H Button. Switches whether a cv change on output should occur on evry clock tick (S&H off), on each step if a trigger or gate is generated (S&H yellow) or only when a trigger output or new gate on that channel occured (s&h red).
 
-S&H Input: Polyphonic input for S&H per channel. If S&H input channel n is > 5V. cv output channel n is set to s&h.
+S&H Input: Polyphonic input for S&H per channel. If the S&H input channel is < 1V, the cv output for this channel changes on on evry clock tick. If the S&H input channel is >= 1V and < 2V, the cv output for this channel changes for every trigger or gate generated only. If the S&H input channel is >= 2V, the cv output for this channel changes for every trigger or a new gate generated only. 
 
-GATE Button: Defines whether the trigger output generates triggers (off) or gates (on).
+GATE Button: Defines whether the trigger output generates triggers (off), gates (yello) or contignous gates(red)).
 
-GATE INPUT: Polyphonic GATE input. Defines GATE/TRG for each polychannel
+GATE INPUT: Polyphonic GATE input. Defines GATE/TRG for each polychannel. < 1V is trigger mode, >=1 and < 2 is gate mode (new gate on every clock tick) and on >=2 the gate stays on contignously for postitiv following gates.
 
 CV Output: (Upper bottom right) Polyphonic CV output
 
@@ -363,4 +363,66 @@ OUT BASE ROOT: [polyphonic] Transposed pitch based on the Root TARGET SCALE with
 OUT BASE CHILD: [polyphonic] Transposed pitch based on the TARGET child SCALE respecting the TARGET CHILD input. 
 
 CHILD SCALE: [polyphonic] Pitches of the TARGET child SCALE (TARGET root Scale rotated by TARGET CHILD.
+
+## Morph
+
+<p align="center"><img src="res/MorphWork.svg"></p>
+
+### Short Description
+
+Morph is a gate and cv looper with turing machine functionality. It is fully polyphonic except of the CLK input. It features two ring buffers of 65 steps max for gates and cvs with a playhead for each polyphonic channel. The channel playhead handels both of buffers. On each clock tick the playhead is advanced one step. Before advancing the playhead, Morph checks for an replacement events for one or both of its channel loop buffers and processes them. A replace event is triggered if the SRC_FORCE gate for the channel, or randomly depending on the setting of the three knobs in the LOCK section. When a replace event occurs for a loop buffer the loop buffers content of the playhead pointing to is replaced. In case of a SRC_FORCE for the channel, gate and cv values from the SRC inputs are copied to the lopp buffers for that channel independent of other settings. In case of a LOCK orginated replace event Morph determines where the new value(s) should come from depending on the setting of the S<>R knob or input. If the values are determined to come from the SRC inputs, the gate and/or cv values are read from SRC inputs. If the values should come from the internal random generator, the RND_GATE knob or input defines the probability a gate is produced and RND_SCL and RND_OFF knobs and inputs are used to generate a random CV from the internal random generator. After processing replace events, the gate/cv values from the playhead position of the buffers are sent to the outputs and the playhead is advanced one step. Buttons and inputs allow for shifting the playhead(s) forward and backward as well as clearing the loop(s) buffer.
+
+### The Panel
+
+#### Top Input Section
+
+CLK input: [monohinic] Clock drivig Morph.
+
+SRC_GATE input: [polyphonic] Source Gate. 
+
+SRC_CV input: [polyphonic] Source Cv. 
+
+SRC_FORCE input: [polyphonic] If high the source gate and cv a forced pushed through to the loop channel buffer overriding other processing for the channel. 
+
+#### LOCK Section
+
+LOCK_GATE knob,
+LOCK_GATE input: [polyphonic] [0-10V] Determines whether a replace event for the gate buffer loop for a channel has to occure. LOCK_BOTH values are added.
+
+LOCK_BOTH knob,
+LOCK_BOTH input: [polyphonic] [-10-10V] Value to add to LOCK_GATE and LOCK_CV values.
+
+LOCK_CV knob,
+LOCK_CV input: [polyphonic] [0-10V] Determines whether a replace event for the Cv buffer loop for a channel has to occure. LOCK_BOTH Values are added.
+
+#### Control Section
+
+S<>R knob,
+S<>R input: [polyphonic] [0-10V] 0V MORPH get new data on replace events from src only. 10V from random only. Inbetween mixed.
+
+<<,>> buttons,
+<<,>> inputs: [polyphonic] Shift theb loop left (<<) or right (>>)
+
+CLR button,
+CLR input: [polyphonic] Clear loop (all gates off, cv to 0V).
+
+#### Lower Input Section
+
+LOOP LEN knob,
+LOOP LEN input: [polyphonic] [0-6.4V] * 10 = Number of steps to loop (max 64).
+
+RND GATE knob,
+RND GATE input: [polyphonic] [0-10V] probability of generating a gate on a replace event fetching from random.
+
+RND SCL knob,
+RNDSCL input: [polyphonic] [-10-10V] scale/10 for random cvs. Negative values bipolar. Positive values unipolar.
+
+RND OFF knob,
+RND OFF input: [-10-10V] offset to add to the scaled random cv.
+
+#### Outputs
+
+GATE output: [polyphonic] Gate output
+
+CV output: [polyphonic] CV output
 
