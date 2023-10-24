@@ -13,7 +13,7 @@
    version="1.1"
    id="svg20339"
    inkscape:version="1.0.1 (3bc2e813f5, 2020-09-07)"
-   sodipodi:docname="GatorWork.svg">
+   sodipodi:docname="GatorDark.svg">
   <defs
      id="defs20333">
     <inkscape:path-effect
@@ -1222,7 +1222,7 @@
         <dc:format>image/svg+xml</dc:format>
         <dc:type
            rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-        <dc:title />
+        <dc:title></dc:title>
       </cc:Work>
     </rdf:RDF>
   </metadata>
@@ -1653,7 +1653,7 @@
      inkscape:groupmode="layer"
      id="g26786"
      inkscape:label="BackgroundDark"
-     style="display:none">
+     style="display:inline">
     <rect
        style="display:inline;opacity:1;vector-effect:none;fill:#202020;fill-opacity:1;fill-rule:evenodd;stroke:none;stroke-width:1.02673;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1;paint-order:normal"
        id="rect26784"
@@ -1666,7 +1666,7 @@
      inkscape:groupmode="layer"
      id="g7606"
      inkscape:label="PanelDark"
-     style="display:none">
+     style="display:inline">
     <path
        style="display:inline;fill:none;stroke:#606060;stroke-width:0.3;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
        d="m 7.6201395,49.785223 -2.79e-4,-1.523942"
@@ -1794,7 +1794,7 @@
      inkscape:groupmode="layer"
      id="g7139"
      inkscape:label="TextDark"
-     style="display:none">
+     style="display:inline">
     <g
        aria-label="LINE"
        id="text7089"
@@ -1850,7 +1850,7 @@
          style="font-style:normal;font-variant:normal;font-weight:bold;font-stretch:normal;font-size:3.52777px;font-family:'Roboto Condensed';-inkscape-font-specification:'Roboto Condensed, Bold';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-feature-settings:normal;text-align:start;writing-mode:lr-tb;text-anchor:start;fill:#c4bac4;fill-opacity:1;stroke-width:0.264583"
          id="path7161" />
       <path
-         d="M 9.6838251,123.27487 H 9.4323336 v 0.91639 H 8.9259057 v -2.50802 h 0.8078731 q 0.3806822,0 0.5873872,0.19809 0.208428,0.19637 0.208428,0.55983 0,0.49953 -0.363457,0.69935 l 0.439249,1.02664 v 0.0241 h -0.544324 z m -0.2514915,-0.42203 h 0.2876649 q 0.1515838,0 0.2273758,-0.0999 0.075792,-0.10163 0.075792,-0.27044 0,-0.37724 -0.294547,-0.37724 h -0.29628 z"
+         d="M 9.6838251,123.27487 H 9.4323336 v 0.91639 H 8.9259057 v -2.50802 h 0.8078731 q 0.3806822,0 0.5873872,0.19809 0.208428,0.19637 0.208428,0.55983 0,0.49953 -0.363457,0.69935 l 0.439249,1.02664 v 0.0241 h -0.544324 z m -0.2514915,-0.42203 h 0.2876649 q 0.1515838,0 0.2273758,-0.0999 0.075792,-0.10163 0.075792,-0.27044 0,-0.37724 -0.2945464,-0.37724 h -0.29628 z"
          style="font-style:normal;font-variant:normal;font-weight:bold;font-stretch:normal;font-size:3.52777px;font-family:'Roboto Condensed';-inkscape-font-specification:'Roboto Condensed, Bold';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-feature-settings:normal;text-align:start;writing-mode:lr-tb;text-anchor:start;fill:#c4bac4;fill-opacity:1;stroke-width:0.264583"
          id="path7163" />
       <path
@@ -2076,7 +2076,7 @@
      inkscape:groupmode="layer"
      id="layer6"
      inkscape:label="BackgroundOrange"
-     style="display:inline">
+     style="display:none">
     <rect
        style="display:inline;opacity:1;vector-effect:none;fill:#15152b;fill-opacity:1;fill-rule:evenodd;stroke:none;stroke-width:1.02673;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1;paint-order:normal"
        id="rect420-8"
@@ -2089,7 +2089,7 @@
      inkscape:groupmode="layer"
      id="layer2"
      inkscape:label="PanelOrange"
-     style="display:inline">
+     style="display:none">
     <path
        style="display:inline;fill:none;stroke:#803300;stroke-width:0.3;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
        d="m 7.6200017,49.785229 -2.79e-4,-1.523942"
@@ -2273,7 +2273,7 @@
          style="font-style:normal;font-variant:normal;font-weight:bold;font-stretch:normal;font-size:3.52777px;font-family:'Roboto Condensed';-inkscape-font-specification:'Roboto Condensed, Bold';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-feature-settings:normal;text-align:start;writing-mode:lr-tb;text-anchor:start;fill:#ff6600;fill-opacity:1;stroke-width:0.264583"
          id="path7483" />
       <path
-         d="M 9.6838251,123.27487 H 9.4323336 v 0.91639 H 8.9259057 v -2.50802 h 0.8078731 q 0.3806822,0 0.5873872,0.19809 0.208428,0.19637 0.208428,0.55983 0,0.49953 -0.363457,0.69935 l 0.439249,1.02664 v 0.0241 h -0.544324 z m -0.2514915,-0.42203 h 0.2876649 q 0.1515838,0 0.2273758,-0.0999 0.075792,-0.10163 0.075792,-0.27044 0,-0.37724 -0.2945287,-0.37724 h -0.29628 z"
+         d="M 9.6838251,123.27487 H 9.4323336 v 0.91639 H 8.9259057 v -2.50802 h 0.8078731 q 0.3806822,0 0.5873872,0.19809 0.208428,0.19637 0.208428,0.55983 0,0.49953 -0.363457,0.69935 l 0.439249,1.02664 v 0.0241 h -0.544324 z m -0.2514915,-0.42203 h 0.2876649 q 0.1515838,0 0.2273758,-0.0999 0.075792,-0.10163 0.075792,-0.27044 0,-0.37724 -0.2945275,-0.37724 h -0.29628 z"
          style="font-style:normal;font-variant:normal;font-weight:bold;font-stretch:normal;font-size:3.52777px;font-family:'Roboto Condensed';-inkscape-font-specification:'Roboto Condensed, Bold';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-feature-settings:normal;text-align:start;writing-mode:lr-tb;text-anchor:start;fill:#ff6600;fill-opacity:1;stroke-width:0.264583"
          id="path7485" />
       <path
@@ -2499,7 +2499,7 @@
      inkscape:groupmode="layer"
      id="layer5"
      inkscape:label="Controls"
-     style="display:inline">
+     style="display:none">
     <g
        transform="matrix(1.000001,0,0,0.99994791,-85.169057,-109.14474)"
        id="layer1-6-8-9-8-0-4"
@@ -2845,7 +2845,7 @@
      inkscape:groupmode="layer"
      id="layer4"
      inkscape:label="TextWork"
-     style="display:inline">
+     style="display:none">
     <text
        xml:space="preserve"
        style="font-style:normal;font-variant:normal;font-weight:bold;font-stretch:normal;font-size:3.52777px;line-height:1.25;font-family:'Roboto Condensed';-inkscape-font-specification:'Roboto Condensed, Bold';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-feature-settings:normal;text-align:start;letter-spacing:0px;word-spacing:0px;writing-mode:lr-tb;text-anchor:start;display:inline;fill:#ff6600;fill-opacity:1;stroke:none;stroke-width:0.264583"

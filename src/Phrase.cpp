@@ -46,6 +46,7 @@ struct Phrase : Module {
 	float oldClkInputVoltage = 0;
 	int   oldClockDelayCounter = 0;
 	int   oldMasterDelayCounter = 0;
+	bool  widgetReady = false;
 
 
 // ********************************************************************************************************************************
@@ -128,18 +129,7 @@ struct Phrase : Module {
 		#pragma GCC diagnostic pop
 
 		setStateJson (STYLE_JSON, float(STYLE_ORANGE));
-		setStateJson (RESET_JSON, 0.f);
-		setStateJson (PHRASELENCOUNTER_JSON, 0.f);
-		setStateJson (PHRASEDURCOUNTER_JSON, 0.f);
-		setStateJson (SLAVELENCOUNTER_JSON, 0.f);
-		setStateJson (SLAVEPATTERN_JSON, 0.f);
-		setStateJson (MASTERDELAYCOUNTER_JSON, 0.f);
-		setStateJson (TROWAFIX_JSON, 0.f);
-		setStateJson (DIVCOUNTER_JSON, 0.f);
-		setStateJson (CLOCKDELAYCOUNTER_JSON, 0.f);
-		setStateJson (CLOCKWITHRESET_JSON, 0.f);
-		setStateJson (CLOCKWITHSPA_JSON, 0.f);
-		setStateJson (CLOCKWITHSPH_JSON, 0.f);
+		moduleReset();
 	}
 
 	/**
@@ -153,6 +143,9 @@ struct Phrase : Module {
 		configParam (MASTER_PTN_PARAM, -10.f, 10.f,  0.f, "Master Input Pattern Offset", "",  0.f, 1.f, 0.f);
 		configParam (MASTER_PTN_PARAM, -10.f, 10.f,  0.f, "Master Input Pattern Offset", "",  0.f, 1.f, 0.f);
 		configParam (CLK_DLY_PARAM,  0.f,  32.f,  0.f, "Slave Clock Delay", " Samples", 0.f, 1.f, 0.f);
+	}
+
+	inline void moduleCustomInitialize () {
 	}
 
 	/**
@@ -357,6 +350,7 @@ struct Phrase : Module {
 		Module specific process method called from process () in OrangeLineCommon.hpp
 	*/
 	inline void moduleProcess (const ProcessArgs &args) {
+		if (!widgetReady) return;	// do not strt processing before the widget is ready
 
 		phraseDurCounter   = int(getStateJson (PHRASEDURCOUNTER_JSON));
 		phraseLenCounter   = int(getStateJson (PHRASELENCOUNTER_JSON));
@@ -419,9 +413,6 @@ struct Phrase : Module {
 		setStateJson (CLOCKWITHSPH_JSON,       float(clockWithSph));
 		setStateJson (SLAVEPATTERN_JSON,       slavePattern);
 		setStateJson (DIVCOUNTER_JSON,         divCounter);
-	}
-
-	inline void moduleCustomInitialize () {
 	}
 
 	/**
@@ -506,6 +497,8 @@ struct PhraseWidget : ModuleWidget {
         addOutput (createOutputCentered<PJ301MPort>	(mm2px (Vec ( 33.737 + 4.2 , /* 128.5 - */ 90.410 + 4.2)),  module, SLAVE_RST_OUTPUT));
         addOutput (createOutputCentered<PJ301MPort>	(mm2px (Vec ( 33.737 + 4.2 , /* 128.5 - */100.093 + 4.2)),  module, SLAVE_CLK_OUTPUT));
         addOutput (createOutputCentered<PJ301MPort>	(mm2px (Vec ( 33.737 + 4.2 , /* 128.5 - */109.777 + 4.2)),  module, SLAVE_PTN_OUTPUT));
+
+  	    if (module) module->widgetReady = true;
 	}        
 
 	struct PhraseStyleItem : MenuItem {

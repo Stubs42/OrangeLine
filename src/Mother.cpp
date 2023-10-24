@@ -79,7 +79,8 @@ struct Mother : Module {
 	bool	cBasedDisplayChanged = false;
 	bool	disableGrabChanged = false;
 	bool	disableDnaChanged = false;
-		
+	bool  widgetReady = false;
+
 	#include "MotherJsonLabels.hpp"
 	#include "MotherScales.hpp"
 
@@ -232,7 +233,7 @@ struct Mother : Module {
 		struct timeval tp;
 		gettimeofday(&tp, NULL);
 		unsigned long int seed = tp.tv_sec * 1000 + tp.tv_usec / 1000;
-		init_genrand (seed);
+		initRandom (&globalRandom, seed);
 		setStateJson (AUTO_CHANNELS_JSON, 1.f);
 		setStateJson (VISUALIZATION_DISABLED_JSON, 0.f);
 		setStateJson (DNA_DISABLED_JSON, 0.f);
@@ -293,6 +294,7 @@ struct Mother : Module {
 		Module specific process method called from process () in OrangeLineCommon.hpp
 	*/
 	inline void moduleProcess (const ProcessArgs &args) {
+		if (!widgetReady) return;	// do not strt processing before the widget is ready
 		int reflectDecrement = (1 + samplesSkipped);
 		if (reflectCounter >= 0 )
 			reflectCounter -= reflectDecrement;
@@ -361,13 +363,13 @@ struct Mother : Module {
 
 					reflectCounter = REFLECT_DURATION;
 					if (rndConnected && channel < rndChannels)
-						init_genrand (int(round (OL_statePoly[rndInPolyIdx] * 100000)));
+						initRandom (&globalRandom, int(round (OL_statePoly[rndInPolyIdx] * 100000)));
 
 					pCnt = 0;
 					pTotal = 0.f;
 
 					if ((OL_inStateChangePoly[trgInPolyIdx] || lastWasTrigger) && (!getInputConnected (CV_INPUT) || channel >= cvChannels))
-						cvIn = genrand_real () * 20.f - 10.f;
+						cvIn = getRandom(&globalRandom) * 20.f - 10.f;
 					else
 						cvIn = OL_statePoly[cvInPolyIdx] - (float(effectiveRoot) / 12.f);
 					cvOut = quantize (cvIn);
@@ -479,7 +481,7 @@ struct Mother : Module {
 					}
 					if (pCnt > 0 && !grab) {
 						float sum = 0.f;
-						rnd = genrand_real () * pTotal;
+						rnd = getRandom (&globalRandom) * pTotal;
 						for (int i = 0; i < pCnt; i++) {
 							sum += pProb[i];
 							if (sum >= rnd) {
@@ -689,6 +691,10 @@ struct Mother : Module {
 			float semiAmt = getStateParam (FATE_AMT_PARAM) / 12.f;
 			float shp = getStateParam (FATE_SHP_PARAM);
 			float d;
+
+			if (getStateJson(ROOT_BASED_DISPLAY_JSON) == 1.f)
+			 	lightIdx = (lightIdx + effectiveChild) % NUM_NOTES;
+
 			if (lightIdx < NUM_NOTES / 2)
 				d = fabs ((5.5f - lightIdx) / 12.f);
 			else
@@ -825,12 +831,12 @@ struct Mother : Module {
 					color = 0x000000;
 				}
 			}
+			if (getStateJson(ROOT_BASED_DISPLAY_JSON) == 1.f)
+				lightIdx = (lightIdx  + effectiveChild + NUM_NOTES) % NUM_NOTES;
+			else
+				if (getStateJson(C_BASED_DISPLAY_JSON) == 1.f)
+					lightIdx = (lightIdx + effectiveChild + effectiveRoot) % NUM_NOTES;
 		}
-		if (getStateJson(ROOT_BASED_DISPLAY_JSON) == 1.f)
-			lightIdx = (lightIdx + effectiveChild) % NUM_NOTES;
-		else
-			if (getStateJson(C_BASED_DISPLAY_JSON) == 1.f)
-				lightIdx = (lightIdx + effectiveChild + effectiveRoot) % NUM_NOTES;
 
 		setRgbLight (NOTE_LIGHT_01_RGB + 3 * lightIdx, color);
 	}	
@@ -1022,6 +1028,8 @@ struct MotherWidget : ModuleWidget {
 		childWidget = TextWidget::create (mm2px (Vec(26.742 - 0.25, 128.5 - 86.537)), module, text, "C", 2, nullptr);
 		childWidget->pStyle = (module == nullptr ? nullptr : &(module->OL_state[STYLE_JSON]));
 		addChild (childWidget);
+  	    
+  	    if (module) module->widgetReady = true;
 	}
 
 	struct MotherScalesItem : MenuItem {

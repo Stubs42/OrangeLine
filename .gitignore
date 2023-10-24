@@ -2,4 +2,5 @@ build/
 plugin.so
 dist/
 *.swp
-
+.vscode/
+plugin.dll
