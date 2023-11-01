@@ -519,7 +519,8 @@ void processOutputChannels() {
 
 	void doReset () {
 		float seed = getGlobalSeed(); 
-		initRandom (&globalRandom, (unsigned long)seed);
+		if (seed != 0)
+			initRandom (&globalRandom, (unsigned long)seed);
 		p_srcRandomGenerator = &globalRandom;
 
 		int preOffset = 0;
