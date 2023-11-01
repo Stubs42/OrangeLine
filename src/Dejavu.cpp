@@ -34,6 +34,7 @@ struct Dejavu : Module {
 		Module member variables
 	*/
 	float oldClkInputVoltage = 0;
+	float oldRstInputVoltage = 0;
 
 	struct OrangeLineRandom repeatRandomGenerator[NUM_ROWS];
 	struct OrangeLineRandom channelRandomGeneratorGate[POLY_CHANNELS];
@@ -80,6 +81,10 @@ struct Dejavu : Module {
 			if (clkInputVoltage != oldClkInputVoltage)
 				skip = false;
 			oldClkInputVoltage = clkInputVoltage;
+			float rstInputVoltage = inputs[RST_INPUT].getVoltage (); 
+			if (rstInputVoltage != oldRstInputVoltage)
+				skip = false;
+			oldRstInputVoltage = rstInputVoltage;
 		}
 		return skip;
 	}
@@ -585,43 +590,33 @@ void processOutputChannels() {
 
 	void prepareEffectiveCounts() {
 		int effectiveCountIndex = 0;
-		int channels = inputs[REP_INPUT].getChannels();
-		bool rowActive = true;
+		int channels = 0;
+		if (getInputConnected (REP_INPUT))
+	  		channels = inputs[REP_INPUT].getChannels();
+		int multiple = 1;
+		int value = 0;
 		for (int row = 0; row < NUM_ROWS; row ++) {
-			rowActive = (int(getStateJson (ONOFF_JSON + row)) == 1);
-
-			int multiple = (row == 0) ? 1 : effectiveCount[(row - 1) * 2 + DUR];
 			for (int lenOrDur = LEN; lenOrDur <= DUR; lenOrDur++) {
-				int value;
-				if (rowActive) {
-					value = 0;
-					if (getInputConnected (REP_INPUT)) {
-						int channel = row * 2 + lenOrDur;
-						if (channel < channels) {
-							int inputValue = floor(OL_statePoly[REP_INPUT * POLY_CHANNELS + channel] * REP_INPUT_SCALE + 0.5);
-							if (inputValue < 0) {
-								inputValue *= -1;
-							}
-							if (inputValue > REP_INPUT_MAX) {
-								inputValue = REP_INPUT_MAX;
-							}
-							if (inputValue >= 1) {
-								value = inputValue ;
-								break;
-							}
+				value = 0;
+				int channel = row * 2 + lenOrDur;
+				if (channel < channels) {
+					value = floor(OL_statePoly[REP_INPUT * POLY_CHANNELS + channel] * REP_INPUT_SCALE + 0.5);
+					if (value != 0) {
+						if (value < 1) {
+							value = 1;
+						}
+						if (value > REP_INPUT_MAX) {
+							value = REP_INPUT_MAX;
 						}
 					}
-					if (value == 0)
-						value = int(getStateJson (ACTIVE_PARAM_JSON + lenOrDur * 4 + row));
-					value *= multiple;
 				}
-				else
-					value = multiple;
+				if (value == 0)
+					value = int(getStateJson (ACTIVE_PARAM_JSON + lenOrDur * 4 + row));
+				value *= multiple;
 
 				if (effectiveCountsPrepared) {
 					int diff = value - effectiveCount[effectiveCountIndex];
 					if (diff != 0) {
-						// DEBUG("prepareEffectivecount(): value = %d, effectiveCount[%d] = %d, diff = %d", value, effectiveCountIndex, effectiveCount[effectiveCountIndex], diff);
 						int jsonIdx = (lenOrDur == LEN ? LEN_COUNTER_JSON : DUR_COUNTER_JSON);
 						int cnt = getStateJson (jsonIdx + row) + diff;
 						if (cnt < 1)
@@ -631,6 +626,18 @@ void processOutputChannels() {
 				}
 				effectiveCount[effectiveCountIndex++] = value;
 			}
+			if (!(getStateJson (ONOFF_JSON + row) == 1.f)) {
+				// set length to duration of current row to dsiable any repitition if row is not active
+				int diff = effectiveCount[effectiveCountIndex-1] - effectiveCount[effectiveCountIndex-2];
+				if (diff != 0) {
+					int cnt = getStateJson (LEN_COUNTER_JSON + row) + diff;
+					if (cnt < 1)
+						cnt = 1;
+					setStateJson(LEN_COUNTER_JSON + row, cnt);
+				}
+				effectiveCount[effectiveCountIndex-2] = effectiveCount[effectiveCountIndex-1];
+			}
+			multiple =  value; // duration of row processed before
 		}
 		effectiveCountsPrepared = true;
 		for (int i = 0; i < NUM_ROWS * 2; i++) {
@@ -734,14 +741,16 @@ void processOutputChannels() {
 				bool cntExpired = false;
 				p_srcRandomGenerator = &globalRandom;
 				for (int row =  NUM_ROWS - 1; row >= 0; row --) {
-					if (!rowActive (row))
-						continue;	// Nothing to do here
 					//
 					//	Decrement counters for this row
 					//
 					int durCnt = getStateJson (DUR_COUNTER_JSON + row) - 1;
 					int lenCnt = getStateJson (LEN_COUNTER_JSON + row) - 1;
-
+					if (!rowActive (row)) {
+						setStateJson (DUR_COUNTER_JSON + row, durCnt);
+						setStateJson (LEN_COUNTER_JSON + row, lenCnt);
+						continue;	// Nothing to do here
+					}
 					for (int lenOrDur = DUR; lenOrDur >= LEN; lenOrDur--) {
 						int cnt = (lenOrDur == DUR) ? durCnt : lenCnt;
 						if (cntExpired || cnt <= 0) {	// should never be < 0 but just for safety <=
@@ -1258,6 +1267,24 @@ struct RigthWidget : TransparentWidget {
 				nvgRGB (0xff, 0x00, 0x00),
 				nvgRGB (0xff, 0x00, 0xff)
 			};
+			NVGcolor dotColorInactive[4] = {
+				nvgRGB (0x00, 0x7f, 0x00),
+				nvgRGB (0x7f, 0x7f, 0x00),
+				nvgRGB (0x7f, 0x00, 0x00),
+				nvgRGB (0x7f, 0x00, 0x7f)
+			};
+			NVGcolor trackColorInactive[4] = {
+				nvgRGB (0x00, 0x7f, 0x00),
+				nvgRGB (0x7f, 0x7f, 0x00),
+				nvgRGB (0x7f, 0x00, 0x00),
+				nvgRGB (0x7f, 0x00, 0x7f)
+			};
+			NVGcolor armColorInactive[4] = {
+				nvgRGB (0x00, 0x7f, 0x00),
+				nvgRGB (0x7f, 0x7f, 0x00),
+				nvgRGB (0x7f, 0x00, 0x00),
+				nvgRGB (0x7f, 0x00, 0x7f)
+			};
 
 			int alpha = (displayAlpha / 100) * 255;
 			int dotAlpha = alpha;
@@ -1279,14 +1306,31 @@ struct RigthWidget : TransparentWidget {
 						topActive = row;
 				}
 
+			int lastActiveRow = 0;
+			for (int row = 0;row < NUM_ROWS; row++) {
+				if (module->rowActive (row))
+					lastActiveRow = row;
+			}
+
 			for (int row = NUM_ROWS - 1;row >= 0; row--) {
 
-				if (module->rowActive (row)) {
+				if (row <= lastActiveRow) {
 
 					bool reverse = false;
-					NVGcolor colorTrk = trackColor[reverse ? NUM_ROWS - 1 - row : row];
-					NVGcolor colorDot =   dotColor[reverse ? NUM_ROWS - 1 - row : row];
-					NVGcolor colorArm =   armColor[reverse ? NUM_ROWS - 1 - row : row];
+					NVGcolor colorTrk;
+					NVGcolor colorDot;
+					NVGcolor colorArm;
+					if (module->rowActive (row)) {
+						colorTrk = trackColor[reverse ? NUM_ROWS - 1 - row : row];
+						colorDot =   dotColor[reverse ? NUM_ROWS - 1 - row : row];
+						colorArm =   armColor[reverse ? NUM_ROWS - 1 - row : row];
+					}
+					else  {
+						colorTrk = trackColorInactive[reverse ? NUM_ROWS - 1 - row : row];
+						colorDot =   dotColorInactive[reverse ? NUM_ROWS - 1 - row : row];
+						colorArm =   armColorInactive[reverse ? NUM_ROWS - 1 - row : row];
+
+					}
 					NVGcolor color;
 
 					bool durEnd = false;
