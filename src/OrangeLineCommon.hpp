@@ -347,6 +347,7 @@ float getFromParamOrPolyInput(int param, int input, int channel, float inputScal
 		else {
 			switch (normalMode) {
 				case NORMAL_MODE_NONE:
+					return paramValue;
 					break;
 				case NORMAL_MODE_ONE:
 					if (channels == 1) {

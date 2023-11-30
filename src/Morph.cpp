@@ -406,7 +406,7 @@ struct Morph : Module
 				cv +=  + rndOffInp;
 				float rndGateInp = getFromParamOrPolyInput(RND_GATE_PARAM, RND_GATE_INPUT, channel, 10.f, VALUE_MODE_ADD, NORMAL_MODE_ONE);
 				float gate = 0.f;
-				if (gateCv * 10.f <= rndGateInp) {
+				if (gateCv * 10.f >= 100.f - rndGateInp && rndGateInp > 0) {
 					gate = 10.f;
 				}
 
