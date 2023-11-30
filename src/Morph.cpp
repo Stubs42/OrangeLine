@@ -330,7 +330,7 @@ struct Morph : Module
                 float gateCv = 0.f;
                 float cv     = getStateJson(STEPS_JSON + channel * MAX_LOOP_LEN * 2 + head * 2 + 1);
 				if (getStateJson(GATE_FROM_CV_JSON) > 0.f) {
-					gateCv = cv;	// vc is nipolat -10 to 10 V !!!
+					gateCv = cv;	// vc is bipolar -10 to 10 V !!!
 				}
 				else {
                 	gateCv = getStateJson(STEPS_JSON + channel * MAX_LOOP_LEN * 2 + head * 2);
@@ -410,12 +410,13 @@ struct Morph : Module
                 // further processing here
 				float rndSclInp = getFromParamOrPolyInput(RND_SCL_PARAM, RND_SCL_INPUT, channel, 0.1f, VALUE_MODE_ADD, NORMAL_MODE_ONE);
 				float rndOffInp = getFromParamOrPolyInput(RND_OFF_PARAM, RND_OFF_INPUT, channel, 1.f, VALUE_MODE_ADD, NORMAL_MODE_ONE);
-				cv = cv * rndSclInp;
+				cv = cv * abs(rndSclInp);
 				if (rndSclInp >= 0) {
 					// make it unipolar
 					cv = (cv + 10.f) / 2.f; 
 				}
-				cv +=  + rndOffInp;
+				cv += rndOffInp;
+
 				float rndGateInp = getFromParamOrPolyInput(RND_GATE_PARAM, RND_GATE_INPUT, channel, 10.f, VALUE_MODE_ADD, NORMAL_MODE_ONE);
 				float gate = 0.f;
 				if (gateCv * 10.f >= 100.f - rndGateInp && rndGateInp > 0) {
