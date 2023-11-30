@@ -201,6 +201,8 @@ struct Morph : Module
             shift[i] = 0;
             clear[i] = 0;
         }
+		setStateJson(GATE_FROM_CV_JSON, 0.f);
+
 		styleChanged = true;
 	}
 
@@ -325,8 +327,14 @@ struct Morph : Module
                 head %= loopLen;
 
                 // read from loop
-                float gateCv = getStateJson(STEPS_JSON + channel * MAX_LOOP_LEN * 2 + head * 2);
+                float gateCv = 0.f;
                 float cv     = getStateJson(STEPS_JSON + channel * MAX_LOOP_LEN * 2 + head * 2 + 1);
+				if (getStateJson(GATE_FROM_CV_JSON) > 0.f) {
+					gateCv = cv;	// vc is nipolat -10 to 10 V !!!
+				}
+				else {
+                	gateCv = getStateJson(STEPS_JSON + channel * MAX_LOOP_LEN * 2 + head * 2);
+				}
 
                 // get force
                 bool force = false;
@@ -395,13 +403,17 @@ struct Morph : Module
                     setStateJson(STEPS_JSON + channel * MAX_LOOP_LEN * 2 + head * 2 + 1, cv);
                 }
 
+				if (getStateJson(GATE_FROM_CV_JSON) > 0.f) {
+					gateCv = (cv + 10.f) / 2.f; // gateCv has to be unipolar
+				}
+
                 // further processing here
 				float rndSclInp = getFromParamOrPolyInput(RND_SCL_PARAM, RND_SCL_INPUT, channel, 0.1f, VALUE_MODE_ADD, NORMAL_MODE_ONE);
 				float rndOffInp = getFromParamOrPolyInput(RND_OFF_PARAM, RND_OFF_INPUT, channel, 1.f, VALUE_MODE_ADD, NORMAL_MODE_ONE);
 				cv = cv * rndSclInp;
 				if (rndSclInp >= 0) {
 					// make it unipolar
-					cv = abs(cv);
+					cv = (cv + 10.f) / 2.f; 
 				}
 				cv +=  + rndOffInp;
 				float rndGateInp = getFromParamOrPolyInput(RND_GATE_PARAM, RND_GATE_INPUT, channel, 10.f, VALUE_MODE_ADD, NORMAL_MODE_ONE);
@@ -524,6 +536,22 @@ struct MorphWidget : ModuleWidget
 		if (module)
 			module->widgetReady = true;
 	}
+	struct GateFromCvItem : MenuItem
+	{
+		Morph *module;
+		void onAction(const event::Action &e) override
+		{
+			if (module->OL_state[GATE_FROM_CV_JSON] == 0.f)
+				module->OL_setOutState(GATE_FROM_CV_JSON, 1.f);
+			else
+				module->OL_setOutState(GATE_FROM_CV_JSON, 0.f);
+		}
+		void step() override
+		{
+			if (module)
+				rightText = (module != nullptr && module->OL_state[GATE_FROM_CV_JSON] == 1.0f) ? "✔" : "";
+		}
+	};
 
 	struct MorphStyleItem : MenuItem
 	{
@@ -591,6 +619,19 @@ struct MorphWidget : ModuleWidget
 
 		Morph *module = dynamic_cast<Morph *>(this->module);
 		assert(module);
+
+
+		MenuLabel *behaviourLabel = new MenuLabel();
+		behaviourLabel->text = "Behaviour";
+		menu->addChild(behaviourLabel);
+
+		GateFromCvItem *gateFromCvItem = new GateFromCvItem();
+		gateFromCvItem->module = module;
+		gateFromCvItem->text = "Gates from CV";
+		menu->addChild(gateFromCvItem);
+
+		spacerLabel = new MenuLabel();
+		menu->addChild(spacerLabel);
 
         MenuLabel *polyphonyLabel = new MenuLabel();
         polyphonyLabel->text = "Polyphony";
