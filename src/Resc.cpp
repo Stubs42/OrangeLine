@@ -247,7 +247,7 @@ struct Resc : Module
 				int srcCld;
 				for (srcCld = srcScaleNotes - 1; srcCld > 0; srcCld--)
 				{
-					if (srcScale[srcCld] <= cld)
+					if (srcScale[srcCld] <= cld + PRECISION)
 					{
 						break;
 					}
@@ -321,7 +321,7 @@ struct Resc : Module
 				int position;
 				for (position = srcScaleNotes - 1; position > 0; position--)
 				{
-					if (srcScale[position] <= srcNote)
+					if (srcScale[position] <= srcNote + PRECISION)
 					{
 						break;
 					}
