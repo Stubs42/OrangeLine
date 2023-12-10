@@ -397,26 +397,29 @@ struct Morph : Module
                     }
                     else {
                         // we go random
+						float rndSclInp = getFromParamOrPolyInput(RND_SCL_PARAM, RND_SCL_INPUT, channel, 0.1f, VALUE_MODE_ADD, NORMAL_MODE_ONE);
+						float rndOffInp = getFromParamOrPolyInput(RND_OFF_PARAM, RND_OFF_INPUT, channel, 1.f, VALUE_MODE_ADD, NORMAL_MODE_ONE);
 						cv = (getRandom(&globalRandom) - 0.5) * 2.f * 10.f ; // make bipolar 
+						cv = cv * abs(rndSclInp);
+						if (rndSclInp >= 0 && cv < 0.f) {
+							// make it unipolar
+							cv = -cv; 
+						}
+						cv += rndOffInp;
                     }
                     // write back change to loop
                     setStateJson(STEPS_JSON + channel * MAX_LOOP_LEN * 2 + head * 2 + 1, cv);
                 }
 
 				if (getStateJson(GATE_FROM_CV_JSON) > 0.f) {
-					gateCv = (cv + 10.f) / 2.f; // gateCv has to be unipolar
+					gateCv = cv;
+					if (gateCv < 0) {
+						// gateCv has to be unipolar
+						gateCv = -gateCv;
+					}
 				}
 
                 // further processing here
-				float rndSclInp = getFromParamOrPolyInput(RND_SCL_PARAM, RND_SCL_INPUT, channel, 0.1f, VALUE_MODE_ADD, NORMAL_MODE_ONE);
-				float rndOffInp = getFromParamOrPolyInput(RND_OFF_PARAM, RND_OFF_INPUT, channel, 1.f, VALUE_MODE_ADD, NORMAL_MODE_ONE);
-				cv = cv * abs(rndSclInp);
-				if (rndSclInp >= 0) {
-					// make it unipolar
-					cv = (cv + 10.f) / 2.f; 
-				}
-				cv += rndOffInp;
-
 				float rndGateInp = getFromParamOrPolyInput(RND_GATE_PARAM, RND_GATE_INPUT, channel, 10.f, VALUE_MODE_ADD, NORMAL_MODE_ONE);
 				float gate = 0.f;
 				if (gateCv * 10.f >= 100.f - rndGateInp && rndGateInp > 0) {
