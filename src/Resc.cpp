@@ -32,6 +32,8 @@ struct Resc : Module
 	float trgScale[POLY_CHANNELS];
 	int trgScaleNotes = 0;
 	int trgCld = 0;
+	bool trgSclInputWasConnected = false;
+	bool trgCldInputWasConnected = false;
 
 #include "OrangeLineCommon.hpp"
 
@@ -200,7 +202,7 @@ struct Resc : Module
 		/*
 			Setup Target Scale
 		*/
-		if (!initialized || (customChangeBits & CHG_TRGSCL))
+		if (!initialized || (customChangeBits & CHG_TRGSCL) || trgSclInputWasConnected == false)
 		{
 			if (getInputConnected(TRGSCL_INPUT))
 			{
@@ -209,6 +211,7 @@ struct Resc : Module
 				{
 					trgScale[channel] = OL_statePoly[TRGSCL_INPUT * POLY_CHANNELS + channel];
 				}
+				trgSclInputWasConnected = false;
 			}
 			else
 			{
@@ -221,39 +224,18 @@ struct Resc : Module
 				trgScale[4] = 7.f * 1.f / 12.f;
 				trgScale[5] = 9.f * 1.f / 12.f;
 				trgScale[6] = 11.f * 1.f / 12.f;
+				trgSclInputWasConnected = false;
 			}
 			run = true;
 		}
 		/*
 			Get Target Child
 		*/
-		if (getInputConnected(TRGCLD_INPUT))
+		if (getInputConnected(TRGCLD_INPUT) )
 		{
-			if (!initialized || changeInput(TRGCLD_INPUT))
+			if (!initialized || changeInput(TRGCLD_INPUT) || trgCldInputWasConnected == false)
 			{
 				float cld = quantize(fmod(getStateInput(TRGCLD_INPUT), 1.0));
-				// DEBUG("cld = %lf", cld);
-				// DEBUG("srcScale[0] = %lf", srcScale[0]);
-				while (cld > srcScale[0] + 1.f)
-				{
-					cld -= 1.f;
-				}
-				while (cld < srcScale[0])
-				{
-					cld += 1.f;
-				}
-				// DEBUG("cld = %lf", cld);
-				// find position in srcScale
-				int srcCld;
-				for (srcCld = srcScaleNotes - 1; srcCld > 0; srcCld--)
-				{
-					if (srcScale[srcCld] <= cld + PRECISION)
-					{
-						break;
-					}
-				}
-				// DEBUG("srcCld = %d", srcCld);
-				cld = trgScale[srcCld];
 				while (cld > trgScale[0] + 1.f)
 				{
 					cld -= 1.f;
@@ -265,16 +247,18 @@ struct Resc : Module
 				// find position in trgScale
 				for (trgCld = trgScaleNotes - 1; trgCld > 0; trgCld--)
 				{
-					if (trgScale[trgCld] <= cld)
+					if (trgScale[trgCld] <= cld + PRECISION)
 					{
 						break;
 					}
 				}
 				run = true;
 			}
+			trgCldInputWasConnected = true;
 		}
 		else
 		{
+			trgCldInputWasConnected = false;
 			if (trgCld != 0)
 			{
 				trgCld = 0;
@@ -284,7 +268,7 @@ struct Resc : Module
 		/*
 			output the Child Scale
 		*/
-		if (!initialized || (customChangeBits & CHG_TRGSCL) || changeInput(TRGCLD_INPUT))
+		if (!initialized || run || (customChangeBits & CHG_TRGSCL) || changeInput(TRGCLD_INPUT))
 		{
 			for (int position = 0; position < trgScaleNotes; position++)
 			{
@@ -309,8 +293,18 @@ struct Resc : Module
 				float srcPitch = quantize(OL_statePoly[IN_INPUT * POLY_CHANNELS + channel]);
 				// DEBUG(" srcPitch = %lf", srcPitch);
 				// DEBUG("     note = %s", notes[note(srcPitch)]);
-				float oct = floor(srcPitch - quantize(srcScale[0]) + PRECISION);
+
+				// octave has to defined relative on srcScale[0] and not on C4 (srcPitch == 0) !!! 
+				float oct = 0.f;
+				while (srcPitch - oct < srcScale[0] - PRECISION) {
+					oct -= 1.f;
+				}
+				while (srcPitch - oct >= srcScale[0] + 1.f - PRECISION) {
+					oct += 1.f;
+				}
 				// DEBUG("      oct = %lf", oct);
+
+				// find position of srcPitch in srcScale
 				float srcNote = float(note(srcPitch)) / 12.f;
 				while (srcNote < srcScale[0])
 				{
@@ -335,7 +329,12 @@ struct Resc : Module
 
 				int cvCldBasedPolyIdx = CLDBASED_OUTPUT * POLY_CHANNELS + channel;
 				// DEBUG("cvCldBasedPolyIdx = %d", cvCldBasedPolyIdx);
-				OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cvCldBasedPolyIdx] = trgScale[(position + trgCld) % trgScaleNotes] + oct;
+
+				float cldTrgPitch = trgScale[(position + trgCld) % trgScaleNotes];
+				if (position + trgCld >= trgScaleNotes) {
+					oct += 1.f;
+				}
+				OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cvCldBasedPolyIdx] = cldTrgPitch + oct;
 				OL_outStateChangePoly[cvCldBasedPolyIdx] = true;
 			}
 			setOutPolyChannels(ROOTBASED_OUTPUT, inputs[IN_INPUT].getChannels());
