@@ -536,7 +536,9 @@ struct Morpheus : Module
 		   ) {
 			if (getStateJson(SELECTED_MEM_JSON) == getStateJson(ACTIVE_MEM_JSON)) {
 				for (int channel = 0; channel < polyChannels; channel++) {
-					loadChannel(channel);
+					if (getChannelHld(channel) < 5.f) {
+						loadChannel(channel);
+					}
 				}
 			}
 			else {
