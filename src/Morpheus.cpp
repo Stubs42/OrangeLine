@@ -140,14 +140,14 @@ struct Morpheus : Module
         configParam (MEM_DOWN_PARAM,    0.f,   1.f,  0.f, "Memory Down",     "", 0.f, 1.f, 0.f);
         configParam (STO_PARAM,         0.f,   1.f,  0.f, "Store Selected Memory Slot",     "", 0.f, 1.f, 0.f);
         configParam (RCL_PARAM,         0.f,   1.f,  0.f, "Recall Selected Memory Slot",    "", 0.f, 1.f, 0.f);
+		configSwitch(HLD_ON_PARAM, 0.0f, 1.0f, 0.0f, "Hold", {"Off", "On"});
 
-        configParam (HLD_ON_PARAM,      0.f,   1.f,  0.f, "Hold (Lock 100% Shortcut)",    "", 0.f, 1.f, 0.f);
         configParam (RND_PARAM,         0.f,  10.f,  0.f, "Randomize (Lock 0%, Balance 100% Shortcut)",    "", 0.f, 1.f, 0.f);
         configParam (SHIFT_LEFT_PARAM,  0.f,  10.f,  0.f, "Shift Left One Step",     "", 0.f, 1.f, 0.f);
         configParam (SHIFT_RIGHT_PARAM, 0.f,  10.f,  0.f, "Shift Right One Step",    "", 0.f, 1.f, 0.f);
         configParam (CLR_PARAM,         0.f,  10.f,  0.f, "Clear Loop (CV -> 0V)",        "", 0.f, 1.f, 0.f);
 
-        configParam (EXT_ON_PARAM,      0.f,   1.f,  0.f, "Use External Source",    "", 0.f, 1.f, 0.f);
+		configSwitch(EXT_ON_PARAM, 0.0f, 1.0f, 0.0f, "Source", {"MEM", "EXT"});
         configParam (REC_PARAM,         0.f,  10.f,  0.f, "Record from External Source (Lock 0%, Balance 0% Shortcut)",    "", 0.f, 1.f, 0.f);
    		configParam (GTP_PARAM,         0.f, 100.f, 50.f, "Random Gate Probability", "%", 0.f, 1.f, 0.f);
    		configParam (SCL_PARAM,       -10.f,  10.f, 10.f, "Random CV Scale",          "", 0.f, 1.f, 0.f);
@@ -193,7 +193,8 @@ struct Morpheus : Module
         }
 		setStateJson(ACTIVE_MEM_JSON, 0.f);
 		setStateJson(SELECTED_MEM_JSON, 0.f);
-		setStateJson(EXT_ON_JSON, 1.f);
+		setStateJson(EXT_ON_JSON, 0.f);
+		setStateJson(HLD_ON_JSON, 0.f);
 		for (int i = 0; i < POLY_CHANNELS; i++) {
 			isShiftLeft[i] = false;
 			isShiftRight[i] = false;
@@ -255,10 +256,10 @@ struct Morpheus : Module
 		return getStateParam(LOOP_LEN_PARAM);
 	}
 
-	inline float getChannelHold(int channel)
+	inline float getChannelHld(int channel)
 	{
-		if (getStateJson(HLD_ON_JSON) > 5.f) {
-			return getStateJson(HLD_ON_JSON);
+		if (getStateJson(HLD_ON_JSON) > 0.f) {
+			return 10.f;
 		}
 		if (getInputConnected(HLD_INPUT)) {
 			int channels = inputs[HLD_INPUT].getChannels();
@@ -460,20 +461,14 @@ struct Morpheus : Module
 
 		// Handle HLD_ON Button presses
 		if (inChangeParam (HLD_ON_PARAM)) {	//	User clicked on tr/gt button
-			if (getStateJson(HLD_ON_JSON) > 5.f) {
-				setStateJson (HLD_ON_JSON, 0.f);
-			}
-			else {
-				setStateJson (HLD_ON_JSON, 10.f);
-			}
+			setStateJson (HLD_ON_JSON, getStateParam(HLD_ON_PARAM));
 		}
-
 
 		// Handle Shift
         for (int channel = 0; channel < polyChannels; channel ++) {
 
 			// Do not Shift channels on hold
-			if (getChannelHold(channel) > 5.f) continue;
+			if (getChannelHld(channel) > 5.f) continue;
 
 			// Shift all channels left if button is pressed
 			if(changeParam(SHIFT_LEFT_PARAM) && getStateParam(SHIFT_LEFT_PARAM) > 0.f) {
@@ -561,12 +556,7 @@ struct Morpheus : Module
 
 		// Handle EXT_ON Button presses
 		if (inChangeParam (EXT_ON_PARAM)) {	//	User clicked on tr/gt button
-			if (getStateJson(EXT_ON_JSON) > 5.f) {
-				setStateJson (EXT_ON_JSON, 0.f);
-			}
-			else {
-				setStateJson (EXT_ON_JSON, 10.f);
-			}
+			setStateJson (EXT_ON_JSON, getStateParam(EXT_ON_PARAM));
 		}
 
 		// Main CLK Processing here
@@ -584,8 +574,8 @@ struct Morpheus : Module
 				float scl = getChannelScl(channel);
 				float ofs = getChannelOfs(channel);
 				// HLD takes precedence no change of steps when channel is on hold
-				if (getChannelHold(channel) < 5.f) {
-					if (getStateJson(EXT_ON_JSON) > 5.f && getChannelRec(channel) > 5.f) {
+				if (getChannelHld(channel) < 5.f) {
+					if (getStateJson(EXT_ON_JSON) > 0.f && getChannelRec(channel) > 5.f) {
 						// User is holding REC and External Source is enabled, so copy xternal Source to step
 						setStateJson(STEPS_JSON + MAX_LOOP_LEN * channel + head, OL_statePoly[EXT_INPUT * POLY_CHANNELS + channel]);
 					}					
@@ -613,7 +603,7 @@ struct Morpheus : Module
 								}
 								else {
 									// replace from source
-									if (getStateJson(EXT_ON_JSON) > 05.f) {
+									if (getStateJson(EXT_ON_JSON) > 0.f) {
 										// source is extern
 										// DEBUG(" from EXT");
 										setStateJson(STEPS_JSON + MAX_LOOP_LEN * channel + head, 
@@ -658,7 +648,7 @@ struct Morpheus : Module
 					memWidget->customForegroundColor = false;
 				}
 				// SRC_OUTPUT
-				if (getStateJson(EXT_ON_JSON) > 5.f) {
+				if (getStateJson(EXT_ON_JSON) > 0.f) {
 					int cvOutPolyIdx = SRC_OUTPUT * POLY_CHANNELS + channel;
 					OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cvOutPolyIdx] = OL_statePoly[EXT_INPUT * POLY_CHANNELS + channel];
 					OL_outStateChangePoly[cvOutPolyIdx] = true;
