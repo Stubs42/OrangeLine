@@ -222,6 +222,8 @@ struct NumberWidget : TransparentWidget {
 	int         length = 0;
 	float       defaultValue = 0.f;
 	float	   *pStyle = nullptr;
+	bool 		customForegroundColor = false;
+	NVGcolor 	foregroundColor = nvgRGB(0,0,0);
 
 	static NumberWidget* create (Vec pos, Module *module, float *pValue, float defaultValue, const char *format, char *buffer, int length) {
 		NumberWidget *w = new NumberWidget();
@@ -251,7 +253,12 @@ struct NumberWidget : TransparentWidget {
 		std::shared_ptr<Font> pFont = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
 		nvgFontFaceId (drawArgs.vg, pFont->handle);
 		nvgFontSize (drawArgs.vg, 18);
-		nvgFillColor (drawArgs.vg, (pStyle == nullptr || *pStyle == STYLE_ORANGE) ? ORANGE : WHITE);
+		if (customForegroundColor) {
+			nvgFillColor (drawArgs.vg, foregroundColor);
+		}
+		else {
+			nvgFillColor (drawArgs.vg, (pStyle == nullptr || *pStyle == STYLE_ORANGE) ? ORANGE : WHITE);
+		}
 		float value = pValue != nullptr ? *pValue : defaultValue;
 		snprintf (buffer, length + 1, format, value);
 		buffer[length] = '\0';
@@ -273,6 +280,8 @@ struct TextWidget : TransparentWidget {
 	const char *defaultText = nullptr;
 	float	   *pStyle = nullptr;
 	bool	    reset = false;
+	bool 		customForegroundColor = false;
+	NVGcolor 	foregroundColor = nvgRGB(0,0,0);
 
 	static TextWidget* create (Vec pos, Module *module, const char *text, const char * defaultText, int length, int *pTimer) {
 		TextWidget *w = new TextWidget();
@@ -295,6 +304,15 @@ struct TextWidget : TransparentWidget {
 	TextWidget () {
 	}
 
+	// void unsetForegroundColor() {
+	// 	customForegroundColor = false;
+	// }
+
+	// void setForegroundColor(NVGcolor color) {
+	// 	customForegroundColor = true;
+	// 	foregroundColor = color;
+	// }
+
 	void drawLayer (const DrawArgs &drawArgs, int layer) override {
 		if (layer != 1) {
 			Widget::drawLayer(drawArgs, layer);
@@ -309,8 +327,12 @@ struct TextWidget : TransparentWidget {
 			len = MAX_TEXT_SIZE;
 		nvgFontFaceId (drawArgs.vg, pFont->handle);
 		nvgFontSize (drawArgs.vg, 18);
-		nvgFillColor (drawArgs.vg, (pStyle == nullptr || *pStyle == STYLE_ORANGE) ? ORANGE : WHITE);
-
+		if (customForegroundColor) {
+			nvgFillColor (drawArgs.vg, foregroundColor);
+		}
+		else {
+			nvgFillColor (drawArgs.vg, (pStyle == nullptr || *pStyle == STYLE_ORANGE) ? ORANGE : WHITE);
+		}
 		if (len <= length) {
 			nvgText (drawArgs.vg, 0, mm2px (5), str, nullptr);
 		}

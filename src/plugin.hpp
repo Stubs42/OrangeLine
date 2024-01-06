@@ -16,6 +16,7 @@ extern Model *modelDejavu;
 extern Model *modelGator;
 extern Model *modelResc;
 extern Model *modelMorph;
+extern Model *modelMorpheus;
 // extern Model *modelTemplate;
 // extern Model *modelWidgetTest;
 
