@@ -244,16 +244,20 @@ struct Morpheus : Module
 
 	inline float getChannelLoopLength(int channel)
 	{
+		float loopLen = 0.f;
 		if (getInputConnected(LOOP_LEN_INPUT)) {
 			int channels = inputs[LOOP_LEN_INPUT].getChannels();
             if (channels == 1) {
-				return floor(OL_statePoly[LOOP_LEN_INPUT * POLY_CHANNELS] * 10.f); // input is scaled so 1.6 is length 16
+				loopLen = floor(OL_statePoly[LOOP_LEN_INPUT * POLY_CHANNELS] * 100.f); // input is scaled so 0.16 is length 16
             }
 			else if (channels >= channel) {
-				return floor(OL_statePoly[LOOP_LEN_INPUT * POLY_CHANNELS + channel] * 10.f); // input is scaled so 1.6 is length 16
+				loopLen = floor(OL_statePoly[LOOP_LEN_INPUT * POLY_CHANNELS + channel] * 100.f); // input is scaled so 0.16 is length 16
             }
 		}
-		return getStateParam(LOOP_LEN_PARAM);
+		if (loopLen < 1.f) {
+			loopLen = getStateParam(LOOP_LEN_PARAM);
+		}
+		return loopLen;
 	}
 
 	inline float getChannelHld(int channel)
