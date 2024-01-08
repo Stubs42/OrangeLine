@@ -426,3 +426,95 @@ GATE output: [polyphonic] Gate output
 
 CV output: [polyphonic] CV output
 
+## Morpheus
+
+<p align="center"><img src="res/MorpheusWork.svg"></p>
+
+### Short Description
+
+Morpheus is cv looper with turing machine and memory functionality which is able to mutate a sequence or morph 
+between sequences. The heart of MORPHEUS is a 16 channel polyphonic cv sequencer loop with a maximum length of 128 steps.
+The length of each channels loop can be different by using the polyphonic LEN input of MORPHEUS. On each clock input MORPHEUS uses 
+the LOCK knobs value or the indivual channels of the polyphonic LOOK input to randomly decide whether the currect step should be
+mutated or or stay as it is. If it decides to mutate the step, the S<>R knob value or the the value of the corresponding
+polyphonic S<>R input is used to determine where the replacement value should come from. If the new value should be taken from the 'source' the active memory slot or the external polyphonic SRC input (if the EXT button is switched on) is used the get the new step value(s).
+If the new value should be randomized it uses the SCL an OFS knobs and corresponding polyphonic inputs to to randomize and scale the
+new step value. Negative SCL will result in bipolar cv centered arounf OFS, positive SCL will create unipolar cv with OFS as lowest value.
+If OFS is set to -10V and the SCL is negative (bipolar) MORPHEUS will create a bipolar cv centered to the value the current steps value.
+Note that SCL and OFS are used when calculating the new random cv. So the result will be stored as step cv value.
+MORPHEUS also can output gates or triggers (settable in right click menu). The GTP knob and its polyphonic input thereby defined the cv threshold the current steps cv has to cross to create a gate. The higher the GTP value the lower the cv has to be, so creating more gates.
+Vice versa the lower the GTP value, the higher the cv value has to be to create a gate, so resulting in less gates to produce. So changing
+the GTP does not alter the step sequence in any way but sill allows for output between 0% and 100% gates. Since it depends in the current cv value GTP is not directly a propability but since the cv is created randomly it indirectly is.
+The HLD button freezes the channels steps, so no change will be applied to the step. Also the step loop of a channel on hold is not
+overwritten when loading from a memory slot. So using the HLD input, you can select which channels to be on HLD individually.
+The buttons RND, <<, >>, CLR affect ALL channels except channels on HLD. The RND and CLR buttons are temporary, so they can used to affect only the current position of the step loops while pressed. If the corresponding polyphonic inputs are used only the gated channels will be affected by the operation. RND forces the current to be randomized. CLR will initialize the current step to the channels OFS value. <<,>> shift the step loop left and right respectively.
+When a nice loop was created, the polyphonic step loop can be stored to one of the 16 memory slots by selecting the slot with the up and down buttons and pressing of STO. When selecting a memory slot with up and down buttons, the slot display will show the new slots number
+in red. This indicates that MORPHEUS still is uing the previous active memory slot as a source for its replacement operations. 
+When pressing RCL while the slot is displayed red, it will set the displayed channel as the new active slot for step replacement. So if not locked an S<>R < 50% the cannel with morph to the new memory slots stored loop. When pressing RCL while the display is not red, the whole
+loop of the memory slot is loaded to the step loop immediatelly. This allows for unmorphed pattern switching.
+The EXT button switches the source for replacement to the polyphonic SRC input. So you can use MORPHEUS to mutate a sequence coming in
+from another sequencer or midi. The REC button and its polyphonic inputs can be used to force MORPHEUS to replace the current steps value(s) be the external CV value(s), thus recording the external source to the step loop. While EXT is on, you can sill save the current loop to a memmory slot but RCL will have no effect on thecurrent step loop.
+
+### The Panel
+
+#### Top Section
+
+LOCK knob: Controls the probability of MORPHEUS will replace a step. 0% forces change of every step, 100% no change of step.
+LOCK input: [polyphonic] [LOCK/10, 0..10V] is added to LOCK knobs value for each channel.
+
+S<>R knob: Controls the probability of MORPHEUS will replace from source or randomize. 0% only use source, 100% alwas randomize.
+S<>R input: [polyphonic] [S<>R/10, 0..10V] is added to s<>R knobs value for each channel.
+
+#### MEM Section
+
+LEN knob [1-128]: Length of the step loop
+LEN input [polyphonic] [LEN/100, 0.01..1.28]: overides the LEN knob per channel. LEN knobs value is used if LEN input for a channel is 0V.
+
+up, down buttons: select memory slot store or recall.
+MEM display. Shows selected memory slot. If the acgive memory slot id a different one the number is displayed in red.
+MEM input [monophonic] [slot/10, 0.1..1.6]: select memory slot by cy 
+
+STO button: Store current loop to selected memory slot. sets active slot to be the selected one.
+STO input [monophonic]: trigger STO if > 0.V is given.
+
+RCL button: Make the selected memory slot the active on. Load step loop from memory if selected and active memory slot already match. Channels on HLD will not be loaded.
+RCL input [monophonic]: trigger RCL if > 0.V is given.
+
+#### EDIT Section
+
+HLD button: Freezes all channel steps ignoring HLD input.
+HLD input [polyphonic]: Freezes individual channels steps if HLD value > 0.
+
+RND button: Randomize all channel steps while RND is pressed, ignoring RND input. Channels on HLD will not be randomized.
+RND input [polyphonic]: Randomize individual channels steps while HLD value > 0.
+
+<<,>> buttons: shift all steps of all channels left or right. Channels on HLD will not be shifted
+<<,>> inputs [polyphonic]: shift individual channels if cv > 0V.
+
+CLR button: Clears all channel steps (step is set to channels OFS value) while CLR is pressed, ignoring CLR input. Channels on HLD will not be cleared.
+CLR input [polyphonic]: Clear individual channels steps while HLD value > 0.
+
+#### EXT and Ramdom Section
+
+EXT button: Use the SRC input as source for non random replacement instead of active memory slot.
+EXT input [polyphonic]: external cv input to process as source or record
+REC button: Momentary button to force EXT input to be recorded to the step loop.
+REC input [polyphonic]: Force record of individula channels if REC cv is > 5.0V
+
+GTP knob: Gate 'probability'. Threshold at which the current steps cv generated a gate
+GTP input [polyphonic]. GTP values for individual channels. Input overrides knob if a value is present for that channel.
+
+SCL knob: Scale for randomly generated cv values. Negative bipolar, positive unipolar.
+SCL input [polyphonic]. SCL values for individual channels. Input overrides knob if a value is present for that channel.
+
+OFS knob: Offset for randomly generated cv values. Negative bipolar, positive unipolar.
+OFS input [polyphonic]. OFS values for individual channels. Input overrides knob if a value is present for that channel.
+
+#### Input/Output Section
+
+RST input [monophonic]: Trigger input for Reset. Sets the head position of all step loops to 0.
+CLK input [monophonic]: Trigger input for Clock
+
+SRC output [polyphonic]: Values of the current EXT cv if EXT is on, or active memory slot if EXT is off
+GATE output [polyphonic]: Gate out (can be switched to Trigger in right click menu)
+CV out [polyphonic]: Value of the current step of the step loop.
