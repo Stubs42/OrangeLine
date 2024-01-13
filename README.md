@@ -30,7 +30,7 @@ If TRG IN is connected, Fence will not work continously but more like a S&H when
 
 Swing is a micro timing sequencer generating a micro timed clock to implement custom micro timing the easy way.
 
-DIV controls how many beats are created for one clock in trg. 
+DIV controls how many beats are created for one clock in trg. Note that moving the knob you can dial in non-integer values but the mantisa (fractional part) will not be displayed. Right click and set using the keyboard to get exact integers.
 LEN controls how many of the 16 timing settings will be applied before looping back to the first one.
 Default setup is DIV 4 and LEN 16 which is fine for 16 16th of a 4/4 bar. For a simple swing LEN 2 is sufficient. You only have to dial in the first 2 knobs in this case.
 AMT controls how much the timing knobs will influence the timing. AMT = 0% switches micro timing off.
