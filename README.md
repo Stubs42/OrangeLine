@@ -438,22 +438,20 @@ The length of each channels loop can be different by using the polyphonic LEN in
 the LOCK knobs value or the indivual channels of the polyphonic LOCK input to randomly decide whether the currect step should be
 mutated or stay as it is. If it decides to mutate the step, the S<>R knob value or the the value of the corresponding
 polyphonic S<>R input is used to determine where the replacement value should come from. If the new value should be taken from the 'source' the active memory slot or the external polyphonic SRC input (if the EXT button is switched on) is used the get the new step value(s).
-If the new value should be randomized it uses the SCL an OFS knobs and corresponding polyphonic inputs to to randomize and scale the
-new step value. Negative SCL will result in bipolar cv centered arounf OFS, positive SCL will create unipolar cv with OFS as lowest value.
-If OFS is set to -10V and the SCL is negative (bipolar) MORPHEUS will create a bipolar cv centered to the value the current steps value.
+If the new value should be randomized it uses the SCL and OFS knobs and corresponding polyphonic inputs to randomize and scale the
+new step value. Negative SCL will result in bipolar, cv centered at OFS, positive SCL will create unipolar cv with OFS as lowest value.
+If OFS is set to -10V and the SCL is negative (bipolar) MORPHEUS will create a bipolar, cv centered at the current steps value.
 Note that SCL and OFS are used when calculating the new random cv. So the result will be stored as step cv value.
 MORPHEUS also can output gates or triggers (settable in right click menu). The GTP knob and its polyphonic input thereby defined the cv threshold the current steps cv has to cross to create a gate. The higher the GTP value the lower the cv has to be, so creating more gates.
 Vice versa the lower the GTP value, the higher the cv value has to be to create a gate, so resulting in less gates to produce. So changing
 the GTP does not alter the step sequence in any way but sill allows for output between 0% and 100% gates. Since it depends in the current cv value GTP is not directly a propability but since the cv is created randomly it indirectly is.
 The HLD button freezes the channels steps, so no change will be applied to the step. Also the step loop of a channel on hold is not
-overwritten when loading from a memory slot. So using the HLD input, you can select which channels to be on HLD individually.
-The buttons RND, <<, >>, CLR affect ALL channels except channels on HLD. The RND and CLR buttons are temporary, so they can used to affect only the current position of the step loops while pressed. If the corresponding polyphonic inputs are used only the gated channels will be affected by the operation. RND forces the current to be randomized. CLR will initialize the current step to the channels OFS value. <<,>> shift the step loop left and right respectively.
-When a nice loop was created, the polyphonic step loop can be stored to one of the 16 memory slots by selecting the slot with the up and down buttons and pressing of STO. When selecting a memory slot with up and down buttons, the slot display will show the new slots number
-in red. This indicates that MORPHEUS still is uing the previous active memory slot as a source for its replacement operations. 
-When pressing RCL while the slot is displayed red, it will set the displayed channel as the new active slot for step replacement. So if not locked an S<>R < 50% the cannel with morph to the new memory slots stored loop. When pressing RCL while the display is not red, the whole
-loop of the memory slot is loaded to the step loop immediatelly. This allows for unmorphed pattern switching.
+overwritten when loading from a memory slot. Using the HLD input, you can select which channels to be on HLD individually.
+The buttons RND, <<, >>, CLR affect ALL channels except channels on HLD. The RND and CLR buttons are temporary, so they can used to affect only the current position of the step loops while pressed. If the corresponding polyphonic inputs are used only the gated channels will be affected by the operation. RND forces the current step to be randomized. CLR will initialize the current step to the channels OFS value. <<,>> shift the step loop left and right respectively.
+When a nice loop was created, the polyphonic step loop can be stored to one of the 16 memory slots by selecting the slot with the up and down buttons and pressing of STO. When selecting a memory slot with up and down buttons, the slot display will show the new slots number in red. This indicates that MORPHEUS still is uing the previous active memory slot as a source for its replacement operations. 
+When pressing RCL while the slot is displayed red, it will set the displayed slot as the new active slot for step replacement. So if not locked an S<>R < 50% the cannel with morph to the new memory slots stored loop. When pressing RCL while the display is not red, the whole loop of the memory slot is loaded to the step loop immediatelly. This allows for unmorphed pattern switching.
 The EXT button switches the source for replacement to the polyphonic SRC input. So you can use MORPHEUS to mutate a sequence coming in
-from another sequencer or midi. The REC button and its polyphonic inputs can be used to force MORPHEUS to replace the current steps value(s) be the external CV value(s), thus recording the external source to the step loop. While EXT is on, you can sill save the current loop to a memmory slot but RCL will have no effect on thecurrent step loop.
+from another sequencer or midi. The REC button and its polyphonic inputs can be used to force MORPHEUS to replace the current steps value(s) be the external CV value(s), thus recording the external source to the step loop. While EXT is on, you can sill save the current loop to a memmory slot but RCL will have no effect on the current step loop.
 
 ### The Panel
 
