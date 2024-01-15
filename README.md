@@ -435,7 +435,7 @@ CV output: [polyphonic] CV output
 Morpheus is cv looper with turing machine and memory functionality which is able to mutate a sequence or morph 
 between sequences. The heart of MORPHEUS is a 16 channel polyphonic cv sequencer loop with a maximum length of 128 steps.
 The length of each channels loop can be different by using the polyphonic LEN input of MORPHEUS. On each clock input MORPHEUS uses 
-the LOCK knobs value or the indivual channels of the polyphonic LOOK input to randomly decide whether the currect step should be
+the LOCK knobs value or the indivual channels of the polyphonic LOCK input to randomly decide whether the currect step should be
 mutated or or stay as it is. If it decides to mutate the step, the S<>R knob value or the the value of the corresponding
 polyphonic S<>R input is used to determine where the replacement value should come from. If the new value should be taken from the 'source' the active memory slot or the external polyphonic SRC input (if the EXT button is switched on) is used the get the new step value(s).
 If the new value should be randomized it uses the SCL an OFS knobs and corresponding polyphonic inputs to to randomize and scale the
