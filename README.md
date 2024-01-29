@@ -469,7 +469,7 @@ LEN knob [1-128]: Length of the step loop
 LEN input [polyphonic] [LEN/100, 0.01..1.28]: overides the LEN knob per channel. LEN knobs value is used if LEN input for a channel is 0V.
 
 up, down buttons: select memory slot store or recall.
-MEM display. Shows selected memory slot. If the acgive memory slot id a different one the number is displayed in red.
+MEM display. Shows selected memory slot. If the active memory slot if a different one the number is displayed in red.
 MEM input [monophonic] [slot/10, 0.1..1.6]: activate memory slot by cv. If the right click menu option 'Load on Mem CV Change' is set, the mem slot is not only activated but loaded instantly. 
 
 STO button: Store current loop to selected memory slot. sets active slot to be the selected one.
@@ -492,7 +492,7 @@ RND input [polyphonic]: Randomize individual channels steps while HLD value > 0.
 CLR button: Clears all channel steps (step is set to channels OFS value) while CLR is pressed, ignoring CLR input. Channels on HLD will not be cleared.
 CLR input [polyphonic]: Clear individual channels steps while HLD value > 0.
 
-#### EXT and Ramdom Section
+#### EXT and Random Section
 
 EXT button: Use the SRC input as source for non random replacement instead of active memory slot.
 EXT input [polyphonic]: external cv input to process as source or record
