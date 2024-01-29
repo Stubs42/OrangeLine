@@ -470,7 +470,7 @@ LEN input [polyphonic] [LEN/100, 0.01..1.28]: overides the LEN knob per channel.
 
 up, down buttons: select memory slot store or recall.
 MEM display. Shows selected memory slot. If the acgive memory slot id a different one the number is displayed in red.
-MEM input [monophonic] [slot/10, 0.1..1.6]: select memory slot by cy 
+MEM input [monophonic] [slot/10, 0.1..1.6]: activate memory slot by cv. If the right click menu option 'Load on Mem CV Change' is set, the mem slot is not only activated but loaded instantly. 
 
 STO button: Store current loop to selected memory slot. sets active slot to be the selected one.
 STO input [monophonic]: trigger STO if > 0.V is given.
