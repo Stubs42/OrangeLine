@@ -195,6 +195,8 @@ struct Morpheus : Module
 		setStateJson(SELECTED_MEM_JSON, 0.f);
 		setStateJson(EXT_ON_JSON, 0.f);
 		setStateJson(HLD_ON_JSON, 0.f);
+		setStateJson(GATE_IS_TRG_JSON, 0.f);
+		setStateJson(LOAD_ON_MEM_CV_CHANGE_JSON, 0.f);
 		for (int i = 0; i < POLY_CHANNELS; i++) {
 			isShiftLeft[i] = false;
 			isShiftRight[i] = false;
@@ -517,7 +519,17 @@ struct Morpheus : Module
 			int m = floor(getStateInput(MEM_INPUT) * 10.f); // input is scaled so 1.6 is mem slot 16
 			if (m < 1) m = 1;
 			if (m > MEM_SLOTS) m = MEM_SLOTS;
-			setStateJson(SELECTED_MEM_JSON, m - 1.f);
+			if (getStateJson(ACTIVE_MEM_JSON) != m - 1.f) {
+				setStateJson(SELECTED_MEM_JSON, m - 1.f);
+				setStateJson(ACTIVE_MEM_JSON, m - 1.f);
+				if (getStateJson(LOAD_ON_MEM_CV_CHANGE_JSON) == 1.0f) {
+					for (int channel = 0; channel < polyChannels; channel++) {
+						if (getChannelHld(channel) < 5.f) {
+							loadChannel(channel);
+						}
+					}
+				}
+			}
 		}
 		else {
 			// Handle MEM up/down
@@ -846,6 +858,23 @@ struct MorpheusWidget : ModuleWidget
 		}
 	};
 
+	struct LoadOnMemCvChangeItem : MenuItem
+	{
+		Morpheus *module;
+		void onAction(const event::Action &e) override
+		{
+			if (module->OL_state[LOAD_ON_MEM_CV_CHANGE_JSON] == 0.f)
+				module->OL_setOutState(LOAD_ON_MEM_CV_CHANGE_JSON, 1.f);
+			else
+				module->OL_setOutState(LOAD_ON_MEM_CV_CHANGE_JSON, 0.f);
+		}
+		void step() override
+		{
+			if (module)
+				rightText = (module != nullptr && module->OL_state[LOAD_ON_MEM_CV_CHANGE_JSON] == 1.0f) ? "✔" : "";
+		}
+	};
+
 	struct MorpheusStyleItem : MenuItem
 	{
 		Morpheus *module;
@@ -922,6 +951,11 @@ struct MorpheusWidget : ModuleWidget
 		gateisTrgItem->module = module;
 		gateisTrgItem->text = "Output Trg instead of Gate";
 		menu->addChild(gateisTrgItem);
+
+		LoadOnMemCvChangeItem *loadOnMemCvChangeItem = new LoadOnMemCvChangeItem();
+		loadOnMemCvChangeItem->module = module;
+		loadOnMemCvChangeItem->text = "Load on Mem CV Change";
+		menu->addChild(loadOnMemCvChangeItem);
 
 		spacerLabel = new MenuLabel();
 		menu->addChild(spacerLabel);

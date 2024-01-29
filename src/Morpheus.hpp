@@ -47,6 +47,7 @@ enum jsonIds {
     EXT_ON_JSON,
     HLD_ON_JSON,
     GATE_IS_TRG_JSON,
+    LOAD_ON_MEM_CV_CHANGE_JSON,
 
 	NUM_JSONS
 };
