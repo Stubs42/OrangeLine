@@ -45,6 +45,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define CHG_CV_IN   (1 << 5)
 #define CHG_TRG_IN  (1 << 6)
 
+#define CLIPBOARD_EMPTY 0
+#define CLIPBOARD_SCALE 1
+#define CLIPBOARD_CHILD 2
 //
 // Defaults
 //

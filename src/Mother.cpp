@@ -64,7 +64,7 @@ struct Mother : Module
 	int noteIdxIn;
 	int pCnt = 0;
 	float pTotal = 0;
-	bool triggered = false;
+	bool didPaste = false;
 	int cvChannels = 0;
 	int trgChannels = 0;
 	int rndChannels = 0;
@@ -83,6 +83,11 @@ struct Mother : Module
 	bool disableGrabChanged = false;
 	bool disableDnaChanged = false;
 	bool widgetReady = false;
+
+	float clipboardSteps[NUM_NOTES];
+	float clipboardScale[NUM_CHLD * NUM_NOTES];
+	float clipboardChild[NUM_NOTES];
+	float clipboardState = CLIPBOARD_EMPTY;
 
 #include "MotherJsonLabels.hpp"
 #include "MotherScales.hpp"
@@ -338,6 +343,64 @@ struct Mother : Module
 		}
 	}
 
+	inline void copyScale()
+	{
+		int onOffJsonBaseIdx = ONOFF_JSON + effectiveScale * NUM_NOTES;
+		for (int i = 0; i < NUM_NOTES; i++)
+		{
+			clipboardSteps[i] = getStateJson(onOffJsonBaseIdx + i);
+		}
+		int weightJsonBaseIdx = WEIGHT_JSON + (effectiveScale * NUM_NOTES);
+		for (int i = 0; i < NUM_NOTES * NUM_CHLD; i++)
+		{
+			float weight = getStateJson(weightJsonBaseIdx + i);
+			clipboardScale[i] = weight;
+		}
+		clipboardState = CLIPBOARD_SCALE;
+	}
+
+	inline void pasteScale()
+	{
+		if (clipboardState == CLIPBOARD_SCALE) {
+			int onOffJsonBaseIdx = ONOFF_JSON + effectiveScale * NUM_NOTES;
+			for (int i = 0; i < NUM_NOTES; i++)
+			{
+				setStateJson(onOffJsonBaseIdx + i, clipboardSteps[i]);
+			}
+			int weightJsonBaseIdx = WEIGHT_JSON + effectiveScale * NUM_NOTES * NUM_CHLD;
+			for (int i = 0; i < NUM_NOTES * NUM_CHLD; i++)
+			{
+				float weight = clipboardScale[i];
+				setStateJson(weightJsonBaseIdx + i, weight);
+			}
+			updateMotherWeights();
+			didPaste = true;
+		}
+	}
+
+	inline void copyChild()
+	{
+		int weightJsonBaseIdx = WEIGHT_JSON + effectiveScale * NUM_NOTES * NUM_CHLD + effectiveChild * NUM_NOTES;
+		for (int i = 0; i < NUM_NOTES; i++)
+		{
+			clipboardChild[i] = getStateJson(weightJsonBaseIdx + i);
+		}
+		clipboardState = CLIPBOARD_CHILD;
+	}
+
+	inline void pasteChild()
+	{
+		if (clipboardState == CLIPBOARD_CHILD) {
+			int weightJsonBaseIdx = WEIGHT_JSON + effectiveScale * NUM_NOTES * NUM_CHLD + effectiveChild * NUM_NOTES;
+			for (int i = 0; i < NUM_NOTES; i++)
+			{
+				setStateJson(weightJsonBaseIdx + i, clipboardChild[i]);
+			}			
+			updateMotherWeights();
+			didPaste = true;
+		}
+	}
+
 	// ********************************************************************************************************************************
 	/*
 		Methods called directly or indirectly called from process () in OrangeLineCommon.hpp
@@ -379,7 +442,6 @@ struct Mother : Module
 
 		bool rndConnected = getInputConnected(RND_INPUT);
 		bool trgConnected = getInputConnected(TRG_INPUT);
-		triggered = false;
 		float cvOut = 0.f;
 		float cvIn;
 		float semiAmt = getStateParam(FATE_AMT_PARAM) / 12.f;
@@ -847,7 +909,7 @@ struct Mother : Module
 				}
 			}
 		}
-		if (customChangeBits & (CHG_SCL | CHG_CHLD | CHG_ROOT) || rootBasedDisplayChanged || cBasedDisplayChanged)
+		if (didPaste || (customChangeBits & (CHG_SCL | CHG_CHLD | CHG_ROOT) || rootBasedDisplayChanged || cBasedDisplayChanged))
 		{
 			for (int paramIdx = WEIGHT_PARAM, i = 0; paramIdx <= WEIGHT_PARAM_LAST; paramIdx++, i++)
 			{
@@ -1115,7 +1177,7 @@ struct Mother : Module
 		{
 			strcpy(rootText, notes[effectiveRoot]);
 		}
-		if (triggered || (customChangeBits & (CHG_WEIGHT | CHG_ONOFF | CHG_SCL | CHG_CHLD | CHG_ROOT)) || !initialized ||
+		if (didPaste || (customChangeBits & (CHG_WEIGHT | CHG_ONOFF | CHG_SCL | CHG_CHLD | CHG_ROOT)) || !initialized ||
 			(reflectCounter >= 0 && getStateJson(VISUALIZATION_DISABLED_JSON) == 0.f) || reflectFateCounter >= 0 || visualizationDisabledChanged || rootBasedDisplayChanged || disableGrabChanged || disableDnaChanged)
 		{
 			rootBasedDisplayChanged = false;
@@ -1129,6 +1191,7 @@ struct Mother : Module
 				lightIdx = (idx - effectiveChild + NUM_NOTES) % NUM_NOTES;
 				setNoteLight(lightIdx, getStateJson(jsonIdx));
 			}
+			didPaste = false;
 		}
 		if (headScrollTimer > 0)
 			headScrollTimer -= 1 + samplesSkipped;
@@ -1542,6 +1605,42 @@ struct MotherWidget : ModuleWidget
 		}
 	};
 
+	struct MotherCopyScaleItem : MenuItem
+	{
+		Mother *module;
+		void onAction(const event::Action &e) override
+		{
+			module->copyScale();
+		}
+	};
+
+	struct MotherPasteScaleItem : MenuItem
+	{
+		Mother *module;
+		void onAction(const event::Action &e) override
+		{
+			module->pasteScale();
+		}
+	};
+
+	struct MotherCopyChildItem : MenuItem
+	{
+		Mother *module;
+		void onAction(const event::Action &e) override
+		{
+			module->copyChild();
+		}
+	};
+
+	struct MotherPasteChildItem : MenuItem
+	{
+		Mother *module;
+		void onAction(const event::Action &e) override
+		{
+			module->pasteChild();
+		}
+	};
+
 	struct MotherDisableVisualizationItem : MenuItem
 	{
 		Mother *module;
@@ -1663,6 +1762,33 @@ struct MotherWidget : ModuleWidget
 			motherScalesItem->text = "Scales";
 			motherScalesItem->rightText = RIGHT_ARROW;
 			menu->addChild(motherScalesItem);
+
+			spacerLabel = new MenuLabel();
+			menu->addChild(spacerLabel);
+
+			MenuLabel *editLabel = new MenuLabel();
+			editLabel->text = "Edit";
+			menu->addChild(editLabel);
+
+			MotherCopyScaleItem *copyScaleItem = new MotherCopyScaleItem();
+			copyScaleItem->module = module;
+			copyScaleItem->text = "Copy Scale";
+			menu->addChild(copyScaleItem);
+
+			MotherPasteScaleItem *pasteScaleItem = new MotherPasteScaleItem();
+			pasteScaleItem->module = module;
+			pasteScaleItem->text = "Paste Scale";
+			menu->addChild(pasteScaleItem);
+
+			MotherCopyChildItem *copyChildItem = new MotherCopyChildItem();
+			copyChildItem->module = module;
+			copyChildItem->text = "Copy Child";
+			menu->addChild(copyChildItem);
+
+			MotherPasteChildItem *pasteChildItem = new MotherPasteChildItem();
+			pasteChildItem->module = module;
+			pasteChildItem->text = "Paste Child";
+			menu->addChild(pasteChildItem);
 
 			spacerLabel = new MenuLabel();
 			menu->addChild(spacerLabel);
