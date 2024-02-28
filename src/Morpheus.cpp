@@ -658,12 +658,14 @@ struct Morpheus : Module
 					}
 				}
 				// MEM display color
-				if (getStateJson(ACTIVE_MEM_JSON) != getStateJson(SELECTED_MEM_JSON)) {
-					memWidget->customForegroundColor = true;
-					memWidget->foregroundColor = nvgRGB(255,0,0);
-				}
-				else {
-					memWidget->customForegroundColor = false;
+				if (memWidget != NULL) {
+					if (getStateJson(ACTIVE_MEM_JSON) != getStateJson(SELECTED_MEM_JSON)) {
+						memWidget->customForegroundColor = true;
+						memWidget->foregroundColor = nvgRGB(255,0,0);
+					}
+					else {
+						memWidget->customForegroundColor = false;
+					}
 				}
 				// SRC_OUTPUT
 				if (getStateJson(EXT_ON_JSON) > 0.f) {
