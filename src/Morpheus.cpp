@@ -583,7 +583,7 @@ struct Morpheus : Module
 				if (getStateJson(RECALL_ON_MEM_CV_CHANGE_JSON) == 1.0f) {
 					setStateJson(ACTIVE_MEM_JSON, mem - 1.f);
 				}
-				else if (getStateJson(LOAD_ON_MEM_CV_CHANGE_JSON) == 1.0f) {
+				if (getStateJson(LOAD_ON_MEM_CV_CHANGE_JSON) == 1.0f) {
 					setStateJson(ACTIVE_MEM_JSON, mem - 1.f);
 					for (int channel = 0; channel < polyChannels; channel++) {
 						loadChannel(channel);
