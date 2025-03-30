@@ -34,6 +34,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define POW_MODE_POW 0.f
 #define POW_MODE_GATES 1.f
 #define POW_MODE_SCALE 2.f
+#define POW_MODE_PES 3.f
+
 #define POW_SCALE_BASE_ROOT  0.f
 #define POW_SCALE_BASE_CHILD 1.f
 #define CHG_ONOFF   1
