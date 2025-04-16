@@ -80,7 +80,7 @@ struct Gator : Module {
 		// Make sure that whe skip when a ne phase behins because the cv inputs
 		// from sequencers might not be ready yet !
 		if (phs < oldPhsSkip) 
-			idleSkipCounter = IDLESKIP;
+			idleSkipCounter = idleSkip;
 		oldPhsSkip = phs;
 		return (idleSkipCounter != 0);
 	}

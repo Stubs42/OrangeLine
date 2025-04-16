@@ -336,7 +336,7 @@ struct Mother : Module
 
 	inline void checkTmpHead()
 	{
-		if (tmpHeadCounter >= 0 - IDLESKIP)
+		if (tmpHeadCounter >= 0 - idleSkip)
 		{
 			if (tmpHeadCounter <= 0)
 			{

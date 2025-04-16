@@ -189,8 +189,7 @@ struct Swing : Module {
 		}
 
         if (getInputConnected (BPM_INPUT)) {
-            if (changeInput (BPM_INPUT) || changeParam (DIV_PARAM) || phaseStep == 0.f)
-                phaseStep = CLOCK_MULT * 2.f * std::pow(2.f, getStateInput (BPM_INPUT)) * OL_sampleTime * (PHASE_HIGH - PHASE_LOW);            
+            phaseStep = CLOCK_MULT * 2.f * std::pow(2.f, getStateInput (BPM_INPUT)) * OL_sampleTime * (PHASE_HIGH - PHASE_LOW);            
         }
         else {
             phaseStep = 0.f;
@@ -231,7 +230,7 @@ struct Swing : Module {
 				}
 			}
 			if (tClkDelay > 0)
-				tClkDelay -= IDLESKIP;
+				tClkDelay -= idleSkip;
 
 			if (!tClkFired && phase >= cmp && tClkDelay <= 0) {
 				setStateOutput (TCLK_OUTPUT, 10.f);

@@ -52,8 +52,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #define PRECISION       0.000001f
 
-#define IDLESKIP		int(rack::settings::sampleRate / 1500)	// we run a bit less than every millisecond	// we run a bit less than every millisecond
-
 #define MAX_TEXT_SIZE  64
 #define TEXT_SCROLL_DELAY   0.5f
 #define TEXT_SCROLL_PRE_DELAY   TEXT_SCROLL_DELAY * 4.f
