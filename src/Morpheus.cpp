@@ -638,6 +638,7 @@ struct Morpheus : Module
 		}
 
 		// Main CLK Processing here
+		int extChannels = inputs[EXT_INPUT].getChannels(); 
 		if (changeInput (CLK_INPUT) && getStateInput(CLK_INPUT) > 0.f) {
 			// DEBUG("polyChannels = %d", polyChannels);
 			if (!hadReset) {
@@ -654,9 +655,11 @@ struct Morpheus : Module
 				// HLD takes precedence no change of steps when channel is on hold
 				if (!getChannelHld(channel)) {
 					if (getStateJson(EXT_ON_JSON) > 0.f && getChannelRec(channel) > 5.f) {
-						// User is holding REC and External Source is enabled, so copy xternal Source to step
-						setStateJson(STEPS_JSON + MAX_LOOP_LEN * channel + head, OL_statePoly[EXT_INPUT * POLY_CHANNELS + channel]);
-					}					
+						// User is holding REC and External Source is enabled, so copy external Source to step
+						if (channel < extChannels) {
+							setStateJson(STEPS_JSON + MAX_LOOP_LEN * channel + head, OL_statePoly[EXT_INPUT * POLY_CHANNELS + channel]);
+						}					
+					}
 					else if (getChannelClr(channel) > 5.f) {
 						// DEBUG("clearing channel %d at %d", channel, head);
 						setStateJson(STEPS_JSON + MAX_LOOP_LEN * channel + head, ofs);
@@ -684,8 +687,9 @@ struct Morpheus : Module
 									if (getStateJson(EXT_ON_JSON) > 0.f) {
 										// source is extern
 										// DEBUG(" from EXT");
-										setStateJson(STEPS_JSON + MAX_LOOP_LEN * channel + head, 
-											OL_statePoly[EXT_INPUT * POLY_CHANNELS + channel]);
+										if (channel < extChannels) {
+											setStateJson(STEPS_JSON + MAX_LOOP_LEN * channel + head, OL_statePoly[EXT_INPUT * POLY_CHANNELS + channel]);
+										}
 									}
 									else {
 										// source is MEM
