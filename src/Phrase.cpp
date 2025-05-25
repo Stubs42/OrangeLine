@@ -125,6 +125,7 @@ struct Phrase : Module {
 		setJsonLabel (CLOCKWITHRESET_JSON, "clockWithReset");
 		setJsonLabel (CLOCKWITHSPA_JSON, "clockWithSpa");
 		setJsonLabel (CLOCKWITHSPH_JSON, "clockWithSph");
+		setJsonLabel (SPHISEOC_JSON, "SphIsEoc");
 
 		#pragma GCC diagnostic pop
 
@@ -200,6 +201,7 @@ struct Phrase : Module {
 		setStateJson (CLOCKWITHRESET_JSON, 0.f);
 		setStateJson (CLOCKWITHSPA_JSON, 0.f);
 		setStateJson (CLOCKWITHSPH_JSON, 0.f);
+		setStateJson (SPHISEOC_JSON, 0.f);
 	}
 
 // ********************************************************************************************************************************
@@ -253,10 +255,10 @@ struct Phrase : Module {
 		/*
 			Initialize counters for phrase patterns
 		*/
-		slaveLenCounter  = getStateParam (LEN_PARAM) * getStateParam(DIV_PARAM);
-		phraseLenCounter = getStateInput (MASTER_LEN_INPUT) * 100.f;
+		slaveLenCounter  = round(getStateParam (LEN_PARAM) * getStateParam(DIV_PARAM));
+		phraseLenCounter = round(getStateInput (MASTER_LEN_INPUT) * 100.f);
 		if (phraseLenCounter <= 0)
-			phraseLenCounter = defaultPhraseLen * 100.f;
+			phraseLenCounter = round(defaultPhraseLen * 100.f);
 	}
 	
 	void advancePhrasePattern () {
@@ -266,7 +268,7 @@ struct Phrase : Module {
 		slavePattern += getStateParam (INC_PARAM);
 		setStateOutput (SLAVE_PTN_OUTPUT, slavePattern);
 
-		slaveLenCounter = getStateParam (LEN_PARAM) * getStateParam(DIV_PARAM);
+		slaveLenCounter = round(getStateParam (LEN_PARAM) * getStateParam(DIV_PARAM));
 		/*
 			Request e slave reset with next slave clock
 		*/
@@ -303,7 +305,7 @@ struct Phrase : Module {
 			phraseDurCounter = phraseLenCounter;
 		/*
 			Request start of phrase and slave reset on next slave clock
-			(start of pattern and slave reset already requeste by startPhrasePattern above)
+			(start of pattern and slave reset already requested by startPhrasePattern above)
 		*/
 		clockWithSph = true;
 		clockSlave();
@@ -317,7 +319,7 @@ struct Phrase : Module {
 		/*
 			Start Div counter
 		*/
-		divCounter = getStateParam(DIV_PARAM) - 1;
+		divCounter = round(getStateParam(DIV_PARAM)) - 1;
 	}
 
 	/*
@@ -341,9 +343,12 @@ struct Phrase : Module {
 	        setStateOutput (SLAVE_RST_OUTPUT, 1.0f);
 		if (clockWithSpa)
 			setStateOutput (SPA_OUTPUT, 1.0f);
-		if (clockWithSph)
-			setStateOutput (SPH_OUTPUT, 1.0f);
-        setStateOutput (SLAVE_CLK_OUTPUT, 1.0f);
+		if (clockWithSph) {
+			if (getStateJson(SPHISEOC_JSON) != 1.0f) {
+				setStateOutput (SPH_OUTPUT, 1.0f);
+			}
+		}
+		setStateOutput (SLAVE_CLK_OUTPUT, 1.0f);
 		clockWithReset = clockWithSpa = clockWithSph = false;
 	}
 
@@ -385,6 +390,8 @@ struct Phrase : Module {
 		clockWithSph       = bool(getStateJson (CLOCKWITHSPH_JSON));
 		slavePattern       = getStateJson (SLAVEPATTERN_JSON);
 		divCounter         = getStateJson (DIVCOUNTER_JSON);
+
+		float divParam = round(getStateParam(DIV_PARAM));
 		
 		/*
 			Derive default phrase length from DLEN if connected or LEN*DIV/100 and set effective default phrase length output
@@ -393,7 +400,7 @@ struct Phrase : Module {
 		if (getInputConnected(DLEN_INPUT))
 			defaultPhraseLen = getStateInput (DLEN_INPUT);
 		if (defaultPhraseLen == 0.f)
-			defaultPhraseLen = (getStateParam (LEN_PARAM) * getStateParam(DIV_PARAM)) / 100.f;
+			defaultPhraseLen = (getStateParam (LEN_PARAM) * divParam) / 100.f;
 		setStateOutput (ELEN_OUTPUT, defaultPhraseLen);
 
 		handleStyleChange ();
@@ -419,9 +426,13 @@ struct Phrase : Module {
 				phraseLenCounter--;
 				phraseDurCounter--;
 
+				if (phraseLenCounter == 0 && getStateJson(SPHISEOC_JSON) == 1.0f) {
+					setStateOutput (SPH_OUTPUT, 1.0f);
+				}
+
 				if (divCounter == 0) {
 					clockSlave();
-					divCounter = getStateParam(DIV_PARAM);
+					divCounter = divParam;
 				}
 				divCounter --;
 			}
@@ -537,6 +548,22 @@ struct PhraseWidget : ModuleWidget {
 		}
 	};
 
+	struct SphIsEocItem : MenuItem {
+		Phrase *module;
+		void onAction(const event::Action &e) override {
+			float v = module->OL_state[SPHISEOC_JSON];
+			if (v != 0.f)
+				v = 0.f;
+			else
+				v = 1.f;
+			module->OL_setOutState(SPHISEOC_JSON, v);
+		}
+		void step() override {
+			if (module)
+				rightText = (module->OL_state[SPHISEOC_JSON] != 0.f) ? "✔" : "";
+		}
+	};
+
 	struct TrowaFixItem : MenuItem {
 		Phrase *module;
 		void onAction(const event::Action &e) override {
@@ -581,6 +608,18 @@ struct PhraseWidget : ModuleWidget {
 		style3Item->module = module;
 		style3Item->style = STYLE_DARK;
 		menu->addChild(style3Item);
+
+		spacerLabel = new MenuLabel();
+		menu->addChild(spacerLabel);
+
+		MenuLabel *behaviourLabel = new MenuLabel();
+		behaviourLabel->text = "Behaviour";
+		menu->addChild(behaviourLabel);
+
+		SphIsEocItem *sphIsEocItem = new SphIsEocItem();
+		sphIsEocItem->text = "SPH is EOC";// 
+		sphIsEocItem->module = module;
+		menu->addChild(sphIsEocItem);
 
 		spacerLabel = new MenuLabel();
 		menu->addChild(spacerLabel);
