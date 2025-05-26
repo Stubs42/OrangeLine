@@ -59,9 +59,9 @@ struct Resc : Module
 	/*
 		Method to decide whether this call of process() should be skipped
 	*/
-	bool moduleSkipProcess()
-	{
-		return false;
+	bool moduleSkipProcess() {
+		bool skip = (idleSkipCounter != 0);
+		return skip;
 	}
 	/**
 		Method to set stateTypes != default types set by initializeInstance() in OrangeLineModule.hpp
@@ -175,8 +175,8 @@ struct Resc : Module
 		/*
 			Setup Source Scale
 		*/
-		if (!initialized || (customChangeBits & CHG_SRCSCL))
-		{
+		// if (!initialized || (customChangeBits & CHG_SRCSCL))
+		// {
 			if (getInputConnected(SRCSCL_INPUT))
 			{
 				srcScaleNotes = inputs[SRCSCL_INPUT].getChannels();
@@ -198,12 +198,12 @@ struct Resc : Module
 				srcScale[6] = 11.f * 1.f / 12.f;
 			}
 			run = true;
-		}
+		// }
 		/*
 			Setup Target Scale
 		*/
-		if (!initialized || (customChangeBits & CHG_TRGSCL) || trgSclInputWasConnected == false)
-		{
+		// if (!initialized || (customChangeBits & CHG_TRGSCL) || trgSclInputWasConnected == false)
+		// {
 			if (getInputConnected(TRGSCL_INPUT))
 			{
 				trgScaleNotes = inputs[TRGSCL_INPUT].getChannels();
@@ -227,7 +227,7 @@ struct Resc : Module
 				trgSclInputWasConnected = false;
 			}
 			run = true;
-		}
+		// }
 		/*
 			Get Target Child
 		*/
