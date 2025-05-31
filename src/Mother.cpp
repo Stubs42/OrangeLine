@@ -1587,7 +1587,7 @@ struct MotherWidget : ModuleWidget
 			void onAction(const event::Action &e) override
 			{
 				module->OL_setOutState(CHILD_CV_MODE_JSON, float(mode));
-				module->flagSetHeadScale = true;;
+				module->flagSetHeadScale = true;
 			}
 			void step() override
 			{
