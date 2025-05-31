@@ -77,7 +77,7 @@ struct Gator : Module {
 	*/
 	bool moduleSkipProcess() {
 		float phs = inputs[PHS_INPUT].getVoltage();
-		// Make sure that whe skip when a ne phase behins because the cv inputs
+		// Make sure that whe skip when a new phase begins because the cv inputs
 		// from sequencers might not be ready yet !
 		if (phs < oldPhsSkip) 
 			idleSkipCounter = idleSkip;
