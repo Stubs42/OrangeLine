@@ -32,6 +32,7 @@ struct Swing : Module {
 	/*
 		Module member variables
 	*/
+	float	oldClkInputVoltage = 0;
     float   phase = 0;
     float   phaseStep = 0;
     float   clkMultCnt = 0;
@@ -60,6 +61,12 @@ struct Swing : Module {
 	*/
 	bool moduleSkipProcess() {
 		bool skip = (idleSkipCounter != 0);
+		if (skip) {
+			float clkInputVoltage = inputs[CLK_INPUT].getVoltage (); 
+			if (clkInputVoltage != oldClkInputVoltage)
+				skip = false;
+			oldClkInputVoltage = clkInputVoltage;
+		}
 		return skip;
 	}
 	/**
