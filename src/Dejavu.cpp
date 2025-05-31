@@ -81,10 +81,6 @@ struct Dejavu : Module {
 			if (clkInputVoltage != oldClkInputVoltage)
 				skip = false;
 			oldClkInputVoltage = clkInputVoltage;
-			float rstInputVoltage = inputs[RST_INPUT].getVoltage (); 
-			if (rstInputVoltage != oldRstInputVoltage)
-				skip = false;
-			oldRstInputVoltage = rstInputVoltage;
 		}
 		return skip;
 	}
