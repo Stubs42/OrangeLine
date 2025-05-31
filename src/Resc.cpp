@@ -305,7 +305,7 @@ struct Resc : Module
 
 			for (int channel = 0; channel < inputs[IN_INPUT].getChannels(); channel++)
 			{
-				// float oct = 0;
+				float oct = 0;
 				float srcPitch = quantize(OL_statePoly[IN_INPUT * POLY_CHANNELS + channel]);
 				float inputSrcPitch = srcPitch;
 
@@ -315,10 +315,12 @@ struct Resc : Module
 				while (srcPitch >= srcScale[0] + 1.f - PRECISION)
 				{
 					srcPitch -= 1.f;
+					oct += 1.f;
 				}
 				while (srcPitch < srcScale[0] - PRECISION)
 				{
 					srcPitch += 1.f;
+					oct -= 1.f;
 				}
 				// DEBUG(" srcPitch = %lf (normalized to srcScale)", srcPitch);
 				// find position of srcPitch in srcScale
@@ -333,21 +335,14 @@ struct Resc : Module
 				// DEBUG("position = %d", position);
 				int cvRootBasedPolyIdx = ROOTBASED_OUTPUT * POLY_CHANNELS + channel;
 				// DEBUG("cvRootBasedPolyIdx = %d", cvRootBasedPolyIdx
-				float trgPitch = trgScale[position % trgScaleNotes];
+				float trgPitch = trgScale[position % trgScaleNotes] ;
 
 				// fix ocatave
-				//make trgPitch lower than inputSrcPitch
-				while (trgPitch > inputSrcPitch + PRECISION)  {
-					trgPitch -= 1.f;
+				if (trgScale[0] > srcScale[0] && inputSrcPitch > trgScale[0] + PRECISION && trgPitch <= inputSrcPitch + PRECISION) {
+					// trgPitch += 1.0;
+					oct += 1.0;
 				}
-				// pring it up to the octave below inputPitch
-				while (trgPitch <= inputSrcPitch - 1.f - PRECISION)  {
-					trgPitch += 1.f;
-				}
-				// one octave up if we transpose up
-				if (cld > 0.f && trgPitch < inputSrcPitch - PRECISION) {
-					trgPitch += 1.f;
-				}
+				trgPitch += oct;
 
 				OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cvRootBasedPolyIdx] = trgPitch ;
 				OL_outStateChangePoly[cvRootBasedPolyIdx] = true;
@@ -358,18 +353,14 @@ struct Resc : Module
 				float cldTrgPitch = trgScale[(position + trgCld) % trgScaleNotes];
 
 				// fix ocatave
-				//make cldTrgPitch lower than inputSrcPitch
-				while (cldTrgPitch > inputSrcPitch + PRECISION)  {
-					cldTrgPitch -= 1.f;
+				if (cld > 0.f && cldTrgPitch + oct <= inputSrcPitch + PRECISION) {
+					oct += 1.f;
 				}
-				// pring it up to the octave below inputPitch
-				while (cldTrgPitch <= inputSrcPitch - 1.f - PRECISION)  {
-					cldTrgPitch += 1.f;
+				if (cld < 0.f && cldTrgPitch + oct >= inputSrcPitch - PRECISION) {
+					oct -= 1.f;
 				}
-				// one octave up if we transpose up
-				if (cld > 0.f  && trgPitch < inputSrcPitch - PRECISION) {
-					cldTrgPitch += 1.f;
-				}
+
+				cldTrgPitch += oct;
 
 				OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cvCldBasedPolyIdx] = cldTrgPitch;
 				OL_outStateChangePoly[cvCldBasedPolyIdx] = true;
