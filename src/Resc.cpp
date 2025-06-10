@@ -322,7 +322,7 @@ struct Resc : Module
 			int cvCldBasedPolyIdx = CLDBASED_OUTPUT * POLY_CHANNELS + channel;
 			// DEBUG("cvCldBasedPolyIdx = %d", cvCldBasedPolyIdx);
 
-			// get target pitch at position fot child
+			// get target pitch at position for child
 			position += trgCld;
 			if (position > trgScaleNotes - 1) {
 				position -= trgScaleNotes;
