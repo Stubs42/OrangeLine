@@ -850,7 +850,7 @@ struct Mother : Module
 	{
 		effectiveRoot = (int(getStateParam (ROOT_PARAM)) + note(getClampedInput(ROOT_INPUT))) % NUM_NOTES;
 		effectiveRootOct = floor(quantize(getClampedInput(ROOT_INPUT)) + (getStateParam (ROOT_PARAM) / NUM_NOTES));
-		DEBUG ("effectiveRootOct = %d", effectiveRootOct);
+		// DEBUG ("effectiveRootOct = %d", effectiveRootOct);
 		effectiveScale = (int(getStateParam(SCL_PARAM)) - 1 + note(getClampedInput(SCL_INPUT))) % NUM_NOTES;
 		effectiveScaleDisplay = float(effectiveScale + 1);
 		effectiveChild = (int(getStateParam (CHLD_PARAM)) + note(getClampedInput(CHLD_INPUT))) % NUM_NOTES;
