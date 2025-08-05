@@ -256,8 +256,8 @@ struct Mother : Module
 		memset(oldCvOut, 0.f, sizeof(oldCvOut));
 		memset(oldCvIn, 0.f, sizeof(oldCvIn));
 
-		strcpy(childText, notes[int(round(getStateParam(CHLD_PARAM)))]);
-		strcpy(rootText, notes[int(round(getStateParam(ROOT_PARAM)))]);
+		strcpy(childText, notes[(int(round(getStateParam(CHLD_PARAM))) + NUM_NOTES) % NUM_NOTES]);
+		strcpy(rootText, notes[(int(round(getStateParam(ROOT_PARAM))) + NUM_NOTES) % NUM_NOTES]);
 
 		strcpy(headDisplayText, headText);
 		updateMotherWeights();
@@ -849,13 +849,16 @@ struct Mother : Module
 	inline void moduleProcessState()
 	{
 		effectiveRoot = (int(getStateParam (ROOT_PARAM)) + note(getClampedInput(ROOT_INPUT)) + 10 * NUM_NOTES) % NUM_NOTES;
-		effectiveRootOct = floor(quantize(getClampedInput(ROOT_INPUT)) + (getStateParam (ROOT_PARAM) / NUM_NOTES));
+		effectiveRootOct = floor(quantize(getClampedInput(ROOT_INPUT)) + 
+		     getStateParam (ROOT_PARAM) / NUM_NOTES);
+
 		// DEBUG ("effectiveRootOct = %d", effectiveRootOct);
 		effectiveScale = (int(getStateParam(SCL_PARAM)) - 1 + note(getClampedInput(SCL_INPUT)) + 10 * NUM_NOTES) % NUM_NOTES;
 		effectiveScaleDisplay = float(effectiveScale + 1);
 		effectiveChild = (int(getStateParam (CHLD_PARAM)) + note(getClampedInput(CHLD_INPUT)) + 10 * NUM_NOTES) % NUM_NOTES;
-		effectiveChildOct = floor(quantize(getClampedInput(CHLD_INPUT)) + quantize(getClampedInput(ROOT_INPUT))) + 
-			(getStateParam (CHLD_PARAM) + getStateParam (ROOT_PARAM)) / NUM_NOTES;
+		effectiveChildOct = floor(quantize(getClampedInput(CHLD_INPUT)) + quantize(getClampedInput(ROOT_INPUT)) + 
+			(getStateParam (CHLD_PARAM) + getStateParam (ROOT_PARAM)) / NUM_NOTES);
+
 		// DEBUG ("effectiveChildOct = %d", effectiveChildOct);
 		/*
 		 	Now we have a Root based effectiveChild, we have to modify it if we run in Child CV Mode 'In scale'
@@ -1232,15 +1235,7 @@ struct Mother : Module
 		}
 		if ((customChangeBits & (CHG_SCL | CHG_CHLD | CHG_ROOT)) || !initialized)
 		{
-			strcpy(childText, notes[(effectiveChild + effectiveRoot + 20 * NUM_NOTES) % NUM_NOTES]);
-			int i = effectiveChild + effectiveRoot;
-			while (i < 0) {
-				i += NUM_NOTES;
-			}
-			while (i >= NUM_NOTES) {
-				i -= NUM_NOTES;
-			}
-			strcpy(childText, notes[i]);
+			strcpy(childText, notes[(effectiveChild + effectiveRoot) % NUM_NOTES]);
 		}
 		if ((customChangeBits & CHG_ROOT) || !initialized)
 		{
