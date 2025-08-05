@@ -61,7 +61,8 @@ struct Resc : Module
 	*/
 	bool moduleSkipProcess()
 	{
-		return false;
+		bool skip = (idleSkipCounter != 0);
+		return skip;
 	}
 	/**
 		Method to set stateTypes != default types set by initializeInstance() in OrangeLineModule.hpp
@@ -94,6 +95,7 @@ struct Resc : Module
 		//
 
 		setJsonLabel(STYLE_JSON, "style");
+		setJsonLabel(CHILD_CV_MODE_JSON, "childCvMode");
 
 #pragma GCC diagnostic pop
 	}
@@ -136,6 +138,7 @@ struct Resc : Module
 	void moduleReset()
 	{
 		styleChanged = true;
+		setStateJson(CHILD_CV_MODE_JSON, CHILD_CV_IN_SCALE);
 	}
 
 	// ********************************************************************************************************************************
@@ -171,175 +174,173 @@ struct Resc : Module
 			}
 			styleChanged = false;
 		}
-		bool run = !initialized;
 		/*
 			Setup Source Scale
 		*/
-		if (!initialized || (customChangeBits & CHG_SRCSCL))
+		if (getInputConnected(SRCSCL_INPUT))
 		{
-			if (getInputConnected(SRCSCL_INPUT))
+			srcScaleNotes = inputs[SRCSCL_INPUT].getChannels();
+			for (int channel = 0; channel < srcScaleNotes; channel++)
 			{
-				srcScaleNotes = inputs[SRCSCL_INPUT].getChannels();
-				for (int channel = 0; channel < srcScaleNotes; channel++)
-				{
-					srcScale[channel] = OL_statePoly[SRCSCL_INPUT * POLY_CHANNELS + channel];
-				}
+				srcScale[channel] = OL_statePoly[SRCSCL_INPUT * POLY_CHANNELS + channel];
 			}
-			else
-			{
-				// Default Cmaj scale
-				srcScaleNotes = 7;
-				srcScale[0] = 0.f;
-				srcScale[1] = 2.f * 1.f / 12.f;
-				srcScale[2] = 4.f * 1.f / 12.f;
-				srcScale[3] = 5.f * 1.f / 12.f;
-				srcScale[4] = 7.f * 1.f / 12.f;
-				srcScale[5] = 9.f * 1.f / 12.f;
-				srcScale[6] = 11.f * 1.f / 12.f;
-			}
-			run = true;
+		}
+		else
+		{
+			// Default Cmaj scale
+			srcScaleNotes = 7;
+			srcScale[0] = quantize(0.f);
+			srcScale[1] = quantize(2.f * 1.f / 12.f);
+			srcScale[2] = quantize(4.f * 1.f / 12.f);
+			srcScale[3] = quantize(5.f * 1.f / 12.f);
+			srcScale[4] = quantize(7.f * 1.f / 12.f);
+			srcScale[5] = quantize(9.f * 1.f / 12.f);
+			srcScale[6] = quantize(11.f * 1.f / 12.f);
 		}
 		/*
 			Setup Target Scale
 		*/
-		if (!initialized || (customChangeBits & CHG_TRGSCL) || trgSclInputWasConnected == false)
+		if (getInputConnected(TRGSCL_INPUT))
 		{
-			if (getInputConnected(TRGSCL_INPUT))
+			trgScaleNotes = inputs[TRGSCL_INPUT].getChannels();
+			for (int channel = 0; channel < trgScaleNotes; channel++)
 			{
-				trgScaleNotes = inputs[TRGSCL_INPUT].getChannels();
-				for (int channel = 0; channel < trgScaleNotes; channel++)
-				{
-					trgScale[channel] = OL_statePoly[TRGSCL_INPUT * POLY_CHANNELS + channel];
-				}
-				trgSclInputWasConnected = false;
+				trgScale[channel] = OL_statePoly[TRGSCL_INPUT * POLY_CHANNELS + channel];
 			}
-			else
-			{
-				// Default Cmaj scale
-				trgScaleNotes = 7;
-				trgScale[0] = 0.f;
-				trgScale[1] = 2.f * 1.f / 12.f;
-				trgScale[2] = 4.f * 1.f / 12.f;
-				trgScale[3] = 5.f * 1.f / 12.f;
-				trgScale[4] = 7.f * 1.f / 12.f;
-				trgScale[5] = 9.f * 1.f / 12.f;
-				trgScale[6] = 11.f * 1.f / 12.f;
-				trgSclInputWasConnected = false;
-			}
-			run = true;
+			trgSclInputWasConnected = false;
+		}
+		else
+		{
+			// Default Cmaj scale
+			trgScaleNotes = 7;
+			trgScale[0] = quantize(0.f);
+			trgScale[1] = quantize(2.f * 1.f / 12.f);
+			trgScale[2] = quantize(4.f * 1.f / 12.f);
+			trgScale[3] = quantize(5.f * 1.f / 12.f);
+			trgScale[4] = quantize(7.f * 1.f / 12.f);
+			trgScale[5] = quantize(9.f * 1.f / 12.f);
+			trgScale[6] = quantize(11.f * 1.f / 12.f);
+			trgSclInputWasConnected = false;
 		}
 		/*
 			Get Target Child
 		*/
-		if (getInputConnected(TRGCLD_INPUT) )
+		float childOct = 0.f;
+		if (getInputConnected(TRGCLD_INPUT))
 		{
-			if (!initialized || changeInput(TRGCLD_INPUT) || trgCldInputWasConnected == false)
+			float cld = quantize(getStateInput(TRGCLD_INPUT));
+			if (getStateJson(CHILD_CV_MODE_JSON) == CHILD_CV_RELATIVE)
 			{
-				float cld = quantize(fmod(getStateInput(TRGCLD_INPUT), 1.0));
-				while (cld > trgScale[0] + 1.f)
-				{
-					cld -= 1.f;
-				}
-				while (cld < trgScale[0])
-				{
-					cld += 1.f;
-				}
-				// find position in trgScale
-				for (trgCld = trgScaleNotes - 1; trgCld > 0; trgCld--)
-				{
-					if (trgScale[trgCld] <= cld + PRECISION)
-					{
-						break;
-					}
-				}
-				run = true;
+				cld += trgScale[0];
 			}
-			trgCldInputWasConnected = true;
+			childOct = 0.f;
+			while (cld > trgScale[trgScaleNotes - 1] + PRECISION)
+			{
+				cld -= 1.f;
+				childOct += 1.f;
+			}
+			while (cld < trgScale[0] - PRECISION)
+			{
+				cld += 1.f;
+				childOct -= 1.f;
+			}
+			// find position in srcScale
+			for (trgCld = trgScaleNotes - 1; trgCld > 0; trgCld--)
+			{
+				if (trgScale[trgCld] <= cld + PRECISION)
+				{
+					break;
+				}
+			}
 		}
 		else
 		{
-			trgCldInputWasConnected = false;
 			if (trgCld != 0)
 			{
 				trgCld = 0;
-				run = true;
 			}
 		}
 		/*
 			output the Child Scale
 		*/
-		if (!initialized || run || (customChangeBits & CHG_TRGSCL) || changeInput(TRGCLD_INPUT))
+		for (int position = 0; position < trgScaleNotes; position++)
 		{
-			for (int position = 0; position < trgScaleNotes; position++)
+			float pitch = trgScale[(position + trgCld) % trgScaleNotes];
+			if (position + trgCld >= trgScaleNotes)
 			{
-				float pitch = trgScale[(position + trgCld) % trgScaleNotes];
-				if (position + trgCld >= trgScaleNotes)
-				{
-					pitch += 1.0f;
-				}
-				int cldSclPolyIdx = CLDSCL_OUTPUT * POLY_CHANNELS + position;
-				OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cldSclPolyIdx] = pitch;
-				OL_outStateChangePoly[cldSclPolyIdx] = true;
+				pitch += 1.0f;
 			}
-			setOutPolyChannels(CLDSCL_OUTPUT, trgScaleNotes);
+			int cldSclPolyIdx = CLDSCL_OUTPUT * POLY_CHANNELS + position;
+			OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cldSclPolyIdx] = pitch + childOct;
+			OL_outStateChangePoly[cldSclPolyIdx] = true;
 		}
+		setOutPolyChannels(CLDSCL_OUTPUT, trgScaleNotes);
 		/*
 			Now do the real job for each poly channel of CHG_IN
 		*/
-		if (run || (customChangeBits & CHG_IN))
+		for (int channel = 0; channel < inputs[IN_INPUT].getChannels(); channel++)
 		{
-			for (int channel = 0; channel < inputs[IN_INPUT].getChannels(); channel++)
+			float oct = 0;
+			float srcPitch = quantize(OL_statePoly[IN_INPUT * POLY_CHANNELS + channel]);
+			// DEBUG(" srcPitch = %lf", srcPitch);
+
+			// Move srcPitch into srcScale octave
+			while (srcPitch >= srcScale[0] + 1.f - PRECISION)
 			{
-				float srcPitch = quantize(OL_statePoly[IN_INPUT * POLY_CHANNELS + channel]);
-				// DEBUG(" srcPitch = %lf", srcPitch);
-				// DEBUG("     note = %s", notes[note(srcPitch)]);
-
-				// octave has to defined relative on srcScale[0] and not on C4 (srcPitch == 0) !!! 
-				float oct = 0.f;
-				while (srcPitch - oct < srcScale[0] - PRECISION) {
-					oct -= 1.f;
-				}
-				while (srcPitch - oct >= srcScale[0] + 1.f - PRECISION) {
-					oct += 1.f;
-				}
-				// DEBUG("      oct = %lf", oct);
-
-				// find position of srcPitch in srcScale
-				float srcNote = float(note(srcPitch)) / 12.f;
-				while (srcNote < srcScale[0])
-				{
-					srcNote += 1.f;
-				}
-				// DEBUG(" srcPitch = %lf (normalized to srcScale)", srcPitch);
-				// find position in srcScale
-				int position;
-				for (position = srcScaleNotes - 1; position > 0; position--)
-				{
-					if (srcScale[position] <= srcNote + PRECISION)
-					{
-						break;
-					}
-				}
-				// DEBUG("position = %d", position);
-				int cvRootBasedPolyIdx = ROOTBASED_OUTPUT * POLY_CHANNELS + channel;
-				// DEBUG("cvRootBasedPolyIdx = %d", cvRootBasedPolyIdx);
-
-				OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cvRootBasedPolyIdx] = trgScale[position % trgScaleNotes] + oct;
-				OL_outStateChangePoly[cvRootBasedPolyIdx] = true;
-
-				int cvCldBasedPolyIdx = CLDBASED_OUTPUT * POLY_CHANNELS + channel;
-				// DEBUG("cvCldBasedPolyIdx = %d", cvCldBasedPolyIdx);
-
-				float cldTrgPitch = trgScale[(position + trgCld) % trgScaleNotes];
-				if (position + trgCld >= trgScaleNotes) {
-					oct += 1.f;
-				}
-				OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cvCldBasedPolyIdx] = cldTrgPitch + oct;
-				OL_outStateChangePoly[cvCldBasedPolyIdx] = true;
+				srcPitch -= 1.f;
+				oct += 1.f;
 			}
-			setOutPolyChannels(ROOTBASED_OUTPUT, inputs[IN_INPUT].getChannels());
-			setOutPolyChannels(CLDBASED_OUTPUT, inputs[IN_INPUT].getChannels());
+			while (srcPitch < srcScale[0] - PRECISION)
+			{
+				srcPitch += 1.f;
+				oct -= 1.f;
+			}
+			// DEBUG(" srcPitch = %lf (normalized to srcScale), oct = %lf", srcPitch, oct);
+
+			// find position of srcPitch in srcScale
+			int position;
+			for (position = srcScaleNotes - 1; position > 0; position--)
+			{
+				if (srcScale[position] <= srcPitch + PRECISION)
+				{
+					srcPitch = srcScale[position] + oct;
+					break;
+				}
+			}
+			// DEBUG("position = %d", position);
+
+			int cvRootBasedPolyIdx = ROOTBASED_OUTPUT * POLY_CHANNELS + channel;
+			// DEBUG("cvRootBasedPolyIdx = %d", cvRootBasedPolyIdx
+
+			// get target pitch at position from target scale
+			float trgPitch = trgScale[position % trgScaleNotes] + oct;
+			// DEBUG ("trgPitch = %lf", trgPitch);
+
+			OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cvRootBasedPolyIdx] = trgPitch;
+			OL_outStateChangePoly[cvRootBasedPolyIdx] = true;
+
+			int cvCldBasedPolyIdx = CLDBASED_OUTPUT * POLY_CHANNELS + channel;
+			// DEBUG("cvCldBasedPolyIdx = %d", cvCldBasedPolyIdx);
+
+			// get target pitch at position for child
+			position += trgCld;
+			if (position > trgScaleNotes - 1) {
+				position -= trgScaleNotes;
+				oct += 1;
+				// DEBUG ("correcting oct + 1 = %lf", oct);
+			}
+			if (position < 0) {
+				position += trgScaleNotes;
+				oct -= 1;
+				// DEBUG ("correcting oct - 1 = %lf", oct);
+			}
+
+			// DEBUG ("[cldTrgScale]:trgScale[position] + oct + childOct = %lf", trgScale[position] + oct + childOct);
+			OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cvCldBasedPolyIdx] = trgScale[position] + oct + childOct;
+			OL_outStateChangePoly[cvCldBasedPolyIdx] = true;
 		}
+		setOutPolyChannels(ROOTBASED_OUTPUT, inputs[IN_INPUT].getChannels());
+		setOutPolyChannels(CLDBASED_OUTPUT, inputs[IN_INPUT].getChannels());
 	}
 
 	/**
@@ -425,35 +426,89 @@ struct RescWidget : ModuleWidget
 		}
 	};
 
+	struct ChildCvModeItem : MenuItem
+	{
+		Resc *module;
+
+		struct ModeItem : MenuItem
+		{
+			Resc *module;
+			int mode;
+			void onAction(const event::Action &e) override
+			{
+				module->OL_setOutState(CHILD_CV_MODE_JSON, float(mode));
+			}
+			void step() override
+			{
+				if (module)
+					rightText = (module != nullptr && module->OL_state[CHILD_CV_MODE_JSON] == float(mode)) ? "✔" : "";
+			}
+		};
+
+		Menu *createChildMenu() override
+		{
+			Menu *menu = new Menu;
+			ModeItem *modeItem;
+			for (int mode = 0; mode < 2; mode++)
+			{
+
+				modeItem = new ModeItem();
+				modeItem->module = module;
+				modeItem->mode = mode;
+				modeItem->text = mode == 0 ? "In Scale" : "Relative [C4]";
+				modeItem->setSize(Vec(110, 20));
+
+				menu->addChild(modeItem);
+			}
+			return menu;
+		}
+	};
+
 	void appendContextMenu(Menu *menu) override
 	{
-		MenuLabel *spacerLabel = new MenuLabel();
-		menu->addChild(spacerLabel);
+		if (module)
+		{
+			MenuLabel *spacerLabel = new MenuLabel();
+			menu->addChild(spacerLabel);
 
-		Resc *module = dynamic_cast<Resc *>(this->module);
-		assert(module);
+			Resc *module = dynamic_cast<Resc *>(this->module);
+			assert(module);
 
-		MenuLabel *styleLabel = new MenuLabel();
-		styleLabel->text = "Style";
-		menu->addChild(styleLabel);
+			MenuLabel *styleLabel = new MenuLabel();
+			styleLabel->text = "Style";
+			menu->addChild(styleLabel);
 
-		RescStyleItem *style1Item = new RescStyleItem();
-		style1Item->text = "Orange"; //
-		style1Item->module = module;
-		style1Item->style = STYLE_ORANGE;
-		menu->addChild(style1Item);
+			RescStyleItem *style1Item = new RescStyleItem();
+			style1Item->text = "Orange"; //
+			style1Item->module = module;
+			style1Item->style = STYLE_ORANGE;
+			menu->addChild(style1Item);
 
-		RescStyleItem *style2Item = new RescStyleItem();
-		style2Item->text = "Bright"; //
-		style2Item->module = module;
-		style2Item->style = STYLE_BRIGHT;
-		menu->addChild(style2Item);
+			RescStyleItem *style2Item = new RescStyleItem();
+			style2Item->text = "Bright"; //
+			style2Item->module = module;
+			style2Item->style = STYLE_BRIGHT;
+			menu->addChild(style2Item);
 
-		RescStyleItem *style3Item = new RescStyleItem();
-		style3Item->text = "Dark"; //
-		style3Item->module = module;
-		style3Item->style = STYLE_DARK;
-		menu->addChild(style3Item);
+			RescStyleItem *style3Item = new RescStyleItem();
+			style3Item->text = "Dark"; //
+			style3Item->module = module;
+			style3Item->style = STYLE_DARK;
+			menu->addChild(style3Item);
+
+			spacerLabel = new MenuLabel();
+			menu->addChild(spacerLabel);
+
+			MenuLabel *behaviourLabel = new MenuLabel();
+			behaviourLabel->text = "Behaviour";
+			menu->addChild(behaviourLabel);
+
+			ChildCvModeItem *childCvModeItem = new ChildCvModeItem();
+			childCvModeItem->module = module;
+			childCvModeItem->text = "Child CV Mode";
+			childCvModeItem->rightText = RIGHT_ARROW;
+			menu->addChild(childCvModeItem);
+		}
 	}
 };
 

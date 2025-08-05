@@ -24,6 +24,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define CHG_SRCSCL 2
 #define CHG_TRGSCL 4
 
+#define CHILD_CV_IN_SCALE   0.f
+#define CHILD_CV_RELATIVE   1.f
+
 //
 // Defaults
 //
@@ -36,6 +39,8 @@ enum jsonIds {
 	// Parameters not bound to any user interface component to save internal module state
 	//
     STYLE_JSON,
+    CHILD_CV_MODE_JSON,
+
 	NUM_JSONS
 };
 

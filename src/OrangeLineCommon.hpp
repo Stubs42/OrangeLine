@@ -67,6 +67,8 @@ bool   styleChanged = true;
 SvgPanel *brightPanel;
 SvgPanel *darkPanel;
 
+int idleSkip;
+
 const char *channelNumbers[16] = {
 	"1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16"
 };
@@ -386,10 +388,12 @@ float getFromParamOrPolyInput(int param, int input, int channel, float inputScal
 	Generic process() Method
 */
 void process (const ProcessArgs &args) override {
+	OL_sampleTime = 1.0 / (double)(APP->engine->getSampleRate ());
+
+	idleSkip = int(0.0009 / OL_sampleTime);	// we run a bit less than every millisecond
 	bool skip = moduleSkipProcess();
-	int idleSkip = IDLESKIP;
 	if (idleSkip > 0) {
-		idleSkipCounter = (idleSkipCounter + 1) % IDLESKIP;
+		idleSkipCounter = (idleSkipCounter + 1) % idleSkip;
 	}
 	else {
 		idleSkipCounter = 0;
@@ -399,8 +403,6 @@ void process (const ProcessArgs &args) override {
 		processActiveOutputTriggers ();
 		return;
 	}
-
-	OL_sampleTime = 1.0 / (double)(APP->engine->getSampleRate ());
 
 	initialize ();
 	processParamsAndInputs ();

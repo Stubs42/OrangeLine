@@ -50,6 +50,7 @@ struct Mother : Module
 
 	int effectiveRoot = 0;
 	int effectiveRootOct = 0;
+	int effectiveChildOct = 0;
 	int effectiveScale = 0;
 	float effectiveScaleDisplay = 0.f;
 	int effectiveChild = 0;
@@ -191,7 +192,7 @@ struct Mother : Module
 	*/
 	inline void moduleParamConfig()
 	{
-		configParam(ROOT_PARAM, 0.f, 11.f, 0.f, "Root", "", 0.f, 1.f / 12.f, 0.f);
+		configParam(ROOT_PARAM, -11.f, 11.f, 0.f, "Root", "", 0.f, 1.f / 12.f, 0.f);
         paramQuantities[ROOT_PARAM]->snapEnabled = true;
 		setCustomChangeMaskParam(ROOT_PARAM, CHG_ROOT);
 
@@ -199,7 +200,7 @@ struct Mother : Module
         paramQuantities[SCL_PARAM]->snapEnabled = true;
 		setCustomChangeMaskParam(SCL_PARAM, CHG_SCL);
 
-		configParam(CHLD_PARAM, 0.f, 11.f, 0.f, "Child Scale", "", 0.f, 1.f / 12.f, 0.f);
+		configParam(CHLD_PARAM, -11.f, 11.f, 0.f, "Child Scale", "", 0.f, 1.f / 12.f, 0.f);
         paramQuantities[CHLD_PARAM]->snapEnabled = true;
 		setCustomChangeMaskParam(CHLD_PARAM, CHG_CHLD);
 
@@ -293,6 +294,7 @@ struct Mother : Module
 		setStateJson(POW_SCALE_STEP_JSON, 1.f);
 		setStateJson(POW_PACK_SCALE_JSON, 0.f);
 		setStateJson(CHILD_CV_MODE_JSON, 0.f);
+		setStateJson(POW_SCALE_IS_OCTAVES_AWARE_JSON, 0.f);
 	}
 
 	// ********************************************************************************************************************************
@@ -336,7 +338,7 @@ struct Mother : Module
 
 	inline void checkTmpHead()
 	{
-		if (tmpHeadCounter >= 0 - IDLESKIP)
+		if (tmpHeadCounter >= 0 - idleSkip)
 		{
 			if (tmpHeadCounter <= 0)
 			{
@@ -413,7 +415,7 @@ struct Mother : Module
 	*/
 	inline void moduleProcess(const ProcessArgs &args)
 	{
-		// if (!widgetReady) return;	// do not strt processing before the widget is ready
+		// DEBUG("moduleProcess");
 		int reflectDecrement = (1 + samplesSkipped);
 		if (reflectCounter >= 0)
 			reflectCounter -= reflectDecrement;
@@ -690,30 +692,35 @@ struct Mother : Module
 			}
 		}
 		int onOffJsonBaseIdx = ONOFF_JSON + effectiveScale * NUM_NOTES;
-		if (getStateJson(POW_MODE_JSON) == POW_MODE_GATES)
+		float powMode = getStateJson(POW_MODE_JSON);
+
+		if (powMode == POW_MODE_GATES)
 		{
+			float startPitchNumber = effectiveRoot;
+			if (getStateJson(POW_SCALE_BASE_JSON) == POW_SCALE_BASE_CHILD) {
+				startPitchNumber += effectiveChild;
+			}
 			for (int i = 0; i < NUM_NOTES; i++)
 			{
 				// no need to take effectiveChild into account because 
 				// the quantizer scale is the same for all mother and child scales
-				int onOffIdx = onOffJsonBaseIdx + (i - effectiveRoot + 10 * NUM_NOTES) % NUM_NOTES;
-				int stateIdx = NUM_INPUTS * POLY_CHANNELS + POW_OUTPUT * POLY_CHANNELS + i;
-				if (getStateJson(onOffIdx) > 0.f)
-				{
-					OL_statePoly[stateIdx] = 10.f;
+				int onOffIdx = 0;
+				if (getStateJson(POW_SCALE_BASE_JSON) == POW_SCALE_BASE_CHILD) {
+					onOffIdx = onOffJsonBaseIdx + ((i + effectiveChild + 10 * NUM_NOTES) % NUM_NOTES);
 				}
-				else
-				{
-					OL_statePoly[stateIdx] = 0.f;
+				else {
+					onOffIdx = onOffJsonBaseIdx + (i % NUM_NOTES);
 				}
+				OL_statePoly[NUM_INPUTS * POLY_CHANNELS + POW_OUTPUT * POLY_CHANNELS + i] = getStateJson(onOffIdx) * 10;
 				int stateChangeIdx = POW_OUTPUT * POLY_CHANNELS + i;
 				OL_outStateChangePoly[stateChangeIdx] = true;
 			}
 			setOutPolyChannels(POW_OUTPUT, NUM_NOTES);
 		}
-		if (getStateJson(POW_MODE_JSON) == POW_MODE_SCALE)
+
+		if (powMode == POW_MODE_SCALE)
 		{
-			// count number of notes on in scale(effectiveRoot and effectiveChild not relevnt for counting)
+			// count number of notes on in scale(effectiveRoot and effectiveChild not relevant for counting)
 			int scaleNotes = 0;	
 			for (int i = 0; i < NUM_NOTES; i++)
 			{
@@ -725,13 +732,24 @@ struct Mother : Module
 			// now cycle throug the scale until all on notes are processed
 			int noteCount = scaleNotes;
 			int step = int(getStateJson(POW_SCALE_STEP_JSON));
-			float startPitchNumber = effectiveRoot;
+			int oct = effectiveRootOct;
+			if (getStateJson(POW_SCALE_IS_OCTAVES_AWARE_JSON) == 1.0f) {
+				oct = effectiveChildOct;
+				// DEBUG ("oct = %d", oct);
+			}
+			int startPitchNumber = effectiveRoot;
 			if (getStateJson(POW_SCALE_BASE_JSON) == POW_SCALE_BASE_CHILD) {
 				startPitchNumber += effectiveChild;
 			}
+			while (startPitchNumber >= NUM_NOTES) {
+				startPitchNumber -= NUM_NOTES;
+			}
+			while (startPitchNumber < 0) {
+				startPitchNumber += NUM_NOTES;
+			}
 			int chn = 0;
 			int i = 0;
-			// DEBUG("noteCount = %d", noteCount);
+			// DEBUG("noteCount = %d, startPitchNumner = %d", noteCount, startPitchNumber);
 			while (noteCount > 0)
 			{
 				int onOffIdx = 0;
@@ -746,14 +764,18 @@ struct Mother : Module
 					// DEBUG("step = %d, onOffIdx - onOffJsonBaseIdx = %d", step, onOffIdx - onOffJsonBaseIdx);
 					if (step == int(getStateJson(POW_SCALE_STEP_JSON)))
 					{
+						int o = oct;
 						int pitchIdx = startPitchNumber + i;
-						if (getStateJson(POW_PACK_SCALE_JSON) > 0.f)
-						{
-							pitchIdx %= 12;
+						if (pitchIdx >= NUM_NOTES) {
+							pitchIdx -= NUM_NOTES;
+							if (getStateJson(POW_PACK_SCALE_JSON) == 0.f) {
+								o ++;
+								// DEBUG ("oct++ = %d", oct);
+							}
 						}
-						float pitch = float(pitchIdx) / NUM_NOTES + effectiveRootOct;
-						// DEBUG("pitchIdx = %d, note = %s", pitchIdx, notes[note(pitch)]);
-						OL_statePoly[NUM_INPUTS * POLY_CHANNELS + POW_OUTPUT * POLY_CHANNELS + chn] = pitch;
+						float pitch = float(pitchIdx) / NUM_NOTES;
+						// DEBUG("pitchIdx = %d, note = %s, oct = %d", pitchIdx, notes[note(pitch)], oct);
+						OL_statePoly[NUM_INPUTS * POLY_CHANNELS + POW_OUTPUT * POLY_CHANNELS + chn] = pitch + o;
 						OL_outStateChangePoly[POW_OUTPUT * POLY_CHANNELS + chn] = true;
 						noteCount--;
 						chn++;
@@ -768,6 +790,29 @@ struct Mother : Module
 			}
 			setOutPolyChannels(POW_OUTPUT, scaleNotes);
 		}
+
+		if (powMode == POW_MODE_PES)
+		{
+			for (int i = 0; i < NUM_NOTES; i++)
+			{
+				// no need to take effectiveChild into account because 
+				// the quantizer scale is the same for all mother and child scales
+				int onOffIdx = onOffJsonBaseIdx + (i - effectiveRoot + NUM_NOTES) % NUM_NOTES;
+				int stateIdx = NUM_INPUTS * POLY_CHANNELS + POW_OUTPUT * POLY_CHANNELS + i;
+				if (getStateJson(onOffIdx) > 0.f)
+				{
+					OL_statePoly[stateIdx] = (i == effectiveChild) ? 10.f : 8.0f;;
+				}
+				else
+				{
+					OL_statePoly[stateIdx] = 0.f;
+				}
+				int stateChangeIdx = POW_OUTPUT * POLY_CHANNELS + i;
+				OL_outStateChangePoly[stateChangeIdx] = true;
+			}
+			setOutPolyChannels(POW_OUTPUT, NUM_NOTES);
+		}
+		
 	}
 
 	/**
@@ -803,13 +848,17 @@ struct Mother : Module
 
 	inline void moduleProcessState()
 	{
-		effectiveRoot = (int(getStateParam (ROOT_PARAM)) + note (getClampedInput(ROOT_INPUT)) + 10 * NUM_NOTES) % NUM_NOTES;
-		effectiveRootOct = floor(getClampedInput(ROOT_INPUT) / 12);
+		effectiveRoot = (int(getStateParam (ROOT_PARAM)) + note(getClampedInput(ROOT_INPUT)) + 10 * NUM_NOTES) % NUM_NOTES;
+		effectiveRootOct = floor(quantize(getClampedInput(ROOT_INPUT)) + (getStateParam (ROOT_PARAM) / NUM_NOTES));
+		// DEBUG ("effectiveRootOct = %d", effectiveRootOct);
 		effectiveScale = (int(getStateParam(SCL_PARAM)) - 1 + note(getClampedInput(SCL_INPUT)) + 10 * NUM_NOTES) % NUM_NOTES;
 		effectiveScaleDisplay = float(effectiveScale + 1);
-		effectiveChild = (int(getStateParam (CHLD_PARAM)) + note (getClampedInput(CHLD_INPUT)) + 10 * NUM_NOTES) % NUM_NOTES;
+		effectiveChild = (int(getStateParam (CHLD_PARAM)) + note(getClampedInput(CHLD_INPUT)) + 10 * NUM_NOTES) % NUM_NOTES;
+		effectiveChildOct = floor(quantize(getClampedInput(CHLD_INPUT)) + quantize(getClampedInput(ROOT_INPUT))) + 
+			(getStateParam (CHLD_PARAM) + getStateParam (ROOT_PARAM)) / NUM_NOTES;
+		// DEBUG ("effectiveChildOct = %d", effectiveChildOct);
 		/*
-		 	Now we have a Root based effectiveChild, we have to modify ir if we run in Child CV Mode 'In scale'
+		 	Now we have a Root based effectiveChild, we have to modify it if we run in Child CV Mode 'In scale'
 		*/
 		if (getStateJson(CHILD_CV_MODE_JSON) == CHILD_CV_IN_SCALE) {
 			effectiveChild = (NUM_NOTES + effectiveChild - effectiveRoot + 20 * NUM_NOTES) % NUM_NOTES;
@@ -1156,7 +1205,7 @@ struct Mother : Module
 			if (getStateJson(ROOT_BASED_DISPLAY_JSON) == 1.f)
 				lightIdx = (lightIdx + effectiveChild + 10 * NUM_NOTES) % NUM_NOTES;
 			else if (getStateJson(C_BASED_DISPLAY_JSON) == 1.f)
-				lightIdx = (lightIdx + effectiveChild + effectiveRoot + 20 * NUM_NOTES) % NUM_NOTES;
+				lightIdx = (lightIdx + effectiveChild + effectiveRoot+ 10 * NUM_NOTES) % NUM_NOTES;
 		}
 
 		setRgbLight(NOTE_LIGHT_01_RGB + 3 * lightIdx, color);
@@ -1184,10 +1233,25 @@ struct Mother : Module
 		if ((customChangeBits & (CHG_SCL | CHG_CHLD | CHG_ROOT)) || !initialized)
 		{
 			strcpy(childText, notes[(effectiveChild + effectiveRoot + 20 * NUM_NOTES) % NUM_NOTES]);
+			int i = effectiveChild + effectiveRoot;
+			while (i < 0) {
+				i += NUM_NOTES;
+			}
+			while (i >= NUM_NOTES) {
+				i -= NUM_NOTES;
+			}
+			strcpy(childText, notes[i]);
 		}
 		if ((customChangeBits & CHG_ROOT) || !initialized)
 		{
-			strcpy(rootText, notes[effectiveRoot]);
+			int i = effectiveRoot;
+			while (i < 0) {
+				i += NUM_NOTES;
+			}
+			while (i >= NUM_NOTES) {
+				i -= NUM_NOTES;
+			}
+			strcpy(rootText, notes[i]);
 		}
 		if (didPaste || (customChangeBits & (CHG_WEIGHT | CHG_ONOFF | CHG_SCL | CHG_CHLD | CHG_ROOT)) || !initialized ||
 			(reflectCounter >= 0 && getStateJson(VISUALIZATION_DISABLED_JSON) == 0.f) || reflectFateCounter >= 0 || visualizationDisabledChanged || rootBasedDisplayChanged || disableGrabChanged || disableDnaChanged)
@@ -1492,14 +1556,16 @@ struct MotherWidget : ModuleWidget
 		{
 			Menu *menu = new Menu;
 			ModeItem *modeItem;
-			for (int mode = 0; mode < 3; mode++)
+			for (int mode = 0; mode < 4; mode++)
 			{
 
 				modeItem = new ModeItem();
 				modeItem->module = module;
 				modeItem->mode = mode;
-				modeItem->text = mode == 0 ? "Power" : (mode == 1) ? "Scale Gates"
-																   : "Scale Pitches";
+				modeItem->text = mode == POW_MODE_POW    ? "Power" : 
+					            (mode == POW_MODE_GATES) ? "Scale Gates" :
+								(mode == POW_MODE_SCALE) ? "Scale Pitches" :
+									"PES";
 				modeItem->setSize(Vec(120, 20));
 
 				menu->addChild(modeItem);
@@ -1557,7 +1623,7 @@ struct MotherWidget : ModuleWidget
 			void onAction(const event::Action &e) override
 			{
 				module->OL_setOutState(CHILD_CV_MODE_JSON, float(mode));
-				module->flagSetHeadScale = true;;
+				module->flagSetHeadScale = true;
 			}
 			void step() override
 			{
@@ -1636,6 +1702,23 @@ struct MotherWidget : ModuleWidget
 		{
 			if (module)
 				rightText = (module != nullptr && module->OL_state[POW_PACK_SCALE_JSON] == 1.0f) ? "✔" : "";
+		}
+	};
+
+	struct PowScaleIsOctavceAwareItem : MenuItem
+	{
+		Mother *module;
+		void onAction(const event::Action &e) override
+		{
+			if (module->OL_state[POW_SCALE_IS_OCTAVES_AWARE_JSON] == 0.f)
+				module->OL_setOutState(POW_SCALE_IS_OCTAVES_AWARE_JSON, 1.f);
+			else
+				module->OL_setOutState(POW_SCALE_IS_OCTAVES_AWARE_JSON, 0.f);
+		}
+		void step() override
+		{
+			if (module)
+				rightText = (module != nullptr && module->OL_state[POW_SCALE_IS_OCTAVES_AWARE_JSON] == 1.0f) ? "✔" : "";
 		}
 	};
 
@@ -1907,6 +1990,11 @@ struct MotherWidget : ModuleWidget
 			packScaleItem->module = module;
 			packScaleItem->text = "Pack Scale";
 			menu->addChild(packScaleItem);
+
+			PowScaleIsOctavceAwareItem *powScaleIsOctaveAwareItem = new PowScaleIsOctavceAwareItem();
+			powScaleIsOctaveAwareItem->module = module;
+			powScaleIsOctaveAwareItem->text = "Preserve Octaves";
+			menu->addChild(powScaleIsOctaveAwareItem);
 
 			spacerLabel = new MenuLabel();
 			menu->addChild(spacerLabel);

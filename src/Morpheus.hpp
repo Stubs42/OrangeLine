@@ -22,6 +22,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #define MAX_LOOP_LEN    128
 #define MEM_SLOTS        16
+#define ON_RANDOMIZE    0
+#define ON_OUTPUT       1
 
 //
 // Defaults
@@ -52,6 +54,7 @@ enum jsonIds {
     SMART_HOLD_JSON,
     MEM_IS_HALFTONES_JSON,
     LOAD_HLD_CHANNELS_JSON,
+    SCALE_MODE_JSON,
     
 	NUM_JSONS
 };

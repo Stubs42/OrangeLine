@@ -202,6 +202,7 @@ struct Morpheus : Module
 		setStateJson(SMART_HOLD_JSON, 0.f);
 		setStateJson(MEM_IS_HALFTONES_JSON, 0.f);
 		setStateJson(LOAD_HLD_CHANNELS_JSON, 0.f);
+		setStateJson(SCALE_MODE_JSON, 0.f);
 
 		for (int i = 0; i < POLY_CHANNELS; i++) {
 			isShiftLeft[i] = false;
@@ -583,7 +584,7 @@ struct Morpheus : Module
 				if (getStateJson(RECALL_ON_MEM_CV_CHANGE_JSON) == 1.0f) {
 					setStateJson(ACTIVE_MEM_JSON, mem - 1.f);
 				}
-				else if (getStateJson(LOAD_ON_MEM_CV_CHANGE_JSON) == 1.0f) {
+				if (getStateJson(LOAD_ON_MEM_CV_CHANGE_JSON) == 1.0f) {
 					setStateJson(ACTIVE_MEM_JSON, mem - 1.f);
 					for (int channel = 0; channel < polyChannels; channel++) {
 						loadChannel(channel);
@@ -638,6 +639,7 @@ struct Morpheus : Module
 		}
 
 		// Main CLK Processing here
+		int extChannels = inputs[EXT_INPUT].getChannels(); 
 		if (changeInput (CLK_INPUT) && getStateInput(CLK_INPUT) > 0.f) {
 			// DEBUG("polyChannels = %d", polyChannels);
 			if (!hadReset) {
@@ -654,9 +656,11 @@ struct Morpheus : Module
 				// HLD takes precedence no change of steps when channel is on hold
 				if (!getChannelHld(channel)) {
 					if (getStateJson(EXT_ON_JSON) > 0.f && getChannelRec(channel) > 5.f) {
-						// User is holding REC and External Source is enabled, so copy xternal Source to step
-						setStateJson(STEPS_JSON + MAX_LOOP_LEN * channel + head, OL_statePoly[EXT_INPUT * POLY_CHANNELS + channel]);
-					}					
+						// User is holding REC and External Source is enabled, so copy external Source to step
+						if (channel < extChannels) {
+							setStateJson(STEPS_JSON + MAX_LOOP_LEN * channel + head, OL_statePoly[EXT_INPUT * POLY_CHANNELS + channel]);
+						}					
+					}
 					else if (getChannelClr(channel) > 5.f) {
 						// DEBUG("clearing channel %d at %d", channel, head);
 						setStateJson(STEPS_JSON + MAX_LOOP_LEN * channel + head, ofs);
@@ -684,8 +688,9 @@ struct Morpheus : Module
 									if (getStateJson(EXT_ON_JSON) > 0.f) {
 										// source is extern
 										// DEBUG(" from EXT");
-										setStateJson(STEPS_JSON + MAX_LOOP_LEN * channel + head, 
-											OL_statePoly[EXT_INPUT * POLY_CHANNELS + channel]);
+										if (channel < extChannels) {
+											setStateJson(STEPS_JSON + MAX_LOOP_LEN * channel + head, OL_statePoly[EXT_INPUT * POLY_CHANNELS + channel]);
+										}
 									}
 									else {
 										// source is MEM
@@ -697,23 +702,26 @@ struct Morpheus : Module
 								}
 							}
 						}
+						float rnd;
 						if (randomize) {
 							// User is holding RND so we force a randomize of the currect step
-							if (scl < 0 && ofs == -10.f) {
-								// bipolar (scl < 0) and ofs -10 does not make sense
-								// so we treat it special using the current step as offset
-								ofs = getStateJson(STEPS_JSON + MAX_LOOP_LEN * channel + head);
-							} 						
-							float low = ofs;
-							if (scl < 0) {
-								low += scl;
+							if (getStateJson(SCALE_MODE_JSON) == ON_RANDOMIZE) {
+								float low = ofs;
+								if (scl < 0) {
+									low += scl;
+								}
+								float high = ofs + abs(scl);
+								if (low < -10.f) low = -10.f;
+								if (high > 10.f) high = 10.f;
+								if (getStateJson(SCALE_MODE_JSON) == ON_RANDOMIZE)
+								rnd = low + getRandom(&globalRandom) * (high - low);
+								// DEBUG ("scl = %lf, ofs = %lf, low = %lf, high = %lf, rnd = %lf", scl, ofs, low, high, rnd);
+								setStateJson(STEPS_JSON + MAX_LOOP_LEN * channel + head, rnd);
 							}
-							float high = ofs + abs(scl);
-							if (low < -10.f) low = -10.f;
-							if (high > 10.f) high = 10.f;
-							float rnd = low + getRandom(&globalRandom) * (high - low);
-							// DEBUG ("scl = %lf, ofs = %lf, low = %lf, high = %lf, rnd = %lf", scl, ofs, low, high, rnd);
-							setStateJson(STEPS_JSON + MAX_LOOP_LEN * channel + head, rnd);
+							else {
+								rnd = getRandom(&globalRandom) * 10.f;
+								setStateJson(STEPS_JSON + MAX_LOOP_LEN * channel + head, rnd);							
+							}
 						}
 					}
 				}
@@ -744,19 +752,25 @@ struct Morpheus : Module
 				float cv = getStateJson(STEPS_JSON + MAX_LOOP_LEN * channel + head);
 				// GATE_OUTPUT
 				float gtp = getChannelGtp(channel); // Gate Probailitoy between 0 an 100
-				// cv range is -10 to 10 so we scale the cv to [0:00]
+
 				float gCv = 0;
-				if (scl > 0) { 
-					// unipolar cv
-					gCv = cv * 10.f; // scaled to [0:100]
+				if (getStateJson(SCALE_MODE_JSON) == ON_RANDOMIZE) {
+					// cv range is -10 to 10 so we scale the cv to [0:00]
+					if (scl > 0) { 
+						// unipolar cv
+						gCv = cv * 10.f; // scaled to [0:100]
+					}
+					else {
+						// bipolar cv
+						gCv = (cv + 10.f) / 0.2f; // scaled to [0:100]
+					}
+					if (gCv < 0) gCv = 0;
+					if (gCv > 100) gCv = 100;
+					gCv = 100 - gCv;
 				}
 				else {
-					// bipolar cv
-					gCv = (cv + 10.f) / 0.2f; // scaled to [0:100]
+					gCv = cv * 10.f;
 				}
-				if (gCv < 0) gCv = 0;
-				if (gCv > 100) gCv = 100;
-				gCv = 100 - gCv;
 				int gateOutPolyIdx = GATE_OUTPUT * POLY_CHANNELS + channel;
 				if ((gCv + 0.001) < gtp) { // +0.001 to guarantee no gate is produced when gtp is 0
 					OL_statePoly[NUM_INPUTS * POLY_CHANNELS + gateOutPolyIdx] = 10.f;
@@ -776,6 +790,16 @@ struct Morpheus : Module
 					OL_isSteadyGate[GATE_OUTPUT * POLY_CHANNELS + channel] = false;
 				}
 				// CV_OUTPUT
+				if (getStateJson(SCALE_MODE_JSON) == ON_OUTPUT) {
+					float low = ofs;
+					if (scl < 0) {
+							low += scl;
+					}
+					float high = ofs + abs(scl);
+					if (low < -10.f) low = -10.f;
+					if (high > 10.f) high = 10.f;
+					cv = low + cv / 10 * (high - low);
+				}
 				setStateOutPoly(CV_OUTPUT, channel, cv);
 				// DEBUG(" CV_OUTPUT[%d] -> %lf", channel, cv);
 			}
@@ -1005,6 +1029,23 @@ struct MorpheusWidget : ModuleWidget
 		}
 	};
 
+	struct ScaleOnOutputItem : MenuItem
+	{
+		Morpheus *module;
+		void onAction(const event::Action &e) override
+		{
+			if (module->OL_state[SCALE_MODE_JSON] == 0.f)
+				module->OL_setOutState(SCALE_MODE_JSON, 1.f);
+			else
+				module->OL_setOutState(SCALE_MODE_JSON, 0.f);
+		}
+		void step() override
+		{
+			if (module)
+				rightText = (module != nullptr && module->OL_state[SCALE_MODE_JSON] == 1.0f) ? "✔" : "";
+		}
+	};
+
 	struct MorpheusStyleItem : MenuItem
 	{
 		Morpheus *module;
@@ -1106,6 +1147,11 @@ struct MorpheusWidget : ModuleWidget
 		loadHldChannelsItem->module = module;
 		loadHldChannelsItem->text = "Load Channels on HLD";
 		menu->addChild(loadHldChannelsItem);
+
+		ScaleOnOutputItem *scaleOnOutputItem = new ScaleOnOutputItem();
+		scaleOnOutputItem->module = module;
+		scaleOnOutputItem->text = "Scale on Output";
+		menu->addChild(scaleOnOutputItem);
 
 		spacerLabel = new MenuLabel();
 		menu->addChild(spacerLabel);

@@ -32,6 +32,7 @@ struct Swing : Module {
 	/*
 		Module member variables
 	*/
+	float	oldClkInputVoltage = 0;
     float   phase = 0;
     float   phaseStep = 0;
     float   clkMultCnt = 0;
@@ -60,6 +61,12 @@ struct Swing : Module {
 	*/
 	bool moduleSkipProcess() {
 		bool skip = (idleSkipCounter != 0);
+		if (skip) {
+			float clkInputVoltage = inputs[CLK_INPUT].getVoltage (); 
+			if (clkInputVoltage != oldClkInputVoltage)
+				skip = false;
+			oldClkInputVoltage = clkInputVoltage;
+		}
 		return skip;
 	}
 	/**
@@ -189,8 +196,7 @@ struct Swing : Module {
 		}
 
         if (getInputConnected (BPM_INPUT)) {
-            if (changeInput (BPM_INPUT) || changeParam (DIV_PARAM) || phaseStep == 0.f)
-                phaseStep = CLOCK_MULT * 2.f * std::pow(2.f, getStateInput (BPM_INPUT)) * OL_sampleTime * (PHASE_HIGH - PHASE_LOW);            
+            phaseStep = CLOCK_MULT * 2.f * std::pow(2.f, getStateInput (BPM_INPUT)) * OL_sampleTime * (PHASE_HIGH - PHASE_LOW);            
         }
         else {
             phaseStep = 0.f;
@@ -231,7 +237,7 @@ struct Swing : Module {
 				}
 			}
 			if (tClkDelay > 0)
-				tClkDelay -= IDLESKIP;
+				tClkDelay -= idleSkip;
 
 			if (!tClkFired && phase >= cmp && tClkDelay <= 0) {
 				setStateOutput (TCLK_OUTPUT, 10.f);
