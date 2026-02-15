@@ -714,7 +714,7 @@ struct Morpheus : Module
 								if (low < -10.f) low = -10.f;
 								if (high > 10.f) high = 10.f;
 								if (getStateJson(SCALE_MODE_JSON) == ON_RANDOMIZE)
-								rnd = low + getRandom(&globalRandom) * (high - low);
+									rnd = low + getRandom(&globalRandom) * (high - low);
 								// DEBUG ("scl = %lf, ofs = %lf, low = %lf, high = %lf, rnd = %lf", scl, ofs, low, high, rnd);
 								setStateJson(STEPS_JSON + MAX_LOOP_LEN * channel + head, rnd);
 							}
@@ -772,7 +772,7 @@ struct Morpheus : Module
 					gCv = cv * 10.f;
 				}
 				int gateOutPolyIdx = GATE_OUTPUT * POLY_CHANNELS + channel;
-				if ((gCv + 0.001) < gtp) { // +0.001 to guarantee no gate is produced when gtp is 0
+				if ((gCv + 0.001) < gtp || gtp == 10.f) { // +0.001 to guarantee no gate is produced when gtp is 0
 					OL_statePoly[NUM_INPUTS * POLY_CHANNELS + gateOutPolyIdx] = 10.f;
 					OL_outStateChangePoly[gateOutPolyIdx] = true;
 				}
