@@ -211,15 +211,17 @@ struct Cron : Module
             setStateJson(LATENCY_JSON + int(selectedChannel) - 1, latency);
         }
 
-        if (changeInput (START_INPUT) && getStateInput(START_INPUT) > 0.f)
+        if (changeInput (START_INPUT) && getStateInput(START_INPUT) > 0.f && !running)
         {
             setStateOutput (RST_OUTPUT, 10.f);
             clkCount = 0;
+            sampleCount = 0;
             running = true;
         }
 
-        if (changeInput (CONT_INPUT) && getStateInput(CONT_INPUT) > 0.f)
+        if (changeInput (CONT_INPUT) && getStateInput(CONT_INPUT) > 0.f && !running)
         {
+            sampleCount = 0;
             running = true;
         }
 
@@ -255,9 +257,12 @@ struct Cron : Module
 
         if (changeInput (CLK_INPUT) && getStateInput(CLK_INPUT) > 0.f)
         {
-            // DEBUG("args.sampleTime = %f", args.sampleTime);
+          // DEBUG("args.sampleTime = %f", args.sampleTime);
+          // DEBUG("sampleCount = %d", sampleCount);
 			float halfPhaseLength = sampleCount * 24 * args.sampleTime / 8;	// 4 phases per beat
-            // DEBUG("halfPhaseLength = %f", halfPhaseLength);
+          // DEBUG("halfPhaseLength = %f", halfPhaseLength);
+          // DEBUG("halfPhaseLengthHistoryCount = %d", halfPhaseLengthHistoryCount);
+          // DEBUG("halfPhaseLengthHistoryPos = %d", halfPhaseLengthHistoryPos);
 
             halfPhaseLengthHistory[halfPhaseLengthHistoryPos] = halfPhaseLength;
             if (halfPhaseLengthHistoryCount < HALF_PHASE_LENGTH_HISTORY)
@@ -274,8 +279,9 @@ struct Cron : Module
             halfPhaseLengthHistoryPos = (halfPhaseLengthHistoryPos + 1) % HALF_PHASE_LENGTH_HISTORY;
             sampleCount = 0;
 
+			float bpm = log2 (0.5 / (halfPhaseLength * 8));
 			// DEBUG("bpm = %f", bpm);			
-            setStateOutput(BPM_OUTPUT, log2 (0.5 / (halfPhaseLength * 8)));   // Umgerechnet in PBM v/Octave
+            setStateOutput(BPM_OUTPUT, bpm);   // Umgerechnet in PBM v/Octave
 
             float cmpIn = getStateInput(CMP_INPUT);
 			// DEBUG("cmpIn = %f", cmpIn);
