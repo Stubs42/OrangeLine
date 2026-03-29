@@ -27,6 +27,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define CHILD_CV_IN_SCALE   0.f
 #define CHILD_CV_RELATIVE   1.f
 
+#define RELATIVE_FLATS_OFF	0.f
+#define RELATIVE_FLATS_ON	1.f
+
 //
 // Defaults
 //
@@ -40,6 +43,7 @@ enum jsonIds {
 	//
     STYLE_JSON,
     CHILD_CV_MODE_JSON,
+	RELATIVE_FLATS_JSON,
 
 	NUM_JSONS
 };

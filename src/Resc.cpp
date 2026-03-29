@@ -96,6 +96,7 @@ struct Resc : Module
 
 		setJsonLabel(STYLE_JSON, "style");
 		setJsonLabel(CHILD_CV_MODE_JSON, "childCvMode");
+		setJsonLabel(RELATIVE_FLATS_JSON, "relativeFlats");
 
 #pragma GCC diagnostic pop
 	}
@@ -299,10 +300,25 @@ struct Resc : Module
 
 			// find position of srcPitch in srcScale
 			int position;
+			bool flat = false;
 			for (position = srcScaleNotes - 1; position > 0; position--)
 			{
 				if (srcScale[position] <= srcPitch + PRECISION)
 				{
+					if (getStateJson(RELATIVE_FLATS_JSON) == RELATIVE_FLATS_ON &&
+						srcScale[position] + PRECISION < srcPitch 
+					   )
+					{
+						// We hava flat outside the source scale
+						if (position + 1 == srcScaleNotes) {
+							position = 0;
+							oct += 1.0f;
+						}
+						else {
+							position++;
+						}
+						flat = true;
+					}
 					srcPitch = srcScale[position] + oct;
 					break;
 				}
@@ -314,6 +330,9 @@ struct Resc : Module
 
 			// get target pitch at position from target scale
 			float trgPitch = trgScale[position % trgScaleNotes] + oct;
+			if (flat) {
+				trgPitch -= SEMITONE;
+			}
 			// DEBUG ("trgPitch = %lf", trgPitch);
 
 			OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cvRootBasedPolyIdx] = trgPitch;
@@ -334,9 +353,12 @@ struct Resc : Module
 				oct -= 1;
 				// DEBUG ("correcting oct - 1 = %lf", oct);
 			}
-
+			float cldPitch = trgScale[position] + oct + childOct;
 			// DEBUG ("[cldTrgScale]:trgScale[position] + oct + childOct = %lf", trgScale[position] + oct + childOct);
-			OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cvCldBasedPolyIdx] = trgScale[position] + oct + childOct;
+			if (flat) {
+				cldPitch -= SEMITONE;
+			}
+			OL_statePoly[NUM_INPUTS * POLY_CHANNELS + cvCldBasedPolyIdx] = cldPitch;
 			OL_outStateChangePoly[cvCldBasedPolyIdx] = true;
 		}
 		setOutPolyChannels(ROOTBASED_OUTPUT, inputs[IN_INPUT].getChannels());
@@ -464,6 +486,23 @@ struct RescWidget : ModuleWidget
 		}
 	};
 
+	struct RelativeFlatsItem : MenuItem
+	{
+		Resc *module;
+		void onAction(const event::Action &e) override
+		{
+			if (module->OL_state[RELATIVE_FLATS_JSON] == 0.f)
+				module->OL_setOutState(RELATIVE_FLATS_JSON, 1.f);
+			else
+				module->OL_setOutState(RELATIVE_FLATS_JSON, 0.f);
+		}
+		void step() override
+		{
+			if (module)
+				rightText = (module != nullptr && module->OL_state[RELATIVE_FLATS_JSON] == 1.0f) ? "✔" : "";
+		}
+	};
+
 	void appendContextMenu(Menu *menu) override
 	{
 		if (module)
@@ -508,6 +547,11 @@ struct RescWidget : ModuleWidget
 			childCvModeItem->text = "Child CV Mode";
 			childCvModeItem->rightText = RIGHT_ARROW;
 			menu->addChild(childCvModeItem);
+
+			RelativeFlatsItem *relativeFlatsItem = new RelativeFlatsItem();
+			relativeFlatsItem->module = module;
+			relativeFlatsItem->text = "Relative Flats";
+			menu->addChild(relativeFlatsItem);
 		}
 	}
 };
