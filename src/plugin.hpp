@@ -19,6 +19,7 @@ extern Model *modelMorph;
 extern Model *modelMorpheus;
 extern Model *modelBuckets;
 extern Model *modelCron;
+extern Model *modelHold;
 // extern Model *modelTemplate;
 // extern Model *modelWidgetTest;
 
