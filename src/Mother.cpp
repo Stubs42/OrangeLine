@@ -460,7 +460,7 @@ struct Mother : Module
 
 		if ((customChangeBits & CHG_TRG_IN) ||
 		    (!trgConnected && (customChangeBits & CHG_CV_IN)) || 
-		    (customChangeBits & (CHG_SCL | CHG_CHLD | CHG_ROOT))
+		    (customChangeBits & (CHG_SCL | CHG_CHLD | CHG_ROOT | CHG_WEIGHT))
 		   )
 		{
 			cvChannels = inputs[CV_INPUT].getChannels();
@@ -491,7 +491,7 @@ struct Mother : Module
 				if ((!trgConnected && OL_inStateChangePoly[cvInPolyIdx]) || 
 				    OL_inStateChangePoly[trgInPolyIdx] || 
 					(channel >= trgChannels && lastWasTrigger)  || 
-				    (customChangeBits & (CHG_SCL | CHG_CHLD | CHG_ROOT))
+				    (customChangeBits & (CHG_SCL | CHG_CHLD | CHG_ROOT | CHG_WEIGHT))
 				   )
 				{
 					if (channel < trgChannels)
@@ -657,7 +657,7 @@ struct Mother : Module
 					cvOut += (float(effectiveRoot) / 12.f);
 					cvOut = quantize(cvOut);
 
-					if (fabs(cvOut - oldCvOut[channel]) > PRECISION)
+					if (true || fabs(cvOut - oldCvOut[channel]) > PRECISION)
 					{
 						if (OL_statePoly[NUM_INPUTS * POLY_CHANNELS + trgOutPolyIdx] != 10.f)
 						{
