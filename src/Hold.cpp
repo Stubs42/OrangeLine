@@ -265,14 +265,14 @@ struct HoldWidget : ModuleWidget
 			addChild(darkPanel);
 		}
 		
-		addInput (createInputCentered<PJ301MPort> (calculateCoordinates (2.145, 9.512, OFFSET_PJ301MPort),  module, GATE_INPUT));
+		addInput (createInputCentered<PJ301MPort> (calculateCoordinates (2.653, 12.052, OFFSET_PJ301MPort),  module, GATE_INPUT));
         for (int i = 0; i < NUM_ROWS; i++)
 		{
-			addInput  (createInputCentered<PJ301MPort>  (calculateCoordinates (2.145,  26.276 + i * 9.144, OFFSET_PJ301MPort),  module, CV_INPUT  + i));
-            addOutput (createOutputCentered<PJ301MPort> (calculateCoordinates (14.337, 26.276 + i * 9.144, OFFSET_PJ301MPort),  module, CV_OUTPUT + i));
+			addInput  (createInputCentered<PJ301MPort>  (calculateCoordinates (2.653,  26.276 + i * 9.37, OFFSET_PJ301MPort),  module, CV_INPUT  + i));
+            addOutput (createOutputCentered<PJ301MPort> (calculateCoordinates (14.337, 26.276 + i * 9.37, OFFSET_PJ301MPort),  module, CV_OUTPUT + i));
 		}
-		addParam (createParamCentered<VCVLatch> (calculateCoordinates  ( 16.162, 11.336, OFFSET_LEDButton),  module, TRK_ON_PARAM));
- 		addChild (createLightCentered<LargeLight<YellowLight>>	(calculateCoordinates  ( 16.162, 11.336, OFFSET_LEDButton), module, TRK_ON_LIGHT));
+		addParam (createParamCentered<VCVLatch> (calculateCoordinates  ( 16.161, 13.876, OFFSET_LEDButton),  module, TRK_ON_PARAM));
+ 		addChild (createLightCentered<LargeLight<YellowLight>>	(calculateCoordinates  ( 16.161, 13.876, OFFSET_LEDButton), module, TRK_ON_LIGHT));
 		
 		if (module)
 			module->widgetReady = true;
