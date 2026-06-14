@@ -69,7 +69,7 @@ struct Hold : Module
 
         for (int i = 0; i < NUM_ROWS; i++) 
 		{
-            setInPoly (CV_INPUT, true);
+            setInPoly (CV_INPUT + i, true);
             setOutPoly(CV_OUTPUT + i, true);
         }
 	}
@@ -186,19 +186,23 @@ struct Hold : Module
 		// Now do the real processing
 		int gateChannels = inputs[GATE_INPUT].getChannels();
 		float gate = 0.0f;
+		int cvInput = -1;
         for (int row = 0; row < NUM_ROWS; row++)
         {
 			// check for active gate
 			if (row < gateChannels) {
 				gate = OL_statePoly[GATE_INPUT + row];
 			}
+			if (getInputConnected(CV_INPUT + row)) {
+				cvInput = CV_INPUT + row;
+			}
 
 			// Skip rows with no cv input connected
-			if (getInputConnected(CV_INPUT + row)) {
-				int channels = inputs[CV_INPUT + row].getChannels();
+			if (cvInput >= 0) {
+				int channels = inputs[cvInput].getChannels();
 		        for (int channel = 0; channel < channels; channel++)
         		{
-					float cv = OL_statePoly[CV_INPUT * POLY_CHANNELS + channel];
+					float cv = OL_statePoly[cvInput * POLY_CHANNELS + channel];
 					if (gate > 5.0f) {
 						if (getStateParam(TRK_ON_PARAM) == 1.0f ||	// gate for track and hold
 					   	    oldGates[row] < 5.0f					// rising edge for sample and hold
@@ -208,7 +212,7 @@ struct Hold : Module
 					}
 					setStateOutPoly(CV_OUTPUT + row, channel, getStateJson(STORE_JSON + row * POLY_CHANNELS + channel));
 				}
-				setOutPolyChannels(CV_OUTPUT + row * POLY_CHANNELS, channels);
+				setOutPolyChannels(CV_OUTPUT + row, channels);
 			}
 			// remember gate for rising edge detection in s&h mode
 			oldGates[row] = gate;
