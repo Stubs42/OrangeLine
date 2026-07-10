@@ -62,11 +62,13 @@ struct Buckets : Module
 	void moduleInitStateTypes()
 	{
         setInPoly (VOCT_INPUT, true);
+        setInPoly (VELOCITY_INPUT, true);
         setInPoly (GATE_INPUT, true);
 
         for (int i = 0; i <= NUM_SPLITS; i++)   // >= because of additional > output
 		{
             setOutPoly(VOCT_OUTPUT + i, true);
+            setOutPoly(VELOCITY_OUTPUT + i, true);
             setOutPoly(GATE_OUTPUT + i, true);
         }
 	}
@@ -95,6 +97,7 @@ struct Buckets : Module
 	inline void moduleParamConfig()
 	{
         configInput (VOCT_INPUT, "Polyphonic V/Oct");
+        configInput (VELOCITY_INPUT, "Aux");
         configInput (GATE_INPUT, "Polyphonic Gate");
 
 		char buffer[64];
@@ -104,10 +107,13 @@ struct Buckets : Module
             configParam (SPLIT_PARAM + i, -5.f,  (5.f - SEMITONE),  0.f, buffer, "", 0.f, 1.f, 0.f);
             sprintf(buffer, "V/Oct <= Split Point %d", i + 1);
             configOutput (VOCT_OUTPUT + i, buffer);
+            sprintf(buffer, "Aux <= Split Point %d", i + 1);
+            configOutput (VELOCITY_OUTPUT + i, buffer);
             sprintf(buffer, "Gates <= Split Point %d", i + 1);
             configOutput (GATE_OUTPUT + i, buffer);
 		}
         configOutput (VOCT_OUTPUT_LAST, "V/Oct > Split Point 12");
+        configOutput (VELOCITY_OUTPUT_LAST, "Aux > Split Point 12");
         configOutput (GATE_OUTPUT_LAST, "Gates > Split Point 12");
 	}
 
@@ -172,23 +178,30 @@ struct Buckets : Module
 			}
 			styleChanged = false;
 		}
-        int voctInputChannels = inputs[VOCT_INPUT].getChannels();
-        int gateInputChannels = inputs[GATE_INPUT].getChannels();
+        int voctInputChannels     = inputs[VOCT_INPUT].getChannels();
+        int gateInputChannels     = inputs[GATE_INPUT].getChannels();
+        int velocityInputChannels = inputs[VELOCITY_INPUT].getChannels();
         if (voctInputChannels < gateInputChannels)
         {
             gateInputChannels = voctInputChannels;
+        }
+        if (velocityInputChannels < gateInputChannels)
+        {
+            gateInputChannels = velocityInputChannels;
         }
         for (int channel = 0; channel < gateInputChannels; channel++)
         {
             if (OL_statePoly[GATE_INPUT * POLY_CHANNELS + channel] > 5.f)
             {
                 float vOct = quantize(OL_statePoly[VOCT_INPUT * POLY_CHANNELS + channel]);
+                float velocity = OL_statePoly[VELOCITY_INPUT * POLY_CHANNELS + channel];
                 bool belowSplit = false;
                 for (int split = 0; split < NUM_SPLITS; split++)
                 {
                     float splitPoint = quantize(getStateParam(SPLIT_PARAM + split));
                     if (vOct <= splitPoint) {
                         setStateOutPoly(VOCT_OUTPUT + split, outputChannels[split], vOct);
+                        setStateOutPoly(VELOCITY_OUTPUT + split, outputChannels[split], velocity);
                         setStateOutPoly(GATE_OUTPUT + split, outputChannels[split], 10.f);
                         outputChannels[split]++;
                         belowSplit = true;
@@ -198,6 +211,7 @@ struct Buckets : Module
                 if (!belowSplit)
                 {
                         setStateOutPoly(VOCT_OUTPUT + NUM_SPLITS, outputChannels[NUM_SPLITS], vOct);
+                        setStateOutPoly(VELOCITY_OUTPUT + NUM_SPLITS, outputChannels[NUM_SPLITS], velocity);
                         setStateOutPoly(GATE_OUTPUT + NUM_SPLITS, outputChannels[NUM_SPLITS], 10.f);
                         outputChannels[NUM_SPLITS]++;
                 }
@@ -206,6 +220,7 @@ struct Buckets : Module
         for (int output = 0; output <= NUM_SPLITS; output ++) // <= because of las cv out for greater last split
         {
             setOutPolyChannels(VOCT_OUTPUT + output, outputChannels[output]);
+            setOutPolyChannels(VELOCITY_OUTPUT + output, outputChannels[output]);
             setOutPolyChannels(GATE_OUTPUT + output, outputChannels[output]);
         }
 	}
@@ -329,6 +344,7 @@ struct BucketsWidget : ModuleWidget
 		}
 		
 		addInput (createInputCentered<PJ301MPort> (calculateCoordinates (1.129, 112.128, OFFSET_PJ301MPort),  module, VOCT_INPUT));
+		addInput (createInputCentered<PJ301MPort> (calculateCoordinates (5.447, 112.128, OFFSET_PJ301MPort),  module, VELOCITY_INPUT));
 		addInput (createInputCentered<PJ301MPort> (calculateCoordinates (9.765, 112.128, OFFSET_PJ301MPort),  module, GATE_INPUT));
 
         for (int i = 0; i < NUM_SPLITS; i++)
@@ -339,6 +355,7 @@ struct BucketsWidget : ModuleWidget
         for (int i = 0; i <= NUM_SPLITS; i++)
 		{
             addOutput (createOutputCentered<PJ301MPort> (calculateCoordinates (27.545, 8.496 + i * (18.187 - 9.551), OFFSET_PJ301MPort),  module, VOCT_OUTPUT + i));
+            addOutput (createOutputCentered<PJ301MPort> (calculateCoordinates (31.863, 8.496 + i * (18.187 - 9.551), OFFSET_PJ301MPort),  module, VELOCITY_OUTPUT + i));
             addOutput (createOutputCentered<PJ301MPort> (calculateCoordinates (36.181, 8.496 + i * (18.187 - 9.551), OFFSET_PJ301MPort),  module, GATE_OUTPUT + i));
 		}
 		
