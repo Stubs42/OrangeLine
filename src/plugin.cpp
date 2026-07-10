@@ -20,6 +20,7 @@ void init(Plugin *p) {
 	p->addModel(modelBuckets);
 	p->addModel(modelCron);
 	p->addModel(modelHold);
+	p->addModel(modelLanes);
 	// p->addModel(modelTemplate);
 	// p->addModel(modelWidgetTest);
 

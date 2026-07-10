@@ -135,6 +135,16 @@
         "Polyphonic",
         "Utility"
       ]
+    },
+    {
+      "slug": "Lanes",
+      "name": "Lanes",
+      "description": "Merges up to 16 polyphonic sources into 16 dynamically allocated polyphonic CV/Gate/Velocity lanes for multi-channel CV to MIDI interfacing",
+      "tags": [
+        "Utility",
+        "Polyphonic",
+        "MIDI"
+      ]
     }
   ]
 }
