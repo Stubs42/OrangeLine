@@ -46,7 +46,7 @@ struct K2C : Module
 		setInPoly (VOCT_INPUT, true);
 		setInPoly (GATE_INPUT, true);
 		setInPoly (VEL_INPUT, true);
-		setInPoly (MATCH_INPUT, true);
+		setInPoly (KEYS_INPUT, true);
 
 		setOutPoly (VOCT_OUTPUT, true);
 		setOutPoly (GATE_OUTPUT, true);
@@ -71,7 +71,7 @@ struct K2C : Module
 		configInput (VOCT_INPUT, "V/Oct");
 		configInput (GATE_INPUT, "Gate");
 		configInput (VEL_INPUT, "Velocity");
-		configInput (MATCH_INPUT, "Match pitch per channel");
+		configInput (KEYS_INPUT, "Key pitch per channel");
 		configOutput (VOCT_OUTPUT, "V/Oct");
 		configOutput (GATE_OUTPUT, "Gate");
 		configOutput (VEL_OUTPUT, "Velocity");
@@ -103,15 +103,15 @@ struct K2C : Module
 		}
 
 		/*
-			1. Compute the 16 match pitches: real CV values for connected channels, then
+			1. Compute the 16 key pitches: real CV values for connected channels, then
 			   continue chromatically (+1 semitone per channel) from the last known value.
-			   If MATCH IN is fully unpatched, start the chromatic run at C4 (0V).
+			   If KEYS IN is fully unpatched, start the chromatic run at C4 (0V).
 		*/
-		float matchPitch[POLY_CHANNELS];
-		bool  matchConnected = getInputConnected (MATCH_INPUT);
-		int   connected      = matchConnected ? inputs[MATCH_INPUT].getChannels() : 0;
+		float keyPitch[POLY_CHANNELS];
+		bool  keysConnected = getInputConnected (KEYS_INPUT);
+		int   connected     = keysConnected ? inputs[KEYS_INPUT].getChannels() : 0;
 		/*
-			Track the seed as an integer semitone count and always derive matchPitch[n] via
+			Track the seed as an integer semitone count and always derive keyPitch[n] via
 			the same "round(...)/12" division quantize() itself uses - not by repeatedly
 			adding SEMITONE (1.f/12.f isn't exactly representable in float, so accumulating
 			it channel by channel drifts from quantize()'s result and the exact == comparison
@@ -122,13 +122,13 @@ struct K2C : Module
 		{
 			if (n < connected)
 			{
-				lastSemitone = (int) round (OL_statePoly[MATCH_INPUT * POLY_CHANNELS + n] * 12.f);
+				lastSemitone = (int) round (OL_statePoly[KEYS_INPUT * POLY_CHANNELS + n] * 12.f);
 			}
 			else if (!(connected == 0 && n == 0))
 			{
 				lastSemitone += 1;
 			}
-			matchPitch[n] = lastSemitone / 12.f;
+			keyPitch[n] = lastSemitone / 12.f;
 		}
 
 		/*
@@ -153,7 +153,7 @@ struct K2C : Module
 			float vel   = velConnected  ? OL_statePoly[VEL_INPUT  * POLY_CHANNELS + c] : 0.f;
 			for (int n = 0; n < POLY_CHANNELS; n++)
 			{
-				if (matchPitch[n] == pitch)
+				if (keyPitch[n] == pitch)
 				{
 					outGate[n] = true;
 					outVel[n]  = vel;
@@ -167,12 +167,12 @@ struct K2C : Module
 		*/
 		for (int n = 0; n < POLY_CHANNELS; n++)
 		{
-			setStateOutPoly (VOCT_OUTPUT, n, matchPitch[n]);
+			setStateOutPoly (VOCT_OUTPUT, n, keyPitch[n]);
 			setStateOutPoly (GATE_OUTPUT, n, outGate[n] ? 10.f : 0.f);
 			setStateOutPoly (VEL_OUTPUT,  n, outGate[n] ? outVel[n] : 0.f);
 		}
 		// Channel-to-pitch assignment is static (channel N is always the identity for
-		// matchPitch[N]), but OL_polyChannels is memset back to 0 by initializeInstance()
+		// keyPitch[N]), but OL_polyChannels is memset back to 0 by initializeInstance()
 		// right after moduleInitStateTypes() runs - so it has to be (re)asserted every tick
 		// here instead, like every other OrangeLine module does.
 		setOutPolyChannels (VOCT_OUTPUT, POLY_CHANNELS);
@@ -189,7 +189,7 @@ struct K2C : Module
 
 	Jack centers below are measured directly from the "Controls" layer of res/KeysWork.svg
 	(single column, 3HP-wide panel), so the widget lines up exactly with the panel art.
-	Order top to bottom: MATCH IN, then the note-input trio (V/Oct, Gate, Vel), then the
+	Order top to bottom: KEYS IN, then the note-input trio (V/Oct, Gate, Vel), then the
 	output trio (V/Oct, Gate, Vel).
 */
 struct K2CWidget : ModuleWidget
@@ -213,7 +213,7 @@ struct K2CWidget : ModuleWidget
 			addChild(darkPanel);
 		}
 
-		addInput (createInputCentered<PJ301MPort> (calculateCoordinates (7.598f, 14.479f, 0.f), module, MATCH_INPUT));
+		addInput (createInputCentered<PJ301MPort> (calculateCoordinates (7.598f, 14.479f, 0.f), module, KEYS_INPUT));
 
 		addInput (createInputCentered<PJ301MPort> (calculateCoordinates (7.620f, 35.815f, 0.f), module, VOCT_INPUT));
 		addInput (createInputCentered<PJ301MPort> (calculateCoordinates (7.620f, 50.547f, 0.f), module, GATE_INPUT));

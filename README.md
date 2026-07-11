@@ -662,3 +662,57 @@ GATE output [polyphonic]: Gate of the notes currently allocated to this lane.
 VEL output [polyphonic]: Velocity of the notes currently allocated to this lane.
 
 OVERFLOW output and light: High/lit while this lane currently has more distinct notes wanting it than it has channels for.
+
+## K2C
+
+<p align="center"><img src="res/K2CWork.svg"></p>
+
+### Short Description
+
+K2C routes incoming polyphonic notes to 16 fixed output channels by exact pitch match, replacing a patch of 2x BUCKETS chained together with 3x M16 to merge the split channels back into one polyphonic cable. Unlike BUCKETS, which splits by knob-defined pitch ranges, K2C matches each of its 16 output channels against an exact, CV-defined target pitch, so every channel has a fixed, addressable note identity - handy for feeding a fixed drum rack or a MIDI interface where each channel is wired to a specific destination.
+
+KEYS defines the target pitch for each of the 16 output channels. If fewer than 16 channels are connected, K2C continues chromatically (+1 semitone per channel) from the last connected value. If KEYS is not connected at all, the 16 channels default to a chromatic run starting at C4.
+
+For every note-channel on the main input, K2C scans all 16 input V/OCT channels and, if the (quantized) input pitch matches a channel's target pitch (KEYS), routes that note's gate and velocity there. If several input channels match the same KEYS pitch, the last (highest-index) one scanned wins. Notes that don't match any of the 16 KEYS pitches are ignored. Each output channel's V/Oct always reflects its fixed KEYS pitch, whether or not a note currently matches it - only GATE and VEL turn on/off as notes come and go.
+
+### The Panel
+
+V/OCT input [polyphonic]: Pitch of the incoming notes to route.
+
+GATE input [polyphonic]: Gate of the incoming notes to route.
+
+VEL input [polyphonic]: Velocity of the incoming notes to route.
+
+KEYS input [polyphonic]: Target pitch for each of the 16 output channels, chromatic fallback from C4 if unconnected or partially connected.
+
+V/OCT output [polyphonic]: Fixed target pitch of each of the 16 output channels.
+
+GATE output [polyphonic]: Gate for each of the 16 output channels, high while a matching note is held.
+
+VEL output [polyphonic]: Velocity for each of the 16 output channels, valid while GATE is high.
+
+## CC14
+
+<p align="center"><img src="res/CC14Work.svg"></p>
+
+### Short Description
+
+CC14 converts between MIDI's 7 bit CC resolution (0-10V representing 0-127) and 14 bit CC resolution (0-10V representing 0-16383), in both directions at once. It's monophonic and stateless - both conversions are fully recomputed every control-rate tick.
+
+MSB IN and LSB IN are combined into a single 14 bit value (msb * 128 + lsb) and sent to CV OUT, still scaled to 0-10V but now at 14 bit resolution - use this to combine two paired 7 bit MIDI CCs (like many MIDI>CV interfaces provide for CC pairs such as 0/32) into one fine-grained CV.
+
+CV IN takes a 0-10V CV representing a 14 bit value and splits it back into its MSB and LSB 7 bit components at MSB OUT and LSB OUT - the exact inverse of the above, for sending a 14 bit CV out as a pair of standard 7 bit MIDI CCs.
+
+### The Panel
+
+MSB IN input: 7 bit MIDI CC CV (0-10V = 0-127) - most significant byte to combine.
+
+LSB IN input: 7 bit MIDI CC CV (0-10V = 0-127) - least significant byte to combine.
+
+CV OUT output: Combined 14 bit CV (0-10V = 0-16383).
+
+CV IN input: 14 bit CV (0-10V = 0-16383) to split.
+
+MSB OUT output: 7 bit MIDI CC CV (0-10V = 0-127) - most significant byte of CV IN.
+
+LSB OUT output: 7 bit MIDI CC CV (0-10V = 0-127) - least significant byte of CV IN.

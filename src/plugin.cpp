@@ -22,6 +22,7 @@ void init(Plugin *p) {
 	p->addModel(modelHold);
 	p->addModel(modelLanes);
 	p->addModel(modelK2C);
+	p->addModel(modelCC14);
 	// p->addModel(modelTemplate);
 	// p->addModel(modelWidgetTest);
 

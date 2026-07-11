@@ -22,6 +22,7 @@ extern Model *modelCron;
 extern Model *modelHold;
 extern Model *modelLanes;
 extern Model *modelK2C;
+extern Model *modelCC14;
 // extern Model *modelTemplate;
 // extern Model *modelWidgetTest;
 

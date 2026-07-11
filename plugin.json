@@ -154,6 +154,15 @@
         "Utility",
         "Polyphonic"
       ]
+    },
+    {
+      "slug": "CC14",
+      "name": "CC14",
+      "description": "Combines two 7 bit MIDI CC CVs into a 14 bit CV and splits a 14 bit CV back into MSB/LSB 7 bit CC CVs",
+      "tags": [
+        "Utility",
+        "MIDI"
+      ]
     }
   ]
 }
