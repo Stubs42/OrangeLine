@@ -1,5 +1,5 @@
 /*
-	Lanes.hpp
+	K2C.hpp
 
 	Author: Dieter Stubler
 
@@ -19,9 +19,6 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 #include "OrangeLine.hpp"
-
-#define NUM_SOURCES 16
-#define NUM_LANES   16
 
 //
 // Defaults
@@ -53,14 +50,10 @@ enum ParamIds {
 // Input Ids
 //
 enum InputIds {
-	VOCT_IN_INPUT,
-    VOCT_IN_INPUT_LAST = VOCT_IN_INPUT + NUM_SOURCES - 1,
-	GATE_IN_INPUT,
-    GATE_IN_INPUT_LAST = GATE_IN_INPUT + NUM_SOURCES - 1,
-	VEL_IN_INPUT,
-    VEL_IN_INPUT_LAST = VEL_IN_INPUT + NUM_SOURCES - 1,
-	LANE_IN_INPUT,
-    LANE_IN_INPUT_LAST = LANE_IN_INPUT + NUM_SOURCES - 1,
+	VOCT_INPUT,
+	GATE_INPUT,
+	VEL_INPUT,
+	MATCH_INPUT,
 
 	NUM_INPUTS
 };
@@ -70,13 +63,8 @@ enum InputIds {
 //
 enum OutputIds {
 	VOCT_OUTPUT,
-    VOCT_OUTPUT_LAST = VOCT_OUTPUT + NUM_LANES - 1,
 	GATE_OUTPUT,
-    GATE_OUTPUT_LAST = GATE_OUTPUT + NUM_LANES - 1,
 	VEL_OUTPUT,
-    VEL_OUTPUT_LAST = VEL_OUTPUT + NUM_LANES - 1,
-	OVERFLOW_OUTPUT,
-    OVERFLOW_OUTPUT_LAST = OVERFLOW_OUTPUT + NUM_LANES - 1,
 
 	NUM_OUTPUTS
 };
@@ -85,8 +73,6 @@ enum OutputIds {
 // Ligh Ids
 //
 enum LightIds {
-	OVERFLOW_LIGHT,
-    OVERFLOW_LIGHT_LAST = OVERFLOW_LIGHT + NUM_LANES - 1,
 
 	NUM_LIGHTS
 };

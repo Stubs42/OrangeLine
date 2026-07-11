@@ -103,9 +103,9 @@ struct Lanes : Module
 		}
 		for (int i = 0; i < NUM_LANES; i++)
 		{
-			setOutPoly (VOCT_OUT_OUTPUT + i, true);
-			setOutPoly (GATE_OUT_OUTPUT + i, true);
-			setOutPoly (VEL_OUT_OUTPUT  + i, true);
+			setOutPoly (VOCT_OUTPUT + i, true);
+			setOutPoly (GATE_OUTPUT + i, true);
+			setOutPoly (VEL_OUTPUT  + i, true);
 			setOutPoly (OVERFLOW_OUTPUT + i, false);	// mono
 			/*
 				Plain continuous gate (STATE_TYPE_VALUE, the default), not a trigger: overflow is an
@@ -152,11 +152,11 @@ struct Lanes : Module
 		for (int i = 0; i < NUM_LANES; i++)
 		{
 			sprintf(buffer, "Lane %d V/Oct", i + 1);
-			configOutput (VOCT_OUT_OUTPUT + i, buffer);
+			configOutput (VOCT_OUTPUT + i, buffer);
 			sprintf(buffer, "Lane %d Gate", i + 1);
-			configOutput (GATE_OUT_OUTPUT + i, buffer);
+			configOutput (GATE_OUTPUT + i, buffer);
 			sprintf(buffer, "Lane %d Velocity", i + 1);
-			configOutput (VEL_OUT_OUTPUT + i, buffer);
+			configOutput (VEL_OUTPUT + i, buffer);
 			sprintf(buffer, "Lane %d Overflow", i + 1);
 			configOutput (OVERFLOW_OUTPUT + i, buffer);
 		}
@@ -408,13 +408,13 @@ struct Lanes : Module
 		{
 			for (int slot = 0; slot < laneChannelCount[lane]; slot++)
 			{
-				setStateOutPoly (VOCT_OUT_OUTPUT + lane, slot, slotPitch[lane][slot]);
-				setStateOutPoly (GATE_OUT_OUTPUT + lane, slot, slotActive[lane][slot] ? 10.f : 0.f);
-				setStateOutPoly (VEL_OUT_OUTPUT  + lane, slot, slotVelocity[lane][slot]);
+				setStateOutPoly (VOCT_OUTPUT + lane, slot, slotPitch[lane][slot]);
+				setStateOutPoly (GATE_OUTPUT + lane, slot, slotActive[lane][slot] ? 10.f : 0.f);
+				setStateOutPoly (VEL_OUTPUT  + lane, slot, slotVelocity[lane][slot]);
 			}
-			setOutPolyChannels (VOCT_OUT_OUTPUT + lane, laneChannelCount[lane]);
-			setOutPolyChannels (GATE_OUT_OUTPUT + lane, laneChannelCount[lane]);
-			setOutPolyChannels (VEL_OUT_OUTPUT  + lane, laneChannelCount[lane]);
+			setOutPolyChannels (VOCT_OUTPUT + lane, laneChannelCount[lane]);
+			setOutPolyChannels (GATE_OUTPUT + lane, laneChannelCount[lane]);
+			setOutPolyChannels (VEL_OUTPUT  + lane, laneChannelCount[lane]);
 
 			// Overflow is a state (currently more distinct pitches want this lane than it has
 			// channels for), not a one-shot event - gate and light just mirror it directly.
@@ -510,9 +510,9 @@ struct LanesWidget : ModuleWidget
 			{
 				int lane = block * 8 + row;
 				float y = ROW0_Y + row * ROW_PITCH;
-				addOutput (createOutputCentered<PJ301MPort> (calculateCoordinates (blockX + 0.f * COL_PITCH, y, 0.f), module, VOCT_OUT_OUTPUT + lane));
-				addOutput (createOutputCentered<PJ301MPort> (calculateCoordinates (blockX + 1.f * COL_PITCH, y, 0.f), module, GATE_OUT_OUTPUT + lane));
-				addOutput (createOutputCentered<PJ301MPort> (calculateCoordinates (blockX + 2.f * COL_PITCH, y, 0.f), module, VEL_OUT_OUTPUT  + lane));
+				addOutput (createOutputCentered<PJ301MPort> (calculateCoordinates (blockX + 0.f * COL_PITCH, y, 0.f), module, VOCT_OUTPUT + lane));
+				addOutput (createOutputCentered<PJ301MPort> (calculateCoordinates (blockX + 1.f * COL_PITCH, y, 0.f), module, GATE_OUTPUT + lane));
+				addOutput (createOutputCentered<PJ301MPort> (calculateCoordinates (blockX + 2.f * COL_PITCH, y, 0.f), module, VEL_OUTPUT  + lane));
 				addOutput (createOutputCentered<PJ301MPort> (calculateCoordinates (blockX + 3.f * COL_PITCH, y, 0.f), module, OVERFLOW_OUTPUT + lane));
 				addChild  (createLightCentered<LargeLight<RedLight>> (calculateCoordinates (blockX + 3.f * COL_PITCH, y, 0.f), module, OVERFLOW_LIGHT + lane));
 			}

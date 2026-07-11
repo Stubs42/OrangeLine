@@ -21,6 +21,7 @@ extern Model *modelBuckets;
 extern Model *modelCron;
 extern Model *modelHold;
 extern Model *modelLanes;
+extern Model *modelK2C;
 // extern Model *modelTemplate;
 // extern Model *modelWidgetTest;
 

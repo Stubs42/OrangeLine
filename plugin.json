@@ -145,6 +145,15 @@
         "Polyphonic",
         "MIDI"
       ]
+    },
+    {
+      "slug": "K2C",
+      "name": "K2C",
+      "description": "Routes polyphonic notes to 16 fixed output channels by exact pitch match against a CV-defined target pitch per channel",
+      "tags": [
+        "Utility",
+        "Polyphonic"
+      ]
     }
   ]
 }
