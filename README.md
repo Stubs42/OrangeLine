@@ -9,18 +9,18 @@ OrangeLine VCV Plugin
 
 The main function of Fence is to take a CV IN and send it to CV OUT, limited to certain range if possible.
 
-This logically works by first substracting a defined STEP value from CV IN as long as the CV is larger than the upper limit of the range. Second, the STEP value is added to the CV as long it is smaller than the lower limit of the range.
+This logically works by first subtracting a defined STEP value from CV IN as long as the CV is larger than the upper limit of the range. Second, the STEP value is added to the CV as long it is smaller than the lower limit of the range.
 Note that this may in a result in a CV OUT larger than the upper limit.
 
 In quantized mode (green light), CV IN and STEP are quantized to semi tone voltages so CV OUT is quantized too. In quantized mode, STEP is working in a special way. Fence will first use a fixed step of 1V (1 octave). If the resulting cv is higher than the upper range limit, it uses STEP as alternative note.
 
-In shaper mode (red light) Fence processes CV IN as an audio signal [-5:5]V, applying the described algorythm to the audio signal. CV OUT in SHPR mode is centered and scaled to [-5:5]V.
+In shaper mode (red light) Fence processes CV IN as an audio signal [-5:5]V, applying the described algorithm to the audio signal. CV OUT in SHPR mode is centered and scaled to [-5:5]V.
 
 When the mode light is off, Fence is working in raw mode processing signals between -10 and 10 V. All voltages are used as they are without any conversion. Still output is clamped to [-10:10]V.
 
 Fence will send a TRG OUT whenever cv out is changing.
 
-If TRG IN is connected, Fence will not work continously but more like a S&H when a trigger in is detected.
+If TRG IN is connected, Fence will not work continuously but more like a S&H when a trigger in is detected.
 
 ## SWING
 
@@ -38,7 +38,7 @@ The 16 timing knobs allow to setup the timing for each beat.
 RST, BPM and CLK have to be connected to your clock. Swing will not work without BPM and Clock connected !
 Start with setting up Clocked and connect the CLK and BPM to swing. With DIV 4 Swing will output a micro timed 16th clk.
 tCLK (timed clock) will output the micro timed clock.
-eCLK (early clock) will output a trg the eraliest time tCLK can appear. Use eCLK to run sequencers delivering values used when tCLK hits.
+eCLK (early clock) will output a trg the earliest time tCLK can appear. Use eCLK to run sequencers delivering values used when tCLK hits.
 I recommend to always do a S&H of all values needed for a step when tCLK arrives to avoid note tails.
 PHS and CMP are output to allow for further timing like humanization (a module using this will come!).
 
@@ -54,12 +54,12 @@ The root (lowest note) has to be always on for a mother scale, so this button is
 Note on/off only can be changed for the mother scale when CHLD is set to 0. If CHLD is not 0, note on/off buttons are disabled.
 Mother will detect known scales automatically and shows its name in the header.
 You can setup up to 12 mother scales and select them using the SCL CV input or knob.
-SCL, CHLD and ROOT inputs use quantized semiton values, so sending a C will select mother scale 1.
+SCL, CHLD and ROOT inputs use quantized semitone values, so sending a C will select mother scale 1.
 For each mother scale, you can set up probability weights for each note of each daughter scale.
 CHLD 0 selects the mother scale itsself. CHLD N shifts note on/off and weights by position.
 ROOT selects the root note of the mother scale.
 Weights for daughter scales (CHLD > 0) have two special values. 50% tells Mother to use the weight of the mother scale at the same position. So if mother scale with root C has weight 100% on C (position 1 in mother scale), the daughter scale will use a weight of 100% for D (position 1 in daughter scale) if the weight of position 1 of the daughter scale is set to 50%. Blue lights indicate that weight for this note is 50% and the mother weight is used. A weight of 100% has a special meaning too (Grab). When processing of FATE hits a note with weight 100% it uses this note without further probability processing. The note light will turn red if Grab is active for that note (weight 100%).
-FATE allows mother to choose notes by probability. If SPAN is 0 no probability processing is done and Mother works like a normal quantizer. With SPAN > 0 Mother will use neighbour notes and its weight to select one of them. The RND input allows to feed a seed to the internal random generator to get repeatable patterns. The internal random generator is reset to the seed at every process cycle. So you should change RND input for each trigger you send to Mother.
+FATE allows mother to choose notes by probability. If SPAN is 0 no probability processing is done and Mother works like a normal quantizer. With SPAN > 0 Mother will use neighbor notes and its weight to select one of them. The RND input allows to feed a seed to the internal random generator to get repeatable patterns. The internal random generator is reset to the seed at every process cycle. So you should change RND input for each trigger you send to Mother.
 If TRG is connected Mother will only process CV in when a trigger is received. If TRG is not connected Mother will process on each (quantized) change of CV in. On change of CV out a gate is produced on the GATE output.
 POW will output the weight of the selected note.
 
@@ -74,15 +74,15 @@ Initialize Mother. Setup a mother major scale. Set weights for c,e,g to 100% and
 
 ### Short Description
 
-Phrase is a Phrase Sequencer but has for itself no sequencing capabilities. Instead, Phrase uses one external sequencer (master) to provide informations on the sequence of phrases to feed another sequencer (slave). The slave sequencer has to have to ability to store multiple patterns (slave patterns) and to switch between them by providing a pattern cv input. Your patches will use the outputs of the slave sequencers channels.
+Phrase is a Phrase Sequencer but has for itself no sequencing capabilities. Instead, Phrase uses one external sequencer (master) to provide information on the sequence of phrases to feed another sequencer (slave). The slave sequencer has to have to ability to store multiple patterns (slave patterns) and to switch between them by providing a pattern cv input. Your patches will use the outputs of the slave sequencers channels.
 
 The master sequencer provides three cv values for each phrase. The starting patterns cv value, the length of the pattern and the duration the phrase should play. If the duration is longer then the length, the pattern is repeated.
 
-The LENgth knob tells Phrase the native number of steps the slave sequencer provides. If the length ofthe pattern given by the master sequencer is greater than LEN, the slave sequencer is advanced to the next pattern by adding the value of the INCrement knob to the current slave pattern cv.
+The LENgth knob tells Phrase the native number of steps the slave sequencer provides. If the length of the pattern given by the master sequencer is greater than LEN, the slave sequencer is advanced to the next pattern by adding the value of the INCrement knob to the current slave pattern cv.
 
 After a phrase is played (duration past) the master sequencer is clocked to provide the information on the next phrase to play. Since the master sequencer may need a number of samples to provide the cv outputs, the processing of the master sequencer inputs is delayed by the number of samples provided by the DLY knob.
 
-If the pattern length provided by the master is 0V, the length defauts to the value of the LEN knob. If the phrase duration provided by the master sequencer is 0V it defaults to the pattern length.
+If the pattern length provided by the master is 0V, the length defaults to the value of the LEN knob. If the phrase duration provided by the master sequencer is 0V it defaults to the pattern length.
 
 ### The Panel
 
@@ -100,29 +100,29 @@ PTN: Pattern cv input to select master sequencer patterns (allows for nesting of
 
 RST: Master reset trigger output
 
-CLK: Clock trigger out (triggered when nexi phrase infomations are needed)
+CLK: Clock trigger out (triggered when next phrase information is needed)
 
 PTN: Master sequencer pattern cv output, copied from top row PTN input when master CLK out is sent.
 
-DLY: Number of samples to wait after master CLK out is sent before processig the master input cv
+DLY: Number of samples to wait after master CLK out is sent before processing the master input cv
 
-DLEN: Default pattern length input used if LEN below is not connceted or 0V 
+DLEN: Default pattern length input used if LEN below is not conncted or 0V 
 
-DUR: Input for phrase duration (cv = #clockticks/100) 
+DUR: Input for phrase duration (cv = #clockTicks/100) 
 
-PTN: Knob for master pattern CV or offset if connecte and master pattern CV input for slave sequencer start pattern cv
+PTN: Knob for master pattern CV or offset if connected and master pattern CV input for slave sequencer start pattern cv
 
-LEN: Input for the pattern length (cv = #clockticks/100), if not connected or 0V, defaults to DLEN, if connected or right column slave LEN knob 
+LEN: Input for the pattern length (cv = #clockTicks/100), if not connected or 0V, defaults to DLEN, if connected or right column slave LEN knob 
 
-DUR: Input for phrase duration (cv = #clockticks/100)
+DUR: Input for phrase duration (cv = #clockTicks/100)
 
 #### Right Column
 
-LEN: Knob to set number of stes of the slave sequencer used
+LEN: Knob to set number of steps of the slave sequencer used
 
 ELEN: Effective default pattern length from copied from left columns DLEN input if connected, or (LEN knob above * top rows DIV knob) / 100 otherwise.
 
-INC: Knob to set the voltage increment used to advance the slave seuqnecers next pattern
+INC: Knob to set the voltage increment used to advance the slave sequencers next pattern
 
 DLY: #Samples the slave clock and reset outputs below shall be delayed
 
@@ -140,7 +140,7 @@ PTN: Pattern cv output to select the slave sequencers pattern
 
 The right click menu offers the usual option including the selection of three different panel style.
 
-Since the trowasoft sequencer are not compatible on pattern cv in itsself, there is a trowa pattern offset fix selectable which add a slight offset to the pattern cv provided by the master sequencer.
+Since the trowasoft sequencer are not compatible on pattern cv in itself, there is a trowa pattern offset fix selectable which add a slight offset to the pattern cv provided by the master sequencer.
 
 ## DEJAVU
 
@@ -152,17 +152,17 @@ Dajavu is a polyphonic source for random gates/triggers as well as random cv.
 It provides polyphonic output for up to 16 channels of trigger/gates and cv each. 
 The number of channels provided can be set in the right clock menu of the module. 
 
-Its unique property is the ability to repeat the generated random sequences in up to 4 levels of nested phrases. Why ? Random generative patterns are much more accepted when there is a good amount of recognition of somthing heard before.
+Its unique property is the ability to repeat the generated random sequences in up to 4 levels of nested phrases. Why ? Random generative patterns are much more accepted when there is a good amount of recognition of something heard before.
 
 Repitition justifies!
 
 Example:
 
 A simple Random generator generates values: ASDIGUEOIRJHSVMCXNSIEKZTAGSFDHD.... which is a chaotic sequence with no structure.
-Dejavu allows to generate : ASDI GUEO ASDI GUEO IRJH SVMC IRJH SVMC ... and more up to 4 nesting levels of repition.
+Dejavu allows to generate : ASDI GUEO ASDI GUEO IRJH SVMC IRJH SVMC ... and more up to 4 nesting levels of repetition.
 
 If you are familiar with Frozen Wastelands 'Seeds of Change' and 'The Gardener', you will be nearly all the way to understand Dejavu.
-On the bottom end, Dejavu is logically a chain of 4 'Gardeners' with its respective 'Seeds Of Change' seed source plus all the cabeling and 
+On the bottom end, Dejavu is logically a chain of 4 'Gardeners' with its respective 'Seeds Of Change' seed source plus all the cabling and 
 logical processing to sample and hold cv and trigger outputs. Thus Dejavu can free up a whole row some patches and frees a lot of CPU so.
 
 
@@ -178,31 +178,31 @@ DIV Input: CV input for DIV, if connected DIV knob will be ignored, input CV is 
 
 DIV Knob: Selects the clock division Dejavu should run with, if DIV input is not connected
 
-SEED CV Input: Global Seed to initialize Dejavu an Reset. Scales by factor 1000 (9.999V represent the max seed of 9999) The resultig seed is clamped to [0..9999]
+SEED CV Input: Global Seed to initialize Dejavu an Reset. Scales by factor 1000 (9.999V represent the max seed of 9999) The resulting seed is clamped to [0..9999]
 
 SEED Knob: Defines the starting seed Dejavu should reset to on RST und TRG trigger input
 
 #### Left Display
 
-The left display shows the current active seed, the random generator used to initilize the seeds of all generators needed for the outputs,
+The left display shows the current active seed, the random generator used to initialize the seeds of all generators needed for the outputs,
 was last initialized with. It changes whenever the lowest active REP row reaches its end of duration. The random generator is reset to the this same seed whenever the lowest active REP row reaches its end of length.
 
 If a knob is turned, the display switches to give a feedback of the current value of the moving knob for some time.
 
 #### Middle Left Section
 
-This section contains 4 rows to define the (nested) repitition of the generated random value stream. 
+This section contains 4 rows to define the (nested) repetition of the generated random value stream. 
 A row is active if it is switched on with the respective LED in the middle of the row and either LEN or DUR of this row is != 1. 
 Each row holds a random generator to provide a seed for the active random generator row above or 
 the active random generator for output seed initialization. 
 On each end of duration (DUR length) the row initializes its random generator from a seed of an active row above or 
 the global random generator if it is the highest active row. In this case, the random generator will start to create a new sequence of randoms. 
-On each end of lenth (LEN length) the random generator is reset to the seed it was initialized last.
+On each end of length (LEN length) the random generator is reset to the seed it was initialized last.
 This will start to deliver the same sequence of seed to its lower row or the out processing random generator as after its last LEN end.
 
 LEN Knob: Define the length of the random sequence to repeat.
 
-LED Button: Switch this row on or off, the LED is dimmed if a row is on but incative because both LEN and DUR are set to 1
+LED Button: Switch this row on or off, the LED is dimmed if a row is on but inactive because both LEN and DUR are set to 1
 
 DUR Knob: Define the total length of the phrase. It is typically a multiple of LEN but other values are working as well. If lower than LEN, the sequence will never reach its end of length because it is terminated before by the lower DUR. If DUR is greater that LEN, Dejavu will just generate the same sequence as after the last len/dur end again.
 
@@ -224,7 +224,7 @@ REP input CVs are interpreted in the same way as the knobs and scaled by a facto
 
 All channels with cv < 1V and are ignored but allow any other length as long the effective length does not exceed max float.
 
-TRG input: trigger input to reset all counters to 0 ignorin any offset settings , not the same than reset, because reset sets offsets if configured
+TRG input: trigger input to reset all counters to 0 ignoring any offset settings , not the same than reset, because reset sets offsets if configured
 
 REP output: Polyphonic cv outputs for the effective DUR/LEN of each row.
 
@@ -234,15 +234,15 @@ TRG output: Polyphonic trigger output for end of length (channel 0,2,4,6) and du
 
 #### Right Display
 
-A visualisation of Dejavus repeat state. All active repeater rows are represented by a circle of dots and an assotiated clock hand.
+A visualization of Dejavus repeat state. All active repeater rows are represented by a circle of dots and an associated clock hand.
 Inactive rows (switched off or both LEN and DUR of the row is 1) will not get displayed.
 The outermost active ring is associated to the uppermost active REP row which feeds and resets the random generators producing all outputs 
 for triggers/gates and CV to its current active seed.
 The inner rings are associated with the lower active REP rows, which feed and reset the random generator of the next active outer ring with its current active seed.
-Whenever it hits the 12:00 dot an end of duration event has occured and a new seed is fetched from the random generator of the next inner active ring 
+Whenever it hits the 12:00 dot an end of duration event has occurred and a new seed is fetched from the random generator of the next inner active ring 
 or the global never repeating random generator if it is the innermost ring. 
 After fetching the next seed from the next inner ring, the next outer ring is reset to the seed just fetched and an it will start a new random sequence.
-Whenever the hand reaches another dot, an end of length event has occured and the random generator of the next outer ring is reset to its starting seed and its random sequence starts to reapeat.
+Whenever the hand reaches another dot, an end of length event has occurred and the random generator of the next outer ring is reset to its starting seed and its random sequence starts to repeat.
 
 #### Heat Section
 
@@ -253,9 +253,9 @@ Left CV input: Polyphonic input for probabilities for the GATE output channels (
 Right CV input: Attenuation input for the HEAT Knob (NOT the CV input!). defined how the HEAT knob will change the value given by the LEFT CV input.
 
 The HEAT knob is kind of a macro knob for trigger probabilities of all channels. If no cv input connected it defines the probability from 0 to 100% for all channels the same.
-When the polyphonic HEAT offset cv is connected (left of HEAT knob) the HEAT knob is just added to the cv given for each channel. Putting Heat to 0, and connect a Knoly Pobs to the HEAT offset gives you 12 HEAT knobs for each channel.
+When the polyphonic HEAT offset cv is connected (left of HEAT knob) the HEAT knob is just added to the cv given for each channel. Putting Heat to 0, and connect a KnolyPobs to the HEAT offset gives you 12 HEAT knobs for each channel.
 When the polyphonic HEAT scale cv is connected (right of HEAT knob), it defines the amount of probabilities the HEAT knob is adding to the probabilities for each channel. So if no HEAT offset cv is connected it defines the maximum probability for each channel when the HEAT knob is put to 100%.
-Both knobs cv inputs for offset and scale can be combined. If scale is negative, raising the HEAT knob will in fact reduce the probbility for that channel.
+Both knobs cv inputs for offset and scale can be combined. If scale is negative, raising the HEAT knob will in fact reduce the probability for that channel.
 
 Normally if you have a cv input, you have two knobs to dial in the offset and scale for the cv input. With DEJAVU HEAT it's just the other way around. The cv inputs for offset and scale tell DEJAVU for each polyphonic channel the offset and scale for the HEAT knob.
 
@@ -271,15 +271,15 @@ SCL Knob: Scale of the CV output to be generated
 
 SCL CV input: Polyphonic input to set SCL per cv output channel
 
-SCL Attenuation Trimpod: Attenuator for the CV input, positiv (unipolar), negative (bipolar) 
+SCL Attenuation Trimpod: Attenuator for the CV input, positive (unipolar), negative (bipolar) 
 
-S&H Button. Switches whether a cv change on output should occur on evry clock tick (S&H off), on each step if a trigger or gate is generated (S&H yellow) or only when a trigger output or new gate on that channel occured (s&h red).
+S&H Button. Switches whether a cv change on output should occur on every clock tick (S&H off), on each step if a trigger or gate is generated (S&H yellow) or only when a trigger output or new gate on that channel occurred (s&h red).
 
-S&H Input: Polyphonic input for S&H per channel. If the S&H input channel is < 1V, the cv output for this channel changes on on evry clock tick. If the S&H input channel is >= 1V and < 2V, the cv output for this channel changes for every trigger or gate generated only. If the S&H input channel is >= 2V, the cv output for this channel changes for every trigger or a new gate generated only. 
+S&H Input: Polyphonic input for S&H per channel. If the S&H input channel is < 1V, the cv output for this channel changes on on every clock tick. If the S&H input channel is >= 1V and < 2V, the cv output for this channel changes for every trigger or gate generated only. If the S&H input channel is >= 2V, the cv output for this channel changes for every trigger or a new gate generated only. 
 
-GATE Button: Defines whether the trigger output generates triggers (off), gates (yello) or contignous gates(red)).
+GATE Button: Defines whether the trigger output generates triggers (off), gates (yellow) or contiguous gates(red)).
 
-GATE INPUT: Polyphonic GATE input. Defines GATE/TRG for each polychannel. < 1V is trigger mode, >=1 and < 2 is gate mode (new gate on every clock tick) and on >=2 the gate stays on contignously for postitiv following gates.
+GATE INPUT: Polyphonic GATE input. Defines GATE/TRG for each poly channel. < 1V is trigger mode, >=1 and < 2 is gate mode (new gate on every clock tick) and on >=2 the gate stays on contiguously for postitive following gates.
 
 CV Output: (Upper bottom right) Polyphonic CV output
 
@@ -292,19 +292,19 @@ GATE_Output: (Bottom right) Polyphonic Trigger/Gate output.
 ### Short Description
 
 Gator is a polyphonic, phase based gate generator. For all of its timing it uses a phase which is a ramp from -10V to 10V of the length of your sequencers clock resolution.
-For example running on 1/16 (clock x 4) the phase is assumed to start 1/32 befor the 1/16 clock at -10V and end 1/32 after the 1/16 clock at 10V. The zero crossing is assumed to be in time with your 1/16 clock. To generate a trigger at the output, an input gate is required. So when just patching 10V to the GATE input of Gator and connect the phase from Swing, Gator will produce 1/16 beats in sync with your clock. Typically you run a gate sequencer on the early clock of Swing to select the 1/16 steps to play. THE Len Knob allows to set the Gate length of the gates Gator generates. The LEN input allows to controll the gate length per step using a step sequencer, best runing on the early clock of Swing. Notable is, that a gate LEN can span multiple phases to play longer notes up 100 phase lengths. 
+For example running on 1/16 (clock x 4) the phase is assumed to start 1/32 before the 1/16 clock at -10V and end 1/32 after the 1/16 clock at 10V. The zero crossing is assumed to be in time with your 1/16 clock. To generate a trigger at the output, an input gate is required. So when just patching 10V to the GATE input of Gator and connect the phase from Swing, Gator will produce 1/16 beats in sync with your clock. Typically you run a gate sequencer on the early clock of Swing to select the 1/16 steps to play. THE Len Knob allows to set the Gate length of the gates Gator generates. The LEN input allows to control the gate length per step using a step sequencer, best running on the early clock of Swing. Notable is, that a gate LEN can span multiple phases to play longer notes up 100 phase lengths. 
 
-The TIME input allows to offset the threshold value used to detect a gate to generate in the range of -95% to +95% of a half phase length. So shifting notes nearly 1/32 foreard and backward in time is possible. I decided to avoid the 100% because it would be very easy to generate missing notes due to overlapping gates. Needless to say that this CV can also be sequenced to achieve a per step timing of the gates.
+The TIME input allows to offset the threshold value used to detect a gate to generate in the range of -95% to +95% of a half phase length. So shifting notes nearly 1/32 forward and backward in time is possible. I decided to avoid the 100% because it would be very easy to generate missing notes due to overlapping gates. Needless to say that this CV can also be sequenced to achieve a per step timing of the gates.
 
 The JIT CV input and knob allow to humanize the gates by applying a random offset to the threshold making the gates out of sync by the amount given by those parameters and inputs.
 
-The Rachet section with its knobs and inputs (RAT/DLY) controlls the ratcheting. RAT is the number of additional gates to produce and DLY the time between the gates in phase lengths. The delay itself can not be as large as the Gate LEN but about two phase lengths are possible. The number of ratchets selected by the RAT knob and input can be up to 10.
+The Rachet section with its knobs and inputs (RAT/DLY) controls the ratcheting. RAT is the number of additional gates to produce and DLY the time between the gates in phase lengths. The delay itself can not be as large as the Gate LEN but about two phase lengths are possible. The number of ratchets selected by the RAT knob and input can be up to 10.
 
 Important to say that GATE, LEN, TIME, JTR, RAT and DLY inputs are polyphonic with the GATE input defining the number of the output channels Gator will run. Gator is able to control the timing, gate length, jitter as well as the ratcheting for up to 16 voices independently.
 
-As an additional feature, Gator can apply a strum timing to the gates of the polyphonic output. The time and direction (negative values strum up, positiv values strum down) can be controlled by the STR knob and input. This is not polyphonic by nature because it already influences all polyphonic channels. Note that also strumming can span cross phase borders.
+As an additional feature, Gator can apply a strum timing to the gates of the polyphonic output. The time and direction (negative values strum up, positive values strum down) can be controlled by the STR knob and input. This is not polyphonic by nature because it already influences all polyphonic channels. Note that also strumming can span cross phase borders.
 
-Any strumming or ratcheting is aborted if a later gate on the same channel starts a new gate event when crossing its give tie theshold.
+Any strumming or ratcheting is aborted if a later gate on the same channel starts a new gate event when crossing its give tie threshold.
 
 ### The Panel
 
@@ -318,9 +318,9 @@ LEN knob: Gate length in units of phase length [0(min trg len) up to 100 phases]
 
 LEN input: [polyphonic] CV input for gate length 0.1 V is one phase. 10V is 100 phases.
 
-JTR knob: humanizastion jitter applied to gate threshold 0%, accurate timeing , 100% very sloppy. (ignored if JTR input is connected).
+JTR knob: humanization jitter applied to gate threshold 0%, accurate timing , 100% very sloppy. (ignored if JTR input is connected).
 
-JTR input: [polyphonic] Jitter input. values < 0 are ignored 10V is 100% sloppyness.
+JTR input: [polyphonic] Jitter input. values < 0 are ignored 10V is 100% sloppiness.
 
 RAT Knob: Number of additional gates to generate [0..10]. (ignored if RAT input is connected).
 
@@ -330,11 +330,11 @@ DLY Knob: Time between additional gates to generate [0..10]. (ignored if RAT inp
 
 DLY input: [polyphonic] cv input for the time between the gates to generate 1V is 1.
 
-STR knob: Controls strumming. 0 position no strum timing is applied. All bates of the polyphonic output channels are offseted to each other by a strummin offset given by the knob value. If positive the lower channels will get gates first and higher channels latest. If negative its vice versa.
+STR knob: Controls strumming. 0 position no strum timing is applied. All bates of the polyphonic output channels are offset to each other by a strumming offset given by the knob value. If positive the lower channels will get gates first and higher channels latest. If negative its vice versa.
 
-STR input: strum controll CV input
+STR input: strum control CV input
 
-RST input: Reset. clears all ongoing gates, ratchetings and strumming.
+RST input: Reset. clears all ongoing gates, ratcheting and strumming.
 
 Output: [polyphonic] The gate output of Gator
 
@@ -344,7 +344,7 @@ Output: [polyphonic] The gate output of Gator
 
 ### Short Description
 
-Resc is a polyphonic, pitch transposer, transposing a pitch given in a source scale to a target scale/child harmonically by determing the pitch position in the source scale and outputting the pitch at the position of the target scale.
+Resc is a polyphonic, pitch transposer, transposing a pitch given in a source scale to a target scale/child harmonically by determining the pitch position in the source scale and outputting the pitch at the position of the target scale.
 
 ### The Panel
 
@@ -368,14 +368,14 @@ CHILD SCALE: [polyphonic] Pitches of the TARGET child SCALE (TARGET root Scale r
 
 ### Short Description
 
-Morph is a gate and cv looper with turing machine functionality. It is fully polyphonic except of the CLK input. It features two ring buffers of 65 steps max for gates and cvs with a playhead for each polyphonic channel. The channel playhead handels both of buffers. On each clock tick the playhead is advanced one step. Before advancing the playhead, Morph checks for an replacement events for one or both of its channel loop buffers and processes them. A replace event is triggered if the SRC_FORCE gate for the channel, or randomly depending on the setting of the three knobs in the LOCK section. When a replace event occurs for a loop buffer the loop buffers content of the playhead pointing to is replaced. In case of a SRC_FORCE for the channel, gate and cv values from the SRC inputs are copied to the lopp buffers for that channel independent of other settings. In case of a LOCK orginated replace event Morph determines where the new value(s) should come from depending on the setting of the S<>R knob or input. If the values are determined to come from the SRC inputs, the gate and/or cv values are read from SRC inputs. If the values should come from the internal random generator, the RND_GATE knob or input defines the probability a gate is produced and RND_SCL and RND_OFF knobs and inputs are used to generate a random CV from the internal random generator. After processing replace events, the gate/cv values from the playhead position of the buffers are sent to the outputs and the playhead is advanced one step. Buttons and inputs allow for shifting the playhead(s) forward and backward as well as clearing the loop(s) buffer.
+Morph is a gate and cv looper with turing machine functionality. It is fully polyphonic except of the CLK input. It features two ring buffers of 65 steps max for gates and cvs with a play head for each polyphonic channel. The channel play head handles both of buffers. On each clock tick the play head is advanced one step. Before advancing the play head, Morph checks for an replacement events for one or both of its channel loop buffers and processes them. A replace event is triggered if the SRC_FORCE gate for the channel, or randomly depending on the setting of the three knobs in the LOCK section. When a replace event occurs for a loop buffer the loop buffers content of the play head pointing to is replaced. In case of a SRC_FORCE for the channel, gate and cv values from the SRC inputs are copied to the loop buffers for that channel independent of other settings. In case of a LOCK originated replace event Morph determines where the new value(s) should come from depending on the setting of the S<>R knob or input. If the values are determined to come from the SRC inputs, the gate and/or cv values are read from SRC inputs. If the values should come from the internal random generator, the RND_GATE knob or input defines the probability a gate is produced and RND_SCL and RND_OFF knobs and inputs are used to generate a random CV from the internal random generator. After processing replace events, the gate/cv values from the play head position of the buffers are sent to the outputs and the play head is advanced one step. Buttons and inputs allow for shifting the play head(s) forward and backward as well as clearing the loop(s) buffer.
 MORPH is deprecated and MORPHEUS should be used instead.
 
 ### The Panel
 
 #### Top Input Section
 
-CLK input: [monohinic] Clock drivig Morph.
+CLK input: [monophonic] Clock driving Morph.
 
 SRC_GATE input: [polyphonic] Source Gate. 
 
@@ -386,7 +386,7 @@ SRC_FORCE input: [polyphonic] If high the source gate and cv a forced pushed thr
 #### LOCK Section
 
 LOCK_GATE knob,
-LOCK_GATE input: [polyphonic] [0-10V] Determines whether a replace event for the gate buffer loop for a channel has to occure. LOCK_BOTH values are added.
+LOCK_GATE input: [polyphonic] [0-10V] Determines whether a replace event for the gate buffer loop for a channel has to occur. LOCK_BOTH values are added.
 
 LOCK_BOTH knob,
 LOCK_BOTH input: [polyphonic] [-10-10V] Value to add to LOCK_GATE and LOCK_CV values.
@@ -397,10 +397,10 @@ LOCK_CV input: [polyphonic] [0-10V] Determines whether a replace event for the C
 #### Control Section
 
 S<>R knob,
-S<>R input: [polyphonic] [0-10V] 0V MORPH get new data on replace events from src only. 10V from random only. Inbetween mixed.
+S<>R input: [polyphonic] [0-10V] 0V MORPH get new data on replace events from src only. 10V from random only. Between mixed.
 
 <<,>> buttons,
-<<,>> inputs: [polyphonic] Shift theb loop left (<<) or right (>>)
+<<,>> inputs: [polyphonic] Shift the loop left (<<) or right (>>)
 
 CLR button,
 CLR input: [polyphonic] Clear loop (all gates off, cv to 0V).
@@ -434,7 +434,7 @@ CV output: [polyphonic] CV output
 Morpheus is cv looper with turing machine and memory functionality which is able to mutate a sequence or morph 
 between sequences. The heart of MORPHEUS is a 16 channel polyphonic cv sequencer loop with a maximum length of 128 steps.
 The length of each channels loop can be different by using the polyphonic LEN input of MORPHEUS. On each clock input MORPHEUS uses 
-the LOCK knobs value or the indivual channels of the polyphonic LOCK input to randomly decide whether the currect step should be
+the LOCK knobs value or the individual channels of the polyphonic LOCK input to randomly decide whether the correct step should be
 mutated or stay as it is. If it decides to mutate the step, the S<>R knob value or the the value of the corresponding
 polyphonic S<>R input is used to determine where the replacement value should come from. If the new value should be taken from the 'source' the active memory slot or the external polyphonic SRC input (if the EXT button is switched on) is used the get the new step value(s).
 If the new value should be randomized it uses the SCL and OFS knobs and corresponding polyphonic inputs to randomize and scale the
@@ -443,16 +443,16 @@ If OFS is set to -10V and the SCL is negative (bipolar) MORPHEUS will create a b
 Note that SCL and OFS are used when calculating the new random cv. So the result will be stored as step cv value.
 MORPHEUS also can output gates or triggers (settable in right click menu). The GTP knob and its polyphonic input thereby defined the cv threshold the current steps cv has to cross to create a gate. The higher the GTP value the lower the cv has to be, so creating more gates.
 Vice versa the lower the GTP value, the higher the cv value has to be to create a gate, so resulting in less gates to produce. So changing
-the GTP does not alter the step sequence in any way but sill allows for output between 0% and 100% gates. Since it depends in the current cv value GTP is not directly a propability but since the cv is created randomly it indirectly is.
+the GTP does not alter the step sequence in any way but sill allows for output between 0% and 100% gates. Since it depends in the current cv value GTP is not directly a probability but since the cv is created randomly it indirectly is.
 The HLD button freezes the channels steps, so no change will be applied to the step. Also the step loop of a channel on hold is not
 overwritten when loading from a memory slot. Using the HLD input, you can select which channels to be on HLD individually.
 The buttons RND, <<, >>, CLR affect ALL channels except channels on HLD. The RND and CLR buttons are temporary, so they can used to affect only the current position of the step loops while pressed. If the corresponding polyphonic inputs are used only the gated channels will be affected by the operation. RND forces the current step to be randomized. CLR will initialize the current step to the channels OFS value. <<,>> shift the step loop left and right respectively.
-When a nice loop was created, the polyphonic step loop can be stored to one of the 16 memory slots by selecting the slot with the up and down buttons and pressing of STO. When selecting a memory slot with up and down buttons, the slot display will show the new slots number in red. This indicates that MORPHEUS still is uing the previous active memory slot as a source for its replacement operations. 
+When a nice loop was created, the polyphonic step loop can be stored to one of the 16 memory slots by selecting the slot with the up and down buttons and pressing of STO. When selecting a memory slot with up and down buttons, the slot display will show the new slots number in red. This indicates that MORPHEUS still is using the previous active memory slot as a source for its replacement operations. 
 
-When pressing RCL while the slot is displayed red, it will set the displayed slot as the new active slot for step replacement. So if not locked an S<>R < 50% the cannel with morph to the new memory slots stored loop. When pressing RCL while the display is not red, the whole loop of the memory slot is loaded to the step loop immediatelly. This allows for unmorphed pattern switching.
+When pressing RCL while the slot is displayed red, it will set the displayed slot as the new active slot for step replacement. So if not locked an S<>R < 50% the cannel with morph to the new memory slots stored loop. When pressing RCL while the display is not red, the whole loop of the memory slot is loaded to the step loop immediately. This allows for unmorphed pattern switching.
 
 The EXT button switches the source for replacement to the polyphonic SRC input. So you can use MORPHEUS to mutate a sequence coming in
-from another sequencer or midi. The REC button and its polyphonic inputs can be used to force MORPHEUS to replace the current steps value(s) be the external CV value(s), thus recording the external source to the step loop. While EXT is on, you can sill save the current loop to a memmory slot but RCL will have no effect on the current step loop.
+from another sequencer or midi. The REC button and its polyphonic inputs can be used to force MORPHEUS to replace the current steps value(s) be the external CV value(s), thus recording the external source to the step loop. While EXT is on, you can sill save the current loop to a memory slot but RCL will have no effect on the current step loop.
 
 ### The Panel
 
@@ -470,7 +470,7 @@ S<>R input: [polyphonic] [S<>R/10, 0..10V] is added to s<>R knobs value for each
 
 LEN knob [1-128]: Length of the step loop
 
-LEN input [polyphonic] [LEN/100, 0.01..1.28]: overides the LEN knob per channel. LEN knobs value is used if LEN input for a channel is 0V.
+LEN input [polyphonic] [LEN/100, 0.01..1.28]: overrides the LEN knob per channel. LEN knobs value is used if LEN input for a channel is 0V.
 
 up, down buttons: select memory slot store or recall.
 
@@ -512,7 +512,7 @@ EXT input [polyphonic]: external cv input to process as source or record
 
 REC button: Momentary button to force EXT input to be recorded to the step loop.
 
-REC input [polyphonic]: Force record of individula channels if REC cv is > 5.0V
+REC input [polyphonic]: Force record of individual channels if REC cv is > 5.0V
 
 GTP knob: Gate 'probability'. Threshold at which the current steps cv generated a gate
 
@@ -559,17 +559,17 @@ Channels: Set number of polyphonic output channels to produce
 ### Short Description
 
 Bucket is a polyphonic splitter which takes takes a pair of polyphonic V/Oct and Gate inputs and copies each channels V/Oct and Gate to one of the 13
-V/Octand Gate  output pairs depending on the input channels V/Oct (Pitch) value.
+V/Oct and Gate  output pairs depending on the input channels V/Oct (Pitch) value.
 There 12 are rows with a knob, a pitch display and the polyphonic output pair for V/Oct and Gate. The input is processed the following way.
-For each channel CRON start at the top row and checks whether the channels input pitch is lower or equal the pitch setup with the rows Split point knob and displayed in the rows display. If so, the V/Oct and Gate of this inputput channle is added to the rows output V/Oct and Gate pair. In this case CRON continues with processing the next input channel. So there is aways only one output channel an input channel is copied to. If not, the next row is checked. If non of the 12 setup split points is larger or equal the input V/Oct, the V/Oct and Gate are added to the bottom output pair beside the inputs. This way multiple instances can be chained. 
+For each channel CRON start at the top row and checks whether the channels input pitch is lower or equal the pitch setup with the rows Split point knob and displayed in the rows display. If so, the V/Oct and Gate of this input channel is added to the rows output V/Oct and Gate pair. In this case CRON continues with processing the next input channel. So there is always only one output channel an input channel is copied to. If not, the next row is checked. If non of the 12 setup split points is larger or equal the input V/Oct, the V/Oct and Gate are added to the bottom output pair beside the inputs. This way multiple instances can be chained. 
 
 ### The Panel
 
 There are 12 rows with:
 
-Split point Knob: Set the split poin for this row
+Split point Knob: Set the split point for this row
 
-Split point Display: Displayes the pitch value for spit point dialed in wih the knob.
+Split point Display: Displays the pitch value for spit point dialed in wih the knob.
 
 Controls the probability of MORPHEUS will replace a step. 0% forces change of every step, 100% no change of step.
 
@@ -583,7 +583,7 @@ V/oct Input [polyphonic]: Output for pitch.
 
 Gate Input [polyphonic]: Output for Gate.
 
-V/oct Output [polyphonic]: Output for pitch for pitchs larger than the pitch setup for any row.
+V/oct Output [polyphonic]: Output for pitch for pitches larger than the pitch setup for any row.
 
 Gate Output [polyphonic]: Output for Gate for pitches larger than the pitch setup for any row.
 
@@ -593,17 +593,17 @@ Gate Output [polyphonic]: Output for Gate for pitches larger than the pitch setu
 
 ### Short Description
 
-CRON is a utility for handling transport and clock from a MIDI>CV or similar MIDI interface module. Is main purpose is to determine BPM by tapping the 24ppm MIDI CLK to provide it to a SWING module. It uses START, STOP and CONT signals to determine running status and uses CLK and CLK/N to tap tempo and for synchronisation of local and MIDI clock. It calculates currect the V/Oct BPM value and outputs it at the BPM output. The RUN output is high while running. CLK/N input is copied to the CLK/N output for conveniance. The RST output puts out a reset trigger.
+CRON is a utility for handling transport and clock from a MIDI>CV or similar MIDI interface module. Is main purpose is to determine BPM by tapping the 24ppm MIDI CLK to provide it to a SWING module. It uses START, STOP and CONT signals to determine running status and uses CLK and CLK/N to tap tempo and for synchronization of local and MIDI clock. It calculates current the V/Oct BPM value and outputs it at the BPM output. The RUN output is high while running. CLK/N input is copied to the CLK/N output for convenience. The RST output puts out a reset trigger.
 
-Additionally CRON has the ability to support up to 16 different latency corrections for different destinations in BOTH directions. Meaning it can correct for positive and negative latency. It takes the input CMP value from for example SWING and caclulates the CMP values for GATOR instances to produce latency corrected gates. The calculated values are sent to the polyphonic CMP output. A CHL channle Knob lets you select the channel you want setup the latency with the LATENCY knob below.   
+Additionally CRON has the ability to support up to 16 different latency corrections for different destinations in BOTH directions. Meaning it can correct for positive and negative latency. It takes the input CMP value from for example SWING and calculates the CMP values for GATOR instances to produce latency corrected gates. The calculated values are sent to the polyphonic CMP output. A CHL channel Knob lets you select the channel you want setup the latency with the LATENCY knob below.   
 
 ### The Panel
 
 ## Upper Section (Clock)
 
-CLK/N and CLK input: MIDI clockinputs
+CLK/N and CLK input: MIDI clock inputs
 
-BPM output: The tapped and calulated BPM V/Oct value
+BPM output: The tapped and calculated BPM V/Oct value
 
 CLK output: MIDI CLK/N outputs
 
@@ -617,12 +617,48 @@ RUN output: Gate output which is high if running
 
 ## Bottom Section (Latency)
 
-CHL knob and display: Channel selectetin to edit latencx below
+CHL knob and display: Channel selection to edit latency below
 
-LATENCY knob: Kob to dial in the latency in milliseconds for the selected chsnnel above.
+LATENCY knob: Kob to dial in the latency in milliseconds for the selected channel above.
 
 LATENCY display: Shows the latency in milliseconds,
 
 CMP input: Reference CMP value from SWING
 
 CMP output [polyphonic]: Latency corrected CMP values for each channel
+
+## LANES
+
+<p align="center"><img src="res/LanesWork.svg"></p>
+
+### Short Description
+
+LANES merges up to 16 polyphonic sources (e.g. multiple sequencers or performance controllers) into 16 independent output lanes, each intended to feed one external CV>MIDI interface. It replaces a CPU-heavy interpreted-script approach with a native, control-rate implementation.
+
+Each of the 16 sources provides a V/Oct, Gate, Velocity and Lane input. The Lane input is a V/Oct-like CV (1 semitone = 1 lane, 0V = Lane 1) that selects which of the 16 output lanes a given note-channel is routed to. LANES allocates each lane's polyphonic output dynamically: when a note-on arrives for a lane, LANES either merges it into an already-active voice of the same pitch on that lane (so the same note is never sent twice to the same downstream MIDI interface), reuses a free channel, or grows the lane's channel count. Velocity is fixed at the moment a channel is first (re)allocated and set back to 0 once the last contributing note releases it.
+
+If a lane already uses all 16 of its channels and a new, distinct pitch needs one, LANES steals the oldest active note on that lane for it (classic voice stealing) - the stolen note does not come back on its own even if its gate is still held, it stays silent until re-triggered or until its lane/pitch input changes. While any held note on a lane has no channel (freshly overflowed or waiting after being stolen from), that lane's OVERFLOW output and light stay active as a continuous state, not a one-shot pulse.
+
+A lane's channel count only ever grows on demand and only shrinks again from the end, one tick after the last channel's gate has already been sent out as low - so a downstream CV>MIDI interface is guaranteed to see an explicit gate-off before a channel can disappear from the polyphonic cable, avoiding hung notes.
+
+### The Panel
+
+16 source blocks (left half), each with:
+
+V/OCT input [polyphonic]: Pitch for this source's note-channels.
+
+GATE input [polyphonic]: Gate for this source's note-channels.
+
+VEL input [polyphonic]: Velocity for this source's note-channels.
+
+LANE input [polyphonic]: Per note-channel CV selecting the destination lane (1 semitone = 1 lane).
+
+16 lane blocks (right half), each with:
+
+V/OCT output [polyphonic]: Pitch of the notes currently allocated to this lane.
+
+GATE output [polyphonic]: Gate of the notes currently allocated to this lane.
+
+VEL output [polyphonic]: Velocity of the notes currently allocated to this lane.
+
+OVERFLOW output and light: High/lit while this lane currently has more distinct notes wanting it than it has channels for.

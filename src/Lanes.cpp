@@ -49,14 +49,22 @@ struct Lanes : Module
 
 	/*
 		Per-lane slot state.
-		laneChannelCount only ever grows (never shrinks) so a downstream CV->MIDI interface
-		never loses a channel while its gate is still high (which would leave a hung note).
+		laneChannelCount only shrinks from the end, and only for a trailing slot that was
+		already inactive for at least one full tick (see moduleProcess()), so a downstream
+		CV->MIDI interface never loses a channel while its gate is still high (never a hung note).
 	*/
 	bool  slotActive      [NUM_LANES][POLY_CHANNELS];
 	float slotPitch       [NUM_LANES][POLY_CHANNELS];
 	float slotVelocity    [NUM_LANES][POLY_CHANNELS];
 	int   slotContributors[NUM_LANES][POLY_CHANNELS];
 	int   laneChannelCount[NUM_LANES];
+
+	/*
+		Age (tick number at last (re)allocation) of each slot, used to find the oldest active
+		slot to steal when a lane is full. ageCounter increments once per control-rate tick.
+	*/
+	unsigned long slotAge[NUM_LANES][POLY_CHANNELS];
+	unsigned long ageCounter;
 
 
 	// ********************************************************************************************************************************
@@ -175,6 +183,8 @@ struct Lanes : Module
 		memset (slotVelocity,    0.f, sizeof(slotVelocity));
 		memset (slotContributors,  0, sizeof(slotContributors));
 		memset (laneChannelCount,  0, sizeof(laneChannelCount));
+		memset (slotAge,           0, sizeof(slotAge));
+		ageCounter = 0;
 		for (int s = 0; s < NUM_SOURCES; s++)
 		{
 			for (int c = 0; c < POLY_CHANNELS; c++)
@@ -201,7 +211,9 @@ struct Lanes : Module
 
 	/**
 		Try to acquire (or merge into) a slot in the given lane for the given (already quantized) pitch.
-		Returns the slot index, or -1 if the lane is full (overflow).
+		Always succeeds: if the lane is full, steals the oldest active slot (classic voice stealing) -
+		the evicted source-channel(s) are NOT reassigned automatically even if still held (see
+		moduleProcess()'s "held but unslotted" handling for the resulting overflow-demand indicator).
 	*/
 	inline int acquireLaneSlot (int lane, float pitch, float velocity)
 	{
@@ -223,6 +235,7 @@ struct Lanes : Module
 				slotPitch[lane][slot]        = pitch;
 				slotVelocity[lane][slot]     = velocity;
 				slotContributors[lane][slot] = 1;
+				slotAge[lane][slot]          = ageCounter;
 				return slot;
 			}
 		}
@@ -234,10 +247,31 @@ struct Lanes : Module
 			slotPitch[lane][slot]        = pitch;
 			slotVelocity[lane][slot]     = velocity;
 			slotContributors[lane][slot] = 1;
+			slotAge[lane][slot]          = ageCounter;
 			return slot;
 		}
-		// 4. overflow: lane is full
-		return -1;
+		// 4. lane is full: steal the oldest active slot
+		int oldestSlot = 0;
+		for (int slot = 1; slot < laneChannelCount[lane]; slot++)
+		{
+			if (slotAge[lane][slot] < slotAge[lane][oldestSlot])
+				oldestSlot = slot;
+		}
+		// invalidate any held source-channel(s) currently pointing at the stolen slot - they
+		// stay silent (srcSlot < 0) until their own gate re-triggers or their lane/pitch changes
+		for (int s2 = 0; s2 < NUM_SOURCES; s2++)
+		{
+			for (int c2 = 0; c2 < POLY_CHANNELS; c2++)
+			{
+				if (oldLane[s2][c2] == lane && srcSlot[s2][c2] == oldestSlot)
+					srcSlot[s2][c2] = -1;
+			}
+		}
+		slotPitch[lane][oldestSlot]        = pitch;
+		slotVelocity[lane][oldestSlot]     = velocity;
+		slotContributors[lane][oldestSlot] = 1;
+		slotAge[lane][oldestSlot]          = ageCounter;
+		return oldestSlot;
 	}
 
 	/**
@@ -285,8 +319,23 @@ struct Lanes : Module
 			styleChanged = false;
 		}
 
+		/*
+			Reclaim trailing free channels - but only ones that were already inactive BEFORE this
+			tick, i.e. their gate=0 was already sent out to the poly cable for at least one full
+			cycle by the output-writing loop below in the previous call. This keeps the invariant
+			that a channel's gate is always explicitly dropped to 0 before it can ever disappear
+			from the poly cable (never shrinking mid-note), while still reclaiming channels that
+			are genuinely done instead of leaving the lane parked at its historical peak forever.
+		*/
+		for (int lane = 0; lane < NUM_LANES; lane++)
+		{
+			while (laneChannelCount[lane] > 0 && !slotActive[lane][laneChannelCount[lane] - 1])
+				laneChannelCount[lane]--;
+		}
+
 		bool overflowThisTick[NUM_LANES];
 		memset (overflowThisTick, 0, sizeof(overflowThisTick));
+		ageCounter++;
 
 		for (int s = 0; s < NUM_SOURCES; s++)
 		{
@@ -330,12 +379,9 @@ struct Lanes : Module
 				{
 					needRelease = true;
 				}
-				else if (gateIn && wasGate && srcSlot[s][c] < 0)
-				{
-					// still held, lane/pitch unchanged, but a previous attempt overflowed and
-					// never got a slot - keep retrying every tick in case one has freed up since
-					needAcquire = true;
-				}
+				// Note: no retry for a held note that's already unslotted (srcSlot < 0) - once
+				// voice-stealing takes its slot, it classically stays silent until its own gate
+				// re-triggers or its lane/pitch changes, it does not automatically reclaim a slot.
 
 				if (needRelease)
 				{
@@ -344,11 +390,13 @@ struct Lanes : Module
 				}
 				if (needAcquire)
 				{
-					int slot = acquireLaneSlot (laneIn, pitchIn, velIn);
-					srcSlot[s][c] = slot;
-					if (slot < 0)
-						overflowThisTick[laneIn] = true;
+					srcSlot[s][c] = acquireLaneSlot (laneIn, pitchIn, velIn);	// always succeeds (steals if full)
 				}
+
+				// Overflow/demand indicator: this channel currently wants a slot on laneIn (gate held)
+				// but doesn't have one - either just-evicted-by-stealing or an original overflow.
+				if (gateIn && srcSlot[s][c] < 0)
+					overflowThisTick[laneIn] = true;
 
 				oldGate[s][c]  = gateIn;
 				oldLane[s][c]  = laneIn;
