@@ -85,6 +85,8 @@ enum OutputIds {
 // Ligh Ids
 //
 enum LightIds {
+	OVERFLOW_LIGHT,
+    OVERFLOW_LIGHT_LAST = OVERFLOW_LIGHT + NUM_LANES - 1,
 
 	NUM_LIGHTS
 };

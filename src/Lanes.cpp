@@ -58,6 +58,7 @@ struct Lanes : Module
 	int   slotContributors[NUM_LANES][POLY_CHANNELS];
 	int   laneChannelCount[NUM_LANES];
 
+
 	// ********************************************************************************************************************************
 	/*
 		Initialization
@@ -97,8 +98,12 @@ struct Lanes : Module
 			setOutPoly (VOCT_OUT_OUTPUT + i, true);
 			setOutPoly (GATE_OUT_OUTPUT + i, true);
 			setOutPoly (VEL_OUT_OUTPUT  + i, true);
-			setOutPoly (OVERFLOW_OUTPUT + i, false);						// mono
-			setStateTypeOutput (OVERFLOW_OUTPUT + i, STATE_TYPE_TRIGGER);	// framework-managed 1ms pulse
+			setOutPoly (OVERFLOW_OUTPUT + i, false);	// mono
+			/*
+				Plain continuous gate (STATE_TYPE_VALUE, the default), not a trigger: overflow is an
+				ongoing condition ("this lane is currently full"), not a one-shot event. A trigger's
+				1ms pulse would fight with the ~0.9ms control-rate retry, causing flicker.
+			*/
 		}
 	}
 
@@ -285,12 +290,23 @@ struct Lanes : Module
 
 		for (int s = 0; s < NUM_SOURCES; s++)
 		{
+			/*
+				If a cable is unpatched, processParamsAndInputs() (OrangeLineCommon.hpp) skips refreshing
+				OL_statePoly for it entirely, leaving the last known (possibly stale) value in place. Force
+				sane defaults here (gate = off, pitch/velocity/lane CV = 0) so unplugging any of the 4 cables
+				behaves like a normal unpatched Eurorack input instead of freezing on the last value - most
+				importantly, unplugging GATE always releases held notes instead of leaving them stuck on.
+			*/
+			bool sourceGateConnected = getInputConnected (GATE_IN_INPUT + s);
+			bool sourceVoctConnected = getInputConnected (VOCT_IN_INPUT + s);
+			bool sourceVelConnected  = getInputConnected (VEL_IN_INPUT  + s);
+			bool sourceLaneConnected = getInputConnected (LANE_IN_INPUT + s);
 			for (int c = 0; c < POLY_CHANNELS; c++)
 			{
-				bool  gateIn  = OL_statePoly[(GATE_IN_INPUT + s) * POLY_CHANNELS + c] > 5.f;
-				float pitchIn = quantize (OL_statePoly[(VOCT_IN_INPUT + s) * POLY_CHANNELS + c]);
-				float velIn   = OL_statePoly[(VEL_IN_INPUT  + s) * POLY_CHANNELS + c];
-				float laneCV  = OL_statePoly[(LANE_IN_INPUT + s) * POLY_CHANNELS + c];
+				bool  gateIn  = sourceGateConnected && OL_statePoly[(GATE_IN_INPUT + s) * POLY_CHANNELS + c] > 5.f;
+				float pitchIn = sourceVoctConnected ? quantize (OL_statePoly[(VOCT_IN_INPUT + s) * POLY_CHANNELS + c]) : 0.f;
+				float velIn   = sourceVelConnected  ? OL_statePoly[(VEL_IN_INPUT  + s) * POLY_CHANNELS + c] : 0.f;
+				float laneCV  = sourceLaneConnected ? OL_statePoly[(LANE_IN_INPUT + s) * POLY_CHANNELS + c] : 0.f;
 				int   laneIn  = int(clamp (round (laneCV * 12.f), 0.f, float(NUM_LANES - 1)));
 
 				bool  wasGate   = oldGate[s][c];
@@ -313,6 +329,12 @@ struct Lanes : Module
 				else if (!gateIn && wasGate)
 				{
 					needRelease = true;
+				}
+				else if (gateIn && wasGate && srcSlot[s][c] < 0)
+				{
+					// still held, lane/pitch unchanged, but a previous attempt overflowed and
+					// never got a slot - keep retrying every tick in case one has freed up since
+					needAcquire = true;
 				}
 
 				if (needRelease)
@@ -346,8 +368,10 @@ struct Lanes : Module
 			setOutPolyChannels (GATE_OUT_OUTPUT + lane, laneChannelCount[lane]);
 			setOutPolyChannels (VEL_OUT_OUTPUT  + lane, laneChannelCount[lane]);
 
-			if (overflowThisTick[lane])
-				setStateOutput (OVERFLOW_OUTPUT + lane, 10.f);
+			// Overflow is a state (currently more distinct pitches want this lane than it has
+			// channels for), not a one-shot event - gate and light just mirror it directly.
+			setStateOutput (OVERFLOW_OUTPUT + lane, overflowThisTick[lane] ? 10.f : 0.f);
+			setStateLight  (OVERFLOW_LIGHT  + lane, overflowThisTick[lane] ? 255.f : 0.f);
 		}
 	}
 	/**
@@ -388,49 +412,61 @@ struct LanesWidget : ModuleWidget
 	LanesWidget(Lanes *module)
 	{
 		setModule(module);
-		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/LanesWork.svg")));
+		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/LanesOrange.svg")));
 
 		if (module)
 		{
 			SvgPanel *brightPanel = new SvgPanel();
-			brightPanel->setBackground(APP->window->loadSvg(asset::plugin(pluginInstance, "res/LanesWork.svg")));
+			brightPanel->setBackground(APP->window->loadSvg(asset::plugin(pluginInstance, "res/LanesBright.svg")));
 			brightPanel->visible = false;
 			module->brightPanel = brightPanel;
 			addChild(brightPanel);
 			SvgPanel *darkPanel = new SvgPanel();
-			darkPanel->setBackground(APP->window->loadSvg(asset::plugin(pluginInstance, "res/LanesWork.svg")));
+			darkPanel->setBackground(APP->window->loadSvg(asset::plugin(pluginInstance, "res/LanesDark.svg")));
 			darkPanel->visible = false;
 			module->darkPanel = darkPanel;
 			addChild(darkPanel);
 		}
 
+		/*
+			Jack centers below are measured directly from the "Controls" layer of res/LanesWork.svg
+			(4 blocks x 4 columns x 8 rows), so the widget lines up exactly with the panel art.
+			These are already true jack centers, so calculateCoordinates() is called with a 0 offset.
+		*/
+		static const float ROW0_Y     = 21.845226f;
+		static const float ROW_PITCH  = 13.208002f;
+		static const float COL_PITCH  = 9.398000f;
+		static const float INPUT_BLOCK_X[2]  = { 7.112002f, 48.514002f };
+		static const float OUTPUT_BLOCK_X[2] = { 90.932002f, 132.588001f };
+
 		// Input blocks: Sources 1-8 (block 0) and Sources 9-16 (block 1)
 		for (int block = 0; block < 2; block++)
 		{
-			float blockX = 8.f + block * 40.f;
+			float blockX = INPUT_BLOCK_X[block];
 			for (int row = 0; row < 8; row++)
 			{
 				int source = block * 8 + row;
-				float y = 16.f + row * 12.f;
-				addInput (createInputCentered<PJ301MPort> (calculateCoordinates (blockX + 0.f * 8.f, y, OFFSET_PJ301MPort), module, VOCT_IN_INPUT + source));
-				addInput (createInputCentered<PJ301MPort> (calculateCoordinates (blockX + 1.f * 8.f, y, OFFSET_PJ301MPort), module, GATE_IN_INPUT + source));
-				addInput (createInputCentered<PJ301MPort> (calculateCoordinates (blockX + 2.f * 8.f, y, OFFSET_PJ301MPort), module, VEL_IN_INPUT  + source));
-				addInput (createInputCentered<PJ301MPort> (calculateCoordinates (blockX + 3.f * 8.f, y, OFFSET_PJ301MPort), module, LANE_IN_INPUT + source));
+				float y = ROW0_Y + row * ROW_PITCH;
+				addInput (createInputCentered<PJ301MPort> (calculateCoordinates (blockX + 0.f * COL_PITCH, y, 0.f), module, VOCT_IN_INPUT + source));
+				addInput (createInputCentered<PJ301MPort> (calculateCoordinates (blockX + 1.f * COL_PITCH, y, 0.f), module, GATE_IN_INPUT + source));
+				addInput (createInputCentered<PJ301MPort> (calculateCoordinates (blockX + 2.f * COL_PITCH, y, 0.f), module, VEL_IN_INPUT  + source));
+				addInput (createInputCentered<PJ301MPort> (calculateCoordinates (blockX + 3.f * COL_PITCH, y, 0.f), module, LANE_IN_INPUT + source));
 			}
 		}
 
 		// Output blocks: Lanes 1-8 (block 0) and Lanes 9-16 (block 1)
 		for (int block = 0; block < 2; block++)
 		{
-			float blockX = 88.f + block * 40.f;
+			float blockX = OUTPUT_BLOCK_X[block];
 			for (int row = 0; row < 8; row++)
 			{
 				int lane = block * 8 + row;
-				float y = 16.f + row * 12.f;
-				addOutput (createOutputCentered<PJ301MPort> (calculateCoordinates (blockX + 0.f * 8.f, y, OFFSET_PJ301MPort), module, VOCT_OUT_OUTPUT + lane));
-				addOutput (createOutputCentered<PJ301MPort> (calculateCoordinates (blockX + 1.f * 8.f, y, OFFSET_PJ301MPort), module, GATE_OUT_OUTPUT + lane));
-				addOutput (createOutputCentered<PJ301MPort> (calculateCoordinates (blockX + 2.f * 8.f, y, OFFSET_PJ301MPort), module, VEL_OUT_OUTPUT  + lane));
-				addOutput (createOutputCentered<PJ301MPort> (calculateCoordinates (blockX + 3.f * 8.f, y, OFFSET_PJ301MPort), module, OVERFLOW_OUTPUT + lane));
+				float y = ROW0_Y + row * ROW_PITCH;
+				addOutput (createOutputCentered<PJ301MPort> (calculateCoordinates (blockX + 0.f * COL_PITCH, y, 0.f), module, VOCT_OUT_OUTPUT + lane));
+				addOutput (createOutputCentered<PJ301MPort> (calculateCoordinates (blockX + 1.f * COL_PITCH, y, 0.f), module, GATE_OUT_OUTPUT + lane));
+				addOutput (createOutputCentered<PJ301MPort> (calculateCoordinates (blockX + 2.f * COL_PITCH, y, 0.f), module, VEL_OUT_OUTPUT  + lane));
+				addOutput (createOutputCentered<PJ301MPort> (calculateCoordinates (blockX + 3.f * COL_PITCH, y, 0.f), module, OVERFLOW_OUTPUT + lane));
+				addChild  (createLightCentered<LargeLight<RedLight>> (calculateCoordinates (blockX + 3.f * COL_PITCH, y, 0.f), module, OVERFLOW_LIGHT + lane));
 			}
 		}
 
