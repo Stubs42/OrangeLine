@@ -5,7 +5,7 @@
    viewBox="0 0 168.0 128.5"
    version="1.1"
    id="svg_root"
-   sodipodi:docname="LanesWork.svg"
+   sodipodi:docname="LanesOrange.svg"
    inkscape:version="1.4.4 (dcaf3e7, 2026-05-05)"
    xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
    xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
@@ -904,7 +904,7 @@
      inkscape:groupmode="layer"
      id="g870"
      inkscape:label="TextOrange"
-     style="display:none"
+     style="display:inline"
      sodipodi:insensitive="true">
     <text
        xml:space="preserve"
@@ -922,7 +922,7 @@
      inkscape:groupmode="layer"
      id="layer3"
      inkscape:label="TextWork"
-     style="display:inline"
+     style="display:none"
      sodipodi:insensitive="true">
     <text
        xml:space="preserve"
@@ -1177,7 +1177,7 @@
      inkscape:groupmode="layer"
      id="layer1"
      inkscape:label="Controls"
-     style="display:inline"
+     style="display:none"
      sodipodi:insensitive="true">
     <g
        id="g14"

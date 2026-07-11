@@ -5,7 +5,7 @@
    viewBox="0 0 168.0 128.5"
    version="1.1"
    id="svg_root"
-   sodipodi:docname="LanesWork.svg"
+   sodipodi:docname="LanesBright.svg"
    inkscape:version="1.4.4 (dcaf3e7, 2026-05-05)"
    xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
    xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
@@ -394,7 +394,7 @@
      inkscape:label="BackgroundBright"
      inkscape:groupmode="layer"
      id="g2"
-     style="display:none;fill:#202020;fill-opacity:1;stroke:#e6e6e6;stroke-opacity:1"
+     style="display:inline;fill:#202020;fill-opacity:1;stroke:#e6e6e6;stroke-opacity:1"
      sodipodi:insensitive="true">
     <rect
        x="0"
@@ -411,7 +411,7 @@
      inkscape:groupmode="layer"
      id="g910"
      inkscape:label="PanelBright"
-     style="display:none"
+     style="display:inline"
      sodipodi:insensitive="true">
     <path
        id="path894"
@@ -552,7 +552,7 @@
      inkscape:groupmode="layer"
      id="g872"
      inkscape:label="TextBright"
-     style="display:none"
+     style="display:inline"
      sodipodi:insensitive="true">
     <text
        xml:space="preserve"
@@ -746,7 +746,7 @@
      inkscape:label="BackgroundOrange"
      inkscape:groupmode="layer"
      id="layer_background"
-     style="display:inline;fill:#15152b;fill-opacity:1"
+     style="display:none;fill:#15152b;fill-opacity:1"
      sodipodi:insensitive="true">
     <rect
        x="0"
@@ -763,7 +763,7 @@
      inkscape:groupmode="layer"
      id="layer2"
      inkscape:label="PanelOrange"
-     style="display:inline"
+     style="display:none"
      sodipodi:insensitive="true">
     <path
        style="display:inline;opacity:0.98;fill:none;fill-opacity:1;stroke:#ff6600;stroke-width:0.3;stroke-linecap:round;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1"
@@ -922,7 +922,7 @@
      inkscape:groupmode="layer"
      id="layer3"
      inkscape:label="TextWork"
-     style="display:inline"
+     style="display:none"
      sodipodi:insensitive="true">
     <text
        xml:space="preserve"
@@ -1177,7 +1177,7 @@
      inkscape:groupmode="layer"
      id="layer1"
      inkscape:label="Controls"
-     style="display:inline"
+     style="display:none"
      sodipodi:insensitive="true">
     <g
        id="g14"
