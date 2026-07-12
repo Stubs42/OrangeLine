@@ -748,3 +748,47 @@ VEL output [polyphonic]: The processed velocity (split, rescaled and curved, bef
 ### Right Click Menu
 
 Unipolar Curve: If set, SHAPE is read as unipolar 0-10V (as MIDI CC delivers it) instead of bipolar [-5:+5], and remapped accordingly.
+
+## CC2CV
+
+<p align="center"><img src="res/CC2CVWork.svg"></p>
+
+### Short Description
+
+CC2CV receives MIDI CC messages and outputs them as CV, covering the entire 0-127 CC range in a single module. Unlike VCV Core's MIDI-CC module, which exposes 16 individually MIDI-learnable monophonic rows, CC2CV uses a fixed, non-learnable mapping across 8 polyphonic outputs of 16 channels each: channel c of output bank N always corresponds to CC number `N*16+c` (bank 1 = CC 0-15, bank 2 = CC 16-31, and so on up to bank 8 = CC 112-127). The 8 output jacks are arranged in a circle on the panel and wired clockwise starting at the top, so the banks advance clockwise around the ring.
+
+Each CC's raw 7 bit value (0-127) is scaled to 0-10V. By default the stepped 7 bit resolution is smoothed into a continuous CV (exponential filter, snaps instantly on large jumps so MIDI buttons still feel immediate) - this can be turned off in the right click menu. The last known value of every CC is remembered and restored on patch reload, so you don't have to touch the physical controller again after reopening a patch.
+
+### The Panel
+
+MIDI Display: Driver/device/channel selector for the MIDI input to receive from.
+
+CC 0-15 .. CC 112-127 outputs [polyphonic, 8x]: arranged clockwise from the top of the ring. Bank N's 16 channels carry CC N*16 through N*16+15 as 0-10V.
+
+### Right Click Menu
+
+Smooth CC: If set (default), CC values are smoothed with an exponential filter instead of stepping in raw 7 bit increments.
+
+## CV2CC
+
+<p align="center"><img src="res/CV2CCWork.svg"></p>
+
+### Short Description
+
+CV2CC is the reverse of CC2CV: it sends CV as MIDI CC messages, again covering the entire 0-127 CC range in a single module via 8 polyphonic inputs of 16 channels each, with the same fixed mapping (channel c of input bank N = CC number `N*16+c`), arranged in the same clockwise-from-top ring as CC2CV. No MIDI learn - the mapping is always fixed.
+
+Each channel's 0-10V CV is converted to a 7 bit CC value (0-127) and sent as a MIDI Control Change message, but only when that CC's value actually changed since the last time it was sent, and rate-limited to at most 200 updates per second overall - both to avoid flooding the MIDI output if many CCs are modulated at once. A disconnected input bank, or channels beyond what a connected poly cable actually carries, are treated as 0V.
+
+FORCE (trigger input) and FLUSH (panel button) both do the same thing: force every one of the 128 CCs to be resent on the next update, bypassing the change-detection - useful to resync an external device or DAW without having to wobble a CV to fake a change. The same thing happens automatically once, the first time the module processes after being added to a patch or right click Initialized.
+
+### The Panel
+
+MIDI Display: Driver/device/channel selector for the MIDI output to send to.
+
+FORCE input: Trigger to force an immediate resend of all 128 CCs.
+
+FLUSH button: Same as FORCE, as a panel button.
+
+CC 0-15 .. CC 112-127 inputs [polyphonic, 8x]: arranged clockwise from the top of the ring. Bank N's 16 channels (0-10V) are sent as CC N*16 through N*16+15.
+
+FORCE input: Trigger to force an immediate resend of all 128 CCs.

@@ -172,6 +172,26 @@
         "Utility",
         "Polyphonic"
       ]
+    },
+    {
+      "slug": "CC2CV",
+      "name": "CC2CV",
+      "description": "Receives up to 128 MIDI CCs and outputs them as 8 polyphonic CV banks of 16 channels each, fixed mapping, no MIDI learn",
+      "tags": [
+        "MIDI",
+        "Utility",
+        "Polyphonic"
+      ]
+    },
+    {
+      "slug": "CV2CC",
+      "name": "CV2CC",
+      "description": "Sends 8 polyphonic CV banks of 16 channels each as up to 128 MIDI CCs, fixed mapping, no MIDI learn",
+      "tags": [
+        "MIDI",
+        "Utility",
+        "Polyphonic"
+      ]
     }
   ]
 }

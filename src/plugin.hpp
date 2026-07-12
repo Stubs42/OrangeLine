@@ -24,6 +24,8 @@ extern Model *modelLanes;
 extern Model *modelK2C;
 extern Model *modelCC14;
 extern Model *modelD2D;
+extern Model *modelCC2CV;
+extern Model *modelCV2CC;
 // extern Model *modelTemplate;
 // extern Model *modelWidgetTest;
 

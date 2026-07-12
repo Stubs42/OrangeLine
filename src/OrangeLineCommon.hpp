@@ -22,6 +22,7 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 #include "OrangeLine.hpp"
+#include <functional>
 
 // ********************************************************************************************************************************
 /*
@@ -68,6 +69,15 @@ SvgPanel *brightPanel;
 SvgPanel *darkPanel;
 
 int idleSkip;
+
+/*
+	Optional per-module hooks for JSON data beyond the flat OL_state float array (e.g. a
+	nested json_t subtree like midi::Port::toJson()). Default nullptr - skipped, so every
+	existing module's dataToJson()/dataFromJson() behavior is unchanged. A module that needs
+	this sets the std::function in its own constructor (see CC2CV.cpp/CV2CC.cpp).
+*/
+std::function<void(json_t*)> moduleExtraDataToJson = nullptr;
+std::function<void(json_t*)> moduleExtraDataFromJson = nullptr;
 
 const char *channelNumbers[16] = {
 	"1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16"
@@ -160,12 +170,22 @@ double getRandom (OrangeLineRandom *rnd)
 	and allocates dsp::SchmittTrigger and dsp::PulsGenerator() objects as needed afterwards.
 */
 inline void initializeInstance () {
+	/*
+		A module with NUM_PARAMS+NUM_INPUTS, NUM_OUTPUTS etc. == 0 (e.g. a MIDI-only module
+		with no CV inputs or no CV outputs) makes the corresponding array below zero-length,
+		which trips GCC's -Wmemset-elt-size heuristic ("length equal to number of elements
+		without multiplication by element size") on an otherwise completely harmless
+		memset(ptr, val, 0). Silence it locally rather than for the whole file.
+	*/
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmemset-elt-size"
+
 	memset (          OL_isPoly, false, sizeof (OL_isPoly));	// Must be before initStateTypes ()!
 	memset (OL_customChangeMask,    0L, sizeof (OL_customChangeMask));	// Initialie customChangeMasks to 0s
 
 	memset (    OL_isSteadyGate, false, sizeof (OL_isSteadyGate));		// Initialize SteadyGateFlags
 	initStateTypes ();			//	Initialize state types to defaults
-	moduleInitStateTypes ();	//	Method to overwrite defaults by module specific settings 
+	moduleInitStateTypes ();	//	Method to overwrite defaults by module specific settings
 	allocateTriggers();			//	Allocate triggers and pulse generators for trigger I/O
 	moduleInitJsonConfig ();	//	Initialize json configuration like setting the json labels for json state attributes
 	moduleInitJsonCalled = true;
@@ -181,6 +201,8 @@ inline void initializeInstance () {
 	memset (  OL_inStateChangePoly, false, sizeof (OL_inStateChangePoly));
 	memset ( OL_outStateChangePoly, false, sizeof (OL_outStateChangePoly));
 	memset (   OL_wasTriggeredPoly, false, sizeof (OL_wasTriggeredPoly));
+
+#pragma GCC diagnostic pop
 	/*
 		Now we call moduleReset () to ensure that a valid json state is created before this constructor
 		returns.
@@ -760,6 +782,7 @@ json_t *dataToJson () override {
 	for (jsonIdx = 0; jsonIdx < NUM_JSONS; jsonIdx ++) {
 		json_object_set_new (rootJ, OL_jsonLabel[jsonIdx], json_real (getStateJson (jsonIdx)));
 	}
+	if (moduleExtraDataToJson) moduleExtraDataToJson (rootJ);
 	return rootJ;
 }
 
@@ -772,6 +795,7 @@ void dataFromJson (json_t *rootJ) override {
 	for (int jsonIdx = 0; jsonIdx < NUM_JSONS; jsonIdx ++)
 		if ((pJson = json_object_get (rootJ, OL_jsonLabel[jsonIdx])) != nullptr)
 			setStateJson (jsonIdx, json_real_value (pJson));
+	if (moduleExtraDataFromJson) moduleExtraDataFromJson (rootJ);
 	OL_initialized = false;		// indiacte that we have to reinitialize
 	dataFromJsonCalled = true;	// indicate that we reloaded a patch or a preset
 }
