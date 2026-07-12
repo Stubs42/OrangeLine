@@ -3,6 +3,7 @@
 enum jsonIds
 {
 	STYLE_JSON,
+	FLUSH_ON_START_JSON,
 	NUM_JSONS
 };
 

@@ -35,9 +35,16 @@ struct CV2CC : Module
 
 	midi::Output midiOutput;
 	/** Last 7 bit value actually sent per CC. Init/reset to an out-of-range sentinel (0xFF)
-		so the first tick after adding/resetting the module force-resends everything once. */
+		so the first tick after adding/resetting the module force-resends everything once,
+		unless FLUSH_ON_START_JSON is off (see needsInitialSeed below). */
 	uint8_t lastSentValues[128];
 	dsp::Timer rateLimiterTimer;
+	/** True until the first time the send loop actually runs after construction/reset. Only
+		meaningful when FLUSH_ON_START_JSON is off: instead of sending on that first pass (the
+		sentinel mismatch would otherwise force one), silently seed lastSentValues from the
+		live CV so nothing goes out until something genuinely changes. A real FORCE/FLUSH in
+		the meantime still always sends, regardless of this flag. */
+	bool needsInitialSeed = true;
 
 	CV2CC()
 	{
@@ -79,6 +86,7 @@ struct CV2CC : Module
 #pragma GCC diagnostic ignored "-Wwrite-strings"
 
 		setJsonLabel(STYLE_JSON, "style");
+		setJsonLabel(FLUSH_ON_START_JSON, "flushOnStart");
 
 #pragma GCC diagnostic pop
 	}
@@ -100,6 +108,8 @@ struct CV2CC : Module
 			lastSentValues[cc] = 0xFF;
 		midiOutput.reset();
 		rateLimiterTimer.reset();
+		needsInitialSeed = true;
+		setStateJson(FLUSH_ON_START_JSON, 1.f);
 
 		styleChanged = true;
 	}
@@ -116,6 +126,12 @@ struct CV2CC : Module
 		limiter's early return, since changeInput()/changeParam() are one-shot edge flags tied
 		to the framework's real tick cadence, not to this rate limiter - checking them after a
 		possible early return would silently drop the edge on ticks the limiter isn't due.
+
+		FLUSH_ON_START_JSON controls whether the very first send pass after construction/reset
+		behaves like a FORCE (sends every CC once, the default - matches VCV Core's CV-CC,
+		whose sentinel-init does the same) or is suppressed (silently seed lastSentValues from
+		the live CV instead of sending, so nothing goes out until something really changes -
+		useful e.g. to avoid an unwanted burst to a controller on patch load).
 	*/
 	inline void moduleProcess(const ProcessArgs &args)
 	{
@@ -135,12 +151,16 @@ struct CV2CC : Module
 		{
 			for (int cc = 0; cc < 128; cc++)
 				lastSentValues[cc] = 0xFF;
+			needsInitialSeed = false;
 		}
 
 		float elapsed = args.sampleTime * float(samplesSkipped + 1);
 		if (rateLimiterTimer.process(elapsed) < RATE_LIMITER_PERIOD)
 			return;
 		rateLimiterTimer.time -= RATE_LIMITER_PERIOD;
+
+		bool suppressInitialFlush = needsInitialSeed && getStateJson(FLUSH_ON_START_JSON) == 0.f;
+		needsInitialSeed = false;
 
 		for (int n = 0; n < 8; n++)
 		{
@@ -151,6 +171,11 @@ struct CV2CC : Module
 				int cc = n * 16 + c;
 				float raw = (c < channels) ? OL_statePoly[(CC_INPUT + n) * POLY_CHANNELS + c] : 0.f;
 				uint8_t value = (uint8_t) clamp(std::round(raw / 10.f * 127.f), 0.f, 127.f);
+				if (suppressInitialFlush)
+				{
+					lastSentValues[cc] = value;
+					continue;
+				}
 				if (value == lastSentValues[cc])
 					continue;
 				lastSentValues[cc] = value;
@@ -237,6 +262,20 @@ struct CV2CCWidget : ModuleWidget
 		}
 	};
 
+	struct CV2CCFlushOnStartItem : MenuItem
+	{
+		CV2CC *module;
+		void onAction(const event::Action &e) override
+		{
+			module->setStateJson(FLUSH_ON_START_JSON, module->getStateJson(FLUSH_ON_START_JSON) == 0.f ? 1.f : 0.f);
+		}
+		void step() override
+		{
+			if (module)
+				rightText = (module->getStateJson(FLUSH_ON_START_JSON) != 0.f) ? "✔" : "";
+		}
+	};
+
 	void appendContextMenu(Menu *menu) override
 	{
 		MenuLabel *spacerLabel = new MenuLabel();
@@ -266,6 +305,14 @@ struct CV2CCWidget : ModuleWidget
 		style3Item->module = module;
 		style3Item->style = STYLE_DARK;
 		menu->addChild(style3Item);
+
+		spacerLabel = new MenuLabel();
+		menu->addChild(spacerLabel);
+
+		CV2CCFlushOnStartItem *flushOnStartItem = new CV2CCFlushOnStartItem();
+		flushOnStartItem->module = module;
+		flushOnStartItem->text = "Flush On Start";
+		menu->addChild(flushOnStartItem);
 	}
 };
 

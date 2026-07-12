@@ -779,7 +779,7 @@ CV2CC is the reverse of CC2CV: it sends CV as MIDI CC messages, again covering t
 
 Each channel's 0-10V CV is converted to a 7 bit CC value (0-127) and sent as a MIDI Control Change message, but only when that CC's value actually changed since the last time it was sent, and rate-limited to at most 200 updates per second overall - both to avoid flooding the MIDI output if many CCs are modulated at once. A disconnected input bank, or channels beyond what a connected poly cable actually carries, are treated as 0V.
 
-FORCE (trigger input) and FLUSH (panel button) both do the same thing: force every one of the 128 CCs to be resent on the next update, bypassing the change-detection - useful to resync an external device or DAW without having to wobble a CV to fake a change. The same thing happens automatically once, the first time the module processes after being added to a patch or right click Initialized.
+FORCE (trigger input) and FLUSH (panel button) both do the same thing: force every one of the 128 CCs to be resent on the next update, bypassing the change-detection - useful to resync an external device or DAW without having to wobble a CV to fake a change. By default the same thing also happens automatically once, the first time the module processes after being added to a patch, loaded with a patch, or right click Initialized - this can be turned off in the right click menu if you'd rather nothing gets sent until something actually changes.
 
 ### The Panel
 
@@ -790,5 +790,9 @@ FORCE input: Trigger to force an immediate resend of all 128 CCs.
 FLUSH button: Same as FORCE, as a panel button.
 
 CC 0-15 .. CC 112-127 inputs [polyphonic, 8x]: arranged clockwise from the top of the ring. Bank N's 16 channels (0-10V) are sent as CC N*16 through N*16+15.
+
+### Right Click Menu
+
+Flush On Start: If set (default), every CC is force-sent once the first time the module processes after being added, loaded, or Initialized - matching VCV Core's CV-CC behavior. If unset, nothing is sent until a CV value actually changes (FORCE/FLUSH still always work regardless).
 
 FORCE input: Trigger to force an immediate resend of all 128 CCs.
