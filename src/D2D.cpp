@@ -62,6 +62,7 @@ struct D2D : Module
 #pragma GCC diagnostic ignored "-Wwrite-strings"
 
 		setJsonLabel (STYLE_JSON, "style");
+		setJsonLabel (CURVE_UNI_JSON, "unipolarCurve");
 
 #pragma GCC diagnostic pop
 	}
@@ -82,6 +83,8 @@ struct D2D : Module
 
 	void moduleReset()
 	{
+		setStateJson (CURVE_UNI_JSON, 0.f);
+
 		styleChanged = true;
 	}
 
@@ -93,8 +96,10 @@ struct D2D : Module
 		Per channel, while GATE is high and VEL > 0:
 		1. Split by VEL: > 5V is the "offset" half, <= 5V is the "scale" half.
 		2. Rescale the half the value fell into back to the full 0-10V range.
-		3. Apply the velocity curve (SHAPE, [-5:+5], 0 = linear) to the rescaled value -
-		   this result is what VEL OUT always reports, regardless of which half fired.
+		3. Apply the velocity curve to the rescaled value - this result is what VEL OUT
+		   always reports, regardless of which half fired. SHAPE is normally bipolar CV
+		   in [-5:+5] (0 = linear); the "Unipolar Curve" context menu option instead reads
+		   it as unipolar 0-10V (as MIDI CC delivers it) and remaps to [-5:+5] via -5V.
 		4. HEATOFF OUT is a plain gate (0V or 10V) for the offset half - no curve, no
 		   attenuation, "always plays" at full value when it fires.
 		   HEATSCL OUT is the curved value from step 3, further linearly scaled by
@@ -135,7 +140,12 @@ struct D2D : Module
 			float rescaled  = upperHalf ? (vel - 5.f) / 5.f * 10.f : vel / 5.f * 10.f;
 			rescaled = clamp (rescaled, 0.f, 10.f);
 
-			float shape = shapeConnected ? OL_statePoly[SHAPE_INPUT * POLY_CHANNELS + c] : 0.f;
+			float shape = shapeConnected ? 
+			  	((getStateJson(CURVE_UNI_JSON) == 0.f) ? 
+			  		OL_statePoly[SHAPE_INPUT * POLY_CHANNELS + c] :
+			  		OL_statePoly[SHAPE_INPUT * POLY_CHANNELS + c] - 5.f
+				) : 
+			  0.f;
 			float v01   = rescaled / 10.f;
 			if (shape > 0.f)
 				v01 = 1.f - pow (1.f - v01, shape + 1.f);
@@ -216,6 +226,16 @@ struct D2DWidget : ModuleWidget
 				rightText = (module != nullptr && module->OL_state[STYLE_JSON] == style) ? "✔" : "";
 		}
 	};
+	struct D2DUnipolarCurveItem : MenuItem {
+		D2D *module;
+		void onAction(const event::Action &e) override {
+			module->setStateJson(CURVE_UNI_JSON, module->getStateJson(CURVE_UNI_JSON) == 0.f ? 1.f : 0.f);
+		}
+		void step() override {
+			if (module)
+				rightText = (module != nullptr && module->getStateJson(CURVE_UNI_JSON) == 1.f) ? "✔" : "";
+		}
+	};
 
 	void appendContextMenu(Menu *menu) override
 	{
@@ -246,6 +266,16 @@ struct D2DWidget : ModuleWidget
 		style3Item->module = module;
 		style3Item->style = STYLE_DARK;
 		menu->addChild(style3Item);
+
+		spacerLabel = new MenuLabel();
+		menu->addChild(spacerLabel);
+
+		D2DUnipolarCurveItem *unipolarCurveItem = new D2DUnipolarCurveItem();
+		unipolarCurveItem->module = module;
+		unipolarCurveItem->text = "Unipolar Curve";
+		menu->addChild(unipolarCurveItem);
+
+
 	}
 };
 

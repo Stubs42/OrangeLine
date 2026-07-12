@@ -716,3 +716,35 @@ CV IN input: 14 bit CV (0-10V = 0-16383) to split.
 MSB OUT output: 7 bit MIDI CC CV (0-10V = 0-127) - most significant byte of CV IN.
 
 LSB OUT output: 7 bit MIDI CC CV (0-10V = 0-127) - least significant byte of CV IN.
+
+## D2D
+
+<p align="center"><img src="res/D2DWork.svg"></p>
+
+### Short Description
+
+D2D (DrumsToDejavu) sits between a drum sequencer and DEJAVU's HEAT section, replacing manual per-hit CV math in the patch. It's polyphonic and stateless, with a fixed 1:1 channel mapping (channel N in, channel N out, no reordering) since its inputs are expected to already come from a fixed-channel source like K2C.
+
+For each channel, while GATE is high and VEL is greater than 0V, incoming VEL is split by range: values above 5V go to the "offset" half, values at or below 5V go to the "scale" half. Whichever half the value falls into is rescaled back up to the full 0-10V range, then the velocity curve is applied (SHAPE CV, normally bipolar [-5:+5] where 0 is linear, or unipolar 0-10V as delivered by MIDI CC if the "Unipolar Curve" right click option is enabled - shape is then remapped from 0-10V to [-5:+5] by subtracting 5V). This curved value is what VEL OUT always reports, regardless of which half fired.
+
+HEATOFF OUT is a plain 0V/10V gate for the "offset" half - no curve, no attenuation, it outputs 10V whenever velocity input is greater than 5V. HEATSCL OUT is the curved value from the "scale" half, further linearly scaled by ATTEN - only this half gets attenuated. In the typical patch, HEATOFF OUT and HEATSCL OUT feed DEJAVU's HEAT OFFSET and HEAT SCALE inputs directly.
+
+### The Panel
+
+GATE input [polyphonic]: Gate from the drum sequencer.
+
+VEL input [polyphonic]: Velocity from the drum sequencer.
+
+ATTEN input [polyphonic]: Heat scale attenuation, linearly scales HEATSCL OUT.
+
+HEATOFF output [polyphonic]: Plain gate (0V/10V) for velocities above 5V, intended for DEJAVU's HEAT OFFSET input.
+
+HEATSCL output [polyphonic]: Curved and attenuated CV for velocities at or below 5V, intended for DEJAVU's HEAT SCALE input.
+
+SHAPE input [polyphonic]: Velocity curve shape, bipolar [-5:+5] (0 = linear) by default, or unipolar 0-10V if "Unipolar Curve" is enabled in the right click menu.
+
+VEL output [polyphonic]: The processed velocity (split, rescaled and curved, before any heat attenuation), for use as the actual note velocity elsewhere in the patch.
+
+### Right Click Menu
+
+Unipolar Curve: If set, SHAPE is read as unipolar 0-10V (as MIDI CC delivers it) instead of bipolar [-5:+5], and remapped accordingly.

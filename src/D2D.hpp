@@ -3,6 +3,8 @@
 enum jsonIds
 {
 	STYLE_JSON,
+	CURVE_UNI_JSON,
+	
 	NUM_JSONS
 };
 
