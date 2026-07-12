@@ -1286,13 +1286,13 @@
      borderopacity="1.0"
      inkscape:pageopacity="0.0"
      inkscape:pageshadow="2"
-     inkscape:zoom="5.6568542"
-     inkscape:cx="27.223611"
-     inkscape:cy="59.220193"
+     inkscape:zoom="2"
+     inkscape:cx="39"
+     inkscape:cy="290.5"
      inkscape:document-units="mm"
-     inkscape:current-layer="g2318"
+     inkscape:current-layer="g5758"
      inkscape:document-rotation="0"
-     showgrid="true"
+     showgrid="false"
      inkscape:snap-bbox="true"
      inkscape:bbox-paths="true"
      inkscape:bbox-nodes="true"
@@ -1325,72 +1325,7 @@
        dotted="false"
        snapvisiblegridlinesonly="true"
        originx="0"
-       visible="true" />
-    <sodipodi:guide
-       position="7.6200002,83.818492"
-       orientation="1,0"
-       id="guide1553"
-       inkscape:locked="false" />
-    <sodipodi:guide
-       position="15.748,41.376751"
-       orientation="0,-1"
-       id="guide1555"
-       inkscape:locked="false" />
-    <sodipodi:guide
-       position="16.51,15.97675"
-       orientation="0,-1"
-       id="guide1645"
-       inkscape:locked="false" />
-    <sodipodi:guide
-       position="4.3180001,112.24275"
-       orientation="0,-1"
-       id="guide1730"
-       inkscape:locked="false" />
-    <sodipodi:guide
-       position="3.0480001,99.542752"
-       orientation="0,-1"
-       id="guide1780"
-       inkscape:locked="false" />
-    <sodipodi:guide
-       position="17.526,28.676751"
-       orientation="0,-1"
-       id="guide1861"
-       inkscape:locked="false" />
-    <sodipodi:guide
-       position="8.8900002,53.822751"
-       orientation="0,-1"
-       id="guide1863"
-       inkscape:locked="false" />
-    <sodipodi:guide
-       position="1.27,120.37075"
-       orientation="-0.70710678,-0.70710678"
-       id="guide1"
-       inkscape:locked="false" />
-    <sodipodi:guide
-       position="7.6200002,114.02075"
-       orientation="0.70710678,-0.70710678"
-       id="guide2"
-       inkscape:locked="false" />
-    <sodipodi:guide
-       position="1.7780001,101.57475"
-       orientation="-0.70710678,-0.70710678"
-       id="guide3"
-       inkscape:locked="false" />
-    <sodipodi:guide
-       position="24.384001,55.34675"
-       orientation="0,-1"
-       id="guide4"
-       inkscape:locked="false" />
-    <sodipodi:guide
-       position="1.27,56.61675"
-       orientation="0.70710678,-0.70710678"
-       id="guide5"
-       inkscape:locked="false" />
-    <sodipodi:guide
-       position="7.8740003,62.712751"
-       orientation="-0.70710678,-0.70710678"
-       id="guide6"
-       inkscape:locked="false" />
+       visible="false" />
   </sodipodi:namedview>
   <metadata
      id="metadata20336">
@@ -1441,7 +1376,7 @@
        inkscape:connector-curvature="0"
        id="path50"
        d="m 3.0492473,117.11912 c 0,0.79375 0.476247,1.27 1.269994,1.27 l 6.6039657,-4e-5 c 0.793744,0 1.269991,-0.47621 1.269991,-1.26996 v -6.604 c 0,-0.79375 -0.555657,-1.28197 -1.349391,-1.28588 l -6.4452157,-0.0318 c -0.793737,-0.004 -1.349344,0.52393 -1.349344,1.31768 z"
-       style="display:inline;opacity:1;vector-effect:none;fill:#606080;fill-opacity:0.980392;stroke:#606080;stroke-width:0.25;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:0.980392" />
+       style="display:inline;opacity:1;vector-effect:none;fill:#808094;fill-opacity:0.980392;stroke:#606080;stroke-width:0.25;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:0.980392" />
     <path
        id="path51"
        style="display:inline;opacity:0.997;fill:none;fill-opacity:1;stroke:#606080;stroke-width:0.299998;stroke-linecap:round;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:0.980392"
@@ -1455,13 +1390,13 @@
        inkscape:connector-curvature="0"
        id="path52"
        d="m 3.048025,102.1331 c 0,0.79375 0.476247,1.27 1.269994,1.27 l 6.603965,-4e-5 c 0.793744,0 1.269991,-0.47621 1.269991,-1.26996 v -6.603997 c 0,-0.79375 -0.555657,-1.28197 -1.349391,-1.28588 l -6.445215,-0.0318 c -0.793737,-0.004 -1.349344,0.52393 -1.349344,1.31768 z"
-       style="display:inline;opacity:1;vector-effect:none;fill:#606080;fill-opacity:0.980392;stroke:#606080;stroke-width:0.25;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:0.980392" />
+       style="display:inline;opacity:1;vector-effect:none;fill:#808094;fill-opacity:0.980392;stroke:#606080;stroke-width:0.25;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:0.980392" />
     <path
        sodipodi:nodetypes="sccccssss"
        inkscape:connector-curvature="0"
        id="path53"
        d="m 3.0492471,87.401125 c 0,0.79375 0.476247,1.27 1.269994,1.27 l 6.6039659,-4e-5 c 0.793744,0 1.269991,-0.47621 1.269991,-1.26996 v -6.604 c 0,-0.79375 -0.555657,-1.28197 -1.349391,-1.28588 l -6.4452159,-0.0318 c -0.793737,-0.004 -1.349344,0.52393 -1.349344,1.31768 z"
-       style="display:inline;opacity:1;vector-effect:none;fill:#606080;fill-opacity:0.980392;stroke:#606080;stroke-width:0.25;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:0.980392" />
+       style="display:inline;opacity:1;vector-effect:none;fill:#808094;fill-opacity:0.980392;stroke:#606080;stroke-width:0.25;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:0.980392" />
     <path
        id="path54"
        style="display:inline;opacity:0.997;fill:none;fill-opacity:1;stroke:#606080;stroke-width:0.299998;stroke-linecap:round;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:0.980392"
@@ -1695,7 +1630,8 @@
      inkscape:groupmode="layer"
      id="g2318"
      inkscape:label="TextOrange"
-     style="display:none">
+     style="display:none"
+     sodipodi:insensitive="true">
     <path
        id="text20"
        style="font-weight:bold;font-size:3.52777px;line-height:1.25;font-family:'Roboto Condensed';-inkscape-font-specification:'Roboto Condensed, Bold';letter-spacing:0px;word-spacing:0px;fill:#ff6600;stroke-width:0.264583"
