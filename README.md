@@ -785,7 +785,7 @@ Each channel's 0-10V CV is converted to a 7 bit CC value (0-127) and sent as a M
 
 FORCE (trigger input) and FLUSH (panel button) both do the same thing: force every one of the 128 CCs to be resent on the next update, bypassing the change-detection - useful to resync an external device or DAW without having to wobble a CV to fake a change. By default the same thing also happens automatically once, the first time the module processes after being added to a patch, loaded with a patch, or right click Initialized - this can be turned off in the right click menu if you'd rather nothing gets sent until something actually changes.
 
-The CC grid lets you click any of the 128 cells (16 columns x 8 rows, cell = CC row*16+column) to enable or disable that CC individually, or click and drag to paint the same on/off state across every cell the drag passes over - a disabled CC is never sent, no matter what the CV does or whether FORCE/FLUSH fires, so unused CCs don't pollute the outgoing MIDI stream. Re-enabling a CC immediately resends its current value on the next update rather than waiting for a change. Cell brightness flashes green whenever a CC is actually transmitted (so a disabled cell, shown in black, never flashes), doubling as a live send-activity display. The on/off mask is remembered across patch reload.
+The CC grid lets you click any of the 128 cells (16 columns x 8 rows, cell = CC row*16+column) to enable or disable that CC individually, or click and drag to paint the same on/off state across every cell the drag passes over - a disabled CC is never sent, no matter what the CV does or whether FORCE/FLUSH fires, so unused CCs don't pollute the outgoing MIDI stream. Re-enabling a CC immediately resends its current value on the next update rather than waiting for a change. Cell brightness flashes whenever the CC's value changes - green if enabled (a message was just sent), a muted red if disabled (nothing was sent, but the value is still moving), so you can tell a muted CC is still doing something even though it's never transmitted. The on/off mask is remembered across patch reload.
 
 ### The Panel
 
@@ -795,7 +795,7 @@ FORCE input: Trigger to force an immediate resend of all 128 CCs.
 
 FLUSH button: Same as FORCE, as a panel button.
 
-CC Grid: 16x8 grid, one cell per CC, click to enable/disable, click and drag to paint the same on/off state across every cell the mouse passes over. Blue = enabled, black = disabled; green flash = a message was just sent for that CC (only ever shows on enabled cells, since disabled ones are never sent). Disabled CCs are never sent, no matter what the CV does.
+CC Grid: 16x8 grid, one cell per CC, click to enable/disable, click and drag to paint the same on/off state across every cell the mouse passes over. Blue = enabled, black = disabled; green flash = a message was just sent, red flash = the CV changed but nothing was sent because the CC is disabled. Disabled CCs are never sent, no matter what the CV does.
 
 CC 0-15 .. CC 112-127 inputs [polyphonic, 8x]: arranged clockwise from the top of the ring. Bank N's 16 channels (0-10V) are sent as CC N*16 through N*16+15.
 
@@ -803,4 +803,37 @@ CC 0-15 .. CC 112-127 inputs [polyphonic, 8x]: arranged clockwise from the top o
 
 Flush On Start: If set (default), every CC is force-sent once the first time the module processes after being added, loaded, or Initialized - matching VCV Core's CV-CC behavior. If unset, nothing is sent until a CV value actually changes (FORCE/FLUSH still always work regardless).
 
-FORCE input: Trigger to force an immediate resend of all 128 CCs.
+## RECALL
+
+<p align="center"><img src="res/RecallWork.svg"></p>
+
+### Short Description
+
+RECALL combines CC2CV's MIDI receive and CV2CC's MIDI send into a single module (its own MIDI IN/OUT, no separate CC2CV/CV2CC instances needed) and gates the bidirectional connection (e.g. to touchOSC) so it stays receive-only during normal operation, avoiding MIDI feedback loops - and only pushes Rack's own data back out as a deliberate sync burst, on demand or once at startup.
+
+Internally it's a simple chain: MIDI IN -> Hold1 -> RX OUT (to the rest of the patch) -> optional external Infix -> TX IN -> Hold2 (snapshots on every sync) -> TX OUT (always shows Hold2's snapshot) -> optional external Infix -> RX IN (overrides what's sent) -> MIDI OUT. There are 8 banks of 16 channels each (same fixed CC mapping as CC2CV/CV2CC: channel c of bank N = CC N*16+c), each with 4 ports:
+
+- **RX IN**: normally unconnected. Overrides, per channel, what the embedded MIDI-send stage actually sends - when unconnected, it sends Hold2's snapshot instead. Patch an external Infix here (typically tapping TX OUT) to inject continuous live data outside of a sync.
+- **RX OUT**: to the rest of the patch. Tracks the incoming MIDI live while not syncing; freezes at its last value while syncing, so the patch doesn't react to a controller that's still catching up mid-sync.
+- **TX IN**: optional override for Hold2's snapshot source. If a cable is connected on a sync's rising edge, Hold2 snapshots that value instead of RX OUT's current (about-to-freeze) value - useful for resetting specific CCs to a patch-calculated default on every sync.
+- **TX OUT**: always shows Hold2's snapshot (regardless of the TX grid's mute state, so an external tap/Infix still sees the true value even when muted).
+
+"Syncing" is true whenever GATE IN is high, SYNC is held, or the (optional) autosync-on-start window is active - these are all level-gates, not one-shot triggers, so a sync lasts for exactly as long as whatever's driving it stays asserted. GATE IN/SYNC have a dual function: besides gating Hold1/Hold2 as above, the *rising edge* of syncing also force-resends every CC via the embedded MIDI OUT - Hold2 takes its fresh snapshot first, then the resend is forced, so the guaranteed full resend actually carries the new snapshot rather than stale values from before the sync.
+
+No built-in send/receive bus beyond the RX IN/TX IN override points above - to tap or inject elsewhere in a large patch, use an external module like Stoermelder-P1's Infix.
+
+Like CC2CV/CV2CC, RECALL has two CC grids for muting individual CCs (16 columns x 8 rows, cell = CC row*16+column, click or click-drag to paint): the RX grid mutes what reaches RX OUT (forced to 0V when disabled, regardless of what's still being received - like CC2CV's own grid), the TX grid mutes whether a CC is actually sent by the embedded MIDI OUT (like CV2CC's own grid - TX OUT's jack itself is unaffected). Both grids flash activity (green if enabled, muted red if disabled) whenever the underlying value changes, so a muted CC's ongoing traffic stays visible on either side. Both masks are remembered across patch reload, along with Hold1's and Hold2's held values and the MIDI device selections - all packed compactly (one byte per CC, base64-encoded) rather than as 128 individual JSON numbers, since `dataToJson()` runs fairly often (autosave, undo/redo history).
+
+### The Panel
+
+Two MIDI interface widgets sit at the top (MIDI IN on the left, MIDI OUT on the right), each with the usual driver/device/channel selection. RX IN sits on the right-hand ring (styled to match a CV2CC-type input ring, since it feeds the MIDI-send stage), RX OUT on the left-hand ring (toward the rest of the patch). TX IN and TX OUT are the two middle columns (TX IN left, TX OUT right of it, both read top-to-bottom for banks 0-7).
+
+GATE input: External sync/force-resend gate - see "Syncing" above.
+
+SYNC button: Same dual function as GATE input, held with the mouse.
+
+RX Grid, TX Grid: 16x8 grids for muting individual CCs on the receive/send side respectively - see above.
+
+### Right Click Menu
+
+Autosync On Start: If set (default), the module forces a sync for a short fixed window (0.5s) the first time it processes after being added, loaded, or Initialized - independent of GATE IN/SYNC.

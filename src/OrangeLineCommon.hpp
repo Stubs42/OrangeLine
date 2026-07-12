@@ -79,6 +79,15 @@ int idleSkip;
 std::function<void(json_t*)> moduleExtraDataToJson = nullptr;
 std::function<void(json_t*)> moduleExtraDataFromJson = nullptr;
 
+/*
+	Opt-in: if set to a jsonIds value in the module's own constructor, the generic per-jsonId
+	loop below stops at that index instead of NUM_JSONS, leaving everything from there on for
+	moduleExtraDataToJson/FromJson to handle itself (e.g. a large poly-range of STORE_JSON-style
+	slots, packed compactly instead of one json_real()/json_boolean() per slot). Default -1
+	means "no skip" - every module that doesn't set this is completely unaffected.
+*/
+int OL_jsonSkipFrom = -1;
+
 const char *channelNumbers[16] = {
 	"1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16"
 };
@@ -779,7 +788,8 @@ json_t *dataToJson () override {
 	json_t *rootJ = json_object ();
 	if (!moduleInitJsonCalled) return rootJ;
 	int jsonIdx;
-	for (jsonIdx = 0; jsonIdx < NUM_JSONS; jsonIdx ++) {
+	int jsonLoopEnd = (OL_jsonSkipFrom >= 0) ? OL_jsonSkipFrom : NUM_JSONS;
+	for (jsonIdx = 0; jsonIdx < jsonLoopEnd; jsonIdx ++) {
 		json_object_set_new (rootJ, OL_jsonLabel[jsonIdx], json_real (getStateJson (jsonIdx)));
 	}
 	if (moduleExtraDataToJson) moduleExtraDataToJson (rootJ);
@@ -792,7 +802,8 @@ json_t *dataToJson () override {
 void dataFromJson (json_t *rootJ) override {
 	if (!moduleInitJsonCalled) return;
 	json_t *pJson;
-	for (int jsonIdx = 0; jsonIdx < NUM_JSONS; jsonIdx ++)
+	int jsonLoopEnd = (OL_jsonSkipFrom >= 0) ? OL_jsonSkipFrom : NUM_JSONS;
+	for (int jsonIdx = 0; jsonIdx < jsonLoopEnd; jsonIdx ++)
 		if ((pJson = json_object_get (rootJ, OL_jsonLabel[jsonIdx])) != nullptr)
 			setStateJson (jsonIdx, json_real_value (pJson));
 	if (moduleExtraDataFromJson) moduleExtraDataFromJson (rootJ);

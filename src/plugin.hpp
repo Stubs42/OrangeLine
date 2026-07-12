@@ -26,6 +26,7 @@ extern Model *modelCC14;
 extern Model *modelD2D;
 extern Model *modelCC2CV;
 extern Model *modelCV2CC;
+extern Model *modelRECALL;
 // extern Model *modelTemplate;
 // extern Model *modelWidgetTest;
 

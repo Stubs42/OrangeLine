@@ -59,6 +59,9 @@ struct CV2CC : Module
 	/** Per-CC 0-1 activity level for the grid's live traffic display, decayed every tick.
 		Only set when a CC is actually sent (so a disabled CC never flashes). Not persisted. */
 	float ccActivity[128];
+	/** Current incoming 0-10V value per CC (pre-mute - this is the same value the grid's cell
+		color is based on), so a muted CC's live input value still shows. Not persisted. */
+	float ccCvValue[128];
 
 	CV2CC()
 	{
@@ -68,6 +71,7 @@ struct CV2CC : Module
 			ccEnabled[cc] = true;
 			ccWasEnabled[cc] = true;
 			ccActivity[cc] = 0.f;
+			ccCvValue[cc] = 0.f;
 		}
 
 		moduleExtraDataToJson = [this](json_t *rootJ)
@@ -143,6 +147,7 @@ struct CV2CC : Module
 			ccEnabled[cc] = true;
 			ccWasEnabled[cc] = true;
 			ccActivity[cc] = 0.f;
+			ccCvValue[cc] = 0.f;
 		}
 		midiOutput.reset();
 		rateLimiterTimer.reset();
@@ -217,17 +222,32 @@ struct CV2CC : Module
 
 				ccActivity[cc] = std::max(0.f, ccActivity[cc] - CC_ACTIVITY_DECAY);
 
-				if (!ccEnabled[cc])
-					continue;
-
 				float raw = (c < channels) ? OL_statePoly[(CC_INPUT + n) * POLY_CHANNELS + c] : 0.f;
 				uint8_t value = (uint8_t) clamp(std::round(raw / 10.f * 127.f), 0.f, 127.f);
+				ccCvValue[cc] = raw;
+
 				if (suppressInitialFlush)
 				{
 					lastSentValues[cc] = value;
 					continue;
 				}
-				if (value == lastSentValues[cc])
+
+				bool changed = (value != lastSentValues[cc]);
+
+				if (!ccEnabled[cc])
+				{
+					// Never send while disabled, but still track/flash activity (in red, via
+					// the grid's color scheme) so a muted CC's ongoing traffic stays visible -
+					// same idea as CC2CV showing activity on disabled input CCs.
+					if (changed)
+					{
+						lastSentValues[cc] = value;
+						ccActivity[cc] = 1.f;
+					}
+					continue;
+				}
+
+				if (!changed)
 					continue;
 				lastSentValues[cc] = value;
 				ccActivity[cc] = 1.f;
@@ -283,7 +303,7 @@ struct CV2CCWidget : ModuleWidget
 		addChild(display);
 
 		CCGridWidget *grid = CCGridWidget::create(calculateCoordinates(3.556f, 42.849f, 0.f), mm2px(Vec(43.688f, 22.0f)),
-			module ? &module->ccEnabled[0] : NULL, module ? &module->ccActivity[0] : NULL);
+			module ? &module->ccEnabled[0] : NULL, module ? &module->ccActivity[0] : NULL, module ? &module->ccCvValue[0] : NULL);
 		addChild(grid);
 
 		addInput(createInputCentered<PJ301MPort>(calculateCoordinates(42.672f, 72.899f, 0.f), module, FORCE_INPUT));

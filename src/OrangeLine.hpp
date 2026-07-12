@@ -380,9 +380,12 @@ struct TextWidget : TransparentWidget {
 #define NUM_CC_COLS 16
 #define NUM_CC_ROWS 8
 
-// Grid cell colors: on/off base color plus a distinct activity-flash color for each state,
+// Grid cell colors: enabled base is a value-dependent gradient (dark orange at 0V, bright
+// orange at 10V - still visibly orange-tinted rather than gray at 0V, so it stays distinct
+// from GRID_OFF's neutral near-black), plus a distinct activity-flash color for each state,
 // so a muted (disabled) CC's traffic reads unmistakably differently from an active one's.
-#define GRID_ON        nvgRGB ( 60, 130, 230)	// enabled base: blue
+#define GRID_ON_LOW    nvgRGB ( 80,  40,   5)	// enabled base @ 0V: dark orange
+#define GRID_ON_HIGH   nvgRGB (255, 130,  40)	// enabled base @ 10V: bright orange, not blown out
 #define GRID_ON_ACT    nvgRGB ( 70, 220, 120)	// enabled + activity flash: green
 #define GRID_OFF       nvgRGB ( 30,  30,  30)	// disabled base: near black
 #define GRID_OFF_ACT   nvgRGB (200,  70,  70)	// disabled + activity flash: muted red (not full ff0000)
@@ -391,13 +394,15 @@ struct CCGridWidget : OpaqueWidget {
 
 	bool  *enabled  = nullptr;	// pointer to module's bool[128], toggled on click
 	float *activity = nullptr;	// pointer to module's float[128], 0-1, read only here
+	float *value    = nullptr;	// pointer to module's float[128], 0-10V, read only here
 
-	static CCGridWidget* create (Vec pos, Vec size, bool *enabled, float *activity) {
+	static CCGridWidget* create (Vec pos, Vec size, bool *enabled, float *activity, float *value = nullptr) {
 		CCGridWidget *w = new CCGridWidget ();
 		w->box.pos  = pos;
 		w->box.size = size;
 		w->enabled  = enabled;
 		w->activity = activity;
+		w->value    = value;
 		return w;
 	}
 
@@ -446,7 +451,13 @@ struct CCGridWidget : OpaqueWidget {
 				float y = row * ch;
 				float pad = fminf (cw, ch) * 0.08f;
 
-				NVGcolor base = enabled[cc] ? GRID_ON : GRID_OFF;
+				NVGcolor base;
+				if (enabled[cc]) {
+					float v = value ? clamp (value[cc] / 10.f, 0.f, 1.f) : 0.f;
+					base = nvgLerpRGBA (GRID_ON_LOW, GRID_ON_HIGH, v);
+				} else {
+					base = GRID_OFF;
+				}
 				NVGcolor activityColor = enabled[cc] ? GRID_ON_ACT : GRID_OFF_ACT;
 				float act = activity ? clamp (activity[cc], 0.f, 1.f) : 0.f;
 				NVGcolor fill = nvgLerpRGBA (base, activityColor, act);

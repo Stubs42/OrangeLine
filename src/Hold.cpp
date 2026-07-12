@@ -19,10 +19,29 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 #include <string>
+#include <vector>
+#include <cstring>
 #include <stdio.h>
 #include <limits.h>
 
 #include "Hold.hpp"
+
+// Held CVs are arbitrary-precision patch voltages (pitch, modulation, anything), not
+// MIDI-CC-derived data - unlike RECALL/CC2CV/CV2CC's byte-quantized CC persistence, these are
+// packed losslessly as raw 4 byte floats rather than quantized to a byte each.
+static std::vector<uint8_t> floatsToBytes(const float *values, int count)
+{
+	std::vector<uint8_t> bytes(count * sizeof(float));
+	std::memcpy(bytes.data(), values, bytes.size());
+	return bytes;
+}
+static void bytesToFloats(const std::vector<uint8_t> &bytes, float *values, int count)
+{
+	size_t copyBytes = std::min(bytes.size(), count * sizeof(float));
+	std::memcpy(values, bytes.data(), copyBytes);
+	for (size_t i = copyBytes / sizeof(float); i < (size_t) count; i++)
+		values[i] = 0.f;
+}
 
 struct Hold : Module
 {
@@ -49,6 +68,48 @@ struct Hold : Module
 	*/
 	Hold()
 	{
+		// STORE_JSON's 160 slots (NUM_ROWS * POLY_CHANNELS) used to be written/read as 160
+		// individual json_real() objects via the generic per-jsonId loop in
+		// OrangeLineCommon.hpp - expensive since dataToJson() runs often (autosave, undo/redo
+		// history). Skipping that range there and packing it into one base64 string via the
+		// hooks below cuts it to a single JSON object, losslessly (raw float bytes, not
+		// quantized - these are arbitrary patch CVs, not 7 bit MIDI CC data).
+		OL_jsonSkipFrom = STORE_JSON;
+
+		moduleExtraDataToJson = [this](json_t *rootJ)
+		{
+			float values[NUM_ROWS * POLY_CHANNELS];
+			for (int i = 0; i < NUM_ROWS * POLY_CHANNELS; i++)
+				values[i] = getStateJson(STORE_JSON + i);
+			json_object_set_new(rootJ, "store", json_string(string::toBase64(floatsToBytes(values, NUM_ROWS * POLY_CHANNELS)).c_str()));
+		};
+		moduleExtraDataFromJson = [this](json_t *rootJ)
+		{
+			json_t *storeJ = json_object_get(rootJ, "store");
+			if (storeJ && json_is_string(storeJ))
+			{
+				float values[NUM_ROWS * POLY_CHANNELS];
+				bytesToFloats(string::fromBase64(json_string_value(storeJ)), values, NUM_ROWS * POLY_CHANNELS);
+				for (int i = 0; i < NUM_ROWS * POLY_CHANNELS; i++)
+					setStateJson(STORE_JSON + i, values[i]);
+			}
+			else
+			{
+				// Patch/preset saved by an older version of this module, before "store"
+				// existed - the individual "r01c01".."r10c16" fields are still in rootJ (the
+				// generic loop just doesn't read them into STORE_JSON anymore since it now
+				// stops at OL_jsonSkipFrom), so read them directly here instead. Without this
+				// fallback, every already-released patch using Hold would silently lose its
+				// held values on load.
+				for (int i = 0; i < NUM_ROWS * POLY_CHANNELS; i++)
+				{
+					json_t *fieldJ = json_object_get(rootJ, jsonLabel[STORE_JSON + i]);
+					if (fieldJ)
+						setStateJson(STORE_JSON + i, json_real_value(fieldJ));
+				}
+			}
+		};
+
 		initializeInstance();
 	}
 	/*

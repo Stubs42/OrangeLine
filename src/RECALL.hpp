@@ -1,0 +1,38 @@
+#include "OrangeLine.hpp"
+
+enum jsonIds
+{
+	STYLE_JSON,
+	AUTOSYNC_JSON,
+	NUM_JSONS
+};
+
+enum ParamIds
+{
+	SYNC_PARAM,
+	NUM_PARAMS
+};
+
+enum InputIds
+{
+	RX_INPUT,
+	RX_INPUT_LAST = RX_INPUT + 8 - 1,
+	TX_INPUT,
+	TX_INPUT_LAST = TX_INPUT + 8 - 1,
+	GATE_INPUT,
+	NUM_INPUTS
+};
+
+enum OutputIds
+{
+	RX_OUTPUT,
+	RX_OUTPUT_LAST = RX_OUTPUT + 8 - 1,
+	TX_OUTPUT,
+	TX_OUTPUT_LAST = TX_OUTPUT + 8 - 1,
+	NUM_OUTPUTS
+};
+
+enum LightIds
+{
+	NUM_LIGHTS
+};

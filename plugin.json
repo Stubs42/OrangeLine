@@ -1,7 +1,7 @@
 {
   "slug": "OrangeLine",
   "name": "OrangeLine",
-  "version": "2.4.15",
+  "version": "2.5.0",
   "license": "GPL-3.0-only",
   "brand": "",
   "author": "Dieter Stubler",
@@ -189,6 +189,15 @@
       "description": "Sends 8 polyphonic CV banks of 16 channels each as up to 128 MIDI CCs, fixed mapping, no MIDI learn",
       "tags": [
         "MIDI",
+        "Utility",
+        "Polyphonic"
+      ]
+    },
+    {
+      "slug": "RECALL",
+      "name": "RECALL",
+      "description": "Gates a bidirectional CC connection receive-only in normal operation, with a one-shot full push-sync of Rack's own data on demand or at startup",
+      "tags": [
         "Utility",
         "Polyphonic"
       ]

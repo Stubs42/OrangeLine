@@ -26,6 +26,7 @@ void init(Plugin *p) {
 	p->addModel(modelD2D);
 	p->addModel(modelCC2CV);
 	p->addModel(modelCV2CC);
+	p->addModel(modelRECALL);
 	// p->addModel(modelTemplate);
 	// p->addModel(modelWidgetTest);
 

@@ -48,6 +48,10 @@ struct CC2CV : Module
 		Reflects incoming MIDI regardless of ccEnabled, so you can see traffic on a CC you've
 		muted. Not persisted - purely cosmetic/runtime. */
 	float ccActivity[128];
+	/** Current 0-10V value per CC (pre-mute, pre-smoothing-doesn't-matter - this is the same
+		value the grid's cell color is based on), so a muted CC's live value still shows.
+		Not persisted - recomputed every tick from ccValues/valueFilters. */
+	float ccCvValue[128];
 
 	CC2CV()
 	{
@@ -57,6 +61,7 @@ struct CC2CV : Module
 			valueFilters[cc].setTau(1.f / 30.f);
 			ccEnabled[cc] = true;
 			ccActivity[cc] = 0.f;
+			ccCvValue[cc] = 0.f;
 		}
 
 		moduleExtraDataToJson = [this](json_t *rootJ)
@@ -143,6 +148,7 @@ struct CC2CV : Module
 			ccValues[cc] = 0;
 			ccEnabled[cc] = true;
 			ccActivity[cc] = 0.f;
+			ccCvValue[cc] = 0.f;
 		}
 		midiInput.reset();
 		setStateJson(SMOOTH_JSON, 1.f);
@@ -201,6 +207,7 @@ struct CC2CV : Module
 				{
 					valueFilters[cc].out = value;
 				}
+				ccCvValue[cc] = value;
 				if (!ccEnabled[cc])
 					value = 0.f;
 				setStateOutPoly(CC_OUTPUT + n, c, value);
@@ -250,7 +257,7 @@ struct CC2CVWidget : ModuleWidget
 		addChild(display);
 
 		CCGridWidget *grid = CCGridWidget::create(calculateCoordinates(3.556f, 42.927f, 0.f), mm2px(Vec(43.688f, 22.0f)),
-			module ? &module->ccEnabled[0] : NULL, module ? &module->ccActivity[0] : NULL);
+			module ? &module->ccEnabled[0] : NULL, module ? &module->ccActivity[0] : NULL, module ? &module->ccCvValue[0] : NULL);
 		addChild(grid);
 
 		addOutput(createOutputCentered<PJ301MPort>(calculateCoordinates(25.400f, 80.265f, 0.f), module, CC_OUTPUT + 0));
