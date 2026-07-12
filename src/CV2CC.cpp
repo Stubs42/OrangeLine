@@ -25,6 +25,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "CV2CC.hpp"
 
 #define RATE_LIMITER_PERIOD (1.f / 200.f)
+// Per-tick decay for the CCGridWidget's activity flash, tuned for moduleProcess()'s
+// ~1.1kHz control rate (idleSkipCounter throttling) - fades to 0 in roughly 300ms.
+#define CC_ACTIVITY_DECAY 0.003f
 
 struct CV2CC : Module
 {
@@ -45,18 +48,48 @@ struct CV2CC : Module
 		live CV so nothing goes out until something genuinely changes. A real FORCE/FLUSH in
 		the meantime still always sends, regardless of this flag. */
 	bool needsInitialSeed = true;
+	/** Per-CC on/off mask (CCGridWidget), persisted. A disabled CC is never sent, regardless
+		of value changes or FORCE/FLUSH - lets you keep unused CCs from "polluting" the
+		outgoing MIDI stream. */
+	bool  ccEnabled[128];
+	/** Shadow of ccEnabled from the previous tick, used to detect a disabled->enabled
+		transition so that CC's lastSentValues sentinel can be reset - re-enabling a CC
+		immediately re-syncs its current value instead of waiting for the next change. */
+	bool  ccWasEnabled[128];
+	/** Per-CC 0-1 activity level for the grid's live traffic display, decayed every tick.
+		Only set when a CC is actually sent (so a disabled CC never flashes). Not persisted. */
+	float ccActivity[128];
 
 	CV2CC()
 	{
 		for (int cc = 0; cc < 128; cc++)
+		{
 			lastSentValues[cc] = 0xFF;
+			ccEnabled[cc] = true;
+			ccWasEnabled[cc] = true;
+			ccActivity[cc] = 0.f;
+		}
 
 		moduleExtraDataToJson = [this](json_t *rootJ)
 		{
+			json_t *enabledJ = json_array();
+			for (int cc = 0; cc < 128; cc++)
+				json_array_append_new(enabledJ, json_boolean(ccEnabled[cc]));
+			json_object_set_new(rootJ, "enabled", enabledJ);
 			json_object_set_new(rootJ, "midi", midiOutput.toJson());
 		};
 		moduleExtraDataFromJson = [this](json_t *rootJ)
 		{
+			json_t *enabledJ = json_object_get(rootJ, "enabled");
+			if (enabledJ)
+			{
+				for (int cc = 0; cc < 128; cc++)
+				{
+					json_t *flagJ = json_array_get(enabledJ, cc);
+					if (flagJ)
+						ccEnabled[cc] = ccWasEnabled[cc] = json_boolean_value(flagJ);
+				}
+			}
 			json_t *midiJ = json_object_get(rootJ, "midi");
 			if (midiJ)
 				midiOutput.fromJson(midiJ);
@@ -105,7 +138,12 @@ struct CV2CC : Module
 	void moduleReset()
 	{
 		for (int cc = 0; cc < 128; cc++)
+		{
 			lastSentValues[cc] = 0xFF;
+			ccEnabled[cc] = true;
+			ccWasEnabled[cc] = true;
+			ccActivity[cc] = 0.f;
+		}
 		midiOutput.reset();
 		rateLimiterTimer.reset();
 		needsInitialSeed = true;
@@ -169,6 +207,19 @@ struct CV2CC : Module
 			for (int c = 0; c < 16; c++)
 			{
 				int cc = n * 16 + c;
+
+				// Re-enabling a CC resets its sentinel so the next real value always goes
+				// out immediately, instead of waiting for a change relative to whatever was
+				// last sent before it got disabled.
+				if (ccEnabled[cc] && !ccWasEnabled[cc])
+					lastSentValues[cc] = 0xFF;
+				ccWasEnabled[cc] = ccEnabled[cc];
+
+				ccActivity[cc] = std::max(0.f, ccActivity[cc] - CC_ACTIVITY_DECAY);
+
+				if (!ccEnabled[cc])
+					continue;
+
 				float raw = (c < channels) ? OL_statePoly[(CC_INPUT + n) * POLY_CHANNELS + c] : 0.f;
 				uint8_t value = (uint8_t) clamp(std::round(raw / 10.f * 127.f), 0.f, 127.f);
 				if (suppressInitialFlush)
@@ -179,6 +230,7 @@ struct CV2CC : Module
 				if (value == lastSentValues[cc])
 					continue;
 				lastSentValues[cc] = value;
+				ccActivity[cc] = 1.f;
 
 				midi::Message msg;
 				msg.setStatus(0xb);
@@ -201,7 +253,7 @@ struct CV2CC : Module
 	layer of res/CV2CCWork.svg, so the widget lines up exactly with the panel art. The 8 CC
 	inputs are arranged in a circle; wired here in clockwise order starting from the top, so
 	CC bank N (CC N*16..N*16+15) always advances clockwise around the ring - same order as
-	CC2CV's output ring. FORCE (trigger jack) and FLUSH (panel button) sit above the ring and
+	CC2CV's output ring. FORCE (trigger jack) and FLUSH (panel button) sit beside the ring and
 	both do the same thing: force every CC to be resent on the next update.
 */
 struct CV2CCWidget : ModuleWidget
@@ -230,8 +282,12 @@ struct CV2CCWidget : ModuleWidget
 		display->setMidiPort(module ? &module->midiOutput : NULL);
 		addChild(display);
 
-		addInput(createInputCentered<PJ301MPort>(calculateCoordinates(13.970f, 54.103f, 0.f), module, FORCE_INPUT));
-		addParam(createParamCentered<LEDButton>(calculateCoordinates(36.830f, 54.103f, 0.f), module, FLUSH_PARAM));
+		CCGridWidget *grid = CCGridWidget::create(calculateCoordinates(3.556f, 42.849f, 0.f), mm2px(Vec(43.688f, 22.0f)),
+			module ? &module->ccEnabled[0] : NULL, module ? &module->ccActivity[0] : NULL);
+		addChild(grid);
+
+		addInput(createInputCentered<PJ301MPort>(calculateCoordinates(42.672f, 72.899f, 0.f), module, FORCE_INPUT));
+		addParam(createParamCentered<LEDButton>(calculateCoordinates(43.942f, 80.415f, 0.f), module, FLUSH_PARAM));
 
 		addInput(createInputCentered<PJ301MPort>(calculateCoordinates(25.400f, 80.265f, 0.f), module, CC_INPUT + 0));
 		addInput(createInputCentered<PJ301MPort>(calculateCoordinates(36.830f, 84.837f, 0.f), module, CC_INPUT + 1));

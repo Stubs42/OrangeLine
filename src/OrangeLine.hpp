@@ -369,4 +369,98 @@ struct TextWidget : TransparentWidget {
 	}
 };
 
+/**
+	Self-drawn interactive grid of NUM_CC_COLS x NUM_CC_ROWS cells, one per MIDI CC (cell
+	[row][col] = CC row*NUM_CC_COLS+col). Click a cell to toggle it on/off (writes directly
+	into the module's own bool[128] via the `enabled` pointer - no per-cell Params, far
+	cheaper than 128 individual widgets). Cell brightness also reflects `activity[cc]`
+	(0-1, expected to be set to 1 and decayed by the module itself) as a live traffic
+	indicator, independent of the on/off state - shared by CC2CV and CV2CC.
+*/
+#define NUM_CC_COLS 16
+#define NUM_CC_ROWS 8
+
+// Grid cell colors: on/off base color plus a distinct activity-flash color for each state,
+// so a muted (disabled) CC's traffic reads unmistakably differently from an active one's.
+#define GRID_ON        nvgRGB ( 60, 130, 230)	// enabled base: blue
+#define GRID_ON_ACT    nvgRGB ( 70, 220, 120)	// enabled + activity flash: green
+#define GRID_OFF       nvgRGB ( 30,  30,  30)	// disabled base: near black
+#define GRID_OFF_ACT   nvgRGB (200,  70,  70)	// disabled + activity flash: muted red (not full ff0000)
+
+struct CCGridWidget : OpaqueWidget {
+
+	bool  *enabled  = nullptr;	// pointer to module's bool[128], toggled on click
+	float *activity = nullptr;	// pointer to module's float[128], 0-1, read only here
+
+	static CCGridWidget* create (Vec pos, Vec size, bool *enabled, float *activity) {
+		CCGridWidget *w = new CCGridWidget ();
+		w->box.pos  = pos;
+		w->box.size = size;
+		w->enabled  = enabled;
+		w->activity = activity;
+		return w;
+	}
+
+	/** While painting (mouse held from a press on this widget), every cell the mouse passes
+		over is force-set to this value instead of toggled - set once on press from the
+		pressed cell's new state, so a whole drag stays consistently "turning on" or
+		"turning off" regardless of what the cells being passed over used to be. */
+	bool paintValue = false;
+
+	/** Returns the CC index for a local position, or -1 if outside the grid. */
+	int cellAt (Vec pos) {
+		int col = int (pos.x / (box.size.x / NUM_CC_COLS));
+		int row = int (pos.y / (box.size.y / NUM_CC_ROWS));
+		if (col < 0 || col >= NUM_CC_COLS || row < 0 || row >= NUM_CC_ROWS) return -1;
+		return row * NUM_CC_COLS + col;
+	}
+
+	void onButton (const ButtonEvent &e) override {
+		OpaqueWidget::onButton (e);
+		if (!enabled) return;
+		if (e.action != GLFW_PRESS || e.button != GLFW_MOUSE_BUTTON_LEFT) return;
+		int cc = cellAt (e.pos);
+		if (cc < 0) return;
+		enabled[cc] = paintValue = !enabled[cc];
+	}
+
+	/** Fires every frame the mouse is over this widget while a drag (started by onButton
+		above) is in progress - lets a click-drag "paint" the same on/off value across every
+		cell it passes over, instead of only ever affecting the single cell first pressed. */
+	void onDragHover (const DragHoverEvent &e) override {
+		OpaqueWidget::onDragHover (e);
+		if (!enabled) return;
+		int cc = cellAt (e.pos);
+		if (cc < 0) return;
+		enabled[cc] = paintValue;
+	}
+
+	void draw (const DrawArgs &drawArgs) override {
+		if (!enabled) return;
+		float cw = box.size.x / NUM_CC_COLS;
+		float ch = box.size.y / NUM_CC_ROWS;
+		for (int row = 0; row < NUM_CC_ROWS; row++) {
+			for (int col = 0; col < NUM_CC_COLS; col++) {
+				int cc = row * NUM_CC_COLS + col;
+				float x = col * cw;
+				float y = row * ch;
+				float pad = fminf (cw, ch) * 0.08f;
+
+				NVGcolor base = enabled[cc] ? GRID_ON : GRID_OFF;
+				NVGcolor activityColor = enabled[cc] ? GRID_ON_ACT : GRID_OFF_ACT;
+				float act = activity ? clamp (activity[cc], 0.f, 1.f) : 0.f;
+				NVGcolor fill = nvgLerpRGBA (base, activityColor, act);
+
+				nvgBeginPath (drawArgs.vg);
+				nvgRoundedRect (drawArgs.vg, x + pad, y + pad, cw - 2 * pad, ch - 2 * pad, pad * 0.5f);
+				nvgFillColor (drawArgs.vg, fill);
+				nvgFill (drawArgs.vg);
+				nvgStrokeColor (drawArgs.vg, nvgRGB (15, 15, 15));
+				nvgStrokeWidth (drawArgs.vg, pad * 0.3f);
+				nvgStroke (drawArgs.vg);
+			}
+		}
+	}
+};
+
 #endif

@@ -759,9 +759,13 @@ CC2CV receives MIDI CC messages and outputs them as CV, covering the entire 0-12
 
 Each CC's raw 7 bit value (0-127) is scaled to 0-10V. By default the stepped 7 bit resolution is smoothed into a continuous CV (exponential filter, snaps instantly on large jumps so MIDI buttons still feel immediate) - this can be turned off in the right click menu. The last known value of every CC is remembered and restored on patch reload, so you don't have to touch the physical controller again after reopening a patch.
 
+The CC grid lets you click any of the 128 cells (16 columns x 8 rows, cell = CC row*16+column) to enable or disable that CC individually, or click and drag to paint the same on/off state across every cell the drag passes over - a disabled CC's output is forced to 0V no matter what's received, so unused/noisy controller CCs don't pollute the rest of the patch. Cell brightness also flashes on incoming MIDI traffic for that CC regardless of its enabled state (green for enabled, a muted red for disabled - still visible but clearly different), so the grid doubles as a live activity display. The on/off mask is remembered across patch reload.
+
 ### The Panel
 
 MIDI Display: Driver/device/channel selector for the MIDI input to receive from.
+
+CC Grid: 16x8 grid, one cell per CC, click to enable/disable, click and drag to paint the same on/off state across every cell the mouse passes over. Blue = enabled, black = disabled; green flash = incoming traffic on an enabled CC, red flash = incoming traffic on a disabled one (still visible, so you can tell a muted CC is still receiving something). Disabled CCs output 0V.
 
 CC 0-15 .. CC 112-127 outputs [polyphonic, 8x]: arranged clockwise from the top of the ring. Bank N's 16 channels carry CC N*16 through N*16+15 as 0-10V.
 
@@ -781,6 +785,8 @@ Each channel's 0-10V CV is converted to a 7 bit CC value (0-127) and sent as a M
 
 FORCE (trigger input) and FLUSH (panel button) both do the same thing: force every one of the 128 CCs to be resent on the next update, bypassing the change-detection - useful to resync an external device or DAW without having to wobble a CV to fake a change. By default the same thing also happens automatically once, the first time the module processes after being added to a patch, loaded with a patch, or right click Initialized - this can be turned off in the right click menu if you'd rather nothing gets sent until something actually changes.
 
+The CC grid lets you click any of the 128 cells (16 columns x 8 rows, cell = CC row*16+column) to enable or disable that CC individually, or click and drag to paint the same on/off state across every cell the drag passes over - a disabled CC is never sent, no matter what the CV does or whether FORCE/FLUSH fires, so unused CCs don't pollute the outgoing MIDI stream. Re-enabling a CC immediately resends its current value on the next update rather than waiting for a change. Cell brightness flashes green whenever a CC is actually transmitted (so a disabled cell, shown in black, never flashes), doubling as a live send-activity display. The on/off mask is remembered across patch reload.
+
 ### The Panel
 
 MIDI Display: Driver/device/channel selector for the MIDI output to send to.
@@ -788,6 +794,8 @@ MIDI Display: Driver/device/channel selector for the MIDI output to send to.
 FORCE input: Trigger to force an immediate resend of all 128 CCs.
 
 FLUSH button: Same as FORCE, as a panel button.
+
+CC Grid: 16x8 grid, one cell per CC, click to enable/disable, click and drag to paint the same on/off state across every cell the mouse passes over. Blue = enabled, black = disabled; green flash = a message was just sent for that CC (only ever shows on enabled cells, since disabled ones are never sent). Disabled CCs are never sent, no matter what the CV does.
 
 CC 0-15 .. CC 112-127 inputs [polyphonic, 8x]: arranged clockwise from the top of the ring. Bank N's 16 channels (0-10V) are sent as CC N*16 through N*16+15.
 

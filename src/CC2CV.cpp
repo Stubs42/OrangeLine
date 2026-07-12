@@ -24,6 +24,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "CC2CV.hpp"
 
+// Per-tick decay for the CCGridWidget's activity flash, tuned for moduleProcess()'s
+// ~1.1kHz control rate (idleSkipCounter throttling) - fades to 0 in roughly 300ms.
+#define CC_ACTIVITY_DECAY 0.003f
+
 struct CC2CV : Module
 {
 
@@ -36,6 +40,14 @@ struct CC2CV : Module
 		controller to be touched again. */
 	uint8_t ccValues[128];
 	dsp::ExponentialFilter valueFilters[128];
+	/** Per-CC on/off mask (CCGridWidget), persisted. Disabled CCs are forced to 0V on the
+		output, regardless of what's received - lets you silence CCs you don't use instead of
+		letting every incoming controller CC "pollute" the patch. */
+	bool  ccEnabled[128];
+	/** Per-CC 0-1 activity level for the grid's live traffic display, decayed every tick.
+		Reflects incoming MIDI regardless of ccEnabled, so you can see traffic on a CC you've
+		muted. Not persisted - purely cosmetic/runtime. */
+	float ccActivity[128];
 
 	CC2CV()
 	{
@@ -43,14 +55,21 @@ struct CC2CV : Module
 		{
 			ccValues[cc] = 0;
 			valueFilters[cc].setTau(1.f / 30.f);
+			ccEnabled[cc] = true;
+			ccActivity[cc] = 0.f;
 		}
 
 		moduleExtraDataToJson = [this](json_t *rootJ)
 		{
 			json_t *valuesJ = json_array();
+			json_t *enabledJ = json_array();
 			for (int cc = 0; cc < 128; cc++)
+			{
 				json_array_append_new(valuesJ, json_integer(ccValues[cc]));
+				json_array_append_new(enabledJ, json_boolean(ccEnabled[cc]));
+			}
 			json_object_set_new(rootJ, "values", valuesJ);
+			json_object_set_new(rootJ, "enabled", enabledJ);
 			json_object_set_new(rootJ, "midi", midiInput.toJson());
 		};
 		moduleExtraDataFromJson = [this](json_t *rootJ)
@@ -63,6 +82,16 @@ struct CC2CV : Module
 					json_t *valueJ = json_array_get(valuesJ, cc);
 					if (valueJ)
 						ccValues[cc] = json_integer_value(valueJ);
+				}
+			}
+			json_t *enabledJ = json_object_get(rootJ, "enabled");
+			if (enabledJ)
+			{
+				for (int cc = 0; cc < 128; cc++)
+				{
+					json_t *flagJ = json_array_get(enabledJ, cc);
+					if (flagJ)
+						ccEnabled[cc] = json_boolean_value(flagJ);
 				}
 			}
 			json_t *midiJ = json_object_get(rootJ, "midi");
@@ -110,7 +139,11 @@ struct CC2CV : Module
 	void moduleReset()
 	{
 		for (int cc = 0; cc < 128; cc++)
+		{
 			ccValues[cc] = 0;
+			ccEnabled[cc] = true;
+			ccActivity[cc] = 0.f;
+		}
 		midiInput.reset();
 		setStateJson(SMOOTH_JSON, 1.f);
 
@@ -121,7 +154,8 @@ struct CC2CV : Module
 		Drains the incoming MIDI CC queue into ccValues[], then maps all 128 values onto the
 		8 poly outputs (channel c of output n = CC n*16+c). Optional exponential smoothing
 		(SMOOTH_JSON) turns the stepped 7 bit resolution into a continuous CV, with a jump
-		detection escape hatch so MIDI buttons still snap instantly.
+		detection escape hatch so MIDI buttons still snap instantly. A disabled CC (ccEnabled,
+		toggled via the CCGridWidget) is forced to 0V on the output instead.
 	*/
 	inline void moduleProcess(const ProcessArgs &args)
 	{
@@ -140,7 +174,11 @@ struct CC2CV : Module
 		while (midiInput.tryPop(&msg, args.frame))
 		{
 			if (msg.getStatus() == 0xb && msg.getSize() >= 3)
-				ccValues[msg.getNote()] = msg.getValue();
+			{
+				uint8_t cc = msg.getNote();
+				ccValues[cc] = msg.getValue();
+				ccActivity[cc] = 1.f;
+			}
 		}
 
 		bool smooth = getStateJson(SMOOTH_JSON) != 0.f;
@@ -163,7 +201,11 @@ struct CC2CV : Module
 				{
 					valueFilters[cc].out = value;
 				}
+				if (!ccEnabled[cc])
+					value = 0.f;
 				setStateOutPoly(CC_OUTPUT + n, c, value);
+
+				ccActivity[cc] = std::max(0.f, ccActivity[cc] - CC_ACTIVITY_DECAY);
 			}
 			setOutPolyChannels(CC_OUTPUT + n, 16);
 		}
@@ -206,6 +248,10 @@ struct CC2CVWidget : ModuleWidget
 		display->box.size = mm2px(Vec(43.688f, 28.194f));
 		display->setMidiPort(module ? &module->midiInput : NULL);
 		addChild(display);
+
+		CCGridWidget *grid = CCGridWidget::create(calculateCoordinates(3.556f, 42.927f, 0.f), mm2px(Vec(43.688f, 22.0f)),
+			module ? &module->ccEnabled[0] : NULL, module ? &module->ccActivity[0] : NULL);
+		addChild(grid);
 
 		addOutput(createOutputCentered<PJ301MPort>(calculateCoordinates(25.400f, 80.265f, 0.f), module, CC_OUTPUT + 0));
 		addOutput(createOutputCentered<PJ301MPort>(calculateCoordinates(36.830f, 84.837f, 0.f), module, CC_OUTPUT + 1));
