@@ -42,6 +42,7 @@ struct Morpheus : Module
 	float selectedMem = 1.f;
 	NumberWidget *memWidget;
 	bool haveEditHld = false;
+	bool scaleOnOutput = false;
 
 #include "MorpheusJsonLabels.hpp"
 
@@ -173,6 +174,7 @@ struct Morpheus : Module
 	*/
 	inline void moduleInitialize()
 	{
+		this->scaleOnOutput = getStateJson(SCALE_MODE_JSON) == ON_OUTPUT;
 	}
 
 	/**
@@ -203,6 +205,7 @@ struct Morpheus : Module
 		setStateJson(MEM_IS_HALFTONES_JSON, 0.f);
 		setStateJson(LOAD_HLD_CHANNELS_JSON, 0.f);
 		setStateJson(SCALE_MODE_JSON, 0.f);
+		this->scaleOnOutput = 0.f;
 
 		for (int i = 0; i < POLY_CHANNELS; i++) {
 			isShiftLeft[i] = false;
@@ -837,6 +840,102 @@ struct Morpheus : Module
 	Module widget implementation
 */
 
+// Only 48 columns fit at a readable size within the display's 49mm width (64 would make the
+// step squares too small to see/hit) - a lane with loopLen > 48 needs up to 3 pages
+// (0-47, 48-95, 96-127) to cover the full MAX_LOOP_LEN of 128. DISPLAY_PAGE_SIZE and the
+// display colors are #defined in Morpheus.hpp for easy configuration.
+
+/**
+	Visualization display for Morpheus's 16 channels x up to 128 steps. Each of the 16 rows
+	(one per poly channel) is 1mm tall, row r starting at local y = r*1mm. Columns are steps,
+	1mm apart, page-relative: step i on a given page is at x=(i - page*48)*1mm. A lane's end
+	marker is only drawn once the channel's play head has actually reached the page containing
+	that end step, so a long lane doesn't show a later page's content prematurely while still
+	playing through an earlier one.
+
+	First piece of content: a small unfilled square marking each channel's last active step
+	(0-based index loopLen-1), white for now.
+*/
+struct MorpheusDisplayWidget : Widget
+{
+	Morpheus *module = nullptr;
+
+	static MorpheusDisplayWidget* create(Vec pos, Vec size, Morpheus *module)
+	{
+		MorpheusDisplayWidget *w = new MorpheusDisplayWidget();
+		w->box.pos = pos;
+		w->box.size = size;
+		w->module = module;
+		return w;
+	}
+
+	void draw(const DrawArgs &args) override
+	{
+		// do not try to draw if module is not initielized yet.
+		if (!module)
+			return;
+
+		nvgBeginPath(args.vg);
+		nvgRect(args.vg, 0, 0, box.size.x, box.size.y);
+		nvgFillColor(args.vg, DISPLAY_BG_COLOR);
+		nvgFill(args.vg);
+
+		for (int row = 0; row < POLY_CHANNELS; row++)
+		{
+			int loopLen = (int) module->getChannelLoopLength(row);
+			if (loopLen < 1)
+				continue;
+			int pos = (int) module->getStateJson(HEAD_JSON + row);
+			int page = pos / DISPLAY_PAGE_SIZE;
+
+			// Step value colors for the currently visible page - steps at or past loopLen
+			// stay black (background already covers that). Same box geometry as the pos
+			// cursor below, drawn first so the cursor/end marker render on top of it.
+			int pageStart = page * DISPLAY_PAGE_SIZE;
+			int pageEnd = std::min(loopLen, pageStart + DISPLAY_PAGE_SIZE);
+			for (int step = pageStart; step < pageEnd; step++)
+			{
+				float cv = module->getStateJson(STEPS_JSON + MAX_LOOP_LEN * row + step);
+				float t = clamp((cv + 10.f) / 20.f, 0.f, 1.f);
+				NVGcolor valueColor;
+				if (module->scaleOnOutput) {
+					valueColor = nvgLerpRGBA(DISPLAY_VALUE_MID_COLOR, DISPLAY_VALUE_POS_COLOR, t);
+				}
+				else {
+					valueColor = nvgLerpRGBA(DISPLAY_VALUE_NEG_COLOR, DISPLAY_VALUE_POS_COLOR, t);
+				}
+				float vx = mm2px((step - pageStart) * 1.f + 0.25f);
+				float vy = mm2px(row * 1.f + 0.25f);
+				float vside = mm2px(0.75f);
+				nvgBeginPath(args.vg);
+				nvgRect(args.vg, vx, vy, vside, vside);
+				nvgFillColor(args.vg, valueColor);
+				nvgFill(args.vg);
+			}
+
+			float x = mm2px((pos % DISPLAY_PAGE_SIZE) * 1.f + 0.25f);
+			float y = mm2px(row * 1.f + 0.25f);
+			float side = mm2px(0.75f);
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, x, y, side, side);
+			nvgFillColor(args.vg, DISPLAY_POS_COLOR);
+			nvgFill(args.vg);
+
+			// Display Loop End Marker if last page is visible
+			if (loopLen > (page + 1 ) * DISPLAY_PAGE_SIZE)
+				continue;
+			x = mm2px(((loopLen - 1) % DISPLAY_PAGE_SIZE) * 1.f + 0.125f);
+			y = mm2px(row * 1.f + 0.125f);
+			side = mm2px(1.f);
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, x, y, side, side);
+			nvgStrokeWidth(args.vg, mm2px(0.25f));
+			nvgStrokeColor(args.vg, DISPLAY_END_MARKER_COLOR);
+			nvgStroke(args.vg);
+		}
+	}
+};
+
 /**
 	Main Module Widget
 */
@@ -847,79 +946,86 @@ struct MorpheusWidget : ModuleWidget
 	MorpheusWidget(Morpheus *module)
 	{
 		setModule(module);
-		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/MorpheusOrange.svg")));
+		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/MorpheusOrangeTest.svg")));
 
 		if (module)
 		{
 			SvgPanel *brightPanel = new SvgPanel();
-			brightPanel->setBackground(APP->window->loadSvg(asset::plugin(pluginInstance, "res/MorpheusBright.svg")));
+			brightPanel->setBackground(APP->window->loadSvg(asset::plugin(pluginInstance, "res/MorpheusOrangeTest.svg")));
 			brightPanel->visible = false;
 			module->brightPanel = brightPanel;
 			addChild(brightPanel);
 			SvgPanel *darkPanel = new SvgPanel();
-			darkPanel->setBackground(APP->window->loadSvg(asset::plugin(pluginInstance, "res/MorpheusDark.svg")));
+			darkPanel->setBackground(APP->window->loadSvg(asset::plugin(pluginInstance, "res/MorpheusOrangeTest.svg")));
 			darkPanel->visible = false;
 			module->darkPanel = darkPanel;
 			addChild(darkPanel);
 		}
 
-		addParam (createParamCentered<RoundLargeBlackKnob> (calculateCoordinates (11.430, 10.161, OFFSET_RoundLargeBlackKnob),  module, LOCK_PARAM));
-		addInput (createInputCentered<PJ301MPort> (calculateCoordinates ( 1.891, 12.306, OFFSET_PJ301MPort), module, LOCK_INPUT));
-		addParam (createParamCentered<RoundLargeBlackKnob> (calculateCoordinates (26.670, 10.161, OFFSET_RoundLargeBlackKnob),  module, BALANCE_PARAM));
-		addInput (createInputCentered<PJ301MPort> (calculateCoordinates (40.499, 12.306, OFFSET_PJ301MPort), module, BALANCE_INPUT));
+		addChild(MorpheusDisplayWidget::create(calculateCoordinates(0.912f, 25.805f, 0.f), mm2px(Vec(49.0f, 16.5f)), module));
+
+		// Positions extracted from res/MorpheusWorkTest.svg's Controls layer (2026-07-13) -
+		// panel reorganized to make room for the future visualization display (reserved band
+		// at y=25.6-42.4). All values below are already true geometric centers, so offset=0.f
+		// throughout (adding the usual OFFSET_* constants on top would double-shift, as it did
+		// briefly for RECALL/CV2CC's lock buttons - see CLAUDE.md).
+		addParam (createParamCentered<RoundLargeBlackKnob> (calculateCoordinates (17.780, 16.511, 0.f),  module, LOCK_PARAM));
+		addInput (createInputCentered<PJ301MPort> (calculateCoordinates ( 6.154, 16.511, 0.f), module, LOCK_INPUT));
+		addParam (createParamCentered<RoundLargeBlackKnob> (calculateCoordinates (33.020, 16.511, 0.f),  module, BALANCE_PARAM));
+		addInput (createInputCentered<PJ301MPort> (calculateCoordinates (44.704, 16.511, 0.f), module, BALANCE_INPUT));
 
         RoundSmallBlackKnob *knob;
-        knob = createParamCentered<RoundSmallBlackKnob> (calculateCoordinates ( 2.096, 34.117, OFFSET_RoundSmallBlackKnob),  module, LOOP_LEN_PARAM);
+        knob = createParamCentered<RoundSmallBlackKnob> (calculateCoordinates ( 6.117, 52.275, 0.f),  module, LOOP_LEN_PARAM);
         knob->snap = true;
         addParam (knob);
 
-		addInput (createInputCentered<PJ301MPort> (calculateCoordinates ( 1.891, 44.818, OFFSET_PJ301MPort), module, LOOP_LEN_INPUT));
-		addParam (createParamCentered<LEDButton> (calculateCoordinates  (13.367, 35.705, OFFSET_LEDButton),  module, MEM_UP_PARAM));
-		addParam (createParamCentered<LEDButton> (calculateCoordinates  (13.367, 46.373, OFFSET_LEDButton),  module, MEM_DOWN_PARAM));
-		addInput (createInputCentered<PJ301MPort> (calculateCoordinates (21.195, 44.818, OFFSET_PJ301MPort), module, MEM_INPUT));
-		addParam (createParamCentered<LEDButton> (calculateCoordinates  (32.671, 35.705, OFFSET_LEDButton),  module, STO_PARAM));
-		addInput (createInputCentered<PJ301MPort> (calculateCoordinates (30.897, 44.818, OFFSET_PJ301MPort), module, STO_INPUT));
-		addParam (createParamCentered<LEDButton> (calculateCoordinates  (42.323, 35.705, OFFSET_LEDButton),  module, RCL_PARAM));
-		addInput (createInputCentered<PJ301MPort> (calculateCoordinates (40.499, 44.818, OFFSET_PJ301MPort), module, RCL_INPUT));
+		addInput (createInputCentered<PJ301MPort> (calculateCoordinates ( 6.154, 61.469, 0.f), module, LOOP_LEN_INPUT));
+		addParam (createParamCentered<LEDButton> (calculateCoordinates  (15.769, 52.245, 0.f),  module, MEM_UP_PARAM));
+		addParam (createParamCentered<LEDButton> (calculateCoordinates  (15.806, 61.200, 0.f),  module, MEM_DOWN_PARAM));
+		addInput (createInputCentered<PJ301MPort> (calculateCoordinates (25.458, 61.469, 0.f), module, MEM_INPUT));
+		addParam (createParamCentered<LEDButton> (calculateCoordinates  (35.073, 52.260, 0.f),  module, STO_PARAM));
+		addInput (createInputCentered<PJ301MPort> (calculateCoordinates (35.110, 61.454, 0.f), module, STO_INPUT));
+		addParam (createParamCentered<LEDButton> (calculateCoordinates  (44.725, 52.245, 0.f),  module, RCL_PARAM));
+		addInput (createInputCentered<PJ301MPort> (calculateCoordinates (44.762, 61.454, 0.f), module, RCL_INPUT));
 
-		addParam (createParamCentered<VCVLatch> (calculateCoordinates  ( 3.789, 61.182, OFFSET_LEDButton),  module, HLD_ON_PARAM));
- 		addChild (createLightCentered<LargeLight<YellowLight>>	(calculateCoordinates  ( 3.789, 61.182, OFFSET_LEDButton), module, HLD_ON_LIGHT));
-		addInput (createInputCentered<PJ301MPort> (calculateCoordinates ( 1.891, 68.948, OFFSET_PJ301MPort), module, HLD_INPUT));
-		addParam (createParamCentered<LEDButton> (calculateCoordinates  (13.365, 61.105, OFFSET_LEDButton),  module, RND_PARAM));
-		addInput (createInputCentered<PJ301MPort> (calculateCoordinates (11.543, 68.948, OFFSET_PJ301MPort), module, RND_INPUT));
-		addParam (createParamCentered<LEDButton> (calculateCoordinates  (23.019, 61.105, OFFSET_LEDButton),  module, SHIFT_LEFT_PARAM));
-		addInput (createInputCentered<PJ301MPort> (calculateCoordinates (21.195, 68.948, OFFSET_PJ301MPort), module, SHIFT_LEFT_INPUT));
-		addParam (createParamCentered<LEDButton> (calculateCoordinates  (32.669, 61.105, OFFSET_LEDButton),  module, SHIFT_RIGHT_PARAM));
-		addInput (createInputCentered<PJ301MPort> (calculateCoordinates (30.847, 68.948, OFFSET_PJ301MPort), module, SHIFT_RIGHT_INPUT));
-		addParam (createParamCentered<LEDButton> (calculateCoordinates  (42.321, 61.105, OFFSET_LEDButton),  module, CLR_PARAM));
-		addInput (createInputCentered<PJ301MPort> (calculateCoordinates (40.499, 68.948, OFFSET_PJ301MPort), module, CLR_INPUT));
+		addParam (createParamCentered<VCVLatch> (calculateCoordinates  ( 6.111, 72.948, 0.f),  module, HLD_ON_PARAM));
+ 		addChild (createLightCentered<LargeLight<YellowLight>>	(calculateCoordinates  ( 6.111, 72.948, 0.f), module, HLD_ON_LIGHT));
+		addInput (createInputCentered<PJ301MPort> (calculateCoordinates ( 6.096, 80.519, 0.f), module, HLD_INPUT));
+		addParam (createParamCentered<LEDButton> (calculateCoordinates  (15.762, 72.948, 0.f),  module, RND_PARAM));
+		addInput (createInputCentered<PJ301MPort> (calculateCoordinates (15.748, 80.519, 0.f), module, RND_INPUT));
+		addParam (createParamCentered<LEDButton> (calculateCoordinates  (25.415, 72.948, 0.f),  module, SHIFT_LEFT_PARAM));
+		addInput (createInputCentered<PJ301MPort> (calculateCoordinates (25.400, 80.519, 0.f), module, SHIFT_LEFT_INPUT));
+		addParam (createParamCentered<LEDButton> (calculateCoordinates  (35.066, 72.948, 0.f),  module, SHIFT_RIGHT_PARAM));
+		addInput (createInputCentered<PJ301MPort> (calculateCoordinates (35.052, 80.519, 0.f), module, SHIFT_RIGHT_INPUT));
+		addParam (createParamCentered<LEDButton> (calculateCoordinates  (44.718, 72.948, 0.f),  module, CLR_PARAM));
+		addInput (createInputCentered<PJ301MPort> (calculateCoordinates (44.704, 80.519, 0.f), module, CLR_INPUT));
 
-		addParam (createParamCentered<VCVLatch> (calculateCoordinates  ( 3.789, 86.594, OFFSET_LEDButton),  module, EXT_ON_PARAM));
- 		addChild (createLightCentered<LargeLight<YellowLight>>	(calculateCoordinates  ( 3.789, 86.594, OFFSET_LEDButton), module, EXT_ON_LIGHT));
-		addInput (createInputCentered<PJ301MPort> (calculateCoordinates ( 1.891, 95.364, OFFSET_PJ301MPort), module, EXT_INPUT));
-		addParam (createParamCentered<LEDButton> (calculateCoordinates  (13.368, 86.594, OFFSET_LEDButton),  module, REC_PARAM));
-		addInput (createInputCentered<PJ301MPort> (calculateCoordinates (11.543, 95.364, OFFSET_PJ301MPort), module, REC_INPUT));
-		addParam (createParamCentered<RoundSmallBlackKnob> (calculateCoordinates (21.400, 84.902, OFFSET_RoundSmallBlackKnob),  module, GTP_PARAM));
-		addInput (createInputCentered<PJ301MPort> (calculateCoordinates (21.195, 95.364, OFFSET_PJ301MPort), module, GTP_INPUT));
-		addParam (createParamCentered<RoundSmallBlackKnob> (calculateCoordinates (31.052, 84.902, OFFSET_RoundSmallBlackKnob),  module, SCL_PARAM));
-		addInput (createInputCentered<PJ301MPort> (calculateCoordinates (30.847, 95.364, OFFSET_PJ301MPort), module, SCL_INPUT));
-		addParam (createParamCentered<RoundSmallBlackKnob> (calculateCoordinates (40.704, 84.902, OFFSET_RoundSmallBlackKnob),  module, OFS_PARAM));
-		addInput (createInputCentered<PJ301MPort> (calculateCoordinates (40.499, 95.364, OFFSET_PJ301MPort), module, OFS_INPUT));
+		addParam (createParamCentered<VCVLatch> (calculateCoordinates  ( 6.096, 93.219, 0.f),  module, EXT_ON_PARAM));
+ 		addChild (createLightCentered<LargeLight<YellowLight>>	(calculateCoordinates  ( 6.096, 93.219, 0.f), module, EXT_ON_LIGHT));
+		addInput (createInputCentered<PJ301MPort> (calculateCoordinates ( 6.096,102.363, 0.f), module, EXT_INPUT));
+		addParam (createParamCentered<LEDButton> (calculateCoordinates  (15.749, 93.219, 0.f),  module, REC_PARAM));
+		addInput (createInputCentered<PJ301MPort> (calculateCoordinates (15.748,102.363, 0.f), module, REC_INPUT));
+		addParam (createParamCentered<RoundSmallBlackKnob> (calculateCoordinates (25.400, 93.219, 0.f),  module, GTP_PARAM));
+		addInput (createInputCentered<PJ301MPort> (calculateCoordinates (25.400,102.363, 0.f), module, GTP_INPUT));
+		addParam (createParamCentered<RoundSmallBlackKnob> (calculateCoordinates (35.052, 93.219, 0.f),  module, SCL_PARAM));
+		addInput (createInputCentered<PJ301MPort> (calculateCoordinates (35.052,102.363, 0.f), module, SCL_INPUT));
+		addParam (createParamCentered<RoundSmallBlackKnob> (calculateCoordinates (44.704, 93.219, 0.f),  module, OFS_PARAM));
+		addInput (createInputCentered<PJ301MPort> (calculateCoordinates (44.704,102.363, 0.f), module, OFS_INPUT));
 
-		addInput (createInputCentered<PJ301MPort> (calculateCoordinates ( 1.891,111.369, OFFSET_PJ301MPort), module, RST_INPUT));
-		addInput (createInputCentered<PJ301MPort> (calculateCoordinates (11.543,111.369, OFFSET_PJ301MPort), module, CLK_INPUT));
-   		addOutput (createOutputCentered<PJ301MPort>	(calculateCoordinates (21.195,111.369, OFFSET_PJ301MPort),  module, SRC_OUTPUT));
-   		addOutput (createOutputCentered<PJ301MPort>	(calculateCoordinates (30.847,111.369, OFFSET_PJ301MPort),  module, GATE_OUTPUT));
-   		addOutput (createOutputCentered<PJ301MPort>	(calculateCoordinates (40.499,111.369, OFFSET_PJ301MPort),  module, CV_OUTPUT));
+		addInput (createInputCentered<PJ301MPort> (calculateCoordinates ( 6.096,115.574, 0.f), module, RST_INPUT));
+		addInput (createInputCentered<PJ301MPort> (calculateCoordinates (15.748,115.574, 0.f), module, CLK_INPUT));
+   		addOutput (createOutputCentered<PJ301MPort>	(calculateCoordinates (25.400,115.574, 0.f),  module, SRC_OUTPUT));
+   		addOutput (createOutputCentered<PJ301MPort>	(calculateCoordinates (35.052,115.574, 0.f),  module, GATE_OUTPUT));
+   		addOutput (createOutputCentered<PJ301MPort>	(calculateCoordinates (44.704,115.574, 0.f),  module, CV_OUTPUT));
 
 		float *pvalue = (module != nullptr ? &(module->selectedMem) : nullptr);
 		if (module) {
-			module->memWidget = NumberWidget::create(mm2px(Vec(22.3 - 0.25, 40.2f)), module, pvalue, 1.f, "%2.0f", memBuffer, 2);
+			module->memWidget = NumberWidget::create(mm2px(Vec(22.3 - 0.25, 54.35f)), module, pvalue, 1.f, "%2.0f", memBuffer, 2);
 			module->memWidget->pStyle = (module == nullptr ? nullptr : &(module->OL_state[STYLE_JSON]));
 			addChild(module->memWidget);
 		}
 		else {
-			NumberWidget *w = NumberWidget::create(mm2px(Vec(22.3 - 0.25, 40.2f)), module, pvalue, 1.f, "%2.0f", memBuffer, 2);
+			NumberWidget *w = NumberWidget::create(mm2px(Vec(22.3 - 0.25, 54.54f)), module, pvalue, 1.f, "%2.0f", memBuffer, 2);
 			w->pStyle = (module == nullptr ? nullptr : &(module->OL_state[STYLE_JSON]));
 			addChild(w);
 		}
@@ -1034,10 +1140,14 @@ struct MorpheusWidget : ModuleWidget
 		Morpheus *module;
 		void onAction(const event::Action &e) override
 		{
-			if (module->OL_state[SCALE_MODE_JSON] == 0.f)
-				module->OL_setOutState(SCALE_MODE_JSON, 1.f);
-			else
-				module->OL_setOutState(SCALE_MODE_JSON, 0.f);
+			if (module->OL_state[SCALE_MODE_JSON] == ON_RANDOMIZE) {
+				module->OL_setOutState(SCALE_MODE_JSON, ON_OUTPUT);
+				module->scaleOnOutput = true;
+			}
+			else {
+				module->OL_setOutState(SCALE_MODE_JSON, ON_RANDOMIZE);
+				module->scaleOnOutput = false;
+			}
 		}
 		void step() override
 		{

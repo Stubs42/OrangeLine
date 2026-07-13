@@ -25,6 +25,17 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define ON_RANDOMIZE    0
 #define ON_OUTPUT       1
 
+// Visualization display (MorpheusDisplayWidget) layout/colors
+#define DISPLAY_PAGE_SIZE         48
+#define DISPLAY_BG_COLOR          nvgRGB(  0,   0,   0)
+#define DISPLAY_END_MARKER_COLOR  nvgRGB(127, 127, 127)
+#define DISPLAY_POS_COLOR         nvgRGB(196, 196, 196)
+// Step value color gradient: -10V = light red, +10V = light green, linearly interpolated
+// (so 0V lands on the natural red+green mix, a yellow/olive tone - no separate color needed).
+#define DISPLAY_VALUE_NEG_COLOR   nvgRGB(164,  32, 32)
+#define DISPLAY_VALUE_MID_COLOR   nvgRGB( 32,  48, 32)
+#define DISPLAY_VALUE_POS_COLOR   nvgRGB( 32, 164, 32)
+
 //
 // Defaults
 //
