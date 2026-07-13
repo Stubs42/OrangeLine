@@ -466,6 +466,16 @@ S<>R knob: Controls the probability of MORPHEUS will replace from source or rand
 
 S<>R input: [polyphonic] [S<>R/10, 0..10V] is added to s<>R knobs value for each channel.
 
+#### Visualization Display
+
+A 16-row display, one row per poly channel, showing up to 48 steps at once (a channel with LEN > 48 pages through its steps 48 at a time, always showing whichever page currently contains the play head).
+
+Each step's square is colored by its current CV value, red-to-green if it still matches its source (the active memory slot, or EXT input if EXT is on), or magenta-to-cyan if it has drifted away from that source (e.g. via randomization). A small brighter square marks the channel's current play position. A hollow square marks the channel's last step (LEN-1) - only visible once the play head has actually reached the page it's on.
+
+Whenever LOCK causes a step to be replaced, that step's square briefly flashes - blue if replaced from source with a genuinely different value, a darker blue if replaced from source but the value happened not to change, and orange if replaced with a new random value. The flash fades out over a fixed, configurable duration (`DISPLAY_FLASH_FADE_TIME` in `Morpheus.hpp`) and stays pinned to the step that changed, independent of the play head moving on to later steps.
+
+All display colors and the page size are `#define`d in `Morpheus.hpp` for easy tweaking. See "Visual On/Off" below to disable the whole display and save CPU.
+
 #### MEM Section
 
 LEN knob [1-128]: Length of the step loop
@@ -550,7 +560,9 @@ Smart HLD:If set, any low HLD channel will be held and edit actions affect only 
 
 MEM is Note: MEM CV uses V/Oct CV to select MEM slots.
 
-Channels: Set number of polyphonic output channels to produce  
+Channels: Set number of polyphonic output channels to produce
+
+Visual On/Off: Enable/disable the step visualization display (see above). Disabling it skips the per-channel/per-step drawing work entirely, useful to save CPU if you don't need the display.
 
 ## BUCKETS
 

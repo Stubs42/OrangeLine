@@ -29,12 +29,36 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define DISPLAY_PAGE_SIZE         48
 #define DISPLAY_BG_COLOR          nvgRGB(  0,   0,   0)
 #define DISPLAY_END_MARKER_COLOR  nvgRGB(127, 127, 127)
-#define DISPLAY_POS_COLOR         nvgRGB(196, 196, 196)
+#define DISPLAY_POS_COLOR         nvgRGB(127, 127, 127)
 // Step value color gradient: -10V = light red, +10V = light green, linearly interpolated
 // (so 0V lands on the natural red+green mix, a yellow/olive tone - no separate color needed).
+// Used when the step's current value still matches its source (MEM slot, or EXT_INPUT if
+// EXT_ON) - i.e. it hasn't drifted/been randomized away from it.
 #define DISPLAY_VALUE_NEG_COLOR   nvgRGB(164,  32, 32)
 #define DISPLAY_VALUE_MID_COLOR   nvgRGB( 32,  48, 32)
 #define DISPLAY_VALUE_POS_COLOR   nvgRGB( 32, 164, 32)
+
+// Second gradient (CMY-based), used instead of the one above when the step's current value
+// differs from its source - a quick "this step has drifted from source" visual cue.
+#define DISPLAY_VALUE_CMY_NEG_COLOR   nvgRGB(164,  32, 164)
+#define DISPLAY_VALUE_CMY_MID_COLOR   nvgRGB( 48,  48,  48)
+#define DISPLAY_VALUE_CMY_POS_COLOR   nvgRGB( 32, 164, 164)
+
+
+// Per-channel step-exchange event, set for one tick by moduleProcess() at the LOCK/S<>R
+// decision point, consumed (and reset to EVENT_NONE) by the widget as soon as it notices it.
+#define EVENT_NONE          0
+#define EVENT_SOURCE        1
+#define EVENT_SOURCE_EQUAL  2  
+#define EVENT_RANDOM        3
+
+// Pos-cursor flash on a step-exchange event - color depends on EVENT_SOURCE/EVENT_RANDOM,
+// fading back to DISPLAY_POS_COLOR over DISPLAY_FLASH_FADE_TIME seconds (widget-managed,
+// time-based via glfwGetTime() so it's independent of GUI frame rate).
+#define DISPLAY_FLASH_FADE_TIME             0.7f
+#define DISPLAY_FLASH_SOURCE_COLOR          nvgRGB( 80, 160, 255)
+#define DISPLAY_FLASH_SOURCE_EQUAL_COLOR    nvgRGB( 60, 120, 196)
+#define DISPLAY_FLASH_RANDOM_COLOR          nvgRGB(255, 160,  80)
 
 //
 // Defaults
@@ -66,7 +90,8 @@ enum jsonIds {
     MEM_IS_HALFTONES_JSON,
     LOAD_HLD_CHANNELS_JSON,
     SCALE_MODE_JSON,
-    
+    VISUAL_ON_JSON,
+
 	NUM_JSONS
 };
 

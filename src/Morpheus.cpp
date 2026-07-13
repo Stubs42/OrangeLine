@@ -43,6 +43,11 @@ struct Morpheus : Module
 	NumberWidget *memWidget;
 	bool haveEditHld = false;
 	bool scaleOnOutput = false;
+	bool visualOn = true;
+	/** One-shot per-channel step-exchange event (EVENT_NONE/EVENT_SOURCE/EVENT_RANDOM), set
+		for a single tick at the LOCK/S<>R decision point, consumed and reset back to
+		EVENT_NONE by MorpheusDisplayWidget as soon as it notices a non-NONE value. */
+	int eventStatus[POLY_CHANNELS];
 
 #include "MorpheusJsonLabels.hpp"
 
@@ -175,6 +180,7 @@ struct Morpheus : Module
 	inline void moduleInitialize()
 	{
 		this->scaleOnOutput = getStateJson(SCALE_MODE_JSON) == ON_OUTPUT;
+		this->visualOn = getStateJson(VISUAL_ON_JSON) != 0.f;
 	}
 
 	/**
@@ -206,10 +212,13 @@ struct Morpheus : Module
 		setStateJson(LOAD_HLD_CHANNELS_JSON, 0.f);
 		setStateJson(SCALE_MODE_JSON, 0.f);
 		this->scaleOnOutput = 0.f;
+		setStateJson(VISUAL_ON_JSON, 1.f);
+		this->visualOn = true;
 
 		for (int i = 0; i < POLY_CHANNELS; i++) {
 			isShiftLeft[i] = false;
 			isShiftRight[i] = false;
+			eventStatus[i] = EVENT_NONE;
 		}
 		styleChanged = true;
 	}
@@ -662,6 +671,7 @@ struct Morpheus : Module
 						// User is holding REC and External Source is enabled, so copy external Source to step
 						if (channel < extChannels) {
 							setStateJson(STEPS_JSON + MAX_LOOP_LEN * channel + head, OL_statePoly[EXT_INPUT * POLY_CHANNELS + channel]);
+							eventStatus[channel] = EVENT_SOURCE;
 						}					
 					}
 					else if (getChannelClr(channel) > 5.f) {
@@ -687,20 +697,27 @@ struct Morpheus : Module
 									randomize = true;
 								}
 								else {
+									int index = STEPS_JSON + MAX_LOOP_LEN * channel + head;
+									float v = getStateJson(index);
 									// replace from source
 									if (getStateJson(EXT_ON_JSON) > 0.f) {
 										// source is extern
 										// DEBUG(" from EXT");
 										if (channel < extChannels) {
-											setStateJson(STEPS_JSON + MAX_LOOP_LEN * channel + head, OL_statePoly[EXT_INPUT * POLY_CHANNELS + channel]);
+											setStateJson(index, OL_statePoly[EXT_INPUT * POLY_CHANNELS + channel]);
 										}
 									}
 									else {
 										// source is MEM
 										// DEBUG(" from MEM");
-										int step = STEPS_JSON + channel * MAX_LOOP_LEN + head;
 										int mem = MEM_JSON + getStateJson(ACTIVE_MEM_JSON) * POLY_CHANNELS * MAX_LOOP_LEN + channel * MAX_LOOP_LEN + head;
-										setStateJson(step, getStateJson(mem));
+										setStateJson(index, getStateJson(mem));
+									}
+									if (getStateJson(index) == v) {
+										eventStatus[channel] = EVENT_SOURCE_EQUAL;
+									}
+									else {
+										eventStatus[channel] = EVENT_SOURCE;
 									}
 								}
 							}
@@ -725,6 +742,7 @@ struct Morpheus : Module
 								rnd = getRandom(&globalRandom) * 10.f;
 								setStateJson(STEPS_JSON + MAX_LOOP_LEN * channel + head, rnd);							
 							}
+							eventStatus[channel] = EVENT_RANDOM;
 						}
 					}
 				}
@@ -860,12 +878,33 @@ struct MorpheusDisplayWidget : Widget
 {
 	Morpheus *module = nullptr;
 
+	/** Per-(channel, step) flash state, owned entirely by the widget - the module only ever
+		delivers a one-shot trigger (Morpheus::eventStatus) for the channel's *current* step.
+		Keyed per step (not just per channel) because the flash must stay pinned to the step
+		that actually changed, fading out at that fixed position - if it were tracked only per
+		channel, the very next clock tick (head moving to a new step) would make the flash
+		jump to the new position instead of staying on the one that changed.
+		flashStartTime holds the glfwGetTime() timestamp of the most recent trigger for that
+		step (far in the past initially, so no flash is active before the first real event);
+		flashEventType remembers which of the three event colors (SOURCE/SOURCE_EQUAL/RANDOM)
+		to fade from at that moment. */
+	double flashStartTime[POLY_CHANNELS][MAX_LOOP_LEN];
+	int flashEventType[POLY_CHANNELS][MAX_LOOP_LEN];
+
 	static MorpheusDisplayWidget* create(Vec pos, Vec size, Morpheus *module)
 	{
 		MorpheusDisplayWidget *w = new MorpheusDisplayWidget();
 		w->box.pos = pos;
 		w->box.size = size;
 		w->module = module;
+		for (int i = 0; i < POLY_CHANNELS; i++)
+		{
+			for (int s = 0; s < MAX_LOOP_LEN; s++)
+			{
+				w->flashStartTime[i][s] = -1000.0;
+				w->flashEventType[i][s] = EVENT_NONE;
+			}
+		}
 		return w;
 	}
 
@@ -880,6 +919,11 @@ struct MorpheusDisplayWidget : Widget
 		nvgFillColor(args.vg, DISPLAY_BG_COLOR);
 		nvgFill(args.vg);
 
+		// "Visual On/Off" right-click toggle - skip the per-channel/per-step content
+		// entirely (the actual CPU cost) when off, leaving just the plain black background.
+		if (!module->visualOn)
+			return;
+
 		for (int row = 0; row < POLY_CHANNELS; row++)
 		{
 			int loopLen = (int) module->getChannelLoopLength(row);
@@ -887,6 +931,16 @@ struct MorpheusDisplayWidget : Widget
 				continue;
 			int pos = (int) module->getStateJson(HEAD_JSON + row);
 			int page = pos / DISPLAY_PAGE_SIZE;
+
+			// Consume a fresh step-exchange event (one-shot from moduleProcess(), always for
+			// the channel's *current* step) into our own per-step time-based fade timer, then
+			// reset it so it isn't picked up again.
+			if (module->eventStatus[row] != EVENT_NONE)
+			{
+				flashEventType[row][pos] = module->eventStatus[row];
+				flashStartTime[row][pos] = glfwGetTime();
+				module->eventStatus[row] = EVENT_NONE;
+			}
 
 			// Step value colors for the currently visible page - steps at or past loopLen
 			// stay black (background already covers that). Same box geometry as the pos
@@ -897,13 +951,48 @@ struct MorpheusDisplayWidget : Widget
 			{
 				float cv = module->getStateJson(STEPS_JSON + MAX_LOOP_LEN * row + step);
 				float t = clamp((cv + 10.f) / 20.f, 0.f, 1.f);
-				NVGcolor valueColor;
-				if (module->scaleOnOutput) {
-					valueColor = nvgLerpRGBA(DISPLAY_VALUE_MID_COLOR, DISPLAY_VALUE_POS_COLOR, t);
+
+				// Same source selection as the LOCK/S<>R exchange logic: EXT_INPUT if EXT_ON,
+				// else the active MEM slot - used only to pick which gradient to show (RGB if
+				// the step still matches its source, CMY if it has drifted away from it).
+				float sourceValue;
+				if (module->getStateJson(EXT_ON_JSON) > 0.f) {
+					sourceValue = module->OL_statePoly[EXT_INPUT * POLY_CHANNELS + row];
 				}
 				else {
-					valueColor = nvgLerpRGBA(DISPLAY_VALUE_NEG_COLOR, DISPLAY_VALUE_POS_COLOR, t);
+					int mem = MEM_JSON + (int) module->getStateJson(ACTIVE_MEM_JSON) * POLY_CHANNELS * MAX_LOOP_LEN + row * MAX_LOOP_LEN + step;
+					sourceValue = module->getStateJson(mem);
 				}
+				bool matchesSource = (cv == sourceValue);
+
+				NVGcolor valueColor;
+				if (matchesSource) {
+					if (module->scaleOnOutput)
+						valueColor = nvgLerpRGBA(DISPLAY_VALUE_MID_COLOR, DISPLAY_VALUE_POS_COLOR, t);
+					else
+						valueColor = nvgLerpRGBA(DISPLAY_VALUE_NEG_COLOR, DISPLAY_VALUE_POS_COLOR, t);
+				}
+				else {
+					if (module->scaleOnOutput)
+						valueColor = nvgLerpRGBA(DISPLAY_VALUE_CMY_MID_COLOR, DISPLAY_VALUE_CMY_POS_COLOR, t);
+					else
+						valueColor = nvgLerpRGBA(DISPLAY_VALUE_CMY_NEG_COLOR, DISPLAY_VALUE_CMY_POS_COLOR, t);
+				}
+
+				double flashElapsed = glfwGetTime() - flashStartTime[row][step];
+				if (flashElapsed >= 0.0 && flashElapsed < DISPLAY_FLASH_FADE_TIME)
+				{
+					float flashAmount = 1.f - (float) (flashElapsed / DISPLAY_FLASH_FADE_TIME);
+					NVGcolor flashColor;
+					switch (flashEventType[row][step])
+					{
+						case EVENT_SOURCE:       flashColor = DISPLAY_FLASH_SOURCE_COLOR; break;
+						case EVENT_SOURCE_EQUAL: flashColor = DISPLAY_FLASH_SOURCE_EQUAL_COLOR; break;
+						default:                 flashColor = DISPLAY_FLASH_RANDOM_COLOR; break;
+					}
+					valueColor = nvgLerpRGBA(valueColor, flashColor, flashAmount);
+				}
+
 				float vx = mm2px((step - pageStart) * 1.f + 0.25f);
 				float vy = mm2px(row * 1.f + 0.25f);
 				float vside = mm2px(0.75f);
@@ -1156,6 +1245,21 @@ struct MorpheusWidget : ModuleWidget
 		}
 	};
 
+	struct VisualOnItem : MenuItem
+	{
+		Morpheus *module;
+		void onAction(const event::Action &e) override
+		{
+			module->visualOn = !module->visualOn;
+			module->OL_setOutState(VISUAL_ON_JSON, module->visualOn ? 1.f : 0.f);
+		}
+		void step() override
+		{
+			if (module)
+				rightText = (module != nullptr && module->OL_state[VISUAL_ON_JSON] == 1.0f) ? "✔" : "";
+		}
+	};
+
 	struct MorpheusStyleItem : MenuItem
 	{
 		Morpheus *module;
@@ -1262,6 +1366,11 @@ struct MorpheusWidget : ModuleWidget
 		scaleOnOutputItem->module = module;
 		scaleOnOutputItem->text = "Scale on Output";
 		menu->addChild(scaleOnOutputItem);
+
+		VisualOnItem *visualOnItem = new VisualOnItem();
+		visualOnItem->module = module;
+		visualOnItem->text = "Visual On/Off";
+		menu->addChild(visualOnItem);
 
 		spacerLabel = new MenuLabel();
 		menu->addChild(spacerLabel);
