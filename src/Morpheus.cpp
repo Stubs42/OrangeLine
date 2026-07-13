@@ -952,31 +952,32 @@ struct MorpheusDisplayWidget : Widget
 				float cv = module->getStateJson(STEPS_JSON + MAX_LOOP_LEN * row + step);
 				float t = clamp((cv + 10.f) / 20.f, 0.f, 1.f);
 
-				// Same source selection as the LOCK/S<>R exchange logic: EXT_INPUT if EXT_ON,
-				// else the active MEM slot - used only to pick which gradient to show (RGB if
-				// the step still matches its source, CMY if it has drifted away from it).
-				float sourceValue;
-				if (module->getStateJson(EXT_ON_JSON) > 0.f) {
-					sourceValue = module->OL_statePoly[EXT_INPUT * POLY_CHANNELS + row];
-				}
-				else {
-					int mem = MEM_JSON + (int) module->getStateJson(ACTIVE_MEM_JSON) * POLY_CHANNELS * MAX_LOOP_LEN + row * MAX_LOOP_LEN + step;
-					sourceValue = module->getStateJson(mem);
-				}
-				bool matchesSource = (cv == sourceValue);
-
 				NVGcolor valueColor;
-				if (matchesSource) {
-					if (module->scaleOnOutput)
-						valueColor = nvgLerpRGBA(DISPLAY_VALUE_MID_COLOR, DISPLAY_VALUE_POS_COLOR, t);
+				if (module->scaleOnOutput) {
+					// Unipolar (0-10V, no negatives) - simple red-to-green by value, source
+					// match still shown via RGB (matches) vs CMY (drifted from source), since
+					// there's screen real estate to spare without a bipolar range to represent.
+					// Same source selection as the LOCK/S<>R exchange logic: EXT_INPUT if
+					// EXT_ON, else the active MEM slot.
+					float sourceValue;
+					if (module->getStateJson(EXT_ON_JSON) > 0.f) {
+						sourceValue = module->OL_statePoly[EXT_INPUT * POLY_CHANNELS + row];
+					}
+					else {
+						int mem = MEM_JSON + (int) module->getStateJson(ACTIVE_MEM_JSON) * POLY_CHANNELS * MAX_LOOP_LEN + row * MAX_LOOP_LEN + step;
+						sourceValue = module->getStateJson(mem);
+					}
+					bool matchesSource = (cv == sourceValue);
+
+					if (matchesSource)
+						valueColor = nvgLerpRGBA(DISPLAY_MATCH_LOW_COLOR, DISPLAY_MATCH_HIGH_COLOR, t);
 					else
-						valueColor = nvgLerpRGBA(DISPLAY_VALUE_NEG_COLOR, DISPLAY_VALUE_POS_COLOR, t);
+						valueColor = nvgLerpRGBA(DISPLAY_DIRTY_LOW_COLOR, DISPLAY_DIRTY_HIGH_COLOR, t);
 				}
 				else {
-					if (module->scaleOnOutput)
-						valueColor = nvgLerpRGBA(DISPLAY_VALUE_CMY_MID_COLOR, DISPLAY_VALUE_CMY_POS_COLOR, t);
-					else
-						valueColor = nvgLerpRGBA(DISPLAY_VALUE_CMY_NEG_COLOR, DISPLAY_VALUE_CMY_POS_COLOR, t);
+					// Bipolar (-10..+10V) - no source-match distinction, that'd be too many
+					// colors at once on top of the already-meaningful red/green value range.
+					valueColor = nvgLerpRGBA(DISPLAY_BIPOLAR_LOW_COLOR, DISPLAY_BIPOLAR_HIGH_COLOR, t);
 				}
 
 				double flashElapsed = glfwGetTime() - flashStartTime[row][step];
@@ -1035,23 +1036,23 @@ struct MorpheusWidget : ModuleWidget
 	MorpheusWidget(Morpheus *module)
 	{
 		setModule(module);
-		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/MorpheusOrangeTest.svg")));
+		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/MorpheusOrange.svg")));
 
 		if (module)
 		{
 			SvgPanel *brightPanel = new SvgPanel();
-			brightPanel->setBackground(APP->window->loadSvg(asset::plugin(pluginInstance, "res/MorpheusOrangeTest.svg")));
+			brightPanel->setBackground(APP->window->loadSvg(asset::plugin(pluginInstance, "res/MorpheusBright.svg")));
 			brightPanel->visible = false;
 			module->brightPanel = brightPanel;
 			addChild(brightPanel);
 			SvgPanel *darkPanel = new SvgPanel();
-			darkPanel->setBackground(APP->window->loadSvg(asset::plugin(pluginInstance, "res/MorpheusOrangeTest.svg")));
+			darkPanel->setBackground(APP->window->loadSvg(asset::plugin(pluginInstance, "res/MorpheusDark.svg")));
 			darkPanel->visible = false;
 			module->darkPanel = darkPanel;
 			addChild(darkPanel);
 		}
 
-		addChild(MorpheusDisplayWidget::create(calculateCoordinates(0.912f, 25.805f, 0.f), mm2px(Vec(49.0f, 16.5f)), module));
+		addChild(MorpheusDisplayWidget::create(calculateCoordinates(1.25f, 25.95f, 0.f), mm2px(Vec(48.4f, 16.3f)), module));
 
 		// Positions extracted from res/MorpheusWorkTest.svg's Controls layer (2026-07-13) -
 		// panel reorganized to make room for the future visualization display (reserved band

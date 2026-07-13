@@ -25,26 +25,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define ON_RANDOMIZE    0
 #define ON_OUTPUT       1
 
-// Visualization display (MorpheusDisplayWidget) layout/colors
-#define DISPLAY_PAGE_SIZE         48
-#define DISPLAY_BG_COLOR          nvgRGB(  0,   0,   0)
-#define DISPLAY_END_MARKER_COLOR  nvgRGB(127, 127, 127)
-#define DISPLAY_POS_COLOR         nvgRGB(127, 127, 127)
-// Step value color gradient: -10V = light red, +10V = light green, linearly interpolated
-// (so 0V lands on the natural red+green mix, a yellow/olive tone - no separate color needed).
-// Used when the step's current value still matches its source (MEM slot, or EXT_INPUT if
-// EXT_ON) - i.e. it hasn't drifted/been randomized away from it.
-#define DISPLAY_VALUE_NEG_COLOR   nvgRGB(164,  32, 32)
-#define DISPLAY_VALUE_MID_COLOR   nvgRGB( 32,  48, 32)
-#define DISPLAY_VALUE_POS_COLOR   nvgRGB( 32, 164, 32)
-
-// Second gradient (CMY-based), used instead of the one above when the step's current value
-// differs from its source - a quick "this step has drifted from source" visual cue.
-#define DISPLAY_VALUE_CMY_NEG_COLOR   nvgRGB(164,  32, 164)
-#define DISPLAY_VALUE_CMY_MID_COLOR   nvgRGB( 48,  48,  48)
-#define DISPLAY_VALUE_CMY_POS_COLOR   nvgRGB( 32, 164, 164)
-
-
 // Per-channel step-exchange event, set for one tick by moduleProcess() at the LOCK/S<>R
 // decision point, consumed (and reset to EVENT_NONE) by the widget as soon as it notices it.
 #define EVENT_NONE          0
@@ -52,13 +32,32 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define EVENT_SOURCE_EQUAL  2  
 #define EVENT_RANDOM        3
 
+// Visualization display (MorpheusDisplayWidget) layout/colors
+
+#define DISPLAY_PAGE_SIZE         48
+#define DISPLAY_FLASH_FADE_TIME   0.5f
+
+#define DISPLAY_BG_COLOR          nvgRGB(  0,   0,   0)
+#define DISPLAY_END_MARKER_COLOR  nvgRGB( 96,  96,  96)
+#define DISPLAY_POS_COLOR         nvgRGB( 96,  96,  96)
+
+// Step value color gradient: -10V = light red, +10V = light green, linearly interpolated
+// (so 0V lands on the natural red+green mix, a yellow/olive tone - no separate color needed).
+// Used when the step's current value still matches its source (MEM slot, or EXT_INPUT if
+// EXT_ON) - i.e. it hasn't drifted/been randomized away from it.
+#define DISPLAY_BIPOLAR_LOW_COLOR       nvgRGB(164,  32, 32)
+#define DISPLAY_BIPOLAR_HIGH_COLOR      nvgRGB( 32, 164, 32)
+#define DISPLAY_MATCH_LOW_COLOR         nvgRGB(  4,  16,  4)
+#define DISPLAY_MATCH_HIGH_COLOR        nvgRGB( 64, 127, 64)
+#define DISPLAY_DIRTY_LOW_COLOR         nvgRGB( 16,   4,  4)
+#define DISPLAY_DIRTY_HIGH_COLOR        nvgRGB(127,  64, 64)
+
 // Pos-cursor flash on a step-exchange event - color depends on EVENT_SOURCE/EVENT_RANDOM,
 // fading back to DISPLAY_POS_COLOR over DISPLAY_FLASH_FADE_TIME seconds (widget-managed,
 // time-based via glfwGetTime() so it's independent of GUI frame rate).
-#define DISPLAY_FLASH_FADE_TIME             0.7f
-#define DISPLAY_FLASH_SOURCE_COLOR          nvgRGB( 80, 160, 255)
-#define DISPLAY_FLASH_SOURCE_EQUAL_COLOR    nvgRGB( 60, 120, 196)
-#define DISPLAY_FLASH_RANDOM_COLOR          nvgRGB(255, 160,  80)
+#define DISPLAY_FLASH_SOURCE_COLOR          nvgRGB( 40, 255,  40)
+#define DISPLAY_FLASH_SOURCE_EQUAL_COLOR    nvgRGB( 48, 196,  48)
+#define DISPLAY_FLASH_RANDOM_COLOR          nvgRGB(255,  40,  40)
 
 //
 // Defaults
