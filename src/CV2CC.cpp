@@ -62,6 +62,11 @@ struct CV2CC : Module
 	/** Current incoming 0-10V value per CC (pre-mute - this is the same value the grid's cell
 		color is based on), so a muted CC's live input value still shows. Not persisted. */
 	float ccCvValue[128];
+	/** Whether the CCGridWidget ignores clicks/drags - protects against accidentally toggling
+		CCs while rearranging cables/modules nearby. Deliberately *not* persisted (Dieter: "das
+		Persistieren der Locks ist overdesigned") - always starts locked on add/load/reset, the
+		light (red = unlocked/careful, off = locked/safe) only reflects clicks since. */
+	bool gridLocked = true;
 
 	CV2CC()
 	{
@@ -131,6 +136,7 @@ struct CV2CC : Module
 	inline void moduleParamConfig()
 	{
 		configParam(FLUSH_PARAM, 0.f, 1.f, 0.f, "Force resend all CCs");
+		configParam(GRID_LOCK_PARAM, 0.f, 1.f, 0.f, "Lock CC grid editing (click to toggle)");
 		for (int n = 0; n < 8; n++)
 			configInput(CC_INPUT + n, string::f("CC %d-%d", n * 16, n * 16 + 15));
 		configInput(FORCE_INPUT, "Force resend all CCs");
@@ -153,6 +159,7 @@ struct CV2CC : Module
 		rateLimiterTimer.reset();
 		needsInitialSeed = true;
 		setStateJson(FLUSH_ON_START_JSON, 1.f);
+		gridLocked = true;
 
 		styleChanged = true;
 	}
@@ -188,6 +195,10 @@ struct CV2CC : Module
 			}
 			styleChanged = false;
 		}
+
+		if (inChangeParam(GRID_LOCK_PARAM))
+			gridLocked = !gridLocked;
+		setStateLight(GRID_LOCK_LIGHT, gridLocked ? 0.f : 255.f);	// red = unlocked (careful!), off = locked (safe)
 
 		bool forceFlush = changeInput(FORCE_INPUT) || (changeParam(FLUSH_PARAM) && getStateParam(FLUSH_PARAM) > 0.f);
 		if (forceFlush)
@@ -303,8 +314,12 @@ struct CV2CCWidget : ModuleWidget
 		addChild(display);
 
 		CCGridWidget *grid = CCGridWidget::create(calculateCoordinates(3.556f, 42.849f, 0.f), mm2px(Vec(43.688f, 22.0f)),
-			module ? &module->ccEnabled[0] : NULL, module ? &module->ccActivity[0] : NULL, module ? &module->ccCvValue[0] : NULL);
+			module ? &module->ccEnabled[0] : NULL, module ? &module->ccActivity[0] : NULL, module ? &module->ccCvValue[0] : NULL,
+			module ? &module->gridLocked : NULL);
 		addChild(grid);
+
+		addParam(createParamCentered<VCVLatch>(calculateCoordinates(22.097f, 72.918f, 0.f), module, GRID_LOCK_PARAM));
+		addChild(createLightCentered<LargeLight<RedLight>>(calculateCoordinates(22.097f, 72.918f, 0.f), module, GRID_LOCK_LIGHT));
 
 		addInput(createInputCentered<PJ301MPort>(calculateCoordinates(42.672f, 72.899f, 0.f), module, FORCE_INPUT));
 		addParam(createParamCentered<LEDButton>(calculateCoordinates(43.942f, 80.415f, 0.f), module, FLUSH_PARAM));

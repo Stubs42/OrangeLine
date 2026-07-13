@@ -10,6 +10,8 @@ enum jsonIds
 enum ParamIds
 {
 	SYNC_PARAM,
+	RX_GRID_LOCK_PARAM,
+	TX_GRID_LOCK_PARAM,
 	NUM_PARAMS
 };
 
@@ -34,5 +36,7 @@ enum OutputIds
 
 enum LightIds
 {
+	RX_GRID_LOCK_LIGHT,
+	TX_GRID_LOCK_LIGHT,
 	NUM_LIGHTS
 };

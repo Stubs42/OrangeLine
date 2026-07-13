@@ -9,6 +9,7 @@ enum jsonIds
 
 enum ParamIds
 {
+	GRID_LOCK_PARAM,
 	NUM_PARAMS
 };
 
@@ -26,5 +27,6 @@ enum OutputIds
 
 enum LightIds
 {
+	GRID_LOCK_LIGHT,
 	NUM_LIGHTS
 };

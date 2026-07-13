@@ -52,6 +52,11 @@ struct CC2CV : Module
 		value the grid's cell color is based on), so a muted CC's live value still shows.
 		Not persisted - recomputed every tick from ccValues/valueFilters. */
 	float ccCvValue[128];
+	/** Whether the CCGridWidget ignores clicks/drags - protects against accidentally toggling
+		CCs while rearranging cables/modules nearby. Deliberately *not* persisted (Dieter: "das
+		Persistieren der Locks ist overdesigned") - always starts locked on add/load/reset, the
+		light (red = unlocked/careful, off = locked/safe) only reflects clicks since. */
+	bool gridLocked = true;
 
 	CC2CV()
 	{
@@ -134,6 +139,7 @@ struct CC2CV : Module
 
 	inline void moduleParamConfig()
 	{
+		configParam(GRID_LOCK_PARAM, 0.f, 1.f, 0.f, "Lock CC grid editing (click to toggle)");
 		for (int n = 0; n < 8; n++)
 			configOutput(CC_OUTPUT + n, string::f("CC %d-%d", n * 16, n * 16 + 15));
 	}
@@ -152,6 +158,7 @@ struct CC2CV : Module
 		}
 		midiInput.reset();
 		setStateJson(SMOOTH_JSON, 1.f);
+		gridLocked = true;
 
 		styleChanged = true;
 	}
@@ -175,6 +182,10 @@ struct CC2CV : Module
 			}
 			styleChanged = false;
 		}
+
+		if (inChangeParam(GRID_LOCK_PARAM))
+			gridLocked = !gridLocked;
+		setStateLight(GRID_LOCK_LIGHT, gridLocked ? 0.f : 255.f);	// red = unlocked (careful!), off = locked (safe)
 
 		midi::Message msg;
 		while (midiInput.tryPop(&msg, args.frame))
@@ -257,8 +268,12 @@ struct CC2CVWidget : ModuleWidget
 		addChild(display);
 
 		CCGridWidget *grid = CCGridWidget::create(calculateCoordinates(3.556f, 42.927f, 0.f), mm2px(Vec(43.688f, 22.0f)),
-			module ? &module->ccEnabled[0] : NULL, module ? &module->ccActivity[0] : NULL, module ? &module->ccCvValue[0] : NULL);
+			module ? &module->ccEnabled[0] : NULL, module ? &module->ccActivity[0] : NULL, module ? &module->ccCvValue[0] : NULL,
+			module ? &module->gridLocked : NULL);
 		addChild(grid);
+
+		addParam(createParamCentered<VCVLatch>(calculateCoordinates(5.588f, 70.867f, 0.f), module, GRID_LOCK_PARAM));
+		addChild(createLightCentered<LargeLight<RedLight>>(calculateCoordinates(5.588f, 70.867f, 0.f), module, GRID_LOCK_LIGHT));
 
 		addOutput(createOutputCentered<PJ301MPort>(calculateCoordinates(25.400f, 80.265f, 0.f), module, CC_OUTPUT + 0));
 		addOutput(createOutputCentered<PJ301MPort>(calculateCoordinates(36.830f, 84.837f, 0.f), module, CC_OUTPUT + 1));

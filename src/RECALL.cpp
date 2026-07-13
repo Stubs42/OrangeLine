@@ -131,6 +131,12 @@ struct RECALL : Module
 		(regardless of txEnabled). Not persisted - purely cosmetic/runtime. */
 	float rxActivity[128];
 	float txActivity[128];
+	/** Whether each CCGridWidget ignores clicks/drags - protects against accidentally toggling
+		CCs while rearranging cables/modules nearby. Deliberately *not* persisted (Dieter: "das
+		Persistieren der Locks ist overdesigned") - always start locked on add/load/reset, the
+		lights (red = unlocked/careful, off = locked/safe) only reflect clicks since. */
+	bool rxGridLocked = true;
+	bool txGridLocked = true;
 
 	RECALL()
 	{
@@ -231,6 +237,8 @@ struct RECALL : Module
 	{
 		configParam(SYNC_PARAM, 0.f, 1.f, 0.f, "Sync / force resend (hold)");
 		configInput(GATE_INPUT, "Sync / force resend gate");
+		configParam(RX_GRID_LOCK_PARAM, 0.f, 1.f, 0.f, "Lock RX grid editing (click to toggle)");
+		configParam(TX_GRID_LOCK_PARAM, 0.f, 1.f, 0.f, "Lock TX grid editing (click to toggle)");
 		for (int n = 0; n < 8; n++)
 		{
 			configInput(RX_INPUT + n, string::f("Send override %d-%d", n * 16, n * 16 + 15));
@@ -265,6 +273,8 @@ struct RECALL : Module
 		midiInput.reset();
 		midiOutput.reset();
 		setStateJson(AUTOSYNC_JSON, 1.f);
+		rxGridLocked = true;
+		txGridLocked = true;
 
 		styleChanged = true;
 	}
@@ -301,6 +311,13 @@ struct RECALL : Module
 			}
 			styleChanged = false;
 		}
+
+		if (inChangeParam(RX_GRID_LOCK_PARAM))
+			rxGridLocked = !rxGridLocked;
+		if (inChangeParam(TX_GRID_LOCK_PARAM))
+			txGridLocked = !txGridLocked;
+		setStateLight(RX_GRID_LOCK_LIGHT, rxGridLocked ? 0.f : 255.f);	// red = unlocked (careful!), off = locked (safe)
+		setStateLight(TX_GRID_LOCK_LIGHT, txGridLocked ? 0.f : 255.f);
 
 		if (needsAutoSyncCheck)
 		{
@@ -501,12 +518,19 @@ struct RECALLWidget : ModuleWidget
 		addParam(createParamCentered<LEDButton>(calculateCoordinates(60.960f, 33.323f, 0.f), module, SYNC_PARAM));
 
 		CCGridWidget *rxGrid = CCGridWidget::create(calculateCoordinates(2.032f, 42.673f, 0.f), mm2px(Vec(43.688f, 22.0f)),
-			module ? &module->rxEnabled[0] : NULL, module ? &module->rxActivity[0] : NULL, module ? &module->heldRx[0] : NULL);
+			module ? &module->rxEnabled[0] : NULL, module ? &module->rxActivity[0] : NULL, module ? &module->heldRx[0] : NULL,
+			module ? &module->rxGridLocked : NULL);
 		addChild(rxGrid);
 
 		CCGridWidget *txGrid = CCGridWidget::create(calculateCoordinates(76.200f, 42.673f, 0.f), mm2px(Vec(43.688f, 22.0f)),
-			module ? &module->txEnabled[0] : NULL, module ? &module->txActivity[0] : NULL, module ? &module->hold2[0] : NULL);
+			module ? &module->txEnabled[0] : NULL, module ? &module->txActivity[0] : NULL, module ? &module->hold2[0] : NULL,
+			module ? &module->txGridLocked : NULL);
 		addChild(txGrid);
+
+		addParam(createParamCentered<VCVLatch>(calculateCoordinates(4.063f, 70.867f, 0.f), module, RX_GRID_LOCK_PARAM));
+		addChild(createLightCentered<LargeLight<RedLight>>(calculateCoordinates(4.063f, 70.867f, 0.f), module, RX_GRID_LOCK_LIGHT));
+		addParam(createParamCentered<VCVLatch>(calculateCoordinates(117.855f, 70.867f, 0.f), module, TX_GRID_LOCK_PARAM));
+		addChild(createLightCentered<LargeLight<RedLight>>(calculateCoordinates(117.855f, 70.867f, 0.f), module, TX_GRID_LOCK_LIGHT));
 
 		if (module)
 			module->widgetReady = true;

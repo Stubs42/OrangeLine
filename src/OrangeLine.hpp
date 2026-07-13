@@ -395,14 +395,16 @@ struct CCGridWidget : OpaqueWidget {
 	bool  *enabled  = nullptr;	// pointer to module's bool[128], toggled on click
 	float *activity = nullptr;	// pointer to module's float[128], 0-1, read only here
 	float *value    = nullptr;	// pointer to module's float[128], 0-10V, read only here
+	bool  *locked   = nullptr;	// pointer to module's bool, read only here - while true, clicks/drags are ignored
 
-	static CCGridWidget* create (Vec pos, Vec size, bool *enabled, float *activity, float *value = nullptr) {
+	static CCGridWidget* create (Vec pos, Vec size, bool *enabled, float *activity, float *value = nullptr, bool *locked = nullptr) {
 		CCGridWidget *w = new CCGridWidget ();
 		w->box.pos  = pos;
 		w->box.size = size;
 		w->enabled  = enabled;
 		w->activity = activity;
 		w->value    = value;
+		w->locked   = locked;
 		return w;
 	}
 
@@ -420,7 +422,18 @@ struct CCGridWidget : OpaqueWidget {
 		return row * NUM_CC_COLS + col;
 	}
 
+	/** While locked, this widget must behave as if it weren't an OpaqueWidget at all - not
+		just skip its own click handling, but actually stop consuming/stopPropagating the
+		event, so it bubbles up to the ModuleWidget underneath (e.g. so click-dragging to move
+		the module works normally even when the drag starts on top of the grid). Falls through
+		to plain Widget::onHover (no consumption) instead of OpaqueWidget::onHover. */
+	void onHover (const HoverEvent &e) override {
+		if (locked && *locked) { Widget::onHover (e); return; }
+		OpaqueWidget::onHover (e);
+	}
+
 	void onButton (const ButtonEvent &e) override {
+		if (locked && *locked) { Widget::onButton (e); return; }
 		OpaqueWidget::onButton (e);
 		if (!enabled) return;
 		if (e.action != GLFW_PRESS || e.button != GLFW_MOUSE_BUTTON_LEFT) return;
@@ -433,6 +446,7 @@ struct CCGridWidget : OpaqueWidget {
 		above) is in progress - lets a click-drag "paint" the same on/off value across every
 		cell it passes over, instead of only ever affecting the single cell first pressed. */
 	void onDragHover (const DragHoverEvent &e) override {
+		if (locked && *locked) { Widget::onDragHover (e); return; }
 		OpaqueWidget::onDragHover (e);
 		if (!enabled) return;
 		int cc = cellAt (e.pos);
