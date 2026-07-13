@@ -645,17 +645,13 @@ CMP output [polyphonic]: Latency corrected CMP values for each channel
 
 ### Short Description
 
-LANES merges up to 16 polyphonic sources (e.g. multiple sequencers or performance controllers) into 16 independent output lanes, each intended to feed one external CV>MIDI interface. It replaces a CPU-heavy interpreted-script approach with a native, control-rate implementation.
+LANES merges up to 16 polyphonic sources (e.g. multiple sequencers or performance controllers) into 16 independent lanes, routed by a per-note Lane CV. It replaces a CPU-heavy interpreted-script approach with a native, control-rate implementation.
 
-Each of the 16 sources provides a V/Oct, Gate, Velocity and Lane input. The Lane input is a V/Oct-like CV (1 semitone = 1 lane, 0V = Lane 1) that selects which of the 16 output lanes a given note-channel is routed to. LANES allocates each lane's polyphonic output dynamically: when a note-on arrives for a lane, LANES either merges it into an already-active voice of the same pitch on that lane (so the same note is never sent twice to the same downstream MIDI interface), reuses a free channel, or grows the lane's channel count. Velocity is fixed at the moment a channel is first (re)allocated and set back to 0 once the last contributing note releases it.
-
-If a lane already uses all 16 of its channels and a new, distinct pitch needs one, LANES steals the oldest active note on that lane for it (classic voice stealing) - the stolen note does not come back on its own even if its gate is still held, it stays silent until re-triggered or until its lane/pitch input changes. While any held note on a lane has no channel (freshly overflowed or waiting after being stolen from), that lane's OVERFLOW output and light stay active as a continuous state, not a one-shot pulse.
-
-A lane's channel count only ever grows on demand and only shrinks again from the end, one tick after the last channel's gate has already been sent out as low - so a downstream CV>MIDI interface is guaranteed to see an explicit gate-off before a channel can disappear from the polyphonic cable, avoiding hung notes.
+LANES itself is deliberately just a shared *input* module: it quantizes and normalizes the 16 sources' V/Oct, Gate, Velocity and Lane CVs (handling unpatched cables sanely - e.g. unplugging GATE always releases held notes) and groups them by destination lane. It has no CV outputs of its own and does no merging or voice-stealing - use the [LANESCV](#lanescv) and/or [LANESMIDI](#lanesmidi) expander modules to actually get lanes out as CV or MIDI (see below for why).
 
 ### The Panel
 
-16 source blocks (left half), each with:
+16 source blocks, each with:
 
 V/OCT input [polyphonic]: Pitch for this source's note-channels.
 
@@ -665,7 +661,25 @@ VEL input [polyphonic]: Velocity for this source's note-channels.
 
 LANE input [polyphonic]: Per note-channel CV selecting the destination lane (1 semitone = 1 lane).
 
-16 lane blocks (right half), each with:
+### Expanders
+
+LANES is a Hub for the Expander modules below - attach any number of them to its right side (in any order/mix; each finds LANES through however many other expanders sit in between). Every expander runs its *own* voice-stealing independently, against its own capacity - a deliberate design choice: merging/allocating polyphony is really a property of what's downstream (e.g. Rack's own 16-channel poly-cable limit for CV, or a MIDI device's own capabilities), not something LANES itself should decide once for everyone. This also makes layering trivial: attach two LANESMIDI expanders side by side, each targeting a different MIDI device - the same lane always ends up on the same MIDI channel on both devices, with each expander's polyphony handled independently.
+
+## LANESCV
+
+### Short Description
+
+LANESCV is a right-side expander for LANES: it reads LANES' raw per-source state, merges/voice-steals it into 16 independent polyphonic CV/Gate/Velocity lanes (its own allocator, capped at Rack's 16-channel poly limit), and outputs them - this is exactly what LANES' own output section used to do before LANES was split into a Hub + Expanders.
+
+When a note-on arrives for a lane, LANESCV either merges it into an already-active voice of the same pitch on that lane (so the same note is never sent twice down the same polyphonic cable), reuses a free channel, or grows the lane's channel count. Velocity is fixed at the moment a channel is first (re)allocated and set back to 0 once the last contributing note releases it.
+
+If a lane already uses all 16 of its channels and a new, distinct pitch needs one, LANESCV steals the oldest active note on that lane for it (classic voice stealing) - the stolen note does not come back on its own even if its gate is still held, it stays silent until re-triggered or until its lane/pitch input changes. While any held note on a lane has no channel (freshly overflowed or waiting after being stolen from), that lane's OVERFLOW output and light stay active as a continuous state, not a one-shot pulse.
+
+A lane's channel count only ever grows on demand and only shrinks again from the end, one tick after the last channel's gate has already been sent out as low - so a downstream CV>MIDI interface is guaranteed to see an explicit gate-off before a channel can disappear from the polyphonic cable, avoiding hung notes.
+
+### The Panel
+
+16 lane blocks, each with:
 
 V/OCT output [polyphonic]: Pitch of the notes currently allocated to this lane.
 
@@ -673,7 +687,25 @@ GATE output [polyphonic]: Gate of the notes currently allocated to this lane.
 
 VEL output [polyphonic]: Velocity of the notes currently allocated to this lane.
 
-OVERFLOW output and light: High/lit while this lane currently has more distinct notes wanting it than it has channels for.
+OVERFLOW output and light: High/lit while this lane currently has more distinct notes wanting it than LANESCV's own 16 channels can represent.
+
+## LANESMIDI
+
+### Short Description
+
+LANESMIDI is a right-side expander for LANES: it reads LANES' raw per-source state, merges/voice-steals it into 16 independent lanes (its own allocator, same algorithm as LANESCV but a completely separate instance/capacity), and sends each of its 16 MIDI channels out as Note On/Off with velocity, driven by whichever lane that channel is tuned to - built for driving a multi-timbral device (e.g. a Roland Integra-7) across all 16 channels without needing a separate CV>MIDI module per channel.
+
+Each of the 16 rows is a MIDI channel (channel 1-16, fixed), with a single button selecting which lane (0 = off, 1-16) feeds it: click to increment, right-click to decrement, hover for a tooltip showing the current value ("Off" or "Lane N"). Indexing by channel rather than by lane is deliberate - a channel can only ever have one source lane at a time (a single selector), so two lanes can never collide over the same channel and no arbitration is needed. Two different channels choosing the same lane is fine (e.g. for layering the same notes to two parts of a multi-timbral patch) since each channel still only ever reads one lane at a time.
+
+The OVERFLOW light per row mirrors LANESCV's: it lights up while the lane currently feeding that channel has more distinct notes wanting it than LANESMIDI's own 16-voice capacity can represent.
+
+Only Gate, V/Oct and Velocity are sent - no aftertouch, pitch wheel or mod wheel, since those can already be handled via CC2CV/CV2CC in parallel if needed.
+
+### The Panel
+
+MIDI device selector (driver + device - no channel dropdown, since each row already fixes one specific MIDI channel).
+
+16 rows (one per MIDI channel), each with a lane-select button (0-16, "Off" or the source lane) and an overflow light (see above).
 
 ## K2C
 

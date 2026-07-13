@@ -21,6 +21,8 @@ extern Model *modelBuckets;
 extern Model *modelCron;
 extern Model *modelHold;
 extern Model *modelLanes;
+extern Model *modelLanesCV;
+extern Model *modelLanesMidi;
 extern Model *modelK2C;
 extern Model *modelCC14;
 extern Model *modelD2D;

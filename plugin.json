@@ -139,11 +139,32 @@
     {
       "slug": "Lanes",
       "name": "Lanes",
-      "description": "Merges up to 16 polyphonic sources into 16 dynamically allocated polyphonic CV/Gate/Velocity lanes for multi-channel CV to MIDI interfacing",
+      "description": "Merges up to 16 polyphonic sources into 16 dynamically allocated polyphonic lanes with voice stealing. Attach LanesCV and/or LanesMidi expanders to the right to read the lanes out as CV or MIDI",
       "tags": [
         "Utility",
         "Polyphonic",
-        "MIDI"
+        "Expander"
+      ]
+    },
+    {
+      "slug": "LanesCV",
+      "name": "LanesCV",
+      "description": "Expander for Lanes: reads its 16 lanes out as polyphonic CV/Gate/Velocity/Overflow jacks",
+      "tags": [
+        "Utility",
+        "Polyphonic",
+        "Expander"
+      ]
+    },
+    {
+      "slug": "LanesMidi",
+      "name": "LanesMidi",
+      "description": "Expander for Lanes: sends its 16 lanes as MIDI Note On/Off/Velocity, one freely assignable MIDI channel per lane, for multi-timbral multi-channel MIDI interfacing",
+      "tags": [
+        "Utility",
+        "Polyphonic",
+        "MIDI",
+        "Expander"
       ]
     },
     {

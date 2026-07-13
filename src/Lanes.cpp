@@ -24,7 +24,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "Lanes.hpp"
 
-struct Lanes : Module
+struct Lanes : Module, LanesHubInterface
 {
 
 #include "OrangeLineCommon.hpp"
@@ -34,37 +34,20 @@ struct Lanes : Module
 	// ********************************************************************************************************************************
 	/*
 		Module member variables
+
+		LANES (the Hub) does no merging or voice-stealing of its own anymore - it's just a
+		shared input module. It quantizes/defaults the NUM_SOURCES raw sources' gate/pitch/
+		velocity/lane-select CV and exposes that raw, per-source, *unmerged* state via
+		LanesHubInterface (see LanesShared.hpp for why). Each expander (LanesCV, LanesMidi,
+		...) runs its own independent LanesVoiceAllocator against this raw state, with its
+		own capacity and its own overflow indicator - see LanesVoiceAllocator.hpp.
 	*/
 	bool widgetReady = false;
 
-	/*
-		Per-source-channel edge-detection state (plain, non-JSON, reset in moduleInitialize()).
-		Tracks the last committed gate/lane/pitch for each of the NUM_SOURCES * POLY_CHANNELS note channels,
-		and which lane-slot (if any) that channel currently contributes to.
-	*/
-	bool  oldGate [NUM_SOURCES][POLY_CHANNELS];
-	int   oldLane [NUM_SOURCES][POLY_CHANNELS];
-	float oldPitch[NUM_SOURCES][POLY_CHANNELS];
-	int   srcSlot [NUM_SOURCES][POLY_CHANNELS];
-
-	/*
-		Per-lane slot state.
-		laneChannelCount only shrinks from the end, and only for a trailing slot that was
-		already inactive for at least one full tick (see moduleProcess()), so a downstream
-		CV->MIDI interface never loses a channel while its gate is still high (never a hung note).
-	*/
-	bool  slotActive      [NUM_LANES][POLY_CHANNELS];
-	float slotPitch       [NUM_LANES][POLY_CHANNELS];
-	float slotVelocity    [NUM_LANES][POLY_CHANNELS];
-	int   slotContributors[NUM_LANES][POLY_CHANNELS];
-	int   laneChannelCount[NUM_LANES];
-
-	/*
-		Age (tick number at last (re)allocation) of each slot, used to find the oldest active
-		slot to steal when a lane is full. ageCounter increments once per control-rate tick.
-	*/
-	unsigned long slotAge[NUM_LANES][POLY_CHANNELS];
-	unsigned long ageCounter;
+	bool  sourceGate    [NUM_SOURCES][POLY_CHANNELS];
+	float sourcePitch   [NUM_SOURCES][POLY_CHANNELS];
+	float sourceVelocity[NUM_SOURCES][POLY_CHANNELS];
+	int   sourceLane    [NUM_SOURCES][POLY_CHANNELS];
 
 
 	// ********************************************************************************************************************************
@@ -100,18 +83,6 @@ struct Lanes : Module
 			setInPoly (GATE_IN_INPUT + i, true);
 			setInPoly (VEL_IN_INPUT  + i, true);
 			setInPoly (LANE_IN_INPUT + i, true);
-		}
-		for (int i = 0; i < NUM_LANES; i++)
-		{
-			setOutPoly (VOCT_OUTPUT + i, true);
-			setOutPoly (GATE_OUTPUT + i, true);
-			setOutPoly (VEL_OUTPUT  + i, true);
-			setOutPoly (OVERFLOW_OUTPUT + i, false);	// mono
-			/*
-				Plain continuous gate (STATE_TYPE_VALUE, the default), not a trigger: overflow is an
-				ongoing condition ("this lane is currently full"), not a one-shot event. A trigger's
-				1ms pulse would fight with the ~0.9ms control-rate retry, causing flicker.
-			*/
 		}
 	}
 
@@ -149,17 +120,6 @@ struct Lanes : Module
 			sprintf(buffer, "Source %d Lane", i + 1);
 			configInput (LANE_IN_INPUT + i, buffer);
 		}
-		for (int i = 0; i < NUM_LANES; i++)
-		{
-			sprintf(buffer, "Lane %d V/Oct", i + 1);
-			configOutput (VOCT_OUTPUT + i, buffer);
-			sprintf(buffer, "Lane %d Gate", i + 1);
-			configOutput (GATE_OUTPUT + i, buffer);
-			sprintf(buffer, "Lane %d Velocity", i + 1);
-			configOutput (VEL_OUTPUT + i, buffer);
-			sprintf(buffer, "Lane %d Overflow", i + 1);
-			configOutput (OVERFLOW_OUTPUT + i, buffer);
-		}
 	}
 
 	inline void moduleCustomInitialize()
@@ -176,23 +136,10 @@ struct Lanes : Module
 	*/
 	inline void moduleInitialize()
 	{
-		memset (oldGate,           0, sizeof(oldGate));
-		memset (oldPitch,        0.f, sizeof(oldPitch));
-		memset (slotActive,        0, sizeof(slotActive));
-		memset (slotPitch,       0.f, sizeof(slotPitch));
-		memset (slotVelocity,    0.f, sizeof(slotVelocity));
-		memset (slotContributors,  0, sizeof(slotContributors));
-		memset (laneChannelCount,  0, sizeof(laneChannelCount));
-		memset (slotAge,           0, sizeof(slotAge));
-		ageCounter = 0;
-		for (int s = 0; s < NUM_SOURCES; s++)
-		{
-			for (int c = 0; c < POLY_CHANNELS; c++)
-			{
-				oldLane[s][c] = -1;
-				srcSlot[s][c] = -1;
-			}
-		}
+		memset (sourceGate,     0, sizeof(sourceGate));
+		memset (sourcePitch,  0.f, sizeof(sourcePitch));
+		memset (sourceVelocity, 0.f, sizeof(sourceVelocity));
+		memset (sourceLane,     0, sizeof(sourceLane));
 	}
 
 	/**
@@ -206,89 +153,14 @@ struct Lanes : Module
 
 	// ********************************************************************************************************************************
 	/*
-		Module specific utility methods
+		LanesHubInterface implementation - raw, unmerged per-source state for expanders
+		(LanesCV, LanesMidi, ...) to run their own LanesVoiceAllocator against. See
+		LanesShared.hpp.
 	*/
-
-	/**
-		Try to acquire (or merge into) a slot in the given lane for the given (already quantized) pitch.
-		Always succeeds: if the lane is full, steals the oldest active slot (classic voice stealing) -
-		the evicted source-channel(s) are NOT reassigned automatically even if still held (see
-		moduleProcess()'s "held but unslotted" handling for the resulting overflow-demand indicator).
-	*/
-	inline int acquireLaneSlot (int lane, float pitch, float velocity)
-	{
-		// 1. merge into an existing active slot with the same pitch
-		for (int slot = 0; slot < laneChannelCount[lane]; slot++)
-		{
-			if (slotActive[lane][slot] && slotPitch[lane][slot] == pitch)
-			{
-				slotContributors[lane][slot]++;
-				return slot;
-			}
-		}
-		// 2. reuse a freed (inactive) slot within the already grown channel count
-		for (int slot = 0; slot < laneChannelCount[lane]; slot++)
-		{
-			if (!slotActive[lane][slot])
-			{
-				slotActive[lane][slot]       = true;
-				slotPitch[lane][slot]        = pitch;
-				slotVelocity[lane][slot]     = velocity;
-				slotContributors[lane][slot] = 1;
-				slotAge[lane][slot]          = ageCounter;
-				return slot;
-			}
-		}
-		// 3. grow the lane's channel count (never shrinks again afterwards)
-		if (laneChannelCount[lane] < POLY_CHANNELS)
-		{
-			int slot = laneChannelCount[lane]++;
-			slotActive[lane][slot]       = true;
-			slotPitch[lane][slot]        = pitch;
-			slotVelocity[lane][slot]     = velocity;
-			slotContributors[lane][slot] = 1;
-			slotAge[lane][slot]          = ageCounter;
-			return slot;
-		}
-		// 4. lane is full: steal the oldest active slot
-		int oldestSlot = 0;
-		for (int slot = 1; slot < laneChannelCount[lane]; slot++)
-		{
-			if (slotAge[lane][slot] < slotAge[lane][oldestSlot])
-				oldestSlot = slot;
-		}
-		// invalidate any held source-channel(s) currently pointing at the stolen slot - they
-		// stay silent (srcSlot < 0) until their own gate re-triggers or their lane/pitch changes
-		for (int s2 = 0; s2 < NUM_SOURCES; s2++)
-		{
-			for (int c2 = 0; c2 < POLY_CHANNELS; c2++)
-			{
-				if (oldLane[s2][c2] == lane && srcSlot[s2][c2] == oldestSlot)
-					srcSlot[s2][c2] = -1;
-			}
-		}
-		slotPitch[lane][oldestSlot]        = pitch;
-		slotVelocity[lane][oldestSlot]     = velocity;
-		slotContributors[lane][oldestSlot] = 1;
-		slotAge[lane][oldestSlot]          = ageCounter;
-		return oldestSlot;
-	}
-
-	/**
-		Release a contribution to a lane slot. Only clears the slot (gate/velocity to 0)
-		once the last contributor has released it.
-	*/
-	inline void releaseLaneSlot (int lane, int slot)
-	{
-		if (slot < 0)
-			return;
-		if (--slotContributors[lane][slot] <= 0)
-		{
-			slotActive[lane][slot]   = false;
-			slotVelocity[lane][slot] = 0.f;
-			slotContributors[lane][slot] = 0;
-		}
-	}
+	bool  getSourceGate(int source, int channel) override { return sourceGate[source][channel]; }
+	float getSourcePitch(int source, int channel) override { return sourcePitch[source][channel]; }
+	float getSourceVelocity(int source, int channel) override { return sourceVelocity[source][channel]; }
+	int   getSourceLane(int source, int channel) override { return sourceLane[source][channel]; }
 
 	// ********************************************************************************************************************************
 	/*
@@ -320,32 +192,18 @@ struct Lanes : Module
 		}
 
 		/*
-			Reclaim trailing free channels - but only ones that were already inactive BEFORE this
-			tick, i.e. their gate=0 was already sent out to the poly cable for at least one full
-			cycle by the output-writing loop below in the previous call. This keeps the invariant
-			that a channel's gate is always explicitly dropped to 0 before it can ever disappear
-			from the poly cable (never shrinking mid-note), while still reclaiming channels that
-			are genuinely done instead of leaving the lane parked at its historical peak forever.
+			Just quantize/default the raw sources and store them - no merging, no voice
+			stealing (that's each expander's own job now, see LanesVoiceAllocator.hpp).
+
+			If a cable is unpatched, processParamsAndInputs() (OrangeLineCommon.hpp) skips
+			refreshing OL_statePoly for it entirely, leaving the last known (possibly stale)
+			value in place. Force sane defaults here (gate = off, pitch/velocity/lane CV = 0)
+			so unplugging any of the 4 cables behaves like a normal unpatched Eurorack input
+			instead of freezing on the last value - most importantly, unplugging GATE always
+			releases held notes instead of leaving them stuck on.
 		*/
-		for (int lane = 0; lane < NUM_LANES; lane++)
-		{
-			while (laneChannelCount[lane] > 0 && !slotActive[lane][laneChannelCount[lane] - 1])
-				laneChannelCount[lane]--;
-		}
-
-		bool overflowThisTick[NUM_LANES];
-		memset (overflowThisTick, 0, sizeof(overflowThisTick));
-		ageCounter++;
-
 		for (int s = 0; s < NUM_SOURCES; s++)
 		{
-			/*
-				If a cable is unpatched, processParamsAndInputs() (OrangeLineCommon.hpp) skips refreshing
-				OL_statePoly for it entirely, leaving the last known (possibly stale) value in place. Force
-				sane defaults here (gate = off, pitch/velocity/lane CV = 0) so unplugging any of the 4 cables
-				behaves like a normal unpatched Eurorack input instead of freezing on the last value - most
-				importantly, unplugging GATE always releases held notes instead of leaving them stuck on.
-			*/
 			bool sourceGateConnected = getInputConnected (GATE_IN_INPUT + s);
 			bool sourceVoctConnected = getInputConnected (VOCT_IN_INPUT + s);
 			bool sourceVelConnected  = getInputConnected (VEL_IN_INPUT  + s);
@@ -358,68 +216,11 @@ struct Lanes : Module
 				float laneCV  = sourceLaneConnected ? OL_statePoly[(LANE_IN_INPUT + s) * POLY_CHANNELS + c] : 0.f;
 				int   laneIn  = int(clamp (round (laneCV * 12.f), 0.f, float(NUM_LANES - 1)));
 
-				bool  wasGate   = oldGate[s][c];
-				int   prevLane  = oldLane[s][c];
-				float prevPitch = oldPitch[s][c];
-
-				bool needRelease = false;
-				bool needAcquire = false;
-
-				if (gateIn && !wasGate)
-				{
-					needAcquire = true;
-				}
-				else if (gateIn && wasGate && (laneIn != prevLane || pitchIn != prevPitch))
-				{
-					// lane or pitch changed while held: treat as note-off (old) + note-on (new)
-					needRelease = true;
-					needAcquire = true;
-				}
-				else if (!gateIn && wasGate)
-				{
-					needRelease = true;
-				}
-				// Note: no retry for a held note that's already unslotted (srcSlot < 0) - once
-				// voice-stealing takes its slot, it classically stays silent until its own gate
-				// re-triggers or its lane/pitch changes, it does not automatically reclaim a slot.
-
-				if (needRelease)
-				{
-					releaseLaneSlot (prevLane, srcSlot[s][c]);
-					srcSlot[s][c] = -1;
-				}
-				if (needAcquire)
-				{
-					srcSlot[s][c] = acquireLaneSlot (laneIn, pitchIn, velIn);	// always succeeds (steals if full)
-				}
-
-				// Overflow/demand indicator: this channel currently wants a slot on laneIn (gate held)
-				// but doesn't have one - either just-evicted-by-stealing or an original overflow.
-				if (gateIn && srcSlot[s][c] < 0)
-					overflowThisTick[laneIn] = true;
-
-				oldGate[s][c]  = gateIn;
-				oldLane[s][c]  = laneIn;
-				oldPitch[s][c] = pitchIn;
+				sourceGate[s][c]     = gateIn;
+				sourcePitch[s][c]    = pitchIn;
+				sourceVelocity[s][c] = velIn;
+				sourceLane[s][c]     = laneIn;
 			}
-		}
-
-		for (int lane = 0; lane < NUM_LANES; lane++)
-		{
-			for (int slot = 0; slot < laneChannelCount[lane]; slot++)
-			{
-				setStateOutPoly (VOCT_OUTPUT + lane, slot, slotPitch[lane][slot]);
-				setStateOutPoly (GATE_OUTPUT + lane, slot, slotActive[lane][slot] ? 10.f : 0.f);
-				setStateOutPoly (VEL_OUTPUT  + lane, slot, slotVelocity[lane][slot]);
-			}
-			setOutPolyChannels (VOCT_OUTPUT + lane, laneChannelCount[lane]);
-			setOutPolyChannels (GATE_OUTPUT + lane, laneChannelCount[lane]);
-			setOutPolyChannels (VEL_OUTPUT  + lane, laneChannelCount[lane]);
-
-			// Overflow is a state (currently more distinct pitches want this lane than it has
-			// channels for), not a one-shot event - gate and light just mirror it directly.
-			setStateOutput (OVERFLOW_OUTPUT + lane, overflowThisTick[lane] ? 10.f : 0.f);
-			setStateLight  (OVERFLOW_LIGHT  + lane, overflowThisTick[lane] ? 255.f : 0.f);
 		}
 	}
 	/**
@@ -478,15 +279,14 @@ struct LanesWidget : ModuleWidget
 
 		/*
 			Jack centers below are measured directly from the "Controls" layer of res/LanesWork.svg
-			(4 blocks x 4 columns x 8 rows), so the widget lines up exactly with the panel art.
-			These are already true jack centers, so calculateCoordinates() is called with a 0 offset.
+			(2 input blocks x 4 columns x 8 rows - the former 2 output blocks moved to LanesCV, see
+			Lanes.hpp), so the widget lines up exactly with the panel art. These are already true
+			jack centers, so calculateCoordinates() is called with a 0 offset.
 		*/
 		static const float ROW0_Y     = 21.845226f;
 		static const float ROW_PITCH  = 13.208002f;
 		static const float COL_PITCH  = 9.398000f;
 		static const float INPUT_BLOCK_X[2]  = { 7.112002f, 48.514002f };
-		static const float OUTPUT_BLOCK_X[2] = { 90.932002f, 132.588001f };
-
 		// Input blocks: Sources 1-8 (block 0) and Sources 9-16 (block 1)
 		for (int block = 0; block < 2; block++)
 		{
@@ -499,22 +299,6 @@ struct LanesWidget : ModuleWidget
 				addInput (createInputCentered<PJ301MPort> (calculateCoordinates (blockX + 1.f * COL_PITCH, y, 0.f), module, GATE_IN_INPUT + source));
 				addInput (createInputCentered<PJ301MPort> (calculateCoordinates (blockX + 2.f * COL_PITCH, y, 0.f), module, VEL_IN_INPUT  + source));
 				addInput (createInputCentered<PJ301MPort> (calculateCoordinates (blockX + 3.f * COL_PITCH, y, 0.f), module, LANE_IN_INPUT + source));
-			}
-		}
-
-		// Output blocks: Lanes 1-8 (block 0) and Lanes 9-16 (block 1)
-		for (int block = 0; block < 2; block++)
-		{
-			float blockX = OUTPUT_BLOCK_X[block];
-			for (int row = 0; row < 8; row++)
-			{
-				int lane = block * 8 + row;
-				float y = ROW0_Y + row * ROW_PITCH;
-				addOutput (createOutputCentered<PJ301MPort> (calculateCoordinates (blockX + 0.f * COL_PITCH, y, 0.f), module, VOCT_OUTPUT + lane));
-				addOutput (createOutputCentered<PJ301MPort> (calculateCoordinates (blockX + 1.f * COL_PITCH, y, 0.f), module, GATE_OUTPUT + lane));
-				addOutput (createOutputCentered<PJ301MPort> (calculateCoordinates (blockX + 2.f * COL_PITCH, y, 0.f), module, VEL_OUTPUT  + lane));
-				addOutput (createOutputCentered<PJ301MPort> (calculateCoordinates (blockX + 3.f * COL_PITCH, y, 0.f), module, OVERFLOW_OUTPUT + lane));
-				addChild  (createLightCentered<LargeLight<RedLight>> (calculateCoordinates (blockX + 3.f * COL_PITCH, y, 0.f), module, OVERFLOW_LIGHT + lane));
 			}
 		}
 

@@ -18,10 +18,11 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
-#include "OrangeLine.hpp"
-
-#define NUM_SOURCES 16
-#define NUM_LANES   16
+// NUM_SOURCES/NUM_LANES and the LanesHubInterface/LanesExpanderInterface pull-API shared
+// with the LanesCV/LanesMidi expanders live in LanesShared.hpp (kept separate from this
+// file's own module-specific enums below, since LanesCV.hpp/LanesMidi.hpp include
+// LanesShared.hpp too and must not pull in Lanes' own jsonIds/ParamIds/etc a second time).
+#include "LanesShared.hpp"
 
 //
 // Defaults
@@ -68,16 +69,10 @@ enum InputIds {
 //
 // Output Ids
 //
+// Hub has no CV outputs of its own anymore - the 16-lane output distributor moved to
+// LanesCV (an expander). See Lanes.hpp's LanesHubInterface for how expanders read the
+// Hub's per-lane state instead.
 enum OutputIds {
-	VOCT_OUTPUT,
-    VOCT_OUTPUT_LAST = VOCT_OUTPUT + NUM_LANES - 1,
-	GATE_OUTPUT,
-    GATE_OUTPUT_LAST = GATE_OUTPUT + NUM_LANES - 1,
-	VEL_OUTPUT,
-    VEL_OUTPUT_LAST = VEL_OUTPUT + NUM_LANES - 1,
-	OVERFLOW_OUTPUT,
-    OVERFLOW_OUTPUT_LAST = OVERFLOW_OUTPUT + NUM_LANES - 1,
-
 	NUM_OUTPUTS
 };
 
@@ -85,8 +80,5 @@ enum OutputIds {
 // Ligh Ids
 //
 enum LightIds {
-	OVERFLOW_LIGHT,
-    OVERFLOW_LIGHT_LAST = OVERFLOW_LIGHT + NUM_LANES - 1,
-
 	NUM_LIGHTS
 };
