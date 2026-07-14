@@ -375,7 +375,7 @@ struct TextWidget : TransparentWidget {
 	into the module's own bool[128] via the `enabled` pointer - no per-cell Params, far
 	cheaper than 128 individual widgets). Cell brightness also reflects `activity[cc]`
 	(0-1, expected to be set to 1 and decayed by the module itself) as a live traffic
-	indicator, independent of the on/off state - shared by CC2CV and CV2CC.
+	indicator, independent of the on/off state - shared by CC2CV, CV2CC, RECALL and MidiBus.
 */
 #define NUM_CC_COLS 16
 #define NUM_CC_ROWS 8
@@ -384,8 +384,22 @@ struct TextWidget : TransparentWidget {
 // orange at 10V - still visibly orange-tinted rather than gray at 0V, so it stays distinct
 // from GRID_OFF's neutral near-black), plus a distinct activity-flash color for each state,
 // so a muted (disabled) CC's traffic reads unmistakably differently from an active one's.
-#define GRID_ON_LOW    nvgRGB ( 80,  40,   5)	// enabled base @ 0V: dark orange
+// A second, blue-toned gradient (GRID_ON_PATCHED_*) is used instead when the optional
+// `patched` pointer says this cell's underlying port currently has something patched into
+// it (e.g. an infix override) - purely a display distinction, orthogonal to enabled/activity.
+// Two more optional gradients (GRID_ON_SNAPSHOT_OVERRIDE_*, teal / GRID_ON_SEND_OVERRIDE_*,
+// magenta) exist for modules with more than one stacked infix point (RECALL's TX grid: an
+// override that only changes a frozen snapshot vs. one that changes what's actually sent
+// right now) - see the `snapshotOverride`/`sendOverride` pointers below. Priority when several
+// apply at once: sendOverride > snapshotOverride > patched > plain enabled.
+#define GRID_ON_LOW    nvgRGB (110,  55,  10)	// enabled base @ 0V: dark orange (bumped up from 80,40,5 for contrast against GRID_OFF)
 #define GRID_ON_HIGH   nvgRGB (255, 130,  40)	// enabled base @ 10V: bright orange, not blown out
+#define GRID_ON_PATCHED_LOW  nvgRGB (  5,  40,  80)	// enabled+patched base @ 0V: dark blue
+#define GRID_ON_PATCHED_HIGH nvgRGB ( 40, 130, 255)	// enabled+patched base @ 10V: bright blue
+#define GRID_ON_SNAPSHOT_OVERRIDE_LOW  nvgRGB (  5,  60,  60)	// enabled+snapshot-override base @ 0V: dark teal
+#define GRID_ON_SNAPSHOT_OVERRIDE_HIGH nvgRGB ( 40, 200, 200)	// enabled+snapshot-override base @ 10V: bright teal
+#define GRID_ON_SEND_OVERRIDE_LOW  nvgRGB ( 70,   5,  70)	// enabled+send-override base @ 0V: dark magenta
+#define GRID_ON_SEND_OVERRIDE_HIGH nvgRGB (220,  40, 220)	// enabled+send-override base @ 10V: bright magenta
 #define GRID_ON_ACT    nvgRGB ( 70, 220, 120)	// enabled + activity flash: green
 #define GRID_OFF       nvgRGB ( 30,  30,  30)	// disabled base: near black
 #define GRID_OFF_ACT   nvgRGB (200,  70,  70)	// disabled + activity flash: muted red (not full ff0000)
@@ -396,8 +410,11 @@ struct CCGridWidget : OpaqueWidget {
 	float *activity = nullptr;	// pointer to module's float[128], 0-1, read only here
 	float *value    = nullptr;	// pointer to module's float[128], 0-10V, read only here
 	bool  *locked   = nullptr;	// pointer to module's bool, read only here - while true, clicks/drags are ignored
+	bool  *patched  = nullptr;	// pointer to module's bool[128], read only here - optional, picks the blue gradient when set
+	bool  *snapshotOverride = nullptr;	// pointer to module's bool[128], read only here - optional, teal gradient (e.g. RECALL's frozen-snapshot infix actually diverged)
+	bool  *sendOverride     = nullptr;	// pointer to module's bool[128], read only here - optional, magenta gradient, takes priority over snapshotOverride/patched
 
-	static CCGridWidget* create (Vec pos, Vec size, bool *enabled, float *activity, float *value = nullptr, bool *locked = nullptr) {
+	static CCGridWidget* create (Vec pos, Vec size, bool *enabled, float *activity, float *value = nullptr, bool *locked = nullptr, bool *patched = nullptr, bool *snapshotOverride = nullptr, bool *sendOverride = nullptr) {
 		CCGridWidget *w = new CCGridWidget ();
 		w->box.pos  = pos;
 		w->box.size = size;
@@ -405,6 +422,9 @@ struct CCGridWidget : OpaqueWidget {
 		w->activity = activity;
 		w->value    = value;
 		w->locked   = locked;
+		w->patched  = patched;
+		w->snapshotOverride = snapshotOverride;
+		w->sendOverride     = sendOverride;
 		return w;
 	}
 
@@ -468,7 +488,14 @@ struct CCGridWidget : OpaqueWidget {
 				NVGcolor base;
 				if (enabled[cc]) {
 					float v = value ? clamp (value[cc] / 10.f, 0.f, 1.f) : 0.f;
-					base = nvgLerpRGBA (GRID_ON_LOW, GRID_ON_HIGH, v);
+					if (sendOverride && sendOverride[cc])
+						base = nvgLerpRGBA (GRID_ON_SEND_OVERRIDE_LOW, GRID_ON_SEND_OVERRIDE_HIGH, v);
+					else if (snapshotOverride && snapshotOverride[cc])
+						base = nvgLerpRGBA (GRID_ON_SNAPSHOT_OVERRIDE_LOW, GRID_ON_SNAPSHOT_OVERRIDE_HIGH, v);
+					else if (patched && patched[cc])
+						base = nvgLerpRGBA (GRID_ON_PATCHED_LOW, GRID_ON_PATCHED_HIGH, v);
+					else
+						base = nvgLerpRGBA (GRID_ON_LOW, GRID_ON_HIGH, v);
 				} else {
 					base = GRID_OFF;
 				}

@@ -121,9 +121,10 @@ struct RECALL : Module
 		regardless, so an external tap/infix still sees the real value even when muted. */
 	bool  rxEnabled[128];
 	bool  txEnabled[128];
-	/** Shadow of txEnabled from the previous tick, used to detect a disabled->enabled
-		transition so that CC's lastSentValues sentinel can be reset - re-enabling a CC
-		immediately re-syncs its current value instead of waiting for the next change. */
+	/** Shadow of txEnabled from the previous tick. Re-enabling a CC deliberately does NOT
+		force an immediate resend/activity-flash (Dieter: "es soll einfach nicht aufblitzen
+		wenn man editiert") - normal change-detection just resumes against whatever was last
+		sent before it was disabled. */
 	bool  txWasEnabled[128];
 	/** Per-CC 0-1 activity levels for the two grids' live traffic displays, decayed every
 		tick. RX flashes on every incoming MIDI message for that CC (regardless of rxEnabled,
@@ -131,6 +132,19 @@ struct RECALL : Module
 		(regardless of txEnabled). Not persisted - purely cosmetic/runtime. */
 	float rxActivity[128];
 	float txActivity[128];
+	/** TX grid color escalation, not persisted (purely cosmetic/runtime, like txActivity).
+		txSnapshotOverride[cc] is latched only at a sync's rising edge (Hold2 only changes
+		there): true when TX_INPUT was actually connected AND supplied a value different from
+		what plain passthrough (heldRx) would have given - i.e. the snapshot was genuinely
+		overridden, not just "something is patched". Stays as-is between syncs; recomputing it
+		continuously against the live (still-moving) heldRx would be wrong, since heldRx keeps
+		changing after the freeze independent of whether an override actually happened. */
+	bool txSnapshotOverride[128];
+	/** txSendOverride[cc] is live, recomputed every 200Hz send tick (RX_INPUT's effect on the
+		actually-sent candidate is continuous, unlike TX_INPUT's one-shot snapshot): true when
+		RX_INPUT is connected AND the resulting send candidate differs from Hold2. Takes visual
+		priority over txSnapshotOverride when both apply (see CCGridWidget's draw()). */
+	bool txSendOverride[128];
 	/** Whether each CCGridWidget ignores clicks/drags - protects against accidentally toggling
 		CCs while rearranging cables/modules nearby. Deliberately *not* persisted (Dieter: "das
 		Persistieren der Locks ist overdesigned") - always start locked on add/load/reset, the
@@ -151,6 +165,8 @@ struct RECALL : Module
 			txWasEnabled[cc] = true;
 			rxActivity[cc] = 0.f;
 			txActivity[cc] = 0.f;
+			txSnapshotOverride[cc] = false;
+			txSendOverride[cc] = false;
 		}
 
 		moduleExtraDataToJson = [this](json_t *rootJ)
@@ -264,6 +280,8 @@ struct RECALL : Module
 			txWasEnabled[cc] = true;
 			rxActivity[cc] = 0.f;
 			txActivity[cc] = 0.f;
+			txSnapshotOverride[cc] = false;
+			txSendOverride[cc] = false;
 		}
 		wasSyncing = false;
 		autoSyncTimer = -1.f;
@@ -372,6 +390,7 @@ struct RECALL : Module
 					if (newValue != hold2[cc])
 						txActivity[cc] = 1.f;
 					hold2[cc] = newValue;
+					txSnapshotOverride[cc] = connected && (c < channels) && (newValue != heldRx[cc]);
 				}
 			}
 			for (int cc = 0; cc < 128; cc++)
@@ -408,12 +427,15 @@ struct RECALL : Module
 			{
 				int cc = n * 16 + c;
 
-				if (txEnabled[cc] && !txWasEnabled[cc])
-					lastSentValues[cc] = 0xFF;
+				// Re-enabling a CC does NOT force an immediate resend/activity-flash
+				// (Dieter: "es soll einfach nicht aufblitzen wenn man editiert") - it just
+				// resumes normal change-detection against whatever was last sent before it
+				// was disabled.
 				txWasEnabled[cc] = txEnabled[cc];
 
 				float candidate = (c < channels) ? OL_statePoly[(RX_INPUT + n) * POLY_CHANNELS + c] : hold2[cc];
 				uint8_t value = (uint8_t) clamp(std::round(candidate / 10.f * 127.f), 0.f, 127.f);
+				txSendOverride[cc] = connected && (c < channels) && (candidate != hold2[cc]);
 
 				if (suppressInitialFlush)
 				{
@@ -524,7 +546,8 @@ struct RECALLWidget : ModuleWidget
 
 		CCGridWidget *txGrid = CCGridWidget::create(calculateCoordinates(76.200f, 42.673f, 0.f), mm2px(Vec(43.688f, 22.0f)),
 			module ? &module->txEnabled[0] : NULL, module ? &module->txActivity[0] : NULL, module ? &module->hold2[0] : NULL,
-			module ? &module->txGridLocked : NULL);
+			module ? &module->txGridLocked : NULL, NULL,
+			module ? &module->txSnapshotOverride[0] : NULL, module ? &module->txSendOverride[0] : NULL);
 		addChild(txGrid);
 
 		addParam(createParamCentered<VCVLatch>(calculateCoordinates(4.063f, 70.867f, 0.f), module, RX_GRID_LOCK_PARAM));

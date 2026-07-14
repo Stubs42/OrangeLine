@@ -233,6 +233,16 @@
         "Utility",
         "Polyphonic"
       ]
+    },
+    {
+      "slug": "MidiBus",
+      "name": "MIDIBUS",
+      "description": "Single-channel MIDI processor insert: receives and sends Notes, CCs, Program Change and Clock/Transport/SysEx on independently selectable channels, with an infix per signal to intervene along the way - passes straight through by default",
+      "tags": [
+        "MIDI",
+        "Utility",
+        "Polyphonic"
+      ]
     }
   ]
 }

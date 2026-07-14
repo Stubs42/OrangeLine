@@ -52,6 +52,11 @@ struct CC2CV : Module
 		value the grid's cell color is based on), so a muted CC's live value still shows.
 		Not persisted - recomputed every tick from ccValues/valueFilters. */
 	float ccCvValue[128];
+	/** Mirrors, per CC, whether its bank's CC_OUTPUT jack is currently connected - drives the
+		grid's blue "patched" gradient (Dieter: two different active colors depending on
+		whether the corresponding port is patched or not). All 16 CCs in a bank share the same
+		value, since patching is a property of the jack, not the individual CC. Not persisted. */
+	bool  ccPatched[128];
 	/** Whether the CCGridWidget ignores clicks/drags - protects against accidentally toggling
 		CCs while rearranging cables/modules nearby. Deliberately *not* persisted (Dieter: "das
 		Persistieren der Locks ist overdesigned") - always starts locked on add/load/reset, the
@@ -67,6 +72,7 @@ struct CC2CV : Module
 			ccEnabled[cc] = true;
 			ccActivity[cc] = 0.f;
 			ccCvValue[cc] = 0.f;
+			ccPatched[cc] = false;
 		}
 
 		moduleExtraDataToJson = [this](json_t *rootJ)
@@ -155,6 +161,7 @@ struct CC2CV : Module
 			ccEnabled[cc] = true;
 			ccActivity[cc] = 0.f;
 			ccCvValue[cc] = 0.f;
+			ccPatched[cc] = false;
 		}
 		midiInput.reset();
 		setStateJson(SMOOTH_JSON, 1.f);
@@ -202,9 +209,11 @@ struct CC2CV : Module
 
 		for (int n = 0; n < 8; n++)
 		{
+			bool connected = outputs[CC_OUTPUT + n].isConnected();
 			for (int c = 0; c < 16; c++)
 			{
 				int cc = n * 16 + c;
+				ccPatched[cc] = connected;
 				float value = ccValues[cc] / 127.f * 10.f;
 				if (smooth)
 				{
@@ -269,7 +278,7 @@ struct CC2CVWidget : ModuleWidget
 
 		CCGridWidget *grid = CCGridWidget::create(calculateCoordinates(3.556f, 42.927f, 0.f), mm2px(Vec(43.688f, 22.0f)),
 			module ? &module->ccEnabled[0] : NULL, module ? &module->ccActivity[0] : NULL, module ? &module->ccCvValue[0] : NULL,
-			module ? &module->gridLocked : NULL);
+			module ? &module->gridLocked : NULL, module ? &module->ccPatched[0] : NULL);
 		addChild(grid);
 
 		addParam(createParamCentered<VCVLatch>(calculateCoordinates(5.588f, 70.867f, 0.f), module, GRID_LOCK_PARAM));

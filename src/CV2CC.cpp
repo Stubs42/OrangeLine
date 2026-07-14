@@ -52,9 +52,10 @@ struct CV2CC : Module
 		of value changes or FORCE/FLUSH - lets you keep unused CCs from "polluting" the
 		outgoing MIDI stream. */
 	bool  ccEnabled[128];
-	/** Shadow of ccEnabled from the previous tick, used to detect a disabled->enabled
-		transition so that CC's lastSentValues sentinel can be reset - re-enabling a CC
-		immediately re-syncs its current value instead of waiting for the next change. */
+	/** Shadow of ccEnabled from the previous tick. Re-enabling a CC deliberately does NOT
+		force an immediate resend/activity-flash (Dieter: "es soll einfach nicht aufblitzen
+		wenn man editiert") - normal change-detection just resumes against whatever was last
+		sent before it was disabled. */
 	bool  ccWasEnabled[128];
 	/** Per-CC 0-1 activity level for the grid's live traffic display, decayed every tick.
 		Only set when a CC is actually sent (so a disabled CC never flashes). Not persisted. */
@@ -62,6 +63,11 @@ struct CV2CC : Module
 	/** Current incoming 0-10V value per CC (pre-mute - this is the same value the grid's cell
 		color is based on), so a muted CC's live input value still shows. Not persisted. */
 	float ccCvValue[128];
+	/** Mirrors, per CC, whether its bank's CC_INPUT jack is currently connected - drives the
+		grid's blue "patched" gradient (Dieter: two different active colors depending on
+		whether the corresponding port is patched or not). All 16 CCs in a bank share the same
+		value, since patching is a property of the jack, not the individual CC. Not persisted. */
+	bool  ccPatched[128];
 	/** Whether the CCGridWidget ignores clicks/drags - protects against accidentally toggling
 		CCs while rearranging cables/modules nearby. Deliberately *not* persisted (Dieter: "das
 		Persistieren der Locks ist overdesigned") - always starts locked on add/load/reset, the
@@ -77,6 +83,7 @@ struct CV2CC : Module
 			ccWasEnabled[cc] = true;
 			ccActivity[cc] = 0.f;
 			ccCvValue[cc] = 0.f;
+			ccPatched[cc] = false;
 		}
 
 		moduleExtraDataToJson = [this](json_t *rootJ)
@@ -154,6 +161,7 @@ struct CV2CC : Module
 			ccWasEnabled[cc] = true;
 			ccActivity[cc] = 0.f;
 			ccCvValue[cc] = 0.f;
+			ccPatched[cc] = false;
 		}
 		midiOutput.reset();
 		rateLimiterTimer.reset();
@@ -223,12 +231,12 @@ struct CV2CC : Module
 			for (int c = 0; c < 16; c++)
 			{
 				int cc = n * 16 + c;
+				ccPatched[cc] = connected;
 
-				// Re-enabling a CC resets its sentinel so the next real value always goes
-				// out immediately, instead of waiting for a change relative to whatever was
-				// last sent before it got disabled.
-				if (ccEnabled[cc] && !ccWasEnabled[cc])
-					lastSentValues[cc] = 0xFF;
+				// Re-enabling a CC does NOT force an immediate resend/activity-flash (Dieter:
+				// "es soll einfach nicht aufblitzen wenn man editiert") - it just resumes
+				// normal change-detection against whatever was last sent before it was
+				// disabled; the next genuine value change is what triggers a send again.
 				ccWasEnabled[cc] = ccEnabled[cc];
 
 				ccActivity[cc] = std::max(0.f, ccActivity[cc] - CC_ACTIVITY_DECAY);
@@ -315,7 +323,7 @@ struct CV2CCWidget : ModuleWidget
 
 		CCGridWidget *grid = CCGridWidget::create(calculateCoordinates(3.556f, 42.849f, 0.f), mm2px(Vec(43.688f, 22.0f)),
 			module ? &module->ccEnabled[0] : NULL, module ? &module->ccActivity[0] : NULL, module ? &module->ccCvValue[0] : NULL,
-			module ? &module->gridLocked : NULL);
+			module ? &module->gridLocked : NULL, module ? &module->ccPatched[0] : NULL);
 		addChild(grid);
 
 		addParam(createParamCentered<VCVLatch>(calculateCoordinates(22.097f, 72.918f, 0.f), module, GRID_LOCK_PARAM));

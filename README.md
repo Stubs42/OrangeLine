@@ -815,13 +815,13 @@ CC2CV receives MIDI CC messages and outputs them as CV, covering the entire 0-12
 
 Each CC's raw 7 bit value (0-127) is scaled to 0-10V. By default the stepped 7 bit resolution is smoothed into a continuous CV (exponential filter, snaps instantly on large jumps so MIDI buttons still feel immediate) - this can be turned off in the right click menu. The last known value of every CC is remembered and restored on patch reload, so you don't have to touch the physical controller again after reopening a patch.
 
-The CC grid lets you click any of the 128 cells (16 columns x 8 rows, cell = CC row*16+column) to enable or disable that CC individually, or click and drag to paint the same on/off state across every cell the drag passes over - a disabled CC's output is forced to 0V no matter what's received, so unused/noisy controller CCs don't pollute the rest of the patch. Cell brightness also flashes on incoming MIDI traffic for that CC regardless of its enabled state (green for enabled, a muted red for disabled - still visible but clearly different), so the grid doubles as a live activity display. The on/off mask is remembered across patch reload.
+The CC grid lets you click any of the 128 cells (16 columns x 8 rows, cell = CC row*16+column) to enable or disable that CC individually, or click and drag to paint the same on/off state across every cell the drag passes over - a disabled CC's output is forced to 0V no matter what's received, so unused/noisy controller CCs don't pollute the rest of the patch. Each cell's background reflects the CC's current live value, and briefly flashes on incoming MIDI traffic for that CC regardless of its enabled state (still visible, but clearly distinguished, when disabled), so the grid doubles as a live activity display. The on/off mask is remembered across patch reload.
 
 ### The Panel
 
 MIDI Display: Driver/device/channel selector for the MIDI input to receive from.
 
-CC Grid: 16x8 grid, one cell per CC, click to enable/disable, click and drag to paint the same on/off state across every cell the mouse passes over. Blue = enabled, black = disabled; green flash = incoming traffic on an enabled CC, red flash = incoming traffic on a disabled one (still visible, so you can tell a muted CC is still receiving something). Disabled CCs output 0V.
+CC Grid: 16x8 grid, one cell per CC, click to enable/disable, click and drag to paint the same on/off state across every cell the mouse passes over. Cell background reflects the CC's live value; a distinct flash marks incoming traffic, whether the CC is enabled or disabled (still visible when disabled, so you can tell a muted CC is still receiving something). Disabled CCs output 0V. Once patched, a cell's background also distinguishes whether the corresponding CV output is actually connected.
 
 CC 0-15 .. CC 112-127 outputs [polyphonic, 8x]: arranged clockwise from the top of the ring. Bank N's 16 channels carry CC N*16 through N*16+15 as 0-10V.
 
@@ -841,7 +841,7 @@ Each channel's 0-10V CV is converted to a 7 bit CC value (0-127) and sent as a M
 
 FORCE (trigger input) and FLUSH (panel button) both do the same thing: force every one of the 128 CCs to be resent on the next update, bypassing the change-detection - useful to resync an external device or DAW without having to wobble a CV to fake a change. By default the same thing also happens automatically once, the first time the module processes after being added to a patch, loaded with a patch, or right click Initialized - this can be turned off in the right click menu if you'd rather nothing gets sent until something actually changes.
 
-The CC grid lets you click any of the 128 cells (16 columns x 8 rows, cell = CC row*16+column) to enable or disable that CC individually, or click and drag to paint the same on/off state across every cell the drag passes over - a disabled CC is never sent, no matter what the CV does or whether FORCE/FLUSH fires, so unused CCs don't pollute the outgoing MIDI stream. Re-enabling a CC immediately resends its current value on the next update rather than waiting for a change. Cell brightness flashes whenever the CC's value changes - green if enabled (a message was just sent), a muted red if disabled (nothing was sent, but the value is still moving), so you can tell a muted CC is still doing something even though it's never transmitted. The on/off mask is remembered across patch reload.
+The CC grid lets you click any of the 128 cells (16 columns x 8 rows, cell = CC row*16+column) to enable or disable that CC individually, or click and drag to paint the same on/off state across every cell the drag passes over - a disabled CC is never sent, no matter what the CV does or whether FORCE/FLUSH fires, so unused CCs don't pollute the outgoing MIDI stream. Re-enabling a CC does not force an immediate resend - it just resumes normal change-detection, so the next genuine value change is what triggers a send again (no flash just from toggling it back on while editing). Cell background reflects the CC's live value, and flashes whenever the value changes - distinguished by whether the CC is currently enabled (an actual message was just sent) or disabled (the value moved but nothing was sent), so you can tell a muted CC is still doing something even though it's never transmitted. The on/off mask is remembered across patch reload.
 
 ### The Panel
 
@@ -851,7 +851,7 @@ FORCE input: Trigger to force an immediate resend of all 128 CCs.
 
 FLUSH button: Same as FORCE, as a panel button.
 
-CC Grid: 16x8 grid, one cell per CC, click to enable/disable, click and drag to paint the same on/off state across every cell the mouse passes over. Blue = enabled, black = disabled; green flash = a message was just sent, red flash = the CV changed but nothing was sent because the CC is disabled. Disabled CCs are never sent, no matter what the CV does.
+CC Grid: 16x8 grid, one cell per CC, click to enable/disable, click and drag to paint the same on/off state across every cell the mouse passes over. Cell background reflects the CC's live value, and a distinct flash marks whether a message was actually sent (enabled) or just changed without being sent (disabled). Disabled CCs are never sent, no matter what the CV does. Once patched, a cell's background also distinguishes whether the corresponding CV input is actually connected.
 
 CC 0-15 .. CC 112-127 inputs [polyphonic, 8x]: arranged clockwise from the top of the ring. Bank N's 16 channels (0-10V) are sent as CC N*16 through N*16+15.
 
@@ -878,7 +878,7 @@ Internally it's a simple chain: MIDI IN -> Hold1 -> RX OUT (to the rest of the p
 
 No built-in send/receive bus beyond the RX IN/TX IN override points above - to tap or inject elsewhere in a large patch, use an external module like Stoermelder-P1's Infix.
 
-Like CC2CV/CV2CC, RECALL has two CC grids for muting individual CCs (16 columns x 8 rows, cell = CC row*16+column, click or click-drag to paint): the RX grid mutes what reaches RX OUT (forced to 0V when disabled, regardless of what's still being received - like CC2CV's own grid), the TX grid mutes whether a CC is actually sent by the embedded MIDI OUT (like CV2CC's own grid - TX OUT's jack itself is unaffected). Both grids flash activity (green if enabled, muted red if disabled) whenever the underlying value changes, so a muted CC's ongoing traffic stays visible on either side. Both masks are remembered across patch reload, along with Hold1's and Hold2's held values and the MIDI device selections - all packed compactly (one byte per CC, base64-encoded) rather than as 128 individual JSON numbers, since `dataToJson()` runs fairly often (autosave, undo/redo history).
+Like CC2CV/CV2CC, RECALL has two CC grids for muting individual CCs (16 columns x 8 rows, cell = CC row*16+column, click or click-drag to paint): the RX grid mutes what reaches RX OUT (forced to 0V when disabled, regardless of what's still being received - like CC2CV's own grid), the TX grid mutes whether a CC is actually sent by the embedded MIDI OUT (like CV2CC's own grid - TX OUT's jack itself is unaffected). Both grids flash activity whenever the underlying value changes, distinguishing enabled from disabled, so a muted CC's ongoing traffic stays visible on either side. The TX grid additionally distinguishes, per cell, whether TX IN or RX IN is actually overriding that CC's value right now (as opposed to merely being patched but not changing anything) - a quick visual check for which CCs a patch is actively intervening on. Both masks are remembered across patch reload, along with Hold1's and Hold2's held values and the MIDI device selections - all packed compactly (one byte per CC, base64-encoded) rather than as 128 individual JSON numbers, since `dataToJson()` runs fairly often (autosave, undo/redo history).
 
 ### The Panel
 
@@ -893,3 +893,33 @@ RX Grid, TX Grid: 16x8 grids for muting individual CCs on the receive/send side 
 ### Right Click Menu
 
 Autosync On Start: If set (default), the module forces a sync for a short fixed window (0.5s) the first time it processes after being added, loaded, or Initialized - independent of GATE IN/SYNC.
+
+## MIDIBUS
+
+<p align="center"><img src="res/MidiBusWork.svg"></p>
+
+### Short Description
+
+MIDIBUS is a single-channel MIDI processor insert - a bus stop, in Dieter's words: if nothing is patched in, it just drives straight through; to intervene, you build an infix. It sits between one MIDI source (e.g. a keyboard) and one destination (e.g. a single channel on a multi-timbral synth), with its own independent channel selection on each side, and an insertion point for every signal it carries so a patch can tap, transform, or override it along the way.
+
+Every signal has an **RX** output (a read tap of what was just received) and a **TX** input (what actually gets sent - falls back to the RX value automatically if left unpatched). This makes MIDIBUS a pure 1:1 passthrough at rest, and a processing insert the moment you patch something into a TX infix - without needing the LANES family's lane-merging/voice-stealing machinery, which is overkill for routing a single channel.
+
+Carried signals: Notes (V/Oct, Gate, Velocity, up to 16 simultaneous per channel), all 128 MIDI CCs (8 polyphonic banks of 16, same fixed mapping as CC2CV/CV2CC), Program Change (with Bank Select MSB sent alongside it), and Clock/Start/Stop/Continue. Bank/Program are represented as CV (0-10V ↔ 0-127, same scaling as CC values) and only actually sent when the Program Change trigger fires - so a bank/program value can be dialed in continuously while only occasionally being committed.
+
+Clock/Start/Stop/Continue are passed through as raw MIDI events, each with its own on/off toggle in the right-click menu (see below) - deliberately not reinterpreted into a derived "running" gate or similar (that's what CRON is for; feed MIDIBUS's Clock output into a CRON instance if you need BPM). SysEx is passed through wholesale (no CV representation is possible for arbitrary bytes) behind its own toggle, with no infix.
+
+A single CC grid (16x8, mute + activity, identical to CV2CC's) sits on the TX side - it's the last checkpoint before anything is actually sent, regardless of whether a CC's value came from the RX passthrough or was injected via its infix.
+
+### The Panel
+
+Two MIDI interface displays (RX on the left, TX on the right), each with driver/device selection only - the channel is chosen separately by its own knob (with a CV input and a numeric display) next to each display, not through the display itself.
+
+RX side: V/Oct, Gate, Velocity and 8 CC bank outputs, plus Bank, Program, Program-Change-trigger, Clock, Start, Stop and Continue outputs - all read taps of what was just received.
+
+TX side: the mirrored set of inputs (fall back to the RX value when unpatched), plus FORCE (force-resend all CCs) and the CC grid.
+
+### Right Click Menu
+
+Flush On Start: whether the very first CC send pass after adding/loading forces every CC out once (default) or silently seeds instead (see CV2CC for the same option).
+
+Pass Through SysEx / Pass Through Clock / Pass Through Transport: independently toggle the automatic RX->TX passthrough for each category when its TX infix is left unpatched - an explicitly patched infix always takes priority regardless of the toggle.
