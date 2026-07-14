@@ -18,6 +18,11 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
+// Touch doesn't help a real MIDI-hardware module - see CC2CV.hpp / CLAUDE.md. (Briefly tried
+// keeping Touch here for an auto-measured sDLY round-trip idea; reverted - KISS, unreliable
+// and no panel room for the extra jack anyway.)
+#define OL_TOUCH_DISABLED
+
 #include "OrangeLine.hpp"
 
 #define NUM_CC_BANKS 8

@@ -428,6 +428,9 @@ struct RescWidget : ModuleWidget
 		addOutput(createOutputCentered<PJ301MPort>(calculateCoordinates(3.415, 95.642, OFFSET_PJ301MPort), module, CLDBASED_OUTPUT));
 		addOutput(createOutputCentered<PJ301MPort>(calculateCoordinates(3.415, 108.342, OFFSET_PJ301MPort), module, CLDSCL_OUTPUT));
 
+		addOrangeLineTouchPorts (this, module, NUM_INPUTS, NUM_OUTPUTS,
+			module ? &module->OL_touchInPort : nullptr, module ? &module->OL_touchOutPort : nullptr, module ? &module->OL_touchVisible : nullptr);
+
 		if (module)
 			module->widgetReady = true;
 	}
@@ -512,6 +515,11 @@ struct RescWidget : ModuleWidget
 
 			Resc *module = dynamic_cast<Resc *>(this->module);
 			assert(module);
+
+			addOrangeLineTouchMenuItem(menu, module->OL_touchInPort, module->OL_touchOutPort, &module->OL_touchVisible);
+
+			spacerLabel = new MenuLabel();
+			menu->addChild(spacerLabel);
 
 			MenuLabel *styleLabel = new MenuLabel();
 			styleLabel->text = "Style";

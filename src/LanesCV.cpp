@@ -55,6 +55,7 @@ struct LanesCV : Module, LanesExpanderInterface
 
 	LanesHubInterface* getLanesHub() override { return lanesHub; }
 	bool getLanesHubAmbiguous() override { return lanesHubAmbiguous; }
+	float getLanesStyle() override { return OL_state[STYLE_JSON]; }
 
 	bool moduleSkipProcess()
 	{
@@ -211,6 +212,8 @@ struct LanesCV : Module, LanesExpanderInterface
 */
 struct LanesCVWidget : ModuleWidget
 {
+	LanesExtStrips extStrips;
+
 	LanesCVWidget(LanesCV *module)
 	{
 		setModule(module);
@@ -258,8 +261,20 @@ struct LanesCVWidget : ModuleWidget
 		addChild (createLightCentered<TinyLight<GreenRedLight>> (calculateCoordinates (3.5f, 4.f, 0.f), module, LEFT_CONN_LIGHT));
 		addChild (createLightCentered<TinyLight<GreenRedLight>> (calculateCoordinates (82.86f, 4.f, 0.f), module, RIGHT_CONN_LIGHT));
 
+		addOrangeLineTouchPorts (this, module, NUM_INPUTS, NUM_OUTPUTS,
+			module ? &module->OL_touchInPort : nullptr, module ? &module->OL_touchOutPort : nullptr, module ? &module->OL_touchVisible : nullptr);
+
+		addLanesExtStrips(this, 86.36f, &extStrips);
+
 		if (module)
 			module->widgetReady = true;
+	}
+
+	void step() override
+	{
+		if (module)
+			updateLanesExtStrips(&extStrips, module, module->leftExpander.module, module->rightExpander.module);
+		ModuleWidget::step();
 	}
 
 	struct LanesCVStyleItem : MenuItem
@@ -285,6 +300,11 @@ struct LanesCVWidget : ModuleWidget
 
 		LanesCV *module = dynamic_cast<LanesCV *>(this->module);
 		assert(module);
+
+		addOrangeLineTouchMenuItem(menu, module->OL_touchInPort, module->OL_touchOutPort, &module->OL_touchVisible);
+
+		spacerLabel = new MenuLabel();
+		menu->addChild(spacerLabel);
 
 		MenuLabel *styleLabel = new MenuLabel();
 		styleLabel->text = "Style";

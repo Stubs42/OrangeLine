@@ -358,7 +358,9 @@ struct BucketsWidget : ModuleWidget
             addOutput (createOutputCentered<PJ301MPort> (calculateCoordinates (31.863, 8.496 + i * (18.187 - 9.551), OFFSET_PJ301MPort),  module, VELOCITY_OUTPUT + i));
             addOutput (createOutputCentered<PJ301MPort> (calculateCoordinates (36.181, 8.496 + i * (18.187 - 9.551), OFFSET_PJ301MPort),  module, GATE_OUTPUT + i));
 		}
-		
+
+		addOrangeLineTouchPorts (this, module, NUM_INPUTS, NUM_OUTPUTS,
+			module ? &module->OL_touchInPort : nullptr, module ? &module->OL_touchOutPort : nullptr, module ? &module->OL_touchVisible : nullptr);
 
 		if (module)
 			module->widgetReady = true;
@@ -387,6 +389,11 @@ struct BucketsWidget : ModuleWidget
 
 		Buckets *module = dynamic_cast<Buckets *>(this->module);
 		assert(module);
+
+		addOrangeLineTouchMenuItem(menu, module->OL_touchInPort, module->OL_touchOutPort, &module->OL_touchVisible);
+
+		spacerLabel = new MenuLabel();
+		menu->addChild(spacerLabel);
 
 		MenuLabel *styleLabel = new MenuLabel();
 		styleLabel->text = "Style";

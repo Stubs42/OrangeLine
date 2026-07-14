@@ -995,7 +995,10 @@ struct FenceWidget : ModuleWidget {
 
 		addOutput (createOutputCentered<PJ301MPort>		(mm2px (Vec (18.02  + 4.2 , 128.5 - 29.609 - 4.2)),  module, TRG_OUTPUT));
 		addOutput (createOutputCentered<PJ301MPort>		(mm2px (Vec (18.02  + 4.2 , 128.5 - 11.829 - 4.2)),  module, CV_OUTPUT));
-  	    
+
+		addOrangeLineTouchPorts (this, module, NUM_INPUTS, NUM_OUTPUTS,
+			module ? &module->OL_touchInPort : nullptr, module ? &module->OL_touchOutPort : nullptr, module ? &module->OL_touchVisible : nullptr);
+
   	    if (module) module->widgetReady = true;
 	}
 
@@ -1018,6 +1021,11 @@ struct FenceWidget : ModuleWidget {
 
 		Fence *module = dynamic_cast<Fence*>(this->module);
 		assert(module);
+
+		addOrangeLineTouchMenuItem(menu, module->OL_touchInPort, module->OL_touchOutPort, &module->OL_touchVisible);
+
+		spacerLabel = new MenuLabel();
+		menu->addChild(spacerLabel);
 
 		MenuLabel *styleLabel = new MenuLabel();
 		styleLabel->text = "Style";

@@ -152,6 +152,9 @@ struct CC14Widget : ModuleWidget
 		addOutput (createOutputCentered<PJ301MPort> (calculateCoordinates (7.620f, 93.981f, 0.f), module, MSB_OUTPUT));
 		addOutput (createOutputCentered<PJ301MPort> (calculateCoordinates (7.626f, 109.221f, 0.f), module, LSB_OUTPUT));
 
+		addOrangeLineTouchPorts (this, module, NUM_INPUTS, NUM_OUTPUTS,
+			module ? &module->OL_touchInPort : nullptr, module ? &module->OL_touchOutPort : nullptr, module ? &module->OL_touchVisible : nullptr);
+
 		if (module)
 			module->widgetReady = true;
 	}
@@ -179,6 +182,11 @@ struct CC14Widget : ModuleWidget
 
 		CC14 *module = dynamic_cast<CC14 *>(this->module);
 		assert(module);
+
+		addOrangeLineTouchMenuItem(menu, module->OL_touchInPort, module->OL_touchOutPort, &module->OL_touchVisible);
+
+		spacerLabel = new MenuLabel();
+		menu->addChild(spacerLabel);
 
 		MenuLabel *styleLabel = new MenuLabel();
 		styleLabel->text = "Style";

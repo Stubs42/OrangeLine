@@ -77,9 +77,13 @@ struct Dejavu : Module {
 	bool moduleSkipProcess() {
 		bool skip = (idleSkipCounter != 0);
 		if (skip) {
-			float clkInputVoltage = inputs[CLK_INPUT].getVoltage (); 
-			if (clkInputVoltage != oldClkInputVoltage)
+			float clkInputVoltage = inputs[CLK_INPUT].getVoltage ();
+			if (clkInputVoltage != oldClkInputVoltage) {
 				skip = false;
+#ifndef OL_TOUCH_DISABLED
+				OL_touchOutRequest = true;	// relay Touch Out in step with this early wake - see CLAUDE.md
+#endif
+			}
 			oldClkInputVoltage = clkInputVoltage;
 		}
 		return skip;
@@ -1492,7 +1496,10 @@ struct DejavuWidget : ModuleWidget {
 #ifdef USE_DEBUG_OUTPUT
 		addOutput (createOutputCentered<PJ301MPort>	(calculateCoordinates (0, 0, OFFSET_PJ301MPort),  module, DEBUG_OUTPUT));
 #endif
-  	    
+
+		addOrangeLineTouchOutputOnly (this, module, NUM_OUTPUTS,
+			module ? &module->OL_touchOutPort : nullptr, module ? &module->OL_touchVisible : nullptr);
+
 		if (module) {
 			module->widgetReady = true;
 		}
@@ -1589,6 +1596,8 @@ struct DejavuWidget : ModuleWidget {
 
 			Dejavu *module = dynamic_cast<Dejavu*>(this->module);
 			assert(module);
+
+			addOrangeLineTouchMenuItem(menu, module->OL_touchInPort, module->OL_touchOutPort, &module->OL_touchVisible);
 
 			spacerLabel = new MenuLabel();
 			menu->addChild(spacerLabel);

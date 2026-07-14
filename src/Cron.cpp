@@ -402,6 +402,9 @@ struct CronWidget : ModuleWidget
         addOutput (createOutputCentered<PJ301MPort>	(calculateCoordinates (14.845, 66.662, OFFSET_PJ301MPort),  module, RUN_OUTPUT));
         addOutput (createOutputCentered<PJ301MPort>	(calculateCoordinates (14.845,111.112, OFFSET_PJ301MPort),  module, CMP_OUTPUT));
 
+		addOrangeLineTouchPorts (this, module, NUM_INPUTS, NUM_OUTPUTS,
+			module ? &module->OL_touchInPort : nullptr, module ? &module->OL_touchOutPort : nullptr, module ? &module->OL_touchVisible : nullptr);
+
 		if (module)
 			module->widgetReady = true;
 	}
@@ -429,6 +432,11 @@ struct CronWidget : ModuleWidget
 
 		Cron *module = dynamic_cast<Cron *>(this->module);
 		assert(module);
+
+		addOrangeLineTouchMenuItem(menu, module->OL_touchInPort, module->OL_touchOutPort, &module->OL_touchVisible);
+
+		spacerLabel = new MenuLabel();
+		menu->addChild(spacerLabel);
 
 		MenuLabel *styleLabel = new MenuLabel();
 		styleLabel->text = "Style";

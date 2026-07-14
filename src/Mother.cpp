@@ -125,6 +125,9 @@ struct Mother : Module
 					if (OL_statePoly[TRG_INPUT * POLY_CHANNELS + i] != inputs[TRG_INPUT].getVoltage(i))
 					{
 						skip = false;
+#ifndef OL_TOUCH_DISABLED
+						OL_touchOutRequest = true;	// relay Touch Out in step with this early wake - see CLAUDE.md
+#endif
 						break;
 					}
 				}
@@ -137,6 +140,9 @@ struct Mother : Module
 					if (OL_statePoly[CV_INPUT * POLY_CHANNELS + i] != inputs[CV_INPUT].getVoltage(i))
 					{
 						skip = false;
+#ifndef OL_TOUCH_DISABLED
+						OL_touchOutRequest = true;
+#endif
 						break;
 					}
 				}
@@ -1438,6 +1444,9 @@ struct MotherWidget : ModuleWidget
 		childWidget->pStyle = (module == nullptr ? nullptr : &(module->OL_state[STYLE_JSON]));
 		addChild(childWidget);
 
+		addOrangeLineTouchOutputOnly (this, module, NUM_OUTPUTS,
+			module ? &module->OL_touchOutPort : nullptr, module ? &module->OL_touchVisible : nullptr);
+
 		if (module)
 			module->widgetReady = true;
 	}
@@ -1880,6 +1889,11 @@ struct MotherWidget : ModuleWidget
 
 			Mother *module = dynamic_cast<Mother *>(this->module);
 			assert(module);
+
+			addOrangeLineTouchMenuItem(menu, module->OL_touchInPort, module->OL_touchOutPort, &module->OL_touchVisible);
+
+			spacerLabel = new MenuLabel();
+			menu->addChild(spacerLabel);
 
 			MenuLabel *motherLabel = new MenuLabel();
 			motherLabel->text = "Mother";

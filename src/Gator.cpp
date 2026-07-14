@@ -467,7 +467,10 @@ struct GatorWidget : ModuleWidget {
         addParam  (createParamCentered<RoundSmallBlackKnob> (calculateCoordinates (13.780,  93.283, OFFSET_RoundSmallBlackKnob), module,  STR_PARAM ));
 		addOutput (createOutputCentered<PJ301MPort>		    (calculateCoordinates (13.780, 109.842, OFFSET_PJ301MPort),          module, GATE_OUTPUT));
 		addInput  (createInputCentered<PJ301MPort>          (calculateCoordinates ( 3.415, 109.842, OFFSET_PJ301MPort),          module,  RST_INPUT ));
-  	    
+
+		addOrangeLineTouchPorts (this, module, NUM_INPUTS, NUM_OUTPUTS,
+			module ? &module->OL_touchInPort : nullptr, module ? &module->OL_touchOutPort : nullptr, module ? &module->OL_touchVisible : nullptr);
+
   	    if (module) module->widgetReady = true;
 	}
 
@@ -490,6 +493,11 @@ struct GatorWidget : ModuleWidget {
 
 		Gator *module = dynamic_cast<Gator*>(this->module);
 		assert(module);
+
+		addOrangeLineTouchMenuItem(menu, module->OL_touchInPort, module->OL_touchOutPort, &module->OL_touchVisible);
+
+		spacerLabel = new MenuLabel();
+		menu->addChild(spacerLabel);
 
 		MenuLabel *styleLabel = new MenuLabel();
 		styleLabel->text = "Style";

@@ -63,9 +63,13 @@ struct Morph : Module
 	bool moduleSkipProcess() {
 		bool skip = (idleSkipCounter != 0);
 		if (skip) {
-			float clkInputVoltage = inputs[CLK_INPUT].getVoltage (); 
-			if (clkInputVoltage != oldClkInputVoltage)
+			float clkInputVoltage = inputs[CLK_INPUT].getVoltage ();
+			if (clkInputVoltage != oldClkInputVoltage) {
 				skip = false;
+#ifndef OL_TOUCH_DISABLED
+				OL_touchOutRequest = true;	// relay Touch Out in step with this early wake - see CLAUDE.md
+#endif
+			}
 			oldClkInputVoltage = clkInputVoltage;
 		}
 		return skip;
@@ -536,6 +540,8 @@ struct MorphWidget : ModuleWidget
    		addOutput (createOutputCentered<PJ301MPort>	(calculateCoordinates (13.321, 110.604, OFFSET_PJ301MPort),  module, GATE_OUTPUT));
    		addOutput (createOutputCentered<PJ301MPort>	(calculateCoordinates (23.989, 110.604, OFFSET_PJ301MPort),  module, CV_OUTPUT));
 
+		addOrangeLineTouchOutputOnly (this, module, NUM_OUTPUTS,
+			module ? &module->OL_touchOutPort : nullptr, module ? &module->OL_touchVisible : nullptr);
 
 		if (module)
 			module->widgetReady = true;
@@ -624,6 +630,10 @@ struct MorphWidget : ModuleWidget
 		Morph *module = dynamic_cast<Morph *>(this->module);
 		assert(module);
 
+		addOrangeLineTouchMenuItem(menu, module->OL_touchInPort, module->OL_touchOutPort, &module->OL_touchVisible);
+
+		spacerLabel = new MenuLabel();
+		menu->addChild(spacerLabel);
 
 		MenuLabel *behaviourLabel = new MenuLabel();
 		behaviourLabel->text = "Behaviour";

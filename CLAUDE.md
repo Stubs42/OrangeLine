@@ -58,6 +58,65 @@ struct MyModule : Module
 - **Widget/panel conventions**: every module widget follows the same shape — `setPanel()` loads `res/<Name>Orange.svg`; a `brightPanel`/`darkPanel` pair (`SvgPanel*`, members already declared in the shared `OrangeLineCommon.hpp` section) load `res/<Name>Bright.svg` / `res/<Name>Dark.svg` and toggle visibility via a `styleChanged` flag + `STYLE_JSON`; a right-click `appendContextMenu()` offers the Orange/Bright/Dark switch (copy the `<Name>StyleItem : MenuItem` pattern verbatim, e.g. from `Buckets.cpp`). `res/<Name>Work.svg` is typically the Inkscape source/authoring file for the shipped panels (not loaded at runtime).
   - `res/Template.svg` is the boilerplate starting point for a brand-new panel with full branding/screws/chamfered corners — only reach for it when actually hand-authoring final artwork; for a quick functional placeholder (no artwork yet), a plain rectangle + a guide layer of jack-position circles is enough to get a module running (see `res/LanesWork.svg` for the pattern: a `controls` layer of plain circles at the exact mm coordinates the widget C++ uses for `addInput`/`addOutput`, so guide and code stay in sync).
 
+## Touch: hidden low-latency force-process infrastructure
+
+Chained throttled modules (see control-rate throttling above) each wake up on their own
+independent ~1kHz cycle, so a signal hopping through several modules can pick up up to ~43
+samples of avoidable extra latency per hop on top of Rack's own unavoidable one-sample-per-
+cable latency. **Touch** is a shared mechanism that collapses this: a hidden mono trigger
+**Touch In** forces that one sample to fully process regardless of the throttle counter, and a
+hidden mono trigger **Touch Out** relays the same pulse onward by default — chaining Touch
+Out → Touch In across a string of modules keeps the whole chain in near-lockstep.
+
+- **Zero changes to any module's own enums.** Touch In/Out live at raw Rack port index
+  `NUM_INPUTS` / `NUM_OUTPUTS` (each module's own enum sentinel — "one past the last real
+  port"), registered via `config(NUM_PARAMS, NUM_INPUTS + 1, NUM_OUTPUTS + 1, NUM_LIGHTS)` in
+  the shared `initializeInstance()`. They're read/written directly as `inputs[NUM_INPUTS]` /
+  `outputs[NUM_OUTPUTS]`, entirely bypassing `OL_state`/`stateIdx*` — no `InputIds`/`OutputIds`
+  entry needed, so no risk of renumbering existing patch cables.
+- **Mechanism** (`OrangeLineCommon.hpp`, all under `#ifndef OL_TOUCH_DISABLED`): `bool touchFired
+  = OL_touchInTrigger.process(inputs[NUM_INPUTS].getVoltage()); bool skip =
+  moduleSkipProcess() && !touchFired;` — a touch forces the sample through without disturbing
+  `idleSkipCounter`'s own ongoing phase. The Touch Out pulse (`OL_touchOutPulse`, currently
+  **0.05s** — deliberately longer than the standard 1ms trigger-output convention so it's
+  actually visible on a scope, tune freely in one place if needed) keeps advancing every real
+  sample regardless of throttling, same reasoning as `processActiveOutputTriggers()`.
+- **`OL_touchOutRequest`** (bool): lets a module that already has its own early-wake trigger
+  (a custom `moduleSkipProcess()` forcing `skip = false` on some other condition, e.g. a clock
+  edge) request a Touch Out relay itself, without needing a redundant dedicated Touch In of its
+  own — see Mother/Dejavu/Morph/Morpheus below.
+- **Widget helpers** (`OrangeLine.hpp`): `addOrangeLineTouchPorts(w, module, NUM_INPUTS,
+  NUM_OUTPUTS, &module->OL_touchInPort, &module->OL_touchOutPort, &module->OL_touchVisible)`
+  (full In+Out, top-left/bottom-right corners) or `addOrangeLineTouchOutputOnly(...)` (Out only,
+  for modules with their own early-wake trigger and no need for Touch In) in the widget
+  constructor after panel setup; `addOrangeLineTouchMenuItem(menu, inPort, outPort,
+  visibleFlag)` in `appendContextMenu()`, placed **above** the Style section with its own
+  separator. Both jacks default hidden (`Widget::visible` gates hit-testing too, confirmed via
+  the SDK's `recursePositionEvent` — a hidden port is also unpatchable, so hidden really means
+  inactive, not just invisible), toggled via the menu item and persisted through an
+  unconditional `"touchVisible"` JSON key added directly in the shared `dataToJson()`/
+  `dataFromJson()` (not any module's own `jsonIds` — guarded with `json_is_boolean()` first).
+- **Per-module opt-out**: `#define OL_TOUCH_DISABLED` in a module's own `<Name>.hpp` **before**
+  its first `#include "OrangeLine.hpp"` (or `"<Family>Shared.hpp"`, which itself includes
+  `OrangeLine.hpp`). Position overrides for panels with no room in the usual top-left spot:
+  `#define OL_TOUCH_IN_Y_MM <value>` (etc., all `#ifndef`-guarded in `OrangeLine.hpp`) before
+  that same include.
+- **Current per-module state** (Dieter's own call per module, not a blanket rollout):
+  - **Full Touch In+Out**: Buckets, CVLanes, Cron, D2D\*, Fence (coexists with its own
+    pre-existing TRG in/out), Gator, Hold (the pilot), K2C\*, LanesCV, Phrase, Resc\*, Swing,
+    CC14\* (\* = slim panel, Touch In repositioned to the bottom via `OL_TOUCH_IN_Y_MM`, same
+    row as Touch Out mirrored to the left).
+  - **Touch Out only** (already has its own early-wake trigger via `OL_touchOutRequest`, no
+    Touch In needed): Mother, Dejavu, Morph, Morpheus.
+  - **Disabled entirely** (`OL_TOUCH_DISABLED`): CC2CV, CV2CC, RECALL, MidiBus, MidiLanes,
+    LanesMidi — MIDI-hardware-facing modules, where MIDI's own transport latency dwarfs the
+    sub-millisecond timing Touch fixes; would just be one more unused hidden jack on an already
+    busy panel.
+- **Deliberately undocumented anywhere user-facing** (README, in-app manual, right-click menu
+  wording) — Dieter's explicit call: "the community should still have something to puzzle
+  about" ("die community soll noch was zum rätseln haben"). This file (developer-facing) is the
+  only place the mechanism is described.
+
 ## Pitfalls learned the hard way (read before writing `moduleProcess()`)
 
 - **`setOutPolyChannels()` must be (re)asserted every tick inside `moduleProcess()`, never only once in `moduleInitStateTypes()`/the constructor.** `initializeInstance()` does `memset(OL_polyChannels, 0, ...)` immediately *after* `moduleInitStateTypes()` runs, silently wiping a one-time call and leaving the output permanently at 0 channels — with no compile error and no obvious symptom besides "no output at all". This holds even when the channel count is constant (K2C: always `POLY_CHANNELS`) — constant doesn't mean "set once", it means "assert the same value every tick".

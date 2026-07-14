@@ -329,7 +329,10 @@ struct HoldWidget : ModuleWidget
 			module->darkPanel = darkPanel;
 			addChild(darkPanel);
 		}
-		
+
+		addOrangeLineTouchPorts (this, module, NUM_INPUTS, NUM_OUTPUTS,
+			module ? &module->OL_touchInPort : nullptr, module ? &module->OL_touchOutPort : nullptr, module ? &module->OL_touchVisible : nullptr);
+
 		addInput (createInputCentered<PJ301MPort> (calculateCoordinates (2.653, 12.052, OFFSET_PJ301MPort),  module, GATE_INPUT));
         for (int i = 0; i < NUM_ROWS; i++)
 		{
@@ -366,6 +369,11 @@ struct HoldWidget : ModuleWidget
 
 		Hold *module = dynamic_cast<Hold *>(this->module);
 		assert(module);
+
+		addOrangeLineTouchMenuItem(menu, module->OL_touchInPort, module->OL_touchOutPort, &module->OL_touchVisible);
+
+		spacerLabel = new MenuLabel();
+		menu->addChild(spacerLabel);
 
 		MenuLabel *styleLabel = new MenuLabel();
 		styleLabel->text = "Style";

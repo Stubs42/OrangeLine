@@ -18,6 +18,9 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
+// Touch doesn't help a real MIDI-hardware module - see CC2CV.hpp / CLAUDE.md.
+#define OL_TOUCH_DISABLED
+
 // See LanesCV.hpp for why this includes LanesShared.hpp (not CVLanes.hpp) - NUM_LANES and
 // the LanesHubInterface/LanesExpanderInterface pull-API shared across the whole LANES
 // family, without colliding with any other family member's own module-specific enums.

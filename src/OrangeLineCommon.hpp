@@ -71,6 +71,33 @@ SvgPanel *darkPanel;
 int idleSkip;
 
 /*
+	Touch: a hidden mono trigger pair every module gets for free, living one index past that
+	module's own last real input/output (NUM_INPUTS/NUM_OUTPUTS - each module's own enum
+	sentinel, never touched or renumbered). Touch In forces this one real sample to fully
+	process regardless of the throttle counter; Touch Out relays the same pulse onward by
+	default, so chaining Touch Out -> Touch In across connected modules collapses the
+	~43-sample-per-hop throttle latency down to close to Rack's own unavoidable per-cable
+	minimum. Hidden (invisible AND unpatchable - Rack's Widget::visible gates hit-testing too,
+	see widget/Widget.hpp's recursePositionEvent) until shown via right-click, persisted per
+	instance, nothing in README.md - stays undocumented. Opt out per module with
+	#define OL_TOUCH_DISABLED before #include "OrangeLineCommon.hpp".
+
+	Some modules (Mother, and any other with its own trigger input that already wakes it early
+	via a custom moduleSkipProcess()) don't need a *second*, redundant Touch In - they already
+	have an equivalent. Those still get a Touch Out, relayed whenever their own logic decides a
+	tick deserves it: the module sets OL_touchOutRequest = true itself (typically right where
+	its own moduleSkipProcess() forces skip = false), instead of relying on OL_touchInTrigger.
+*/
+#ifndef OL_TOUCH_DISABLED
+dsp::SchmittTrigger OL_touchInTrigger;
+dsp::PulseGenerator OL_touchOutPulse;
+bool OL_touchVisible = false;
+bool OL_touchOutRequest = false;
+PortWidget *OL_touchInPort = nullptr;
+PortWidget *OL_touchOutPort = nullptr;
+#endif
+
+/*
 	Optional per-module hooks for JSON data beyond the flat OL_state float array (e.g. a
 	nested json_t subtree like midi::Port::toJson()). Default nullptr - skipped, so every
 	existing module's dataToJson()/dataFromJson() behavior is unchanged. A module that needs
@@ -222,7 +249,13 @@ inline void initializeInstance () {
 	/*
 		VCV interface configuration
 	*/
+#ifndef OL_TOUCH_DISABLED
+	config (NUM_PARAMS, NUM_INPUTS + 1, NUM_OUTPUTS + 1, NUM_LIGHTS);
+	configInput (NUM_INPUTS, "Touch In (forces immediate processing)");
+	configOutput (NUM_OUTPUTS, "Touch Out (relays Touch In downstream)");
+#else
 	config (NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
+#endif
 	moduleParamConfig ();
 	/*
 		Initialize globalRandomGeneratorInstance with zero random seed
@@ -421,8 +454,26 @@ float getFromParamOrPolyInput(int param, int input, int channel, float inputScal
 void process (const ProcessArgs &args) override {
 	OL_sampleTime = 1.0 / (double)(APP->engine->getSampleRate ());
 
+#ifndef OL_TOUCH_DISABLED
+	/*
+		Touch In forces this one real sample to fully process regardless of the throttle
+		counter below - checked every real sample (not just non-skipped ones), same as any
+		other trigger input would need to be to not miss an edge.
+	*/
+	bool touchFired = OL_touchInTrigger.process (inputs[NUM_INPUTS].getVoltage ());
+#else
+	bool touchFired = false;
+#endif
+
 	idleSkip = int(0.0009 / OL_sampleTime);	// we run a bit less than every millisecond
-	bool skip = moduleSkipProcess();
+	bool skip = moduleSkipProcess() && !touchFired;
+#ifndef OL_TOUCH_DISABLED
+	// A module with its own early-wake trigger (e.g. Mother's TRG_INPUT, forcing skip = false
+	// inside its own moduleSkipProcess() above) can set OL_touchOutRequest itself to relay
+	// Touch Out in step with that, without needing a dedicated Touch In port of its own.
+	touchFired = touchFired || OL_touchOutRequest;
+	OL_touchOutRequest = false;
+#endif
 	if (idleSkip > 0) {
 		idleSkipCounter = (idleSkipCounter + 1) % idleSkip;
 	}
@@ -432,6 +483,9 @@ void process (const ProcessArgs &args) override {
 	if (skip) {
 		samplesSkipped ++;
 		processActiveOutputTriggers ();
+#ifndef OL_TOUCH_DISABLED
+		outputs[NUM_OUTPUTS].setVoltage (OL_touchOutPulse.process ((float) args.sampleTime) ? 10.f : 0.f);
+#endif
 		return;
 	}
 
@@ -441,6 +495,14 @@ void process (const ProcessArgs &args) override {
 	moduleProcess (args);
 	moduleReflectChanges ();
 	reflectChanges();
+
+#ifndef OL_TOUCH_DISABLED
+	// Touch Out relays Touch In downstream by default - deliberately longer than the standard
+	// 1ms trigger-output convention (see setStateTypeOutput(STATE_TYPE_TRIGGER) in CLAUDE.md) so
+	// the pulse is actually visible on a scope.
+	if (touchFired) OL_touchOutPulse.trigger (0.05f);
+	outputs[NUM_OUTPUTS].setVoltage (OL_touchOutPulse.process ((float) args.sampleTime) ? 10.f : 0.f);
+#endif
 
 	OL_initialized = true;
 	samplesSkipped = 0;
@@ -793,6 +855,9 @@ json_t *dataToJson () override {
 		json_object_set_new (rootJ, OL_jsonLabel[jsonIdx], json_real (getStateJson (jsonIdx)));
 	}
 	if (moduleExtraDataToJson) moduleExtraDataToJson (rootJ);
+#ifndef OL_TOUCH_DISABLED
+	json_object_set_new (rootJ, "touchVisible", json_boolean (OL_touchVisible));
+#endif
 	return rootJ;
 }
 
@@ -807,6 +872,16 @@ void dataFromJson (json_t *rootJ) override {
 		if ((pJson = json_object_get (rootJ, OL_jsonLabel[jsonIdx])) != nullptr)
 			setStateJson (jsonIdx, json_real_value (pJson));
 	if (moduleExtraDataFromJson) moduleExtraDataFromJson (rootJ);
+#ifndef OL_TOUCH_DISABLED
+	// Read directly (not via the module's own jsonLabel loop above) - Touch is a cross-cutting
+	// framework feature, deliberately kept outside every module's own jsonIds enum. Guarded
+	// with json_is_boolean() first (a patch saved before this field existed has no key at all,
+	// json_object_get() returns nullptr and this is skipped - OL_touchVisible keeps its
+	// constructor default of false, exactly as it should for an old patch).
+	json_t *touchVisibleJ = json_object_get (rootJ, "touchVisible");
+	if (touchVisibleJ && json_is_boolean (touchVisibleJ))
+		OL_touchVisible = json_is_true (touchVisibleJ);
+#endif
 	OL_initialized = false;		// indiacte that we have to reinitialize
 	dataFromJsonCalled = true;	// indicate that we reloaded a patch or a preset
 }

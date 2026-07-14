@@ -515,4 +515,101 @@ struct CCGridWidget : OpaqueWidget {
 	}
 };
 
+/**
+	Touch: shared widget/menu helpers for the hidden force-process trigger pair every module can
+	get for free (mechanism lives in OrangeLineCommon.hpp - see CLAUDE.md). Hidden by default -
+	Rack's Widget::visible gates both drawing AND position-event hit-testing together (see
+	widget/Widget.hpp's recursePositionEvent), so hidden here deliberately means both invisible
+	and unpatchable at once, and shown means both visible and patchable at once - there's no
+	in-between state. Uses setVisible()/show()/hide() rather than assigning ->visible directly,
+	per the SDK's own doc comment on that field. Deliberately raw-pointer based (not templated
+	on the module type) to match this file's existing convention (CCGridWidget/NumberWidget/
+	TextWidget all take direct pointers to the relevant module members).
+*/
+/** Dieter's own hand-drawn 2.5x2.5mm icons (res/TouchIn.svg / TouchOut.svg), positioned by
+	their top-left corner (not centered - these coordinates are exact Inkscape-derived
+	placements, not a generic center point). TouchIn sits OL_TOUCH_IN_X_MM/Y_MM from the
+	panel's own top-left corner; TouchOut sits OL_TOUCH_OUT_MARGIN_MM from the panel's *right*
+	edge (mirroring TouchIn's left margin, accounting for the icon's own 2.5mm width) and
+	OL_TOUCH_OUT_Y_MM down from the top. */
+#ifndef OL_TOUCH_IN_X_MM
+#define OL_TOUCH_IN_X_MM 0.611f
+#endif
+#ifndef OL_TOUCH_IN_Y_MM
+#define OL_TOUCH_IN_Y_MM 0.763f
+#endif
+#ifndef OL_TOUCH_OUT_MARGIN_MM
+#define OL_TOUCH_OUT_MARGIN_MM (0.611f + 2.5f)
+#endif
+#ifndef OL_TOUCH_OUT_Y_MM
+#define OL_TOUCH_OUT_Y_MM 125.26f
+#endif
+
+struct TouchInPort : app::SvgPort {
+	TouchInPort () {
+		setSvg (Svg::load (asset::plugin (pluginInstance, "res/TouchIn.svg")));
+	}
+};
+struct TouchOutPort : app::SvgPort {
+	TouchOutPort () {
+		setSvg (Svg::load (asset::plugin (pluginInstance, "res/TouchOut.svg")));
+	}
+};
+
+inline void addOrangeLineTouchPorts (ModuleWidget *w, Module *module, int touchInId, int touchOutId,
+                                      PortWidget **touchInPortOut, PortWidget **touchOutPortOut, bool *touchVisible) {
+	Vec topLeft (mm2px (OL_TOUCH_IN_X_MM), mm2px (OL_TOUCH_IN_Y_MM));
+	Vec bottomRight (w->box.size.x - mm2px (OL_TOUCH_OUT_MARGIN_MM), mm2px (OL_TOUCH_OUT_Y_MM));
+
+	TouchInPort  *inPort  = createInput<TouchInPort>   (topLeft,     module, touchInId);
+	TouchOutPort *outPort = createOutput<TouchOutPort> (bottomRight, module, touchOutId);
+	bool visible = touchVisible ? *touchVisible : false;
+	inPort->setVisible  (visible);
+	outPort->setVisible (visible);
+	w->addInput (inPort);
+	w->addOutput (outPort);
+	if (touchInPortOut)  *touchInPortOut  = inPort;
+	if (touchOutPortOut) *touchOutPortOut = outPort;
+}
+
+/** For modules that already have their own equivalent of Touch In (e.g. Mother's TRG_INPUT,
+	which forces an early wake inside its own moduleSkipProcess()) - a second, redundant Touch
+	In would just be confusing, so these only get the Touch Out jack. Relaying still works via
+	OL_touchOutRequest (see OrangeLineCommon.hpp) - the module sets that itself wherever its own
+	logic decides a tick deserves a relay. */
+inline void addOrangeLineTouchOutputOnly (ModuleWidget *w, Module *module, int touchOutId,
+                                           PortWidget **touchOutPortOut, bool *touchVisible) {
+	Vec bottomRight (w->box.size.x - mm2px (OL_TOUCH_OUT_MARGIN_MM), mm2px (OL_TOUCH_OUT_Y_MM));
+
+	TouchOutPort *outPort = createOutput<TouchOutPort> (bottomRight, module, touchOutId);
+	outPort->setVisible (touchVisible ? *touchVisible : false);
+	w->addOutput (outPort);
+	if (touchOutPortOut) *touchOutPortOut = outPort;
+}
+
+struct OrangeLineTouchMenuItem : MenuItem {
+	PortWidget *inPort  = nullptr;
+	PortWidget *outPort = nullptr;
+	bool *visibleFlag   = nullptr;
+
+	void onAction (const event::Action &e) override {
+		if (!visibleFlag) return;
+		*visibleFlag = !*visibleFlag;
+		if (inPort)  inPort->setVisible  (*visibleFlag);
+		if (outPort) outPort->setVisible (*visibleFlag);
+	}
+	void step () override {
+		rightText = (visibleFlag && *visibleFlag) ? "✔" : "";
+	}
+};
+
+inline void addOrangeLineTouchMenuItem (Menu *menu, PortWidget *inPort, PortWidget *outPort, bool *visibleFlag) {
+	OrangeLineTouchMenuItem *item = new OrangeLineTouchMenuItem ();
+	item->text = "Show Touch Ports";
+	item->inPort = inPort;
+	item->outPort = outPort;
+	item->visibleFlag = visibleFlag;
+	menu->addChild (item);
+}
+
 #endif

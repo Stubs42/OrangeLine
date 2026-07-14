@@ -1,3 +1,7 @@
+// CC14 is one of the slim panels - no room in the header for Touch In's usual top-left spot,
+// so it goes to the bottom instead (same row as Touch Out, mirrored to the left side).
+#define OL_TOUCH_IN_Y_MM 125.26f
+
 #include "OrangeLine.hpp"
 
 enum jsonIds

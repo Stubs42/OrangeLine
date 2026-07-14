@@ -161,6 +161,7 @@ struct CVLanes : Module, LanesHubInterface
 	float getSourcePitch(int source, int channel) override { return sourcePitch[source][channel]; }
 	float getSourceVelocity(int source, int channel) override { return sourceVelocity[source][channel]; }
 	int   getSourceLane(int source, int channel) override { return sourceLane[source][channel]; }
+	float getLanesStyle() override { return OL_state[STYLE_JSON]; }
 
 	// ********************************************************************************************************************************
 	/*
@@ -265,6 +266,8 @@ struct CVLanes : Module, LanesHubInterface
 */
 struct CVLanesWidget : ModuleWidget
 {
+	LanesExtStrips extStrips;
+
 	CVLanesWidget(CVLanes *module)
 	{
 		setModule(module);
@@ -318,8 +321,20 @@ struct CVLanesWidget : ModuleWidget
 		addChild (createLightCentered<TinyLight<GreenRedLight>> (calculateCoordinates (3.5f, 4.f, 0.f), module, LEFT_CONN_LIGHT));
 		addChild (createLightCentered<TinyLight<GreenRedLight>> (calculateCoordinates (82.86f, 4.f, 0.f), module, RIGHT_CONN_LIGHT));
 
+		addOrangeLineTouchPorts (this, module, NUM_INPUTS, NUM_OUTPUTS,
+			module ? &module->OL_touchInPort : nullptr, module ? &module->OL_touchOutPort : nullptr, module ? &module->OL_touchVisible : nullptr);
+
+		addLanesExtStrips(this, 86.36f, &extStrips);
+
 		if (module)
 			module->widgetReady = true;
+	}
+
+	void step() override
+	{
+		if (module)
+			updateLanesExtStrips(&extStrips, module, module->leftExpander.module, module->rightExpander.module);
+		ModuleWidget::step();
 	}
 
 	struct CVLanesStyleItem : MenuItem
@@ -345,6 +360,11 @@ struct CVLanesWidget : ModuleWidget
 
 		CVLanes *module = dynamic_cast<CVLanes *>(this->module);
 		assert(module);
+
+		addOrangeLineTouchMenuItem(menu, module->OL_touchInPort, module->OL_touchOutPort, &module->OL_touchVisible);
+
+		spacerLabel = new MenuLabel();
+		menu->addChild(spacerLabel);
 
 		MenuLabel *styleLabel = new MenuLabel();
 		styleLabel->text = "Style";

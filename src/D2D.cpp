@@ -207,6 +207,9 @@ struct D2DWidget : ModuleWidget
 		addInput (createInputCentered<PJ301MPort> (calculateCoordinates (7.620f, 93.981f, 0.f), module, SHAPE_INPUT));
 		addOutput (createOutputCentered<PJ301MPort> (calculateCoordinates (7.626f, 109.440f, 0.f), module, VEL_OUTPUT));
 
+		addOrangeLineTouchPorts (this, module, NUM_INPUTS, NUM_OUTPUTS,
+			module ? &module->OL_touchInPort : nullptr, module ? &module->OL_touchOutPort : nullptr, module ? &module->OL_touchVisible : nullptr);
+
 		if (module)
 			module->widgetReady = true;
 	}
@@ -244,6 +247,11 @@ struct D2DWidget : ModuleWidget
 
 		D2D *module = dynamic_cast<D2D *>(this->module);
 		assert(module);
+
+		addOrangeLineTouchMenuItem(menu, module->OL_touchInPort, module->OL_touchOutPort, &module->OL_touchVisible);
+
+		spacerLabel = new MenuLabel();
+		menu->addChild(spacerLabel);
 
 		MenuLabel *styleLabel = new MenuLabel();
 		styleLabel->text = "Style";

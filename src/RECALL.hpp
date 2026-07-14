@@ -1,3 +1,6 @@
+// Touch doesn't help a real MIDI-hardware module - see CC2CV.hpp / CLAUDE.md.
+#define OL_TOUCH_DISABLED
+
 #include "OrangeLine.hpp"
 
 enum jsonIds

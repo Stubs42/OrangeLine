@@ -336,6 +336,10 @@ struct SwingWidget : ModuleWidget {
 			Vec pos = Vec (3.169 + 4 + x * (13.621 - 3.169), 128.5 - 85.535 - 4 + y * (13.621 - 3.169));
 			addParam (createParamCentered<RoundSmallBlackKnob> (mm2px (pos), module, TIM_PARAM_01 +  i));
 		}
+
+		addOrangeLineTouchPorts (this, module, NUM_INPUTS, NUM_OUTPUTS,
+			module ? &module->OL_touchInPort : nullptr, module ? &module->OL_touchOutPort : nullptr, module ? &module->OL_touchVisible : nullptr);
+
   	    if (module) module->widgetReady = true;
 	}
 
@@ -358,6 +362,11 @@ struct SwingWidget : ModuleWidget {
 
 		Swing *module = dynamic_cast<Swing*>(this->module);
 		assert(module);
+
+		addOrangeLineTouchMenuItem(menu, module->OL_touchInPort, module->OL_touchOutPort, &module->OL_touchVisible);
+
+		spacerLabel = new MenuLabel();
+		menu->addChild(spacerLabel);
 
 		MenuLabel *styleLabel = new MenuLabel();
 		styleLabel->text = "Style";

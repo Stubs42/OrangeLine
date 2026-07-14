@@ -106,6 +106,7 @@ struct MidiLanes : Module, LanesHubInterface
 		int lane = (int) getStateParam(LANE_PARAM + source);
 		return lane == 0 ? 0 : lane - 1;
 	}
+	float getLanesStyle() override { return OL_state[STYLE_JSON]; }
 
 	bool moduleSkipProcess()
 	{
@@ -254,6 +255,8 @@ struct MidiLaneDisplayWidget : TransparentWidget
 */
 struct MidiLanesWidget : ModuleWidget
 {
+	LanesExtStrips extStrips;
+
 	MidiLanesWidget(MidiLanes *module)
 	{
 		setModule(module);
@@ -316,8 +319,17 @@ struct MidiLanesWidget : ModuleWidget
 		addChild (createLightCentered<TinyLight<GreenRedLight>> (calculateCoordinates (3.5f, 4.f, 0.f), module, LEFT_CONN_LIGHT));
 		addChild (createLightCentered<TinyLight<GreenRedLight>> (calculateCoordinates (47.3f, 4.f, 0.f), module, RIGHT_CONN_LIGHT));
 
+		addLanesExtStrips(this, 50.8f, &extStrips);
+
 		if (module)
 			module->widgetReady = true;
+	}
+
+	void step() override
+	{
+		if (module)
+			updateLanesExtStrips(&extStrips, module, module->leftExpander.module, module->rightExpander.module);
+		ModuleWidget::step();
 	}
 
 	struct MidiLanesStyleItem : MenuItem

@@ -18,6 +18,10 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
+// Resc is one of the slim panels - no room in the header for Touch In's usual top-left spot,
+// so it goes to the bottom instead (same row as Touch Out, mirrored to the left side).
+#define OL_TOUCH_IN_Y_MM 125.26f
+
 #include "OrangeLine.hpp"
 
 #define CHG_IN     1

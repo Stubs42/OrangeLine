@@ -1,3 +1,8 @@
+// Touch doesn't help a real MIDI-hardware module - MIDI's own transport latency dwarfs the
+// sub-millisecond timing Touch is built to fix, and it would just be one more never-used
+// hidden jack cluttering an already-busy panel (see CLAUDE.md).
+#define OL_TOUCH_DISABLED
+
 #include "OrangeLine.hpp"
 
 enum jsonIds

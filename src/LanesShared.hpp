@@ -57,6 +57,10 @@ struct LanesHubInterface {
 	virtual float getSourcePitch(int source, int channel) = 0;
 	virtual float getSourceVelocity(int source, int channel) = 0;
 	virtual int   getSourceLane(int source, int channel) = 0;
+	// This module's own STYLE_JSON value (STYLE_ORANGE/BRIGHT/DARK) - purely for the cosmetic
+	// seam-bridging "Ext" strip (see getLanesNeighborStyle() below), unrelated to Hub
+	// resolution/health.
+	virtual float getLanesStyle() = 0;
 	virtual ~LanesHubInterface() {}
 };
 
@@ -69,8 +73,30 @@ struct LanesExpanderInterface {
 	// some other Hub", which classifyLanesNeighborForHub() below can't tell just from
 	// getLanesHub() alone (that only ever returns ONE, arbitrarily preferred, Hub).
 	virtual bool getLanesHubAmbiguous() = 0;
+	// See LanesHubInterface::getLanesStyle() above.
+	virtual float getLanesStyle() = 0;
 	virtual ~LanesExpanderInterface() {}
 };
+
+/**
+	Returns the LANES-family theme (STYLE_ORANGE/BRIGHT/DARK) of a given immediate neighbor, or
+	-1 if that neighbor isn't part of the LANES family at all. Purely for the cosmetic
+	seam-bridging "Ext" strip (res/Ext{Orange,Bright,Dark}.svg) that visually merges two
+	touching same-themed panels - deliberately independent of Hub-resolution health (a
+	same-themed neighbor bridges the seam regardless of whether the wider chain is "healthy").
+*/
+inline float getLanesNeighborStyle(Module *neighbor)
+{
+	if (!neighbor)
+		return -1.f;
+	LanesHubInterface *hub = dynamic_cast<LanesHubInterface*>(neighbor);
+	if (hub)
+		return hub->getLanesStyle();
+	LanesExpanderInterface *link = dynamic_cast<LanesExpanderInterface*>(neighbor);
+	if (link)
+		return link->getLanesStyle();
+	return -1.f;
+}
 
 /**
 	Resolves the Hub reachable through a given immediate neighbor (leftExpander.module or
@@ -126,6 +152,67 @@ inline LanesNeighborKind classifyLanesNeighborForHub(Module *neighbor, LanesHubI
 	if (theirHub && theirHub != self)
 		return LANES_NEIGHBOR_CONFLICT;
 	return LANES_NEIGHBOR_OK;
+}
+
+/**
+	"Ext" strip (res/Ext{Orange,Bright,Dark}.svg, Dieter's design): a thin (1.524mm) full-height
+	sliver drawn right at a module's own left/right edge, continuing the panel's bottom accent
+	line across the seam so two touching same-themed LANES-family modules read as one
+	continuous panel. Purely cosmetic (widget-side only, no moduleProcess() involvement) -
+	Rack doesn't clip a widget to its parent module's own bounds, so a strip positioned exactly
+	at x=0 or x=panelWidth reaches right up to (and covers) the seam between two adjacent
+	modules. Both sides of a seam draw their own independent copy (deliberately redundant -
+	whichever module Rack happens to render on top of the other at that seam still shows the
+	strip, regardless of draw order).
+*/
+struct LanesExtStrips {
+	SvgWidget *left = nullptr;
+	SvgWidget *right = nullptr;
+	std::shared_ptr<Svg> orangeSvg, brightSvg, darkSvg;
+};
+
+inline void addLanesExtStrips(ModuleWidget *w, float panelWidthMm, LanesExtStrips *strips)
+{
+	strips->orangeSvg = APP->window->loadSvg(asset::plugin(pluginInstance, "res/ExtOrange.svg"));
+	strips->brightSvg = APP->window->loadSvg(asset::plugin(pluginInstance, "res/ExtBright.svg"));
+	strips->darkSvg   = APP->window->loadSvg(asset::plugin(pluginInstance, "res/ExtDark.svg"));
+
+	// Straddle the seam itself (half outside this module's own edge, half inside) rather than
+	// sitting flush against it - the seam line is the gap/border BETWEEN two adjacent modules'
+	// edges, so a strip that only touches it from one side still leaves it visible.
+	strips->left = new SvgWidget();
+	strips->left->setSvg(strips->orangeSvg);
+	strips->left->box.pos = mm2px(Vec(-1.524f / 2.f - 0.1f, 0.1f)); // TEMP: -0.1mm x shift, 0.1mm y clip-down
+	strips->left->visible = false;
+	w->addChild(strips->left);
+
+	strips->right = new SvgWidget();
+	strips->right->setSvg(strips->orangeSvg);
+	strips->right->box.pos = mm2px(Vec(panelWidthMm - 1.524f / 2.f + 0.1f, 0.1f)); // TEMP: +0.1mm x shift, 0.1mm y clip-down
+	strips->right->visible = false;
+	w->addChild(strips->right);
+}
+
+/**
+	Called every widget step() (UI frame rate, not audio rate - this is purely cosmetic). `self`
+	is the widget's own module - works even though it's a generic Module* because every LANES-
+	family module already implements LanesHubInterface or LanesExpanderInterface (that's what
+	getLanesNeighborStyle() dynamic_casts against), so this needs no per-module-type code at all.
+*/
+inline void updateLanesExtStrips(LanesExtStrips *strips, Module *self, Module *leftNeighbor, Module *rightNeighbor)
+{
+	float myStyle = getLanesNeighborStyle(self);
+	if (myStyle < 0.f)
+		return;
+	std::shared_ptr<Svg> svg = (myStyle == STYLE_ORANGE) ? strips->orangeSvg : (myStyle == STYLE_BRIGHT) ? strips->brightSvg : strips->darkSvg;
+
+	float leftStyle = getLanesNeighborStyle(leftNeighbor);
+	strips->left->setSvg(svg);
+	strips->left->visible = (leftStyle >= 0.f) && (leftStyle == myStyle);
+
+	float rightStyle = getLanesNeighborStyle(rightNeighbor);
+	strips->right->setSvg(svg);
+	strips->right->visible = (rightStyle >= 0.f) && (rightStyle == myStyle);
 }
 
 #endif

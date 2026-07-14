@@ -73,9 +73,13 @@ struct Morpheus : Module
 	bool moduleSkipProcess() {
 		bool skip = (idleSkipCounter != 0);
 		if (skip) {
-			float clkInputVoltage = inputs[CLK_INPUT].getVoltage (); 
-			if (clkInputVoltage != oldClkInputVoltage)
+			float clkInputVoltage = inputs[CLK_INPUT].getVoltage ();
+			if (clkInputVoltage != oldClkInputVoltage) {
 				skip = false;
+#ifndef OL_TOUCH_DISABLED
+				OL_touchOutRequest = true;	// relay Touch Out in step with this early wake - see CLAUDE.md
+#endif
+			}
 			oldClkInputVoltage = clkInputVoltage;
 		}
 		return skip;
@@ -1119,6 +1123,10 @@ struct MorpheusWidget : ModuleWidget
 			w->pStyle = (module == nullptr ? nullptr : &(module->OL_state[STYLE_JSON]));
 			addChild(w);
 		}
+
+		addOrangeLineTouchOutputOnly (this, module, NUM_OUTPUTS,
+			module ? &module->OL_touchOutPort : nullptr, module ? &module->OL_touchVisible : nullptr);
+
 		if (module)
 			module->widgetReady = true;
 	}
@@ -1328,6 +1336,10 @@ struct MorpheusWidget : ModuleWidget
 		Morpheus *module = dynamic_cast<Morpheus *>(this->module);
 		assert(module);
 
+		addOrangeLineTouchMenuItem(menu, module->OL_touchInPort, module->OL_touchOutPort, &module->OL_touchVisible);
+
+		spacerLabel = new MenuLabel();
+		menu->addChild(spacerLabel);
 
 		MenuLabel *behaviourLabel = new MenuLabel();
 		behaviourLabel->text = "Behaviour";
