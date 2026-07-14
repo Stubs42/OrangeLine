@@ -278,23 +278,26 @@ struct LanesWidget : ModuleWidget
 		}
 
 		/*
-			Jack centers below are measured directly from the "Controls" layer of res/LanesWork.svg
-			(2 input blocks x 4 columns x 8 rows - the former 2 output blocks moved to LanesCV, see
-			Lanes.hpp), so the widget lines up exactly with the panel art. These are already true
-			jack centers, so calculateCoordinates() is called with a 0 offset.
+			Jack centers below are measured directly from the "Controls" layer of
+			res/LanesInputWork.svg (2 input blocks x 4 columns x 8 rows), so the widget lines
+			up exactly with the panel art. These are already true jack centers, so
+			calculateCoordinates() is called with a 0 offset. The two blocks' row-zero Y
+			differ very slightly (sub-0.05mm, an artifact of the panel art) - kept as measured
+			rather than forced to a single shared value.
 		*/
-		static const float ROW0_Y     = 21.845226f;
 		static const float ROW_PITCH  = 13.208002f;
 		static const float COL_PITCH  = 9.398000f;
-		static const float INPUT_BLOCK_X[2]  = { 7.112002f, 48.514002f };
+		static const float INPUT_BLOCK_X[2] = { 7.112002f, 51.054000f };
+		static const float INPUT_ROW0_Y[2]  = { 21.866941f, 21.823511f };
 		// Input blocks: Sources 1-8 (block 0) and Sources 9-16 (block 1)
 		for (int block = 0; block < 2; block++)
 		{
 			float blockX = INPUT_BLOCK_X[block];
+			float row0Y  = INPUT_ROW0_Y[block];
 			for (int row = 0; row < 8; row++)
 			{
 				int source = block * 8 + row;
-				float y = ROW0_Y + row * ROW_PITCH;
+				float y = row0Y + row * ROW_PITCH;
 				addInput (createInputCentered<PJ301MPort> (calculateCoordinates (blockX + 0.f * COL_PITCH, y, 0.f), module, VOCT_IN_INPUT + source));
 				addInput (createInputCentered<PJ301MPort> (calculateCoordinates (blockX + 1.f * COL_PITCH, y, 0.f), module, GATE_IN_INPUT + source));
 				addInput (createInputCentered<PJ301MPort> (calculateCoordinates (blockX + 2.f * COL_PITCH, y, 0.f), module, VEL_IN_INPUT  + source));

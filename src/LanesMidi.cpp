@@ -354,8 +354,8 @@ struct LanesMidiWidget : ModuleWidget
 			addChild(darkPanel);
 		}
 
-		MidiDisplay *display = createWidget<MidiDisplay>(calculateCoordinates(3.552f, 10.411f, 0.f));
-		display->box.size = mm2px(Vec(43.688f, 18.796f));
+		MidiDisplay *display = createWidget<MidiDisplay>(calculateCoordinates(3.552f, 10.411251f, 0.f));
+		display->box.size = mm2px(Vec(43.688f, 18.799999f));
 		display->setMidiPort(module ? &module->midiOutput : NULL);
 		// No per-lane device-wide channel: channel routing is the 16 buttons below, so the
 		// standard channel dropdown (which would fight our per-lane channel assignment) is
@@ -365,11 +365,19 @@ struct LanesMidiWidget : ModuleWidget
 		display->channelChoice = nullptr;
 		addChild(display);
 
-		static const float ROW0_Y      = 42.849f + 6.f;
-		static const float ROW_PITCH   = 10.5f;
-		static const float COL_KNOB_X[2] = { 10.f, 30.f };
-		static const float DISPLAY_DX  = 8.f;
-		static const Vec   DISPLAY_SIZE = mm2px(Vec(9.f, 6.f));
+		/*
+			Measured from res/LanesMidiWork.svg: the knob grid (from the "Layer 1" imported
+			knob symbol instances in the Controls layer) and the lane-display backgrounds
+			(the small rounded-rect path2128-* shapes in the PanelOrange layer - there's no
+			dedicated guide layer entry for them since they're baked into the panel art, not
+			a separate control). Both share the same row grid; the display sits at a fixed
+			11.683317mm offset to the right of its knob.
+		*/
+		static const float ROW0_Y        = 37.847943f;
+		static const float ROW_PITCH     = 10.769670f;
+		static const float COL_KNOB_X[2] = { 8.128683f, 31.242683f };
+		static const float DISPLAY_DX    = 11.683317f;
+		static const Vec   DISPLAY_SIZE  = mm2px(Vec(8.128f, 6.096f));
 
 		for (int col = 0; col < 2; col++)
 		{

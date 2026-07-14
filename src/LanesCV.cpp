@@ -215,10 +215,12 @@ struct LanesCVWidget : ModuleWidget
 			addChild(darkPanel);
 		}
 
-		static const float ROW0_Y     = 21.845226f;
+		// Measured from the "Controls" layer of res/LanesCVWork.svg - identical grid to
+		// LANES' own input blocks (see Lanes.cpp), since this panel continues that same grid.
 		static const float ROW_PITCH  = 13.208002f;
 		static const float COL_PITCH  = 9.398000f;
-		static const float BLOCK_X[2] = { 7.112002f, 48.514002f };
+		static const float BLOCK_X[2] = { 7.112002f, 51.054000f };
+		static const float ROW0_Y[2]  = { 21.866941f, 21.823511f };
 
 		for (int block = 0; block < 2; block++)
 		{
@@ -226,7 +228,7 @@ struct LanesCVWidget : ModuleWidget
 			for (int row = 0; row < 8; row++)
 			{
 				int lane = block * 8 + row;
-				float y = ROW0_Y + row * ROW_PITCH;
+				float y = ROW0_Y[block] + row * ROW_PITCH;
 				addOutput (createOutputCentered<PJ301MPort> (calculateCoordinates (blockX + 0.f * COL_PITCH, y, 0.f), module, VOCT_OUTPUT + lane));
 				addOutput (createOutputCentered<PJ301MPort> (calculateCoordinates (blockX + 1.f * COL_PITCH, y, 0.f), module, GATE_OUTPUT + lane));
 				addOutput (createOutputCentered<PJ301MPort> (calculateCoordinates (blockX + 2.f * COL_PITCH, y, 0.f), module, VEL_OUTPUT  + lane));
