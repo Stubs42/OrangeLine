@@ -82,3 +82,68 @@ struct MyModule : Module
 7. `res/<Name>Orange/Bright/Dark.svg` (+ optionally `<Name>Work.svg`) — panel art; can start as a plain placeholder and be replaced later without touching the C++.
 
 No Makefile changes are ever needed — `src/*.cpp` is globbed automatically.
+
+## Expander modules (Hub + Expander pattern)
+
+Use this pattern when several modules need to share state where one module collects/produces it and any number of others consume it in different forms — e.g. the LANES family: **`CVLanes`**/**`MidiLanes`** are Hubs (CV-input and MIDI-input variants, same role), **`LanesCV`**/**`LanesMidi`** are Expanders that read a Hub's state and turn it into CV jacks or MIDI. Treat this family as the canonical reference implementation — copy its file shapes verbatim for a new Hub/Expander family rather than re-deriving the pattern from scratch.
+
+**Core principle**: any merging/voice-stealing/allocation-*capacity* decision belongs to the **consumer** (each Expander), never the Hub. A Hub just collects and normalizes raw state; it must not decide how many simultaneous "things" downstream can represent, because that's inherently a property of the consumer (Rack's own 16-channel poly limit for a CV expander, a MIDI device's own capabilities for a MIDI expander, etc — see `LanesVoiceAllocator.hpp`, a `template <int CAPACITY>` allocator each Expander instantiates independently with its own capacity, run against the Hub's raw per-source state).
+
+- **`src/<Family>Shared.hpp`** — a header **separate from any module's own `<Name>.hpp`**, included by every family member (Hubs and Expanders alike). It holds only:
+  - Shared `#define`s used by more than one family member (e.g. `NUM_SOURCES`/`NUM_LANES`).
+  - `struct <Family>HubInterface` — pure-virtual, declares only what a Hub exposes (raw, *unmerged* per-source state — e.g. `getSourceGate/Pitch/Velocity/Lane(source, channel)`). Every Hub type implements this.
+  - `struct <Family>ExpanderInterface` — pure-virtual, declares `getLanesHub()` (the Hub pointer this expander itself resolved) and `getLanesHubAmbiguous()` (see bidirectional resolution below). Every Expander type implements this.
+  - `resolveLanesHub(Module *neighbor)` and `classifyLanesNeighborForHub(Module *neighbor, <Family>HubInterface *self)` helpers (below).
+
+  This must be a **separate header from each module's own `<Name>.hpp`** (which still defines that module's own `jsonIds`/`ParamIds`/`InputIds`/`OutputIds`/`LightIds` enums as usual) — if the shared interfaces lived inside e.g. the Hub's own header, every Expander's `.hpp` including it would pull in the Hub's own enums a second time and collide. Each family member's own `<Name>.hpp` includes `<Family>Shared.hpp` (for the interfaces/shared constants) *and* declares its own enums as normal.
+
+- **Why `dynamic_cast`, not `model == modelX` + `reinterpret_cast`**: a plain type check via `dynamic_cast<X*>(neighbor)` lets any *future* Hub or Expander type join the family automatically just by implementing the right interface — no central registry of "known models" to keep in sync, and no risk of a stale `reinterpret_cast` reading the wrong memory layout if a struct changes shape.
+
+- **Chain-walk / resolution** (`resolveLanesHub`, in the shared header):
+  ```cpp
+  inline LanesHubInterface* resolveLanesHub(Module *neighbor) {
+      if (!neighbor) return nullptr;
+      LanesHubInterface *hub = dynamic_cast<LanesHubInterface*>(neighbor);
+      if (hub) return hub;
+      LanesExpanderInterface *link = dynamic_cast<LanesExpanderInterface*>(neighbor);
+      if (link) return link->getLanesHub();
+      return nullptr;
+  }
+  ```
+  Every Expander calls this **on both `leftExpander.module` and `rightExpander.module`, every control-rate tick** (the Rack neighborhood can change any time) — a Hub is one instance, but there's no reason an Expander can't sit on either side of it, or be reached through a chain of other Expanders in between:
+  ```cpp
+  LanesHubInterface *hubLeft  = resolveLanesHub(leftExpander.module);
+  LanesHubInterface *hubRight = resolveLanesHub(rightExpander.module);
+  lanesHub = hubLeft ? hubLeft : hubRight;   // prefer left, arbitrary but deterministic
+  ```
+
+- **Pitfall — comparing "found via multiple paths" must compare *identity*, not just non-null count.** In a plain healthy chain `Hub | ExpanderA | ExpanderB`, `ExpanderA` legitimately resolves the *same* Hub twice: directly via its left side, and indirectly via its right side (because `ExpanderB` resolves back to that same Hub through *its* left side, which is `ExpanderA`). A naive ambiguity check like `hubLeft && hubRight` treats this healthy, ordinary case as a conflict. The correct check compares pointer identity:
+  ```cpp
+  bool hubConflict = hubLeft && hubRight && hubLeft != hubRight;
+  ```
+  Only genuinely *different* Hub instances reachable on each side (e.g. `HubA | Expander | HubB`) are an actual conflict. This bit the LANES family once already — reflexive lookups (A resolves through B, B resolves through A) can make the identical answer arrive from more than one direction without anything being wrong.
+
+- **Connection-status corner lights** — every family member (Hub or Expander) gets two tiny bi-color lights, one per side, so a glance at the panel shows whether the whole chain is healthy:
+  - Component: `TinyLight<GreenRedLight>` (`GreenRedLight` reads 2 consecutive light IDs: green then red — mix both for yellow). Declare as `LEFT_CONN_LIGHT, LEFT_CONN_LIGHT_LAST = LEFT_CONN_LIGHT + 1, RIGHT_CONN_LIGHT, RIGHT_CONN_LIGHT_LAST = RIGHT_CONN_LIGHT + 1` in `LightIds`. Placeholder position (until real panel art defines one): `calculateCoordinates(3.5f, 4.f, 0.f)` near the top-left corner, mirrored near the top-right (panel-width minus ~3.5-4mm) — small margin from the panel edge, safely above the first control row.
+  - **Expander** meaning (uses the `hubLeft`/`hubRight` from the resolution above): off (nothing connected on that specific side) / **green** (exactly one Hub reachable, healthy) / **yellow** (something connected, but no Hub reachable through *either* side) / **red** (`hubConflict`, see above — two different Hubs reachable). The yellow/green/red judgement is shared by both lights (it reflects the whole module's chain health); only the off/lit distinction is actually per-side.
+  - **Hub** meaning — deliberately simpler, **no yellow**, since a Hub doesn't need to "find" anything, it's complete by itself: off (nothing recognized on that side) / **green** (a normal Expander unambiguously serving this Hub) / **red** (another Hub directly adjacent, or an Expander that's ambiguous or is actually serving a *different* Hub reachable through its far side). Use `classifyLanesNeighborForHub(Module *neighbor, LanesHubInterface *self)`:
+    ```cpp
+    inline LanesNeighborKind classifyLanesNeighborForHub(Module *neighbor, LanesHubInterface *self) {
+        if (!neighbor) return LANES_NEIGHBOR_NONE;
+        if (dynamic_cast<LanesHubInterface*>(neighbor)) return LANES_NEIGHBOR_CONFLICT;
+        LanesExpanderInterface *link = dynamic_cast<LanesExpanderInterface*>(neighbor);
+        if (!link) return LANES_NEIGHBOR_NONE;
+        if (link->getLanesHubAmbiguous()) return LANES_NEIGHBOR_CONFLICT;
+        LanesHubInterface *theirHub = link->getLanesHub();
+        if (theirHub && theirHub != self) return LANES_NEIGHBOR_CONFLICT;
+        return LANES_NEIGHBOR_OK;
+    }
+    ```
+    This is what makes `HubA | Expander | HubB` light up red on the Expander-facing side of *both* Hubs, not just on the Expander itself — a Hub can't tell this just from its immediate neighbor's *type* (the immediate neighbor is a perfectly normal Expander), it has to ask that Expander whether it's `getLanesHubAmbiguous()` or serving someone else.
+
+- **New Expander/Hub family checklist**:
+  1. `src/<Family>Shared.hpp` — shared constants + the two interfaces + `resolveLanesHub()`/`classifyLanesNeighborForHub()` (rename the `Lanes`-prefixed identifiers to your family's name).
+  2. `src/<Family>VoiceAllocator.hpp` (if the family involves merging/polyphony at all) — the reusable `template <int CAPACITY>` allocator, one instance per Expander.
+  3. Each Hub: `struct <Name> : Module, <Family>HubInterface`, implements the raw-state getters, plus the two connection lights using `classifyLanesNeighborForHub()`.
+  4. Each Expander: `struct <Name> : Module, <Family>ExpanderInterface`, implements `getLanesHub()`/`getLanesHubAmbiguous()`, resolves both sides every tick, plus the two connection lights using the green/yellow/red logic above.
+  5. Usual per-module checklist (above) for each Hub/Expander's own `.hpp`/`.cpp`/`JsonLabels.hpp`/`plugin.hpp`/`plugin.cpp`/`plugin.json`/panel files.
