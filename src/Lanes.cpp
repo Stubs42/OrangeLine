@@ -261,17 +261,17 @@ struct LanesWidget : ModuleWidget
 	LanesWidget(Lanes *module)
 	{
 		setModule(module);
-		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/LanesOrange.svg")));
+		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/LanesInputOrange.svg")));
 
 		if (module)
 		{
 			SvgPanel *brightPanel = new SvgPanel();
-			brightPanel->setBackground(APP->window->loadSvg(asset::plugin(pluginInstance, "res/LanesBright.svg")));
+			brightPanel->setBackground(APP->window->loadSvg(asset::plugin(pluginInstance, "res/LanesInputBright.svg")));
 			brightPanel->visible = false;
 			module->brightPanel = brightPanel;
 			addChild(brightPanel);
 			SvgPanel *darkPanel = new SvgPanel();
-			darkPanel->setBackground(APP->window->loadSvg(asset::plugin(pluginInstance, "res/LanesDark.svg")));
+			darkPanel->setBackground(APP->window->loadSvg(asset::plugin(pluginInstance, "res/LanesInputDark.svg")));
 			darkPanel->visible = false;
 			module->darkPanel = darkPanel;
 			addChild(darkPanel);

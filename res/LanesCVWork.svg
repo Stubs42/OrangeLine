@@ -5,7 +5,7 @@
    viewBox="0 0 86.360001 128.5"
    version="1.1"
    id="svg_root"
-   sodipodi:docname="LanesCVOrange.svg"
+   sodipodi:docname="LanesCVWork.svg"
    inkscape:version="1.4.4 (dcaf3e7, 2026-05-05)"
    xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
    xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
@@ -243,7 +243,7 @@
      inkscape:window-x="-11"
      inkscape:window-y="-11"
      inkscape:window-maximized="1"
-     inkscape:current-layer="g870"
+     inkscape:current-layer="layer3"
      showguides="false">
     <inkscape:grid
        id="grid1"
@@ -1270,7 +1270,7 @@
      inkscape:groupmode="layer"
      id="g870"
      inkscape:label="TextOrange"
-     style="display:inline"
+     style="display:none"
      sodipodi:insensitive="true">
     <text
        xml:space="preserve"
@@ -1658,7 +1658,7 @@
      inkscape:groupmode="layer"
      id="layer3"
      inkscape:label="TextWork"
-     style="display:none"
+     style="display:inline"
      sodipodi:insensitive="true">
     <text
        xml:space="preserve"
@@ -2028,7 +2028,7 @@
      inkscape:groupmode="layer"
      id="layer1"
      inkscape:label="Controls"
-     style="display:none"
+     style="display:inline"
      sodipodi:insensitive="true">
     <g
        id="g14"
