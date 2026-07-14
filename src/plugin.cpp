@@ -20,7 +20,8 @@ void init(Plugin *p) {
 	p->addModel(modelBuckets);
 	p->addModel(modelCron);
 	p->addModel(modelHold);
-	p->addModel(modelLanes);
+	p->addModel(modelCVLanes);
+	p->addModel(modelMidiLanes);
 	p->addModel(modelLanesCV);
 	p->addModel(modelLanesMidi);
 	p->addModel(modelK2C);

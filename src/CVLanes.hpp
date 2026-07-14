@@ -1,5 +1,5 @@
 /*
-	Lanes.hpp
+	CVLanes.hpp
 
 	Author: Dieter Stubler
 
@@ -70,8 +70,8 @@ enum InputIds {
 // Output Ids
 //
 // Hub has no CV outputs of its own anymore - the 16-lane output distributor moved to
-// LanesCV (an expander). See Lanes.hpp's LanesHubInterface for how expanders read the
-// Hub's per-lane state instead.
+// LanesCV (an expander). See LanesShared.hpp's LanesHubInterface for how expanders read
+// the Hub's per-lane state instead.
 enum OutputIds {
 	NUM_OUTPUTS
 };

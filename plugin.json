@@ -137,9 +137,9 @@
       ]
     },
     {
-      "slug": "Lanes",
-      "name": "Lanes",
-      "description": "Merges up to 16 polyphonic sources into 16 dynamically allocated polyphonic lanes with voice stealing. Attach LanesCV and/or LanesMidi expanders to the right to read the lanes out as CV or MIDI",
+      "slug": "CVLanes",
+      "name": "CV-LANES",
+      "description": "Merges up to 16 polyphonic CV sources into 16 dynamically allocated polyphonic lanes with voice stealing. Attach LANES-CV and/or LANES-MIDI expanders to the right to read the lanes out as CV or MIDI",
       "tags": [
         "Utility",
         "Polyphonic",
@@ -147,9 +147,20 @@
       ]
     },
     {
+      "slug": "MidiLanes",
+      "name": "MIDI-LANES",
+      "description": "Merges up to 16 incoming MIDI channels into 16 dynamically allocated polyphonic lanes with voice stealing, mirroring CV-LANES for MIDI input. Attach LANES-CV and/or LANES-MIDI expanders to the right to read the lanes out as CV or MIDI",
+      "tags": [
+        "Utility",
+        "Polyphonic",
+        "MIDI",
+        "Expander"
+      ]
+    },
+    {
       "slug": "LanesCV",
-      "name": "LanesCV",
-      "description": "Expander for Lanes: reads its 16 lanes out as polyphonic CV/Gate/Velocity/Overflow jacks",
+      "name": "LANES-CV",
+      "description": "Expander for CV-LANES/MIDI-LANES: reads its 16 lanes out as polyphonic CV/Gate/Velocity/Overflow jacks",
       "tags": [
         "Utility",
         "Polyphonic",
@@ -158,8 +169,8 @@
     },
     {
       "slug": "LanesMidi",
-      "name": "LanesMidi",
-      "description": "Expander for Lanes: sends its 16 lanes as MIDI Note On/Off/Velocity, one freely assignable MIDI channel per lane, for multi-timbral multi-channel MIDI interfacing",
+      "name": "LANES-MIDI",
+      "description": "Expander for CV-LANES/MIDI-LANES: sends its 16 lanes as MIDI Note On/Off/Velocity, one freely assignable MIDI channel per lane, for multi-timbral multi-channel MIDI interfacing",
       "tags": [
         "Utility",
         "Polyphonic",

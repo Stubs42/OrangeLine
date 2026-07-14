@@ -1,7 +1,7 @@
 /*
-	Lanes.cpp
+	CVLanes.cpp
 
-	Code for the OrangeLine module Lanes
+	Code for the OrangeLine module CVLanes (the LANES Hub, CV-input variant)
 
 Copyright (C) 2019 Dieter Stubler
 
@@ -22,14 +22,14 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <stdio.h>
 #include <limits.h>
 
-#include "Lanes.hpp"
+#include "CVLanes.hpp"
 
-struct Lanes : Module, LanesHubInterface
+struct CVLanes : Module, LanesHubInterface
 {
 
 #include "OrangeLineCommon.hpp"
 
-#include "LanesJsonLabels.hpp"
+#include "CVLanesJsonLabels.hpp"
 
 	// ********************************************************************************************************************************
 	/*
@@ -59,7 +59,7 @@ struct Lanes : Module, LanesHubInterface
 
 		Typically just calls initializeInstance included from OrangeLineCommon.hpp
 	*/
-	Lanes()
+	CVLanes()
 	{
 		initializeInstance();
 	}
@@ -252,26 +252,26 @@ struct Lanes : Module, LanesHubInterface
 /**
 	Main Module Widget
 
-	v1 panel: plain functional layout, no custom artwork yet (see res/LanesWork.svg).
-	Jack coordinates below match 1:1 the grid documented in res/LanesWork.svg so the
+	v1 panel: plain functional layout, no custom artwork yet (see res/CVLanesWork.svg).
+	Jack coordinates below match 1:1 the grid documented in res/CVLanesWork.svg so the
 	guide layer and the actual widget stay in sync once custom panels are authored.
 */
-struct LanesWidget : ModuleWidget
+struct CVLanesWidget : ModuleWidget
 {
-	LanesWidget(Lanes *module)
+	CVLanesWidget(CVLanes *module)
 	{
 		setModule(module);
-		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/LanesInputOrange.svg")));
+		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/CVLanesOrange.svg")));
 
 		if (module)
 		{
 			SvgPanel *brightPanel = new SvgPanel();
-			brightPanel->setBackground(APP->window->loadSvg(asset::plugin(pluginInstance, "res/LanesInputBright.svg")));
+			brightPanel->setBackground(APP->window->loadSvg(asset::plugin(pluginInstance, "res/CVLanesBright.svg")));
 			brightPanel->visible = false;
 			module->brightPanel = brightPanel;
 			addChild(brightPanel);
 			SvgPanel *darkPanel = new SvgPanel();
-			darkPanel->setBackground(APP->window->loadSvg(asset::plugin(pluginInstance, "res/LanesInputDark.svg")));
+			darkPanel->setBackground(APP->window->loadSvg(asset::plugin(pluginInstance, "res/CVLanesDark.svg")));
 			darkPanel->visible = false;
 			module->darkPanel = darkPanel;
 			addChild(darkPanel);
@@ -279,7 +279,7 @@ struct LanesWidget : ModuleWidget
 
 		/*
 			Jack centers below are measured directly from the "Controls" layer of
-			res/LanesInputWork.svg (2 input blocks x 4 columns x 8 rows), so the widget lines
+			res/CVLanesWork.svg (2 input blocks x 4 columns x 8 rows), so the widget lines
 			up exactly with the panel art. These are already true jack centers, so
 			calculateCoordinates() is called with a 0 offset. The two blocks' row-zero Y
 			differ very slightly (sub-0.05mm, an artifact of the panel art) - kept as measured
@@ -309,9 +309,9 @@ struct LanesWidget : ModuleWidget
 			module->widgetReady = true;
 	}
 
-	struct LanesStyleItem : MenuItem
+	struct CVLanesStyleItem : MenuItem
 	{
-		Lanes *module;
+		CVLanes *module;
 		int style;
 		void onAction(const event::Action &e) override
 		{
@@ -330,26 +330,26 @@ struct LanesWidget : ModuleWidget
 		MenuLabel *spacerLabel = new MenuLabel();
 		menu->addChild(spacerLabel);
 
-		Lanes *module = dynamic_cast<Lanes *>(this->module);
+		CVLanes *module = dynamic_cast<CVLanes *>(this->module);
 		assert(module);
 
 		MenuLabel *styleLabel = new MenuLabel();
 		styleLabel->text = "Style";
 		menu->addChild(styleLabel);
 
-		LanesStyleItem *style1Item = new LanesStyleItem();
+		CVLanesStyleItem *style1Item = new CVLanesStyleItem();
 		style1Item->text = "Orange"; //
 		style1Item->module = module;
 		style1Item->style = STYLE_ORANGE;
 		menu->addChild(style1Item);
 
-		LanesStyleItem *style2Item = new LanesStyleItem();
+		CVLanesStyleItem *style2Item = new CVLanesStyleItem();
 		style2Item->text = "Bright"; //
 		style2Item->module = module;
 		style2Item->style = STYLE_BRIGHT;
 		menu->addChild(style2Item);
 
-		LanesStyleItem *style3Item = new LanesStyleItem();
+		CVLanesStyleItem *style3Item = new CVLanesStyleItem();
 		style3Item->text = "Dark"; //
 		style3Item->module = module;
 		style3Item->style = STYLE_DARK;
@@ -357,4 +357,4 @@ struct LanesWidget : ModuleWidget
 	}
 };
 
-Model *modelLanes = createModel<Lanes, LanesWidget>("Lanes");
+Model *modelCVLanes = createModel<CVLanes, CVLanesWidget>("CVLanes");
