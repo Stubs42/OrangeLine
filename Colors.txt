@@ -1,0 +1,23 @@
+Orange:
+
+    Background:  15152bff
+    Text:        ff6600ff
+    Frame:       803300ff
+    OutputFill:  101020ff
+    DisplayFill: 100600ff
+
+Dark:
+
+    Background:  202020ff
+    Text:        c4bac4ff
+    Frame:       606060fa
+    OutputFill:  171717ff
+    DisplayFill: 171717ff
+
+Bright:
+
+    Background:  e6e6e6ff
+    Text:        15152bff
+    Frame:       606080fa
+    OutputFill:  808094fa
+    DisplayFill: 15152bff
