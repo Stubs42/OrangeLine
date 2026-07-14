@@ -71,8 +71,26 @@ enum OutputIds {
 //
 // Ligh Ids
 //
-// No lights - each channel's own lane-number display doubles as the overflow indicator
-// (color-coded, see LanesMidi.cpp's LaneDisplayWidget) instead of a separate light.
+// Each channel's own lane-number display doubles as the overflow indicator (color-coded,
+// see LanesMidi.cpp's LaneDisplayWidget) instead of a separate light - but two tiny bi-color
+// corner lights are still needed to signal Hub connection health (see LanesShared.hpp's
+// resolveLanesHub(), run for both sides every tick in moduleProcess()).
+/*
+	Tiny bi-color (GreenRedLight, 2 consecutive slots: green then red) corner lights, one per
+	side. Per-side meaning (see LanesMidi.cpp's moduleProcess()):
+		off    - nothing connected on this side at all
+		green  - connected, and exactly one Hub is reachable (this side or the other)
+		yellow - connected, but no Hub is reachable through either side
+		red    - connected, and a Hub is reachable through BOTH sides (ambiguous)
+	The green/yellow/red judgement is the same for both lights (it reflects the whole
+	module's chain health, not just this one side) - only the off/lit distinction is
+	actually per-side.
+*/
 enum LightIds {
+	LEFT_CONN_LIGHT,
+	LEFT_CONN_LIGHT_LAST = LEFT_CONN_LIGHT + 1,
+	RIGHT_CONN_LIGHT,
+	RIGHT_CONN_LIGHT_LAST = RIGHT_CONN_LIGHT + 1,
+
 	NUM_LIGHTS
 };

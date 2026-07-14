@@ -180,6 +180,13 @@ struct MidiLanes : Module, LanesHubInterface
 			styleChanged = false;
 		}
 
+		LanesNeighborKind leftKind  = classifyLanesNeighborForHub(leftExpander.module,  this);
+		LanesNeighborKind rightKind = classifyLanesNeighborForHub(rightExpander.module, this);
+		setStateLight(LEFT_CONN_LIGHT,      leftKind  == LANES_NEIGHBOR_OK       ? 255.f : 0.f);
+		setStateLight(LEFT_CONN_LIGHT + 1,  leftKind  == LANES_NEIGHBOR_CONFLICT ? 255.f : 0.f);
+		setStateLight(RIGHT_CONN_LIGHT,     rightKind == LANES_NEIGHBOR_OK       ? 255.f : 0.f);
+		setStateLight(RIGHT_CONN_LIGHT + 1, rightKind == LANES_NEIGHBOR_CONFLICT ? 255.f : 0.f);
+
 		midi::Message msg;
 		while (midiInput.tryPop(&msg, args.frame))
 		{
@@ -200,7 +207,7 @@ struct MidiLanes : Module, LanesHubInterface
 
 /**
 	Read-only per-channel display (no SVG frames yet, placeholder): shows the lane number
-	currently assigned via the knob below it ("--" for 0/off). Unlike LanesMidi's
+	currently assigned via the knob below it (blank for 0/off). Unlike LanesMidi's
 	LaneDisplayWidget, no overflow color-coding - the Hub itself has no capacity concept to
 	report (see MidiLanes' comment on getSourceGate/etc above).
 */
@@ -220,12 +227,11 @@ struct MidiLaneDisplayWidget : TransparentWidget
 			return;
 
 		int lane = (int) module->params[LANE_PARAM + channel].getValue();
+		if (lane == 0)
+			return;
 
 		char buffer[8];
-		if (lane == 0)
-			snprintf(buffer, sizeof(buffer), "--");
-		else
-			snprintf(buffer, sizeof(buffer), "%d", lane);
+		snprintf(buffer, sizeof(buffer), "%d", lane);
 
 		std::shared_ptr<Font> pFont = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
 		nvgFontFaceId(args.vg, pFont->handle);
@@ -303,6 +309,12 @@ struct MidiLanesWidget : ModuleWidget
 				addChild(disp);
 			}
 		}
+
+		// Tiny bi-color corner lights - off/green/red neighbor signal (see moduleProcess()'s
+		// classifyLanesNeighborForHub() calls and MidiLanes.hpp). Placeholder position (panel is
+		// 50.8mm wide) until Dieter places guide art for them.
+		addChild (createLightCentered<TinyLight<GreenRedLight>> (calculateCoordinates (3.5f, 4.f, 0.f), module, LEFT_CONN_LIGHT));
+		addChild (createLightCentered<TinyLight<GreenRedLight>> (calculateCoordinates (47.3f, 4.f, 0.f), module, RIGHT_CONN_LIGHT));
 
 		if (module)
 			module->widgetReady = true;

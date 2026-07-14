@@ -79,6 +79,10 @@ struct LanesMidi : Module, LanesExpanderInterface
 	bool widgetReady = false;
 
 	LanesHubInterface *lanesHub = nullptr;
+	// Set when a Hub is reachable through BOTH sides at once - see LanesShared.hpp's
+	// classifyLanesNeighborForHub(), which a neighboring Hub uses this to detect being
+	// caught between two Hubs even though we're not directly adjacent to the other one.
+	bool lanesHubAmbiguous = false;
 	LanesVoiceAllocator<POLY_CHANNELS> allocator;
 
 	midi::Output midiOutput;
@@ -119,6 +123,7 @@ struct LanesMidi : Module, LanesExpanderInterface
 	}
 
 	LanesHubInterface* getLanesHub() override { return lanesHub; }
+	bool getLanesHubAmbiguous() override { return lanesHubAmbiguous; }
 
 	bool moduleSkipProcess()
 	{
@@ -180,9 +185,9 @@ struct LanesMidi : Module, LanesExpanderInterface
 	}
 
 	/**
-		Chain-walk to find the Hub (see LanesShared.hpp), run our own voice allocator, then
-		for each MIDI channel relay whichever lane it's currently tuned to into its own
-		LaneMidiGenerator.
+		Chain-walk to find the Hub (checked on both sides, see LanesShared.hpp's
+		resolveLanesHub()), run our own voice allocator, then for each MIDI channel relay
+		whichever lane it's currently tuned to into its own LaneMidiGenerator.
 	*/
 	inline void moduleProcess(const ProcessArgs &args)
 	{
@@ -202,18 +207,28 @@ struct LanesMidi : Module, LanesExpanderInterface
 		// anything else that might have touched it (stray preset, UI, ...).
 		midiOutput.channel = -1;
 
-		lanesHub = nullptr;
-		Module *left = leftExpander.module;
-		if (left)
-		{
-			lanesHub = dynamic_cast<LanesHubInterface*>(left);
-			if (!lanesHub)
-			{
-				LanesExpanderInterface *link = dynamic_cast<LanesExpanderInterface*>(left);
-				if (link)
-					lanesHub = link->getLanesHub();
-			}
-		}
+		LanesHubInterface *hubLeft  = resolveLanesHub(leftExpander.module);
+		LanesHubInterface *hubRight = resolveLanesHub(rightExpander.module);
+		lanesHub = hubLeft ? hubLeft : hubRight;
+		// Only a real conflict if left and right resolve to two DIFFERENT Hubs - in a plain
+		// chain (Hub | LanesCV | LanesMidi), the middle expander reaches the same Hub both
+		// directly (left) and indirectly through its other neighbor (right), which is
+		// perfectly healthy, not ambiguous.
+		bool hubConflict = hubLeft && hubRight && hubLeft != hubRight;
+		lanesHubAmbiguous = hubConflict;
+
+		// Chain-health color, shared by both corner lights (see LanesMidi.hpp) - only
+		// whether each light is lit at all depends on that specific side's own connection.
+		float healthGreen, healthRed;
+		if (hubConflict)               { healthGreen = 0.f;   healthRed = 255.f; }	// red: two different Hubs reachable
+		else if (hubLeft || hubRight)  { healthGreen = 255.f; healthRed = 0.f;   }	// green: healthy, one Hub (either or both sides)
+		else                           { healthGreen = 255.f; healthRed = 255.f; }	// yellow: connected, but no Hub anywhere
+		bool leftConnected  = leftExpander.module  != nullptr;
+		bool rightConnected = rightExpander.module != nullptr;
+		setStateLight(LEFT_CONN_LIGHT,      leftConnected  ? healthGreen : 0.f);
+		setStateLight(LEFT_CONN_LIGHT + 1,  leftConnected  ? healthRed   : 0.f);
+		setStateLight(RIGHT_CONN_LIGHT,     rightConnected ? healthGreen : 0.f);
+		setStateLight(RIGHT_CONN_LIGHT + 1, rightConnected ? healthRed   : 0.f);
 
 		if (lanesHub)
 			allocator.process(lanesHub);
@@ -280,7 +295,7 @@ struct LanesMidi : Module, LanesExpanderInterface
 
 /**
 	Read-only per-channel display (no SVG frames yet, placeholder): shows the lane number
-	currently assigned via the knob below it ("--" for 0/off), color-coded orange normally
+	currently assigned via the knob below it (blank for 0/off), color-coded orange normally
 	and red while that lane is overflowing (see LanesMidi's laneOverflowDisplay member) -
 	replaces a separate overflow light entirely, per Dieter's call. Reads two plain module
 	members directly (drawLayer(layer==1), matching OrangeLine.hpp's NumberWidget/TextWidget
@@ -304,13 +319,12 @@ struct LaneDisplayWidget : TransparentWidget
 			return;
 
 		int lane = (int) module->params[LANE_PARAM + channel].getValue();
+		if (lane == 0)
+			return;
 		bool overflow = module->laneOverflowDisplay[channel];
 
 		char buffer[8];
-		if (lane == 0)
-			snprintf(buffer, sizeof(buffer), "--");
-		else
-			snprintf(buffer, sizeof(buffer), "%d", lane);
+		snprintf(buffer, sizeof(buffer), "%d", lane);
 
 		std::shared_ptr<Font> pFont = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
 		nvgFontFaceId(args.vg, pFont->handle);
@@ -396,6 +410,12 @@ struct LanesMidiWidget : ModuleWidget
 				addChild(disp);
 			}
 		}
+
+		// Tiny bi-color corner lights - off/green/yellow/red chain-health signal (see
+		// moduleProcess()'s resolveLanesHub() calls and LanesMidi.hpp). Placeholder position
+		// (panel is 50.8mm wide) until Dieter places guide art for them.
+		addChild (createLightCentered<TinyLight<GreenRedLight>> (calculateCoordinates (3.5f, 4.f, 0.f), module, LEFT_CONN_LIGHT));
+		addChild (createLightCentered<TinyLight<GreenRedLight>> (calculateCoordinates (47.3f, 4.f, 0.f), module, RIGHT_CONN_LIGHT));
 
 		if (module)
 			module->widgetReady = true;

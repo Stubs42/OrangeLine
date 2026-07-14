@@ -191,6 +191,13 @@ struct CVLanes : Module, LanesHubInterface
 			styleChanged = false;
 		}
 
+		LanesNeighborKind leftKind  = classifyLanesNeighborForHub(leftExpander.module,  this);
+		LanesNeighborKind rightKind = classifyLanesNeighborForHub(rightExpander.module, this);
+		setStateLight(LEFT_CONN_LIGHT,      leftKind  == LANES_NEIGHBOR_OK       ? 255.f : 0.f);
+		setStateLight(LEFT_CONN_LIGHT + 1,  leftKind  == LANES_NEIGHBOR_CONFLICT ? 255.f : 0.f);
+		setStateLight(RIGHT_CONN_LIGHT,     rightKind == LANES_NEIGHBOR_OK       ? 255.f : 0.f);
+		setStateLight(RIGHT_CONN_LIGHT + 1, rightKind == LANES_NEIGHBOR_CONFLICT ? 255.f : 0.f);
+
 		/*
 			Just quantize/default the raw sources and store them - no merging, no voice
 			stealing (that's each expander's own job now, see LanesVoiceAllocator.hpp).
@@ -304,6 +311,12 @@ struct CVLanesWidget : ModuleWidget
 				addInput (createInputCentered<PJ301MPort> (calculateCoordinates (blockX + 3.f * COL_PITCH, y, 0.f), module, LANE_IN_INPUT + source));
 			}
 		}
+
+		// Tiny bi-color corner lights - off/green/red neighbor signal (see moduleProcess()'s
+		// classifyLanesNeighborForHub() calls and CVLanes.hpp). Placeholder position (panel is
+		// 86.36mm wide) until Dieter places guide art for them.
+		addChild (createLightCentered<TinyLight<GreenRedLight>> (calculateCoordinates (3.5f, 4.f, 0.f), module, LEFT_CONN_LIGHT));
+		addChild (createLightCentered<TinyLight<GreenRedLight>> (calculateCoordinates (82.86f, 4.f, 0.f), module, RIGHT_CONN_LIGHT));
 
 		if (module)
 			module->widgetReady = true;

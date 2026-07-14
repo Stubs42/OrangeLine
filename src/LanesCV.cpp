@@ -42,6 +42,10 @@ struct LanesCV : Module, LanesExpanderInterface
 	bool widgetReady = false;
 
 	LanesHubInterface *lanesHub = nullptr;
+	// Set when a Hub is reachable through BOTH sides at once - see LanesShared.hpp's
+	// classifyLanesNeighborForHub(), which a neighboring Hub uses this to detect being
+	// caught between two Hubs even though we're not directly adjacent to the other one.
+	bool lanesHubAmbiguous = false;
 	LanesVoiceAllocator<POLY_CHANNELS> allocator;
 
 	LanesCV()
@@ -50,6 +54,7 @@ struct LanesCV : Module, LanesExpanderInterface
 	}
 
 	LanesHubInterface* getLanesHub() override { return lanesHub; }
+	bool getLanesHubAmbiguous() override { return lanesHubAmbiguous; }
 
 	bool moduleSkipProcess()
 	{
@@ -112,10 +117,10 @@ struct LanesCV : Module, LanesExpanderInterface
 	}
 
 	/**
-		Chain-walk to find the Hub, run our own voice allocator against its raw per-source
-		state, then relay the result to our own CV ports. See LanesShared.hpp for why
-		dynamic_cast (not a model==check) is used - this lets LanesCV sit anywhere in a
-		chain of mixed expander types, not just directly next to the Hub.
+		Chain-walk to find the Hub (checked on both sides - there's only one Hub, but an
+		expander may sit to its left or its right, see LanesShared.hpp's resolveLanesHub()),
+		run our own voice allocator against its raw per-source state, then relay the result
+		to our own CV ports.
 	*/
 	inline void moduleProcess(const ProcessArgs &args)
 	{
@@ -130,18 +135,28 @@ struct LanesCV : Module, LanesExpanderInterface
 			styleChanged = false;
 		}
 
-		lanesHub = nullptr;
-		Module *left = leftExpander.module;
-		if (left)
-		{
-			lanesHub = dynamic_cast<LanesHubInterface*>(left);
-			if (!lanesHub)
-			{
-				LanesExpanderInterface *link = dynamic_cast<LanesExpanderInterface*>(left);
-				if (link)
-					lanesHub = link->getLanesHub();
-			}
-		}
+		LanesHubInterface *hubLeft  = resolveLanesHub(leftExpander.module);
+		LanesHubInterface *hubRight = resolveLanesHub(rightExpander.module);
+		lanesHub = hubLeft ? hubLeft : hubRight;
+		// Only a real conflict if left and right resolve to two DIFFERENT Hubs - in a plain
+		// chain (Hub | LanesCV | LanesMidi), the middle expander reaches the same Hub both
+		// directly (left) and indirectly through its other neighbor (right), which is
+		// perfectly healthy, not ambiguous.
+		bool hubConflict = hubLeft && hubRight && hubLeft != hubRight;
+		lanesHubAmbiguous = hubConflict;
+
+		// Chain-health color, shared by both corner lights (see LanesCV.hpp) - only whether
+		// each light is lit at all depends on that specific side's own connection.
+		float healthGreen, healthRed;
+		if (hubConflict)               { healthGreen = 0.f;   healthRed = 255.f; }	// red: two different Hubs reachable
+		else if (hubLeft || hubRight)  { healthGreen = 255.f; healthRed = 0.f;   }	// green: healthy, one Hub (either or both sides)
+		else                           { healthGreen = 255.f; healthRed = 255.f; }	// yellow: connected, but no Hub anywhere
+		bool leftConnected  = leftExpander.module  != nullptr;
+		bool rightConnected = rightExpander.module != nullptr;
+		setStateLight(LEFT_CONN_LIGHT,      leftConnected  ? healthGreen : 0.f);
+		setStateLight(LEFT_CONN_LIGHT + 1,  leftConnected  ? healthRed   : 0.f);
+		setStateLight(RIGHT_CONN_LIGHT,     rightConnected ? healthGreen : 0.f);
+		setStateLight(RIGHT_CONN_LIGHT + 1, rightConnected ? healthRed   : 0.f);
 
 		if (lanesHub)
 			allocator.process(lanesHub);
@@ -236,6 +251,12 @@ struct LanesCVWidget : ModuleWidget
 				addChild  (createLightCentered<LargeLight<RedLight>> (calculateCoordinates (blockX + 3.f * COL_PITCH, y, 0.f), module, OVERFLOW_LIGHT + lane));
 			}
 		}
+
+		// Tiny bi-color corner lights - off/green/yellow/red chain-health signal (see
+		// moduleProcess()'s resolveLanesHub() calls and LanesCV.hpp). Placeholder position
+		// (panel is 86.36mm wide) until Dieter places guide art for them.
+		addChild (createLightCentered<TinyLight<GreenRedLight>> (calculateCoordinates (3.5f, 4.f, 0.f), module, LEFT_CONN_LIGHT));
+		addChild (createLightCentered<TinyLight<GreenRedLight>> (calculateCoordinates (82.86f, 4.f, 0.f), module, RIGHT_CONN_LIGHT));
 
 		if (module)
 			module->widgetReady = true;
