@@ -49,14 +49,39 @@ the section with the full rule/rationale.
     neighboring-controls rules, all in *Positioning controls*/*Panel labels*. Not every control
     needs a label - a run of identical, self-evident controls (e.g. J's 8 plain inputs) can
     stay unlabeled if a label would only clutter the panel (Dieter's call).
-12. **Bake `TextWork` into `Text<Theme>`**: converting each real `<text>` element into a
-    theme-colored `<path>` - **scriptable, no Inkscape needed**, see *Baking text to paths
-    (fontTools)* below. Do this once per theme (Orange/Dark/Bright), reusing the exact same
-    geometry with only the fill color changed.
-13. **Export the three per-theme files**: still manual for now - save `JWork.svg` as
+12. **Bake `TextWork` + recolor `PanelOrange` into all three themes**: run
+    `python3 tools/bake_panel_theme.py res/<Name>Work.svg` - **fully automated, one command,
+    do not hand-roll this again**, see *Baking per-theme layers (scripted)* below for exactly
+    what it does.
+13. **Export the three per-theme files**: still manual for now - save `<Name>Work.svg` as
     `<Name>Orange/Bright/Dark.svg` with only that theme's `Background`/`Panel`/`Text` layers set
     to `display:inline` and everything else (including `TextWork`/`Controls`) `display:none`,
     per the visibility matrix in *SVG layer structure*.
+
+## Baking per-theme layers (scripted)
+
+**One command, run from the repo root: `python3 tools/bake_panel_theme.py res/<Name>Work.svg`.**
+This is a solved, scripted process - don't re-derive it by hand or re-invent a new script each
+time a panel needs this step. The script does exactly two things, both idempotent (safe to
+re-run after further edits to `TextWork`/`PanelOrange` - it always fully replaces the target
+layers' content rather than appending to stale content):
+
+1. **Bakes every `<text>` in `TextWork`** (title, footer wordmark, and any per-control labels
+   like channel numbers) via fontTools straight into path data, at the *same* x/y position, and
+   writes the result into `TextOrange`/`TextDark`/`TextBright` - filled with that theme's own
+   `Colors.txt` Text color. Each target layer's own `<g>` (id/label/style) is preserved; only
+   its *content* is cleared and repopulated, never the layer element itself.
+2. **Copies `PanelOrange`'s entire content into `PanelDark`/`PanelBright`**, recoloring the
+   Frame-color stroke and DisplayFill-color fill to each theme's own `Colors.txt` equivalent,
+   and renaming every copied element's `id` (`-dark`/`-bright` suffix) so ids stay unique
+   across the document. `inkscape:path-effect="#path-effectN"` references are left untouched -
+   those point at shared `<defs>` entries that don't change per theme.
+
+**Implementation note for future maintenance**: the script scans for matching `</g>` tags with
+proper nesting-depth tracking (`find_balanced_g_block`), not a naive non-greedy regex - a naive
+`.*?</g>` match stops at the *first* nested closing tag it finds (e.g. a knob's own inner
+group), silently truncating the copy and producing invalid XML. This bit once already; don't
+regress to the simpler-looking regex.
 
 ## Baking text to paths (fontTools, no Inkscape needed)
 
