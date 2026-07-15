@@ -29,10 +29,10 @@ counterpart (e.g. Morpheus's `CLK_INPUT`) are never candidates.
   There is deliberately **no separate per-channel value buffer stored on the Host at all** - see
   below for why that turned out to be unnecessary.
 - **Expander module** (X8 / X16): a generic, reusable "remote control" for a host's candidate
-  params - no CV sockets at all (deliberately - a socket here would be over-engineering), just
-  a parameter-select mechanism, an engage button, and physical per-channel value controls. It
-  manages all of its own physical state itself (see below) and stores nothing about the Host at
-  all beyond which one it currently resolves.
+  params - no CV sockets at all (deliberately - a socket here would be over-engineering), just a
+  combined parameter-select/engage grid (see "Expander panel" below) and physical per-channel
+  value controls. It manages all of its own physical state itself (see below) and stores nothing
+  about the Host at all beyond which one it currently resolves.
 
 ## Architecture: left-only attachment, single unidirectional chain
 
@@ -53,10 +53,10 @@ Expander is currently present at all.
 
 Consequence for the connection-status indicator: **no dedicated light needed at all** (unlike
 LANES' two bi-color corner lights). Normally a header light would show connection state, but
-here it's already conveyed for free by the panel's own controls: LEFT/RIGHT/ENGAGE all render
-grey together when no Host is resolved, and the name display itself can also show a
-"not connected" state (e.g. blank/dashes) - that's the "not connected" indicator, so a separate
-light would be redundant.
+here it's already conveyed for free by the panel's own controls: the whole button grid (see
+"Expander panel" below) renders empty/unlit when no Host is resolved, and the name display
+itself can also show a "not connected" state (e.g. blank/dashes) - that's the "not connected"
+indicator, so a separate light would be redundant.
 
 ## Architecture: Expander = a virtual poly cable on the Host's own input (decided 2026-07-15)
 
@@ -159,13 +159,21 @@ mechanism, not just for the channel-limit feature.
   simply defined as a no-op whenever the param is already taken by someone else. "Stealing"
   another Expander's active binding is therefore impossible by definition of what an engage-click
   does, not because the param was ever hidden from view.
-- **No motorized-knob sync.** A knob's value is never moved by the Host - a real knob can't move
-  itself. It simply always shows/holds its own last physical position; the Host starts reading
-  whatever position it finds the instant it becomes the live one (first engage, or browsing back
-  to an already-held param after looking elsewhere). Same "value jump on touch" tradeoff real
-  (non-motorized) hardware controllers make - accepted here deliberately, KISS, and it's exactly
-  the behavior Dieter's own use case wants (adjust one param, quickly hop to another and tune
-  that, hop back later - each hop is a legitimate fresh "touch").
+- **No motorized-knob sync while a control is actually interactive (engaged by this instance) -
+  but read-only controls are free to be "motorized" (decided 2026-07-15, retiring the earlier
+  "value jump on touch" tradeoff entirely, not just softening it).** The original "a real knob
+  can't move itself" reasoning only applies while a control is actually accepting user input. A
+  VCV knob is just a drawn graphic, not real hardware - while a value control is showing a param
+  this instance *isn't* currently engaged for (available, taken elsewhere, cable-connected), it
+  isn't accepting input anyway, so nothing stops it from visually live-tracking
+  `getXParamLiveValue()` continuously (see below), exactly like a motorized fader would. Because
+  pressing a grid cell *always* sets `browseIndex` to it immediately (short click or the start of
+  a long press - see "Expander panel" below), the control has already been live-tracking the real
+  value for the entire duration of the press by the time a long-press actually fires
+  `consumeEngagePress()`. So the value taken over at the moment of engaging is, by construction,
+  exactly the value the control was already showing - **no jump at all**, not merely an accepted
+  one. The control only stops tracking and becomes a normal, position-holding, user-draggable
+  knob once *this instance* actually becomes the bound provider.
 - Consequence: **an Expander's own `moduleProcess()` stays almost a no-op** - resolve the Host
   pointer, update the seamless-strip/connection state, handle its own local button
   debounce/browse-index bookkeeping, done. All *decision* logic (binding, Red/Green) lives on the
@@ -298,6 +306,13 @@ struct XHostInterface {
     // Host-side right-click action (see "Host right-click menu" below).
     virtual void resetXParam(int index) = 0;       // clears the binding -> Red
 
+    // Read-only, available regardless of engagement or who (if anyone) is bound -
+    // the actual current value sitting in the Host's own poly input state for this
+    // param/channel (from a real cable, a bound Expander, or just whatever was last
+    // there). Lets ANY Expander browsing this param live-monitor it even when it's
+    // not the one driving it - see "Expander panel" below.
+    virtual float getXParamLiveValue(int index, int channel) = 0;
+
     virtual std::string formatXParamValue(int index, float value) = 0; // continuous only
 
     virtual ~XHostInterface() {}
@@ -392,65 +407,82 @@ disabled/greyed - no separate display widget needed, just the control's own visu
 
 ## Expander panel (X8 = 1 column of 8, X16 = 2 columns of 8, channels 1-8 left / 9-16 right)
 
-- **Name display**: shows the currently browsed param's name, in one of three visual states read
-  straight off the Host (Dieter: "wir sind kein Hochsicherheitstrakt" - nothing is ever hidden,
-  only colored): **available** (untaken by anyone - one color), **mine** (`isXParamEngaged() &&
-  getXParamBoundId() == this->id` - e.g. green), or **taken/unavailable** (engaged by a *different*
-  Expander, or `isXParamCableConnected()` - both shown the same way, e.g. grey/disabled, since
-  neither is anything this Expander can act on). When no Host is resolved at all, shows a grey
-  placeholder (e.g. dashes) instead of a name - there's simply nothing to browse, and this doubles
-  as the "not connected" indicator (see above).
-- **Two step buttons** (prev/next, not a knob - simpler and more precise for pure list
-  navigation than trying to land a rotary knob on an exact index). **Circular, over the complete,
-  unfiltered list of every candidate param, always** - nothing is ever skipped or hidden, see
-  above. Needs its own small custom SVG component (not an existing component-library part).
-  Browsing is **never locked** (see architecture section above) - stepping to a different param
-  one already holds elsewhere simply hands live control to that one instead (Track & Hold, see
-  above); stepping onto a grey (taken-elsewhere/cable-connected) one is harmless read-only
-  viewing, no restriction of any kind.
-- **One engage button**: a plain click, self-debounced locally, exposed to the Host as
-  `consumeEngagePress()` - the Expander itself has no idea whether this will actually do anything
-  (the Host decides: *add* a new binding if the browsed param is currently available, *remove*
-  the existing one if this instance already holds the binding for the param it's currently
-  browsing, or **do nothing at all** if the browsed param is grey - taken by a different Expander
-  or cable-connected - see Red/Green above).
-- **8 or 16 value controls**, purely local Rack Params owned by the Expander itself, declared
-  like on any other module - they hold whatever physical position the user last left them at,
-  nothing more, and land in `OL_state` automatically via the shared framework (see architecture
-  section above, no extra code needed). The Host only treats them as *live* for whichever param
-  this Expander is currently browsing **and actually holds the binding for** (Track & Hold, see
-  above) - every other param this instance holds elsewhere keeps whatever value it last had, and
-  browsing to a grey (taken-elsewhere/cable-connected) param never causes the Host to read this
-  control at all, regardless of what it happens to show.
-- **Numeric display only for continuous-type params** - toggle/click/momentary controls show
-  their state through their own visual appearance instead (see below), they need no separate
-  digit readout.
-- Each continuous-type value control needs a **custom `ParamQuantity`** (not a plain static
+**Selector redesigned 2026-07-15: a 4x4 (16-cell) button grid replaces LEFT/RIGHT stepping and
+the separate ENGAGE button entirely** (Dieter: "kein Host hat mehr als 16 polyphone
+Parameter-Inputs" - one grid cell per possible candidate index, always enough room). Structurally
+the same kind of widget as the existing `CCGridWidget` (already used by CC2CV/CV2CC/RECALL/
+MidiBus - colored, clickable grid cells wired to raw pointers) - reuse/adapt that pattern rather
+than building a new one from scratch, just at 4x4 instead of 16x8.
+
+- **Each cell = one fixed candidate-param slot** (index 0-15), not a scrolling/paged list.
+  **Excess cells** (beyond the currently-resolved Host's actual `getXParamCount()`) are simply
+  **invisible** - a Host with 12 candidates only ever shows 12 lit cells.
+- **Cell base color = that param's own `getXParamColor(index)`** - identity, always the same
+  regardless of status. **Brightness/frame indicates status** on top of that base color: mine
+  (bright/distinct frame), available (dim/plain), taken-elsewhere-or-cable-connected (further
+  dimmed/greyed frame) - three states, same as the old name-display coloring, just per-cell now
+  instead of a single current-selection readout.
+- **Press-down on any cell immediately sets `getXBrowseIndex()` to that cell's param** -
+  regardless of whether the press turns out to be short or long. This is what makes the
+  value-jump problem disappear entirely (see "No motorized-knob sync" above) - by the time a
+  long-press could possibly fire an engage, the value controls have already been live-tracking
+  that param for the whole duration of the press.
+- **Short click** (released before the long-press threshold): pure selection - shows that param's
+  name, color-coded, in the name display (see below). No state change of any kind.
+- **Long press**: fires `consumeEngagePress()` for whichever param is under the pressed cell (by
+  construction, always the currently-`browseIndex`ed one, since press-down already set it). The
+  Host then does exactly what "Red/Green" above describes for that index: bind if available,
+  unbind if this instance already holds it, or nothing at all if taken elsewhere/cable-connected.
+- **Name display**: shows the currently-selected (last-pressed) param's name, color-coded the
+  same three-state way as its grid cell. When no Host is resolved at all, shows a grey
+  placeholder (e.g. dashes) instead - there's simply nothing to select, doubling as the "not
+  connected" indicator (see above).
+- **Host-side visual companion, deferred, not part of X8 itself**: since a param's color is
+  already defined by the Host (`getXParamColor()`), a Host module could optionally draw a
+  matching colored ring around its own poly CV jack for that same param, giving an at-a-glance
+  visual link between "this jack" and "this grid cell/button color" - a nice follow-on for
+  Morpheus's own panel, independent of anything X8 needs to do.
+- **8 or 16 value controls**, one per channel, each a custom composite `ParamWidget` with **two
+  orthogonal render/behavior axes**:
+  1. **Type-based appearance** (Dieter: "der Expander muss dann auch beim Umschalten sein
+     Aussehen ändern können, aus Buttons werden dann Knobs und umgekehrt") - continuous ->
+     rotary knob; toggle/click/momentary -> button, differing only in click semantics:
+     - **Toggle**: click flips the control's own param value between two states, stays until
+       clicked again.
+     - **Click**: fires a single fixed-length pulse on click, regardless of how long the mouse
+       is held down (what earlier drafts called "Trigger").
+     - **Momentary**: value is high only while the mouse button is actually held down, drops the
+       instant it's released - a live gate-follow, not a pulse.
+     Button state is always shown via the button's own appearance - no numeric readout needed
+     for these three types (see below).
+  2. **Engagement-based interactivity** (new, 2026-07-15, see "No motorized-knob sync" above):
+     while this instance is **not** the bound provider for the currently-browsed param, the
+     control is **read-only and "motorized"** - it continuously renders `getXParamLiveValue()`
+     (knob rotates to match the real value in real time; a button-type control's lit state
+     mirrors the real boolean/pulse state) and does not accept drag/click-to-change input at all.
+     The instant this instance *becomes* the bound provider, the control switches to a normal,
+     interactive, position-holding control (accepting drag same as any ordinary knob/button) -
+     starting from exactly the value it was already showing, so no jump occurs.
+  These two axes are independent - a continuous param can be either interactive-knob or
+  read-only-motorized-knob; same for each button type.
+- **Numeric display only for continuous-type params, on X8D/X16D** - X8/X16 (no per-channel
+  display) rely on the knob's own rotation (read-only/motorized case) or hover tooltip
+  (interactive case) instead; toggle/click/momentary never need a digit readout regardless of
+  variant, their own appearance already shows the state.
+- Each continuous-type control needs a **custom `ParamQuantity`** (not a plain static
   `configParam()`) so its native VCV hover tooltip calls `formatXParamValue()` live, using
   whichever param is currently browsed - a static tooltip can't work here since the same
   physical control represents different params over time.
-- **The physical control itself must morph appearance/behavior by type** (Dieter: "der
-  Expander muss dann auch beim Umschalten sein Aussehen ändern können, aus Buttons werden dann
-  Knobs und umgekehrt"). When the browsed param is **continuous**, each of the 8/16 controls
-  renders and behaves as a knob (rotary drag). For the three non-continuous types they render
-  and behave as buttons instead, differing only in click semantics:
-  - **Toggle**: click flips the control's own param value between two states, stays until
-    clicked again - lands in `OL_state` like any other param, read live by the Host exactly like
-    the continuous case.
-  - **Click**: fires a single fixed-length pulse on click, regardless of how long the mouse is
-    held down (this is what earlier drafts of this spec called "Trigger").
-  - **Momentary**: value is high only for as long as the mouse button is actually held down on
-    the control, and drops the instant it's released - a live gate-follow, not a pulse.
-
-  Button state is always shown via the button's own appearance (no numeric readout, see above).
   This is a custom composite `ParamWidget` per channel - not several overlaid widgets swapped by
   visibility, but one widget whose `draw()` and interaction handlers branch on the
   currently-browsed param's declared type.
-- **Button visual design** (established while building X8's panel): a squarish button shape
-  with rounded corners (small ~0.53mm radius), fill = that theme's DisplayFill color, stroke =
-  `#ff6600` (the fixed orange accent, not the theme Frame color) - see `res/X8Work.svg`'s
-  LEFT/RIGHT/ENGAGE groups for the concrete pattern. Same shape reused for the per-channel
-  controls when they're in button mode (toggle/click/momentary).
+- **Button visual design**: a squarish button shape with rounded corners (small ~0.53mm radius),
+  fill = that theme's DisplayFill color, stroke = `#ff6600` (the fixed orange accent, not the
+  theme Frame color) - established while building the original (pre-grid) X8 panel, still the
+  base shape for the per-channel controls when they're in button mode (toggle/click/momentary).
+  The selector grid cells (see above) are their own new shape, colored per-param rather than a
+  fixed accent - panel art for both is being redrawn (2026-07-15, in progress) to match the
+  16-cell grid redesign; `res/X8Work.svg`'s old LEFT/RIGHT/ENGAGE groups no longer apply.
 
 ## Lifecycle / state rules
 
@@ -476,6 +508,12 @@ disabled/greyed - no separate display widget needed, just the control's own visu
   unbound (Red), picked back up the next time some Expander engages it.
 
 ## Four fixed panel variants (no resizing - deliberately KISS)
+
+**Note (2026-07-15): the panel art described below predates the 16-cell selector grid redesign**
+(see "Expander panel" above) and is being redrawn - the fixed-width-variants decision itself, and
+the general "only the shared header/frame scale, per-channel units are fixed-size copies"
+principle, still stand; only the *contents* of the shared header (LEFT/RIGHT/ENGAGE -> grid) are
+changing. Left as-is below as the historical record of how the pre-grid panels were built.
 
 An earlier draft of this spec explored a drag-to-resize mechanism (studied via David
 O'Rourke's SubmarineFree plugin's `SizeableModuleWidget`/`ResizeHandle`) where per-channel
