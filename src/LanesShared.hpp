@@ -154,41 +154,81 @@ inline LanesNeighborKind classifyLanesNeighborForHub(Module *neighbor, LanesHubI
 	return LANES_NEIGHBOR_OK;
 }
 
+// Panel background per theme (Dieter's Colors.txt) - the "Orange" theme's own background is
+// actually the dark navy 15152b (its warm tone comes from the ff6600 text/accent color, not
+// the background), Dark is 202020, Bright is e6e6e6.
+#define EXT_STRIP_BG_ORANGE nvgRGB(0x15, 0x15, 0x2b)
+#define EXT_STRIP_BG_DARK   nvgRGB(0x20, 0x20, 0x20)
+#define EXT_STRIP_BG_BRIGHT nvgRGB(0xe6, 0xe6, 0xe6)
+
+// The "ORANGE LINE" brand accent stripe every panel already has (measured from
+// res/CVLanesOrange.svg's PanelOrange/Bright/Dark layers - identical y/thickness/color, i.e.
+// ff6600 (=ORANGE), across all three themes: <path d="M 0.762,124.71525 H 85.598" stroke="#ff6600"
+// stroke-width="0.3"/>). The strip needs to continue this line across the seam too, not just the
+// flat background.
+#define EXT_STRIP_ACCENT_Y_MM 124.71525f
+#define EXT_STRIP_ACCENT_THICKNESS_MM 0.3f
+
 /**
-	"Ext" strip (res/Ext{Orange,Bright,Dark}.svg, Dieter's design): a thin (1.524mm) full-height
-	sliver drawn right at a module's own left/right edge, continuing the panel's bottom accent
-	line across the seam so two touching same-themed LANES-family modules read as one
-	continuous panel. Purely cosmetic (widget-side only, no moduleProcess() involvement) -
-	Rack doesn't clip a widget to its parent module's own bounds, so a strip positioned exactly
-	at x=0 or x=panelWidth reaches right up to (and covers) the seam between two adjacent
-	modules. Both sides of a seam draw their own independent copy (deliberately redundant -
-	whichever module Rack happens to render on top of the other at that seam still shows the
-	strip, regardless of draw order).
+	"Ext" strip (Dieter's design): a thin (1.524mm) full-height sliver drawn right at a module's
+	own left/right edge, matching that theme's panel background color, so two touching same-
+	themed LANES-family modules read as one continuous panel across the seam. Purely cosmetic
+	(widget-side only, no moduleProcess() involvement) - Rack doesn't clip a widget to its parent
+	module's own bounds, so a strip positioned straddling x=0 or x=panelWidth reaches right up to
+	(and covers) the seam between two adjacent modules. Both sides of a seam draw their own
+	independent copy (deliberately redundant - whichever module Rack happens to render on top of
+	the other at that seam still shows the strip, regardless of draw order).
+
+	Plain flat-color draw() instead of loading an SVG asset per theme - simpler to get pixel-
+	perfect and no separate res/Ext*.svg files to keep in sync with Colors.txt.
 */
+struct LanesExtStripWidget : Widget {
+	int style = STYLE_ORANGE;
+	// How far this widget's own box.pos.y sits above panel-global y=0 (the tuned top-inset
+	// straddle) - needed to translate the accent line's panel-global y into this widget's own
+	// local draw coordinates.
+	float topInsetMm = 0.f;
+
+	void draw(const DrawArgs &args) override
+	{
+		if (!visible)
+			return;
+		nvgBeginPath(args.vg);
+		nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+		nvgFillColor(args.vg, (style == STYLE_ORANGE) ? EXT_STRIP_BG_ORANGE : (style == STYLE_DARK) ? EXT_STRIP_BG_DARK : EXT_STRIP_BG_BRIGHT);
+		nvgFill(args.vg);
+
+		float accentLocalY = mm2px(EXT_STRIP_ACCENT_Y_MM - topInsetMm);
+		nvgBeginPath(args.vg);
+		nvgRect(args.vg, 0.f, accentLocalY - mm2px(EXT_STRIP_ACCENT_THICKNESS_MM) / 2.f, box.size.x, mm2px(EXT_STRIP_ACCENT_THICKNESS_MM));
+		nvgFillColor(args.vg, ORANGE);
+		nvgFill(args.vg);
+	}
+};
+
 struct LanesExtStrips {
-	SvgWidget *left = nullptr;
-	SvgWidget *right = nullptr;
-	std::shared_ptr<Svg> orangeSvg, brightSvg, darkSvg;
+	LanesExtStripWidget *left = nullptr;
+	LanesExtStripWidget *right = nullptr;
 };
 
 inline void addLanesExtStrips(ModuleWidget *w, float panelWidthMm, LanesExtStrips *strips)
 {
-	strips->orangeSvg = APP->window->loadSvg(asset::plugin(pluginInstance, "res/ExtOrange.svg"));
-	strips->brightSvg = APP->window->loadSvg(asset::plugin(pluginInstance, "res/ExtBright.svg"));
-	strips->darkSvg   = APP->window->loadSvg(asset::plugin(pluginInstance, "res/ExtDark.svg"));
-
 	// Straddle the seam itself (half outside this module's own edge, half inside) rather than
 	// sitting flush against it - the seam line is the gap/border BETWEEN two adjacent modules'
-	// edges, so a strip that only touches it from one side still leaves it visible.
-	strips->left = new SvgWidget();
-	strips->left->setSvg(strips->orangeSvg);
-	strips->left->box.pos = mm2px(Vec(-1.524f / 2.f - 0.1f, 0.1f)); // TEMP: -0.1mm x shift, 0.1mm y clip-down
+	// edges, so a strip that only touches it from one side still leaves it visible. Offsets
+	// (+-0.1mm beyond the exact half-width straddle, 0.1mm inset from the top) tuned by eye
+	// against a real two-module chain.
+	strips->left = new LanesExtStripWidget();
+	strips->left->box.pos = mm2px(Vec(-1.524f / 2.f - 0.1f, 0.35f));
+	strips->left->box.size = mm2px(Vec(1.524f, PANELHEIGHT - 0.5f));
+	strips->left->topInsetMm = 0.35f;
 	strips->left->visible = false;
 	w->addChild(strips->left);
 
-	strips->right = new SvgWidget();
-	strips->right->setSvg(strips->orangeSvg);
-	strips->right->box.pos = mm2px(Vec(panelWidthMm - 1.524f / 2.f + 0.1f, 0.1f)); // TEMP: +0.1mm x shift, 0.1mm y clip-down
+	strips->right = new LanesExtStripWidget();
+	strips->right->box.pos = mm2px(Vec(panelWidthMm - 1.524f / 2.f + 0.1f, 0.35f));
+	strips->right->box.size = mm2px(Vec(1.524f, PANELHEIGHT - 0.5f));
+	strips->right->topInsetMm = 0.35f;
 	strips->right->visible = false;
 	w->addChild(strips->right);
 }
@@ -204,14 +244,13 @@ inline void updateLanesExtStrips(LanesExtStrips *strips, Module *self, Module *l
 	float myStyle = getLanesNeighborStyle(self);
 	if (myStyle < 0.f)
 		return;
-	std::shared_ptr<Svg> svg = (myStyle == STYLE_ORANGE) ? strips->orangeSvg : (myStyle == STYLE_BRIGHT) ? strips->brightSvg : strips->darkSvg;
 
 	float leftStyle = getLanesNeighborStyle(leftNeighbor);
-	strips->left->setSvg(svg);
+	strips->left->style = (int) myStyle;
 	strips->left->visible = (leftStyle >= 0.f) && (leftStyle == myStyle);
 
 	float rightStyle = getLanesNeighborStyle(rightNeighbor);
-	strips->right->setSvg(svg);
+	strips->right->style = (int) myStyle;
 	strips->right->visible = (rightStyle >= 0.f) && (rightStyle == myStyle);
 }
 
