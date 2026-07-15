@@ -82,9 +82,15 @@ mechanism, not just for the channel-limit feature.
   tick, for free, exactly as it does for every other OrangeLine module. `getXKnobValue(channel)`
   is therefore just a one-line passthrough into state the framework was already maintaining -
   not a new mechanism.
-- **Engaging = plugging the virtual cable in.** Disengaging = unplugging it - and, taking the
+- **Engaging = plugging a virtual cable in.** Disengaging = unplugging it - and, taking the
   cable metaphor all the way, **a real cable can be unplugged from either end**, so this needs to
-  work the same way here (see "three ways to disconnect" below), not just from the Host's side.
+  work the same way here (see "four ways to disconnect" below), not just from the Host's side.
+- **One Expander instance can hold any number of simultaneous bindings, to different params**
+  (decided 2026-07-15, refining an earlier "one binding per Expander, LEFT/RIGHT locked while
+  bound" draft - see below for why that turned out to be an unnecessary restriction). Only the
+  1:1 rule *per param* still holds (never two Expanders bound to the same param at once) - an
+  Expander itself can be the bound provider for several different params at the same time, each
+  shown "engaged" (e.g. green) as it browses past them.
 - **The one piece of state this actually requires the Host to remember**: a small per-param
   binding, *which* Expander instance currently holds the plug. Concretely a stable Rack module
   ID, not a raw pointer:
@@ -106,46 +112,66 @@ mechanism, not just for the channel-limit feature.
   event, not a "temporary network interruption". A timer-based grace period was solving the
   wrong problem: there is no transient-disconnect problem to begin with once the binding doesn't
   depend on current chain adjacency at all.
-- **Three, and only three, equally legitimate ways to end a binding** - "beidseitig" (Dieter):
+- **An Expander recognizing itself as the bound one**: the Host exposes `getXParamBoundId(index)`
+  (returns the bound module's ID, or -1) - an Expander compares this against its own Rack-native
+  `this->id` to know whether *it* is the bound provider for a given param, no new identity
+  mechanism needed since every Rack `Module` already has a stable public `id`.
+- **Four, equally legitimate ways to end one specific param's binding**:
   1. **Host side**: the right-click "Reset" action (see below) - explicit and immediate.
-  2. **Expander side**: clicking ENGAGE again on the specific instance that currently holds the
-     binding - also explicit and immediate (this is why the engage button ends up being a real
-     toggle after all for the *bound* instance specifically - see Red/Green below).
+  2. **Expander side**: clicking ENGAGE again while browsing the *one* param this instance
+     already holds - also explicit and immediate (the engage button ends up being a real toggle,
+     but only ever for a param this same instance currently holds - see Red/Green below).
   3. **The bound module is actually deleted from the patch**: `getModule(id)` starts returning
      `nullptr`. The binding is **not** implicitly cleared by this - it stays "virtually plugged
      in" (an Expander somewhere might still believe it holds this plug forever, if it was deleted
      without ever clicking disengage) until an explicit Reset (path 1) frees it up again. In the
-     meantime, no data transfers - exactly the existing "a disconnected input just doesn't get
-     its `OL_statePoly` refreshed, stays at its last known value" pattern, reused here rather than
-     inventing something new.
-- **Consequence: an Expander physically can't be re-wired while its own plug is inserted.** It
-  only has one set of 8/16 knobs; if it browsed away (LEFT/RIGHT) to a different param while
-  still bound, those same knobs would suddenly mean something else and the "cable" would be
-  silently carrying garbage. So while an Expander is the bound provider for a param, its own
-  LEFT/RIGHT is locked - exactly like not being able to rewire a real patch cable without
-  unplugging it first.
-- **A bound param must not even appear in another Expander's browse list.** Since only the bound
-  instance can ever provide values for its param, letting a second Expander browse to (and stare
-  at) an already-taken param would raise questions (what does its display show? what happens if
-  it also clicks engage?) that simply don't need answering if that param is filtered out of its
-  LEFT/RIGHT navigation entirely - see `isXParamEngaged()` under Host Interface below, reused
-  directly for this filter (an engaged param is, by construction, always exactly the one that's
-  bound - see Red/Green below). This also means **no tie-break/"who's touched" heuristic is ever
-  needed** for two Expanders wanting the same param - the second one simply never gets the option
-  to select it while it's taken.
-- **No motorized-knob sync.** The bound Expander's knob position is never moved by the Host - a
-  real knob can't move itself. It simply always shows/holds its own last physical position; the
-  Host starts reading whatever position it finds the instant the plug goes in. Same "value jump
-  on first touch" tradeoff real (non-motorized) hardware controllers make - accepted here
-  deliberately, KISS.
+     meantime, no data transfers for that param - see the Track & Hold behavior below.
+  4. **A real cable gets patched into the same jack**: takes over immediately and actively clears
+     any existing binding for that param (rather than leaving a dormant, superseded binding
+     sitting there) - see "Real-cable override" below.
+- **Browsing is never locked, on any Expander, ever** (supersedes the earlier "LEFT/RIGHT locked
+  while bound" rule). An Expander's browse list contains exactly: every param not yet taken by
+  *anyone* (physically or virtually), plus every param **this same instance** currently holds
+  (shown distinctly, e.g. green vs. some other color for "free" - exact colors not yet fixed).
+  Params held by a *different* Expander never appear at all - see the browse-filter rule below.
+  Consequence: clicking ENGAGE while browsing an available param *adds* a new binding (on top of
+  any this instance already holds elsewhere) - it never needs to replace anything first.
+- **Track & Hold, not "locked knobs"** (Dieter's own analogy, replacing the earlier "can't
+  re-wire while bound" reasoning): an Expander only has one physical set of 8/16 knobs, so it can
+  only ever *actively* represent whichever param it's currently browsing - but that's fine,
+  because it doesn't need to represent all of its bound params at once. A bound param's value is
+  **live only while this Expander's own `getXBrowseIndex()` currently equals that param's index**;
+  the moment it browses away to something else (available, or another param it also holds),
+  the previous one simply stops receiving fresh values and holds at whatever it last was -
+  exactly like a Track & Hold module losing its gate. This needs **no new storage anywhere**: it
+  falls straight out of the Host's own already-established "a disconnected input's
+  `OL_statePoly` just isn't refreshed, stays at its last value" convention (see "No separate
+  per-channel value buffer" below) - the Host simply only treats a bound Expander as "providing
+  live data this tick" for the one param it's currently browsing, nothing new to build.
+- **A bound param must not even appear in another Expander's browse list.** Letting a second
+  Expander browse to (and stare at) an already-taken param would raise questions (what does its
+  display show? what happens if it also clicks engage?) that simply don't need answering if that
+  param is filtered out of its browse list entirely - see `isXParamEngaged()` /
+  `isXParamCableConnected()` under Host Interface below, reused directly for this filter. This
+  also means **no tie-break/"who's touched" heuristic is ever needed** for two Expanders wanting
+  the same param - the second one simply never gets the option to select it while it's taken, and
+  accidentally "stealing" another Expander's active binding is architecturally impossible, not
+  just discouraged.
+- **No motorized-knob sync.** A knob's value is never moved by the Host - a real knob can't move
+  itself. It simply always shows/holds its own last physical position; the Host starts reading
+  whatever position it finds the instant it becomes the live one (first engage, or browsing back
+  to an already-held param after looking elsewhere). Same "value jump on touch" tradeoff real
+  (non-motorized) hardware controllers make - accepted here deliberately, KISS, and it's exactly
+  the behavior Dieter's own use case wants (adjust one param, quickly hop to another and tune
+  that, hop back later - each hop is a legitimate fresh "touch").
 - Consequence: **an Expander's own `moduleProcess()` stays almost a no-op** - resolve the Host
   pointer, update the seamless-strip/connection state, handle its own local button
   debounce/browse-index bookkeeping, done. All *decision* logic (binding, Red/Green) lives on the
   Host side only.
 - This also **fully resolves the earlier "engage must initialize every channel" concern**: there
   is no snapshot/transfer moment, and no separate buffer to initialize at all (see next section) -
-  the Host just reads the bound Expander's live array fresh every tick from the moment the plug
-  goes in.
+  the Host just reads whichever bound Expander is currently browsing a given param, fresh, every
+  tick that it's the live one.
 
 ## No separate per-channel value buffer on the Host at all
 
@@ -157,35 +183,42 @@ sowieso macht, und der Host sie liest wenn eine Connection besteht") cuts that o
 - A candidate param already has a real poly CV jack on the Host, and the shared framework
   already has an established, well-understood convention for "this input isn't connected right
   now" (see the pitfalls list in `CLAUDE.md`: a disconnected input's `OL_statePoly` simply isn't
-  refreshed, so the module already has to tolerate "no new data this tick" gracefully).
-- So instead of a parallel buffer, the Host just wraps its normal poly-input read with one extra
-  fallback step, in priority order:
-  1. **A real cable is connected** (`getInputConnected(inputId)`) - read it exactly as today,
-     completely unchanged. This is the existing "Real-cable override" behavior, now understood as
-     simply the *first* priority rather than a special case bolted on top.
-  2. **Else, a param is currently bound to an Expander** (`boundExpanderId != -1` and it still
-     resolves) - read that Expander's live array instead, clamped to `getXParamChannelLimit()`.
-  3. **Else** - nothing to read this tick; the Host's calling code does exactly what it already
-     does today when nothing is connected (drive every channel from its own front-panel knob).
-- Sketch of the shared helper (lives in `XShared.hpp`, used by any Host):
+  refreshed, so the module already has to tolerate "no new data this tick" gracefully). This is
+  exactly the mechanism that gives Track & Hold above for free.
+- Rather than wrapping every individual read call site, the Host does this **once per tick, in
+  one place, right after the framework's own `processParamsAndInputs()`** - for each candidate
+  param, in priority order:
+  1. **A real cable is connected** (`getInputConnected(inputId)`) - already handled, completely
+     unchanged, by the framework itself. If a binding also happens to exist for this param, it is
+     actively cleared right here (see "four ways to disconnect" above) rather than left dormant.
+  2. **Else, a param is currently bound to an Expander whose own `getXBrowseIndex()` equals this
+     param's index right now** (i.e. it's the one *actively being looked at*) - overwrite
+     `OL_statePoly` for this input with that Expander's live array, clamped to
+     `getXParamChannelLimit()`.
+  3. **Else** (bound but not currently browsed there, or not bound at all, or a real cable) -
+     write nothing this tick. Either the existing "no cable, use the front-panel knob" behavior
+     applies unchanged (never bound), or the Track & Hold behavior applies (bound, but this isn't
+     the moment it's live) - both already exactly how the framework already treats an unrefreshed
+     `OL_statePoly` slot, no special-casing needed.
   ```cpp
-  inline bool getXAwarePolyInput(Module *host, int inputId, int64_t boundExpanderId,
-                                  int channelLimit, int &channels, float *values)
+  // sketch, lives in XShared.hpp, called once per candidate param right after
+  // processParamsAndInputs() inside the Host's own moduleProcess()
+  inline void refreshXAwarePolyInput(Module *host, int inputId, int64_t &boundExpanderId,
+                                      int channelLimit)
   {
       if (host->getInputConnected(inputId)) {
-          channels = host->inputs[inputId].getChannels();
-          for (int c = 0; c < channels; c++)
-              values[c] = host->inputs[inputId].getVoltage(c);
-          return true;
+          boundExpanderId = -1;   // real cable actively displaces any existing virtual binding
+          return;                 // framework already wrote OL_statePoly from the real cable
       }
       Module *m = boundExpanderId >= 0 ? APP->engine->getModule(boundExpanderId) : nullptr;
-      if (auto *exp = m ? dynamic_cast<XExpanderInterface*>(m) : nullptr) {
-          channels = std::min(exp->getXKnobCount(), channelLimit);
-          for (int c = 0; c < channels; c++)
-              values[c] = exp->getXKnobValue(c);
-          return true;
-      }
-      return false;   // caller falls back to its own existing "nothing connected" behavior
+      auto *exp = m ? dynamic_cast<XExpanderInterface*>(m) : nullptr;
+      if (!exp)
+          return;                 // not bound, or bound module gone - leave stale value as-is
+      if (exp->getXBrowseIndex() != /* this param's index */ -1)
+          return;                 // bound, but not the one it's currently looking at - hold
+      int channels = std::min(exp->getXKnobCount(), channelLimit);
+      for (int c = 0; c < channels; c++)
+          host->OL_statePoly[inputId * POLY_CHANNELS + c] = exp->getXKnobValue(c);
   }
   ```
 - Consequence: **`isXParamEngaged(index)` is a derived quantity, not separately stored or
@@ -212,8 +245,8 @@ struct XExpanderInterface
     virtual int getXBrowseIndex() = 0;             // which host param this Expander's
                                                     // controls currently point at (local
                                                     // UI state owned by the Expander) -
-                                                    // locked while this instance holds
-                                                    // the plug, see above
+                                                    // never locked, freely navigable, see
+                                                    // "Browsing is never locked" above
     virtual bool consumeEngagePress() = 0;         // one-shot: true exactly once per
                                                     // physical click, debounced locally -
                                                     // the Host decides what it means
@@ -241,11 +274,16 @@ struct XHostInterface {
     virtual NVGcolor getXParamColor(int index) = 0;
 
     // Red/Green - derived, not separately stored: true iff this param currently
-    // has a live binding (see "No separate per-channel value buffer" above).
-    // Also reused directly by Expanders to filter their own browse list - an
-    // engaged param never appears when browsing on any Expander that doesn't
-    // itself hold the binding.
+    // has a binding (see "No separate per-channel value buffer" above). Also
+    // reused directly by Expanders to filter their own browse list - an engaged
+    // param never appears when browsing on any Expander that doesn't itself
+    // hold the binding.
     virtual bool isXParamEngaged(int index) = 0;
+
+    // Which module currently holds the binding for this param, or -1. An
+    // Expander compares this against its own Rack-native `id` to know whether
+    // *it* is the bound provider - see architecture section above.
+    virtual int64_t getXParamBoundId(int index) = 0;
 
     // True while a real cable is patched into the host's own poly CV jack for
     // this param - overrides everything else, see "Real-cable override" below.
@@ -293,21 +331,26 @@ single knob:
 - **Green**: `isXParamEngaged() == true` - the host drives each channel's output from the bound
   Expander's live array (see "No separate per-channel value buffer" above).
 
-Getting to Green: the Host, on seeing an *unbound* Expander's `consumeEngagePress()` fire while
-it's browsing an available (non-engaged) param, records that Expander's module ID as the new
-binding. Getting back to Red: any of the **three equally legitimate disconnect paths** above -
-Host Reset, the *bound* Expander's own engage button clicked again (a real toggle, but only ever
-effective for the instance that actually holds the binding - any other Expander's engage-press
-on an already-engaged param literally can't happen, since that param never appears in its browse
-list to begin with), or the bound module being deleted outright (binding then just sits stale,
-providing no data, until an explicit Reset clears it).
+Getting to Green: the Host, on seeing any Expander's `consumeEngagePress()` fire while it's
+browsing an available (untaken) param, records that Expander's module ID as the new binding for
+that param - **in addition to** any other bindings that same Expander already holds elsewhere
+(see "one Expander, several simultaneous bindings" above). Getting back to Red for one specific
+param: any of the **four equally legitimate disconnect paths** above - Host Reset, the *bound*
+Expander's own engage button clicked again while browsing that specific param (a real toggle, but
+only ever effective for a param this same instance already holds - any other Expander's
+engage-press on an already-engaged param literally can't happen, since that param never appears
+in its browse list to begin with), the bound module being deleted outright (binding then just
+sits stale, providing no data, until an explicit Reset clears it), or a real cable being patched
+into that param's jack (clears the binding immediately, see below).
 
 ## Real-cable override
 
 If a real cable is patched into the host's own poly CV jack for a given param, that jack wins
-outright - see priority order in "No separate per-channel value buffer" above. The param's entry
-on every Expander shows its name **greyed out / disabled** regardless of any binding, since the
-real cable already provides live per-channel CV directly. Query via `isXParamCableConnected()`.
+outright - see priority order in "No separate per-channel value buffer" above - and it actively
+clears any existing virtual binding for that param rather than leaving it dormant (see "four ways
+to disconnect" above). The param's entry on every Expander shows its name **greyed out /
+disabled** regardless of any binding, since the real cable already provides live per-channel CV
+directly. Query via `isXParamCableConnected()`.
 
 ## Host right-click menu: nested "Expanders" submenu
 
@@ -348,33 +391,35 @@ disabled/greyed - no separate display widget needed, just the control's own visu
 
 ## Expander panel (X8 = 1 column of 8, X16 = 2 columns of 8, channels 1-8 left / 9-16 right)
 
-- **Name display**: shows the currently browsed param's name. Since an already-engaged param
-  (bound to a *different* Expander) never appears in this Expander's browse list at all (see
-  architecture section above), whatever name is shown here is always either unengaged (Red) or
-  bound to *this very instance* (Green) - never a foreign Green. Greyed out instead if
+- **Name display**: shows the currently browsed param's name. Since a param bound to a
+  *different* Expander never appears in this Expander's browse list at all (see architecture
+  section above), whatever name is shown here is always either untaken (Red) or bound to *this
+  very instance* (Green) - never a foreign Green - color-coded to distinguish the two (e.g. green
+  for "mine", another color for "free" - exact colors not yet fixed). Greyed out instead if
   `isXParamCableConnected()` is true for that param (see "Real-cable override"). When no Host is
   resolved at all, shows a grey placeholder (e.g. dashes) instead of a name - there's simply
   nothing to browse, and this doubles as the "not connected" indicator (see above).
 - **Two step buttons** (prev/next, not a knob - simpler and more precise for pure list
-  navigation than trying to land a rotary knob on an exact index). **Circular**, but skipping any
-  param currently engaged by a *different* Expander (`isXParamEngaged(i) && ` not bound to this
-  instance) - such params simply aren't selectable stops on this Expander's list at all. Needs
-  its own small custom SVG component (not an existing component-library part). Browsing alone
-  never changes any state - it's read-only navigation, **except** it's locked/disabled while
-  this Expander instance is the bound provider for whatever param it's currently on - see the
-  virtual-cable architecture section above.
+  navigation than trying to land a rotary knob on an exact index). **Circular**, over exactly the
+  filtered list described above (untaken params + this instance's own bound params) - a param
+  taken by a *different* Expander is never a selectable stop at all. Needs its own small custom
+  SVG component (not an existing component-library part). Browsing is **never locked** (see
+  architecture section above) - stepping to a different param one already holds elsewhere simply
+  hands live control to that one instead (Track & Hold, see above), no restriction of any kind.
 - **One engage button**: a plain click, self-debounced locally, exposed to the Host as
-  `consumeEngagePress()` - the Expander itself has no idea whether this will actually do
-  anything (the Host decides: bind if the browsed param is currently available, unbind if this
-  instance already holds the binding for it - see Red/Green above). Disabled/no-op-looking while
-  that param is grey (real cable connected).
+  `consumeEngagePress()` - the Expander itself has no idea whether this will actually do anything
+  (the Host decides: *add* a new binding if the browsed param is currently available, *remove*
+  the existing one if this instance already holds the binding for the param it's currently
+  browsing - see Red/Green above). Disabled/no-op-looking while that param is grey (real cable
+  connected).
 - **8 or 16 value controls**, purely local Rack Params owned by the Expander itself, declared
   like on any other module - they hold whatever physical position the user last left them at,
   nothing more, and land in `OL_state` automatically via the shared framework (see architecture
-  section above, no extra code needed). The Host reads them (`getXKnobValue`) only while this
-  Expander instance is the bound provider for the browsed param. There is no "browsing a foreign
-  already-engaged param" case to handle on this control at all, since such params never appear in
-  the browse list to begin with (see above).
+  section above, no extra code needed). The Host only treats them as *live* for whichever param
+  this Expander is currently browsing (Track & Hold, see above) - every other param this instance
+  holds elsewhere keeps whatever value it last had. There is no "browsing a foreign already-engaged
+  param" case to handle on this control at all, since such params never appear in the browse list
+  to begin with (see above).
 - **Numeric display only for continuous-type params** - toggle/click/momentary controls show
   their state through their own visual appearance instead (see below), they need no separate
   digit readout.
@@ -409,17 +454,21 @@ disabled/greyed - no separate display widget needed, just the control's own visu
 
 - **No expander ever attached, or a param never engaged**: baseline behavior, unchanged from
   today - the host's own knob drives all channels uniformly (Red).
-- **Engaging a param** (an *unbound* Expander's engage click while browsing an available param,
-  Red -> Green): the Host, during its own `process()`, sees that Expander's
-  `consumeEngagePress()` fire and records its module ID as `boundExpanderId[index]` - the virtual
-  cable is now plugged in; that Expander's own LEFT/RIGHT locks, and the param disappears from
-  every other Expander's browse list.
-- **Browsing on an Expander that is *not* currently bound**: has no effect on any param's state
-  at all - pure read-only navigation, automatically skipping any param already engaged elsewhere.
-- **Disengaging a param** (Red <- Green): any of the three equally legitimate paths under
-  "Architecture: Expander = a virtual poly cable" above - Host Reset, the *bound* Expander's own
-  engage button clicked again, or that module being deleted outright (binding then sits stale,
-  providing no data, until an explicit Reset clears it).
+- **Engaging a param** (any Expander's engage click while browsing an available param, Red ->
+  Green): the Host, during its own `process()`, sees that Expander's `consumeEngagePress()` fire
+  and records its module ID as `boundExpanderId[index]` - *added* to whatever other bindings that
+  same Expander might already hold elsewhere; the param disappears from every other Expander's
+  browse list.
+- **Browsing, on any Expander, at any time**: never locked, never restricted beyond the filter
+  (untaken params + this instance's own bindings) - has no effect on any param's state by itself.
+  Stepping onto a param this instance already holds elsewhere hands it live control (Track &
+  Hold - the one just browsed away from simply freezes at its last value, see architecture
+  section above).
+- **Disengaging one specific param** (Red <- Green): any of the **four** equally legitimate paths
+  under "Architecture: Expander = a virtual poly cable" above - Host Reset, the *bound* Expander's
+  own engage button clicked again while browsing that param, that module being deleted outright
+  (binding then sits stale, providing no data, until an explicit Reset clears it), or a real
+  cable being patched into that param's own jack (clears it immediately).
 - **Patch save/reload**: only the channel limit is real persisted host state (see Host Interface
   above) and survives a save/reload. The binding itself is **not** persisted - every param loads
   unbound (Red), picked back up the next time some Expander engages it.
