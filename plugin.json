@@ -252,6 +252,15 @@
         "Logic",
         "Utility"
       ]
+    },
+    {
+      "slug": "X8",
+      "name": "X8",
+      "description": "Generic param-access Expander (step 1: host connection detection only, no param access yet) - attach to the left of a compatible host to remote-control one of its polyphonic params per channel",
+      "tags": [
+        "Utility",
+        "Expander"
+      ]
     }
   ]
 }

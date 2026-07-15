@@ -24,13 +24,18 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "Morpheus.hpp"
 
-struct Morpheus : Module
+struct Morpheus : Module, XHostInterface
 {
 	float oldClkInputVoltage = 0;
     int polyChannels = 1;
 	bool hadReset = true;
 	bool isShiftLeft[POLY_CHANNELS];
 	bool isShiftRight[POLY_CHANNELS];
+
+	// X-family param-access Expander connection (step 1: detection + connection light only,
+	// see ExpanderParamAccessSpec.md - no real param exposure yet, getXParamCount() below
+	// deliberately returns 0 for now). An Expander only ever attaches to a Host's LEFT side.
+	bool xConnected = false;
 
 #include "OrangeLineCommon.hpp"
 
@@ -492,6 +497,11 @@ struct Morpheus : Module
 			styleChanged = false;
 		}
 
+		// X-family param-access Expander connection (step 1: detection only, see
+		// ExpanderParamAccessSpec.md) - only ever check leftExpander, never rightExpander.
+		xConnected = dynamic_cast<XExpanderInterface*>(leftExpander.module) != nullptr;
+		setStateLight(X_CONN_LIGHT, xConnected ? 255.f : 0.f);
+
 		// Handle Reset
 		if (changeInput (RST_INPUT) || OL_initialized == false) {
 			for (int i = HEAD_JSON; i < HEAD_JSON + POLY_CHANNELS; i++) {
@@ -855,6 +865,26 @@ struct Morpheus : Module
 		setStateLight (HLD_ON_LIGHT, getStateJson (HLD_ON_JSON) * 255.f);
 		setStateLight (EXT_ON_LIGHT, getStateJson (EXT_ON_JSON) * 255.f);
 	}
+
+	// XHostInterface (step 1: connection detection only, see ExpanderParamAccessSpec.md) -
+	// getXParamCount() deliberately returns 0 for now, so none of the other methods below are
+	// actually called by anything yet. Real candidate-param wiring (LOCK/BALANCE/... per the
+	// spec's confirmed table) is a later step.
+	int getXParamCount() override { return 0; }
+	const char* getXParamName(int index) override { return ""; }
+	const char* getXParamShortName(int index) override { return ""; }
+	NVGcolor getXParamColor(int index) override { return nvgRGB(0xff, 0x66, 0x00); }
+	bool isXParamEngaged(int index) override { return false; }
+	void setXParamEngaged(int index, bool engaged) override {}
+	bool isXParamCableConnected(int index) override { return false; }
+	int getXParamChannelLimit(int index) override { return POLY_CHANNELS; }
+	void setXParamChannelLimit(int index, int limit) override {}
+	float getXParamChannelValue(int index, int channel) override { return 0.f; }
+	void setXParamChannelValue(int index, int channel, float value) override {}
+	void resetXParam(int index) override {}
+	void initializeXParam(int index) override {}
+	std::string formatXParamValue(int index, float value) override { return ""; }
+	float getXStyle() override { return OL_state[STYLE_JSON]; }
 };
 
 // ********************************************************************************************************************************
@@ -1057,6 +1087,12 @@ struct MorpheusWidget : ModuleWidget
 		}
 
 		addChild(MorpheusDisplayWidget::create(calculateCoordinates(1.25f, 25.95f, 0.f), mm2px(Vec(48.4f, 16.3f)), module));
+
+		// X-family param-access Expander connection light (step 1 only, see
+		// ExpanderParamAccessSpec.md) - placeholder position near the top-left corner, since an
+		// Expander only ever attaches to a Host's LEFT side. Same corner-light convention as the
+		// LANES family (CLAUDE.md).
+		addChild(createLightCentered<TinyLight<GreenLight>>(calculateCoordinates(3.5f, 4.f, 0.f), module, X_CONN_LIGHT));
 
 		// Positions extracted from res/MorpheusWorkTest.svg's Controls layer (2026-07-13) -
 		// panel reorganized to make room for the future visualization display (reserved band

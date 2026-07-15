@@ -19,6 +19,7 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 #include "OrangeLine.hpp"
+#include "XShared.hpp"
 
 #define MAX_LOOP_LEN    128
 #define MEM_SLOTS        16
@@ -165,6 +166,7 @@ enum OutputIds {
 enum LightIds {
 	HLD_ON_LIGHT,
 	EXT_ON_LIGHT,
+	X_CONN_LIGHT,
 
 	NUM_LIGHTS
 };

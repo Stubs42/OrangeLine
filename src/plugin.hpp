@@ -32,6 +32,7 @@ extern Model *modelCV2CC;
 extern Model *modelRECALL;
 extern Model *modelMidiBus;
 extern Model *modelJ;
+extern Model *modelX8;
 // extern Model *modelTemplate;
 // extern Model *modelWidgetTest;
 

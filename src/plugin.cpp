@@ -32,6 +32,7 @@ void init(Plugin *p) {
 	p->addModel(modelRECALL);
 	p->addModel(modelMidiBus);
 	p->addModel(modelJ);
+	p->addModel(modelX8);
 	// p->addModel(modelTemplate);
 	// p->addModel(modelWidgetTest);
 
