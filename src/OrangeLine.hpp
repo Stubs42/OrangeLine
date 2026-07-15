@@ -213,6 +213,33 @@ typedef struct OrangeLineRandom {
 */
 
 /**
+	A connection-status light that goes fully invisible (not just dark) when its brightness is
+	0 - standard Rack light components always render their bezel/background even when off,
+	which reads as "a light exists here" regardless of state. Purely cosmetic (Dieter's call,
+	2026-07-15): use createLightCentered<AutoHideLight<TinyLight<GreenLight>>>(...) etc. in
+	place of the plain component wherever "nothing to see" should mean nothing visible at all.
+*/
+template <typename TBase>
+struct AutoHideLight : TBase
+{
+	void step() override
+	{
+		if (this->module)
+		{
+			bool anyLit = false;
+			for (size_t c = 0; c < this->baseColors.size(); c++)
+				if (this->module->lights[this->firstLightId + c].getBrightness() > 0.0001f)
+				{
+					anyLit = true;
+					break;
+				}
+			this->visible = anyLit;
+		}
+		TBase::step();
+	}
+};
+
+/**
 	Widget to display cvOct values as floats or notes
 */
 struct NumberWidget : TransparentWidget {

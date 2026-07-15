@@ -125,7 +125,7 @@ struct X8Widget : ModuleWidget
 			addChild(darkPanel);
 		}
 
-		addChild(createLightCentered<TinyLight<GreenLight>>(calculateCoordinates(X8_PANEL_WIDTH_MM - 3.5f, 4.f, 0.f), module, CONN_LIGHT));
+		addChild(createLightCentered<AutoHideLight<TinyLight<GreenLight>>>(calculateCoordinates(X8_PANEL_WIDTH_MM - 3.5f, 4.f, 0.f), module, CONN_LIGHT));
 
 		extStrip = addXExtStrip(this, X8_PANEL_WIDTH_MM);
 

@@ -223,7 +223,7 @@ struct LanesMidi : Module, LanesExpanderInterface
 		float healthGreen, healthRed;
 		if (hubConflict)               { healthGreen = 0.f;   healthRed = 255.f; }	// red: two different Hubs reachable
 		else if (hubLeft || hubRight)  { healthGreen = 255.f; healthRed = 0.f;   }	// green: healthy, one Hub (either or both sides)
-		else                           { healthGreen = 255.f; healthRed = 255.f; }	// yellow: connected, but no Hub anywhere
+		else                           { healthGreen = 0.f;   healthRed = 0.f;   }	// off: connected, but no Hub anywhere (dropped yellow - cosmetic call, Dieter 2026-07-15)
 		bool leftConnected  = leftExpander.module  != nullptr;
 		bool rightConnected = rightExpander.module != nullptr;
 		setStateLight(LEFT_CONN_LIGHT,      leftConnected  ? healthGreen : 0.f);
@@ -417,8 +417,8 @@ struct LanesMidiWidget : ModuleWidget
 		// Tiny bi-color corner lights - off/green/yellow/red chain-health signal (see
 		// moduleProcess()'s resolveLanesHub() calls and LanesMidi.hpp). Placeholder position
 		// (panel is 50.8mm wide) until Dieter places guide art for them.
-		addChild (createLightCentered<TinyLight<GreenRedLight>> (calculateCoordinates (3.5f, 4.f, 0.f), module, LEFT_CONN_LIGHT));
-		addChild (createLightCentered<TinyLight<GreenRedLight>> (calculateCoordinates (47.3f, 4.f, 0.f), module, RIGHT_CONN_LIGHT));
+		addChild (createLightCentered<AutoHideLight<TinyLight<GreenRedLight>>> (calculateCoordinates (3.5f, 4.f, 0.f), module, LEFT_CONN_LIGHT));
+		addChild (createLightCentered<AutoHideLight<TinyLight<GreenRedLight>>> (calculateCoordinates (47.3f, 4.f, 0.f), module, RIGHT_CONN_LIGHT));
 
 		addLanesExtStrips(this, 50.8f, &extStrips);
 

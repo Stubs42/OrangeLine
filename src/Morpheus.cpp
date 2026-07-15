@@ -1092,7 +1092,7 @@ struct MorpheusWidget : ModuleWidget
 		// ExpanderParamAccessSpec.md) - placeholder position near the top-left corner, since an
 		// Expander only ever attaches to a Host's LEFT side. Same corner-light convention as the
 		// LANES family (CLAUDE.md).
-		addChild(createLightCentered<TinyLight<GreenLight>>(calculateCoordinates(3.5f, 4.f, 0.f), module, X_CONN_LIGHT));
+		addChild(createLightCentered<AutoHideLight<TinyLight<GreenLight>>>(calculateCoordinates(3.5f, 4.f, 0.f), module, X_CONN_LIGHT));
 
 		// Positions extracted from res/MorpheusWorkTest.svg's Controls layer (2026-07-13) -
 		// panel reorganized to make room for the future visualization display (reserved band
