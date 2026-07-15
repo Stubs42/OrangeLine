@@ -73,19 +73,19 @@ int idleSkip;
 /*
 	Touch: a hidden mono trigger pair every module gets for free, living one index past that
 	module's own last real input/output (NUM_INPUTS/NUM_OUTPUTS - each module's own enum
-	sentinel, never touched or renumbered). Touch In forces this one real sample to fully
-	process regardless of the throttle counter; Touch Out relays the same pulse onward by
-	default, so chaining Touch Out -> Touch In across connected modules collapses the
-	~43-sample-per-hop throttle latency down to close to Rack's own unavoidable per-cable
-	minimum. Hidden (invisible AND unpatchable - Rack's Widget::visible gates hit-testing too,
-	see widget/Widget.hpp's recursePositionEvent) until shown via right-click, persisted per
-	instance, nothing in README.md - stays undocumented. Opt out per module with
-	#define OL_TOUCH_DISABLED before #include "OrangeLineCommon.hpp".
+	sentinel, never touched or renumbered). Displayed as "Wakeup" (input) and "Ready" (output) -
+	Wakeup forces this one real sample to fully process regardless of the throttle counter;
+	Ready relays the same pulse onward by default, so chaining Ready -> Wakeup across connected
+	modules collapses the ~43-sample-per-hop throttle latency down to close to Rack's own
+	unavoidable per-cable minimum. Hidden (invisible AND unpatchable - Rack's Widget::visible
+	gates hit-testing too, see widget/Widget.hpp's recursePositionEvent) until shown via right-
+	click, persisted per instance, nothing in README.md - stays undocumented. Opt out per module
+	with #define OL_TOUCH_DISABLED before #include "OrangeLineCommon.hpp".
 
 	Some modules (Mother, and any other with its own trigger input that already wakes it early
-	via a custom moduleSkipProcess()) don't need a *second*, redundant Touch In - they already
-	have an equivalent. Those still get a Touch Out, relayed whenever their own logic decides a
-	tick deserves it: the module sets OL_touchOutRequest = true itself (typically right where
+	via a custom moduleSkipProcess()) don't need a *second*, redundant Wakeup - they already
+	have an equivalent. Those still get a Ready output, relayed whenever their own logic decides
+	a tick deserves it: the module sets OL_touchOutRequest = true itself (typically right where
 	its own moduleSkipProcess() forces skip = false), instead of relying on OL_touchInTrigger.
 */
 #ifndef OL_TOUCH_DISABLED
@@ -251,8 +251,8 @@ inline void initializeInstance () {
 	*/
 #ifndef OL_TOUCH_DISABLED
 	config (NUM_PARAMS, NUM_INPUTS + 1, NUM_OUTPUTS + 1, NUM_LIGHTS);
-	configInput (NUM_INPUTS, "Touch In (forces immediate processing)");
-	configOutput (NUM_OUTPUTS, "Touch Out (relays Touch In downstream)");
+	configInput (NUM_INPUTS, "Wakeup (forces immediate processing)");
+	configOutput (NUM_OUTPUTS, "Ready (relays Wakeup downstream)");
 #else
 	config (NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 #endif
@@ -456,7 +456,7 @@ void process (const ProcessArgs &args) override {
 
 #ifndef OL_TOUCH_DISABLED
 	/*
-		Touch In forces this one real sample to fully process regardless of the throttle
+		Wakeup forces this one real sample to fully process regardless of the throttle
 		counter below - checked every real sample (not just non-skipped ones), same as any
 		other trigger input would need to be to not miss an edge.
 	*/
@@ -470,7 +470,7 @@ void process (const ProcessArgs &args) override {
 #ifndef OL_TOUCH_DISABLED
 	// A module with its own early-wake trigger (e.g. Mother's TRG_INPUT, forcing skip = false
 	// inside its own moduleSkipProcess() above) can set OL_touchOutRequest itself to relay
-	// Touch Out in step with that, without needing a dedicated Touch In port of its own.
+	// Ready in step with that, without needing a dedicated Wakeup port of its own.
 	touchFired = touchFired || OL_touchOutRequest;
 	OL_touchOutRequest = false;
 #endif
@@ -497,7 +497,7 @@ void process (const ProcessArgs &args) override {
 	reflectChanges();
 
 #ifndef OL_TOUCH_DISABLED
-	// Touch Out relays Touch In downstream by default - deliberately longer than the standard
+	// Ready relays Wakeup downstream by default - deliberately longer than the standard
 	// 1ms trigger-output convention (see setStateTypeOutput(STATE_TYPE_TRIGGER) in CLAUDE.md) so
 	// the pulse is actually visible on a scope.
 	if (touchFired) OL_touchOutPulse.trigger (0.05f);

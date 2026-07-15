@@ -77,7 +77,7 @@ struct Morpheus : Module
 			if (clkInputVoltage != oldClkInputVoltage) {
 				skip = false;
 #ifndef OL_TOUCH_DISABLED
-				OL_touchOutRequest = true;	// relay Touch Out in step with this early wake - see CLAUDE.md
+				OL_touchOutRequest = true;	// relay Ready in step with this early wake - see CLAUDE.md
 #endif
 			}
 			oldClkInputVoltage = clkInputVoltage;

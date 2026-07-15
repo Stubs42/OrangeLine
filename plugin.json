@@ -243,6 +243,15 @@
         "Utility",
         "Polyphonic"
       ]
+    },
+    {
+      "slug": "J",
+      "name": "J",
+      "description": "8-input AND gate: fires a fixed-length trigger/gate (1-10ms, knob-adjustable) the instant every patched input is simultaneously high - built to resync signals that diverged in timing across different patch branches",
+      "tags": [
+        "Logic",
+        "Utility"
+      ]
     }
   ]
 }

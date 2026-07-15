@@ -1,5 +1,5 @@
 /*
-	K2C.hpp
+	J.hpp
 
 	Author: Dieter Stubler
 
@@ -18,65 +18,40 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
-// K2C is one of the slim panels - no room in the header for Wakeup's usual top-left spot,
-// so it goes to the bottom instead (same row as Ready, mirrored to the left side).
-#define OL_TOUCH_IN_Y_MM 125.26f
+// J is itself Touch-adjacent infrastructure (syncs branches that used Touch), not a Touch
+// consumer - deliberately gets no Wakeup/Ready ports of its own.
+#define OL_TOUCH_DISABLED
 
 #include "OrangeLine.hpp"
 
-//
-// Defaults
-//
+#define AND_THRESHOLD 5.f
 
-//
-// Virtual Parameter Ids stored using Json
-//
-enum jsonIds {
-	//
-	// Parameters not bound to any user interface component to save internal module state
-	//
-    STYLE_JSON,
-
+enum jsonIds
+{
+	STYLE_JSON,
 	NUM_JSONS
 };
 
-//
-// Parameter Ids
-//
-enum ParamIds {
-	//
-	// Paramater for user interface components
-	//
-    NUM_PARAMS
+enum ParamIds
+{
+	LEN_PARAM,	// Output gate/trigger length (ms)
+	NUM_PARAMS
 };
 
-//
-// Input Ids
-//
-enum InputIds {
-	VOCT_INPUT,
-	GATE_INPUT,
-	VEL_INPUT,
-	KEYS_INPUT,
-
+enum InputIds
+{
+	IN_INPUT,
+	IN_INPUT_LAST = IN_INPUT + 7,	// 8 mono inputs
 	NUM_INPUTS
 };
 
-//
-// Output Ids
-//
-enum OutputIds {
-	VOCT_OUTPUT,
-	GATE_OUTPUT,
-	VEL_OUTPUT,
-
+enum OutputIds
+{
+	OUT_OUTPUT,
 	NUM_OUTPUTS
 };
 
-//
-// Ligh Ids
-//
-enum LightIds {
-
+enum LightIds
+{
 	NUM_LIGHTS
 };

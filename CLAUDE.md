@@ -64,11 +64,13 @@ Chained throttled modules (see control-rate throttling above) each wake up on th
 independent ~1kHz cycle, so a signal hopping through several modules can pick up up to ~43
 samples of avoidable extra latency per hop on top of Rack's own unavoidable one-sample-per-
 cable latency. **Touch** is a shared mechanism that collapses this: a hidden mono trigger
-**Touch In** forces that one sample to fully process regardless of the throttle counter, and a
-hidden mono trigger **Touch Out** relays the same pulse onward by default — chaining Touch
-Out → Touch In across a string of modules keeps the whole chain in near-lockstep.
+**Wakeup** forces that one sample to fully process regardless of the throttle counter, and a
+hidden mono trigger **Ready** relays the same pulse onward by default — chaining Ready →
+Wakeup across a string of modules keeps the whole chain in near-lockstep. (Right-click menu
+label: "Wakeup/Ready Ports" — internal identifiers/comments/filenames still say "Touch"/
+`OL_touch*`/`TouchIn.svg`/`TouchOut.svg`, only the user-facing port names changed.)
 
-- **Zero changes to any module's own enums.** Touch In/Out live at raw Rack port index
+- **Zero changes to any module's own enums.** Wakeup/Ready live at raw Rack port index
   `NUM_INPUTS` / `NUM_OUTPUTS` (each module's own enum sentinel — "one past the last real
   port"), registered via `config(NUM_PARAMS, NUM_INPUTS + 1, NUM_OUTPUTS + 1, NUM_LIGHTS)` in
   the shared `initializeInstance()`. They're read/written directly as `inputs[NUM_INPUTS]` /
@@ -77,19 +79,19 @@ Out → Touch In across a string of modules keeps the whole chain in near-lockst
 - **Mechanism** (`OrangeLineCommon.hpp`, all under `#ifndef OL_TOUCH_DISABLED`): `bool touchFired
   = OL_touchInTrigger.process(inputs[NUM_INPUTS].getVoltage()); bool skip =
   moduleSkipProcess() && !touchFired;` — a touch forces the sample through without disturbing
-  `idleSkipCounter`'s own ongoing phase. The Touch Out pulse (`OL_touchOutPulse`, currently
+  `idleSkipCounter`'s own ongoing phase. The Ready pulse (`OL_touchOutPulse`, currently
   **0.05s** — deliberately longer than the standard 1ms trigger-output convention so it's
   actually visible on a scope, tune freely in one place if needed) keeps advancing every real
   sample regardless of throttling, same reasoning as `processActiveOutputTriggers()`.
 - **`OL_touchOutRequest`** (bool): lets a module that already has its own early-wake trigger
   (a custom `moduleSkipProcess()` forcing `skip = false` on some other condition, e.g. a clock
-  edge) request a Touch Out relay itself, without needing a redundant dedicated Touch In of its
+  edge) request a Ready relay itself, without needing a redundant dedicated Wakeup of its
   own — see Mother/Dejavu/Morph/Morpheus below.
 - **Widget helpers** (`OrangeLine.hpp`): `addOrangeLineTouchPorts(w, module, NUM_INPUTS,
   NUM_OUTPUTS, &module->OL_touchInPort, &module->OL_touchOutPort, &module->OL_touchVisible)`
-  (full In+Out, top-left/bottom-right corners) or `addOrangeLineTouchOutputOnly(...)` (Out only,
-  for modules with their own early-wake trigger and no need for Touch In) in the widget
-  constructor after panel setup; `addOrangeLineTouchMenuItem(menu, inPort, outPort,
+  (full Wakeup+Ready, top-left/bottom-right corners) or `addOrangeLineTouchOutputOnly(...)`
+  (Ready only, for modules with their own early-wake trigger and no need for Wakeup) in the
+  widget constructor after panel setup; `addOrangeLineTouchMenuItem(menu, inPort, outPort,
   visibleFlag)` in `appendContextMenu()`, placed **above** the Style section with its own
   separator. Both jacks default hidden (`Widget::visible` gates hit-testing too, confirmed via
   the SDK's `recursePositionEvent` — a hidden port is also unpatchable, so hidden really means
@@ -102,16 +104,19 @@ Out → Touch In across a string of modules keeps the whole chain in near-lockst
   `#define OL_TOUCH_IN_Y_MM <value>` (etc., all `#ifndef`-guarded in `OrangeLine.hpp`) before
   that same include.
 - **Current per-module state** (Dieter's own call per module, not a blanket rollout):
-  - **Full Touch In+Out**: Buckets, CVLanes, Cron, D2D\*, Fence (coexists with its own
+  - **Full Wakeup+Ready**: Buckets, CVLanes, Cron, D2D\*, Fence (coexists with its own
     pre-existing TRG in/out), Gator, Hold (the pilot), K2C\*, LanesCV, Phrase, Resc\*, Swing,
-    CC14\* (\* = slim panel, Touch In repositioned to the bottom via `OL_TOUCH_IN_Y_MM`, same
-    row as Touch Out mirrored to the left).
-  - **Touch Out only** (already has its own early-wake trigger via `OL_touchOutRequest`, no
-    Touch In needed): Mother, Dejavu, Morph, Morpheus.
+    CC14\* (\* = slim panel, Wakeup repositioned to the bottom via `OL_TOUCH_IN_Y_MM`, same
+    row as Ready mirrored to the left).
+  - **Ready only** (already has its own early-wake trigger via `OL_touchOutRequest`, no
+    Wakeup needed): Mother, Dejavu, Morph, Morpheus.
   - **Disabled entirely** (`OL_TOUCH_DISABLED`): CC2CV, CV2CC, RECALL, MidiBus, MidiLanes,
     LanesMidi — MIDI-hardware-facing modules, where MIDI's own transport latency dwarfs the
     sub-millisecond timing Touch fixes; would just be one more unused hidden jack on an already
     busy panel.
+  - **J (planned, not yet built)**: deliberately gets **no Touch I/O of its own** — it's Touch-
+    adjacent infrastructure (syncing branches that used Touch), not a Touch consumer needing
+    its own further latency reduction.
 - **Deliberately undocumented anywhere user-facing** (README, in-app manual, right-click menu
   wording) — Dieter's explicit call: "the community should still have something to puzzle
   about" ("die community soll noch was zum rätseln haben"). This file (developer-facing) is the
@@ -132,10 +137,58 @@ Out → Touch In across a string of modules keeps the whole chain in near-lockst
 - **System MIDI messages (status nibble `0xf` — SysEx `0xF0-0xF7`, Clock `0xF8`, Start/Continue/Stop `0xFA-0xFC`, etc.) bypass `midi::Port.channel` filtering entirely**, verified directly in `Rack/src/midi.cpp`'s `InputDevice::onMessage`/`Output::sendMessage` (not just the SDK headers): `if (message.getStatus() != 0xf && input->channel >= 0 && message.getChannel() != input->channel) continue;`. They arrive in `tryPop()` regardless of the selected channel, and `sendMessage()` never overwrites their channel-nibble byte (which, for status `0xf`, is actually the message *sub-type*, not a channel) with the port's configured channel. See `MidiBus.cpp`'s `handleIncomingSystemMessage`/`sendSystemRealtime` for the pattern of manually stamping/reading that sub-type nibble.
 - **When a `CCGridWidget` needs a visual state that reflects "did an override actually change something" rather than just "is something patched"**, and that override only fires at a specific event (e.g. a one-shot snapshot) rather than continuously: latch the comparison result *at that same event*, don't recompute it continuously against whatever the live baseline has since drifted to. RECALL's TX grid hit this: comparing a frozen snapshot against the *current* live receive value would keep "diverging" over time even with no override at all, simply because the live side kept moving after the freeze while the snapshot didn't. Compare the override's incoming value against the baseline's value *at the moment of the snapshot*, store the boolean result, and leave it alone until the next such event — a genuinely continuous override (recomputed every tick) is a separate, simpler case and doesn't need latching.
 
+## Workflow: building a new module step by step
+
+This is the actual sequence used building **J** (2026-07-15, the first module built this way
+start to finish) - repeat it for the next new module. Panel art comes *before* the C++ (the
+widget's jack/knob positions are measured from the finished panel, not the other way round) -
+see `PanelDesignGuide.md`'s own numbered Workflow section for that half of the process first.
+
+1. **Pin down the exact behavior before writing any code.** Simple-sounding specs hide real
+   ambiguity - e.g. J's "AND of connected inputs, fixed-length output pulse" needed one crucial
+   clarifying question (edge-triggered fixed pulse vs. continuous level-following capped at max
+   length - these are different modules) before implementation could start. Ask rather than
+   assume whenever a design choice would produce genuinely different behavior.
+2. **Find the closest existing module as a structural reference** rather than inventing the
+   module shape from scratch. Two different existing modules can each supply a different piece:
+   J used `D2D.cpp` for the overall minimal hook shape (a small, modern, throttled module with
+   no legacy cruft) and `Gator.hpp`/`Gator.cpp` for the `LEN_PARAM` gate-length-knob pattern
+   (`configParam(LEN_PARAM, min, max, default, "Gate Length", " ms")` + `getStateParam
+   (LEN_PARAM)`).
+3. **Write `<Name>.hpp`**: the four/five enums (`jsonIds`/`ParamIds`/`InputIds`/`OutputIds`/
+   `LightIds`), any `#define`s, `#define OL_TOUCH_DISABLED` before the first `#include` if the
+   module doesn't need Wakeup/Ready (see the Touch section above for which modules do).
+4. **Write `<Name>.cpp`**: the module struct (`#include "OrangeLineCommon.hpp"` first, then the
+   required hooks - `moduleSkipProcess`, `moduleInitStateTypes`, `moduleInitJsonConfig`,
+   `moduleParamConfig`, `moduleCustomInitialize`, `moduleInitialize`, `moduleReset`,
+   `moduleProcess`, `moduleProcessState`, `moduleReflectChanges`), then `<Name>Widget :
+   ModuleWidget` using the exact jack/knob coordinates from the finished panel's `Controls`
+   layer, then `Model *model<Name> = createModel<<Name>, <Name>Widget>("<Name>");`.
+   - **`<Name>JsonLabels.hpp` is optional, not required** - only the older/more complex modules
+     (CVLanes, Hold, LanesCV, LanesMidi, MidiBus) use a separate `char *jsonLabel[NUM_JSONS]`
+     array file. Simpler modern modules (D2D, K2C, CC14, J) just call `setJsonLabel(id, "name")`
+     directly inside `moduleInitJsonConfig()` - no separate file needed. Prefer this simpler
+     form for a new module unless it has a genuinely large indexed JSON range.
+   - A custom fixed-duration output pulse (not the standard hardcoded-1ms `STATE_TYPE_TRIGGER`
+     convention) needs its own `dsp::PulseGenerator` member, triggered manually in
+     `moduleProcess()` with whatever duration the module computes (see J's
+     `outPulse.trigger(getStateParam(LEN_PARAM) / 1000.f)`) - same pattern the Touch mechanism
+     itself uses for `OL_touchOutPulse`.
+5. **Register the module**: `src/plugin.hpp` (`extern Model *model<Name>;`), `src/plugin.cpp`
+   (`p->addModel(model<Name>);`), `plugin.json` (a `{ "slug", "name", "description", "tags" }`
+   entry - validate the file is still well-formed JSON after editing, e.g. `python3 -c "import
+   json; json.load(open('plugin.json'))"` - this repo has hit a missing-comma bug here before).
+6. **Compile-check each new/changed `.cpp` individually** via the direct-`g++` sandbox
+   workaround (see Build section above) before attempting a full link - catches syntax/type
+   errors immediately without waiting on a full plugin relink. Leave the actual full link/build
+   to Dieter when he wants to do it himself in a real MSYS2 terminal and test-load the result in
+   Rack - don't run it unprompted once told "I'll do it".
+
 ## Adding a new module — file checklist
 
 1. `src/<Name>.hpp` — enums + any `#define`s for repeated-I/O counts.
-2. `src/<Name>JsonLabels.hpp` — `char *jsonLabel[NUM_JSONS] = { ... };` matching the `jsonIds` enum order exactly.
+2. `src/<Name>JsonLabels.hpp` — optional (see Workflow step 4 above); only needed for large
+   indexed JSON ranges, most new modules just call `setJsonLabel()` in `moduleInitJsonConfig()`.
 3. `src/<Name>.cpp` — the module struct (see architecture above) + `<Name>Widget : ModuleWidget` + `Model *model<Name> = createModel<<Name>, <Name>Widget>("<Name>");` at the end.
 4. `src/plugin.hpp` — add `extern Model *model<Name>;`.
 5. `src/plugin.cpp` — add `p->addModel(model<Name>);`.

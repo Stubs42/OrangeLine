@@ -572,9 +572,9 @@ inline void addOrangeLineTouchPorts (ModuleWidget *w, Module *module, int touchI
 	if (touchOutPortOut) *touchOutPortOut = outPort;
 }
 
-/** For modules that already have their own equivalent of Touch In (e.g. Mother's TRG_INPUT,
-	which forces an early wake inside its own moduleSkipProcess()) - a second, redundant Touch
-	In would just be confusing, so these only get the Touch Out jack. Relaying still works via
+/** For modules that already have their own equivalent of Wakeup (e.g. Mother's TRG_INPUT,
+	which forces an early wake inside its own moduleSkipProcess()) - a second, redundant Wakeup
+	would just be confusing, so these only get the Ready jack. Relaying still works via
 	OL_touchOutRequest (see OrangeLineCommon.hpp) - the module sets that itself wherever its own
 	logic decides a tick deserves a relay. */
 inline void addOrangeLineTouchOutputOnly (ModuleWidget *w, Module *module, int touchOutId,
@@ -605,7 +605,7 @@ struct OrangeLineTouchMenuItem : MenuItem {
 
 inline void addOrangeLineTouchMenuItem (Menu *menu, PortWidget *inPort, PortWidget *outPort, bool *visibleFlag) {
 	OrangeLineTouchMenuItem *item = new OrangeLineTouchMenuItem ();
-	item->text = "Show Touch Ports";
+	item->text = "Wakeup/Ready Ports";
 	item->inPort = inPort;
 	item->outPort = outPort;
 	item->visibleFlag = visibleFlag;

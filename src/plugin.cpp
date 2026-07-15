@@ -31,6 +31,7 @@ void init(Plugin *p) {
 	p->addModel(modelCV2CC);
 	p->addModel(modelRECALL);
 	p->addModel(modelMidiBus);
+	p->addModel(modelJ);
 	// p->addModel(modelTemplate);
 	// p->addModel(modelWidgetTest);
 
