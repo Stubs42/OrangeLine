@@ -26,7 +26,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 /*
 	The X family (X8/X8D/X16/X16D) is a generic "param-access" Expander: any Host module with
 	polyphonic param-paired inputs can let an X unit remote-control one of them per-channel. See
-	ExpanderParamAccessSpec.md at the repo root for the full design.
+	ExpanderParamAccessSpec.md at the repo root for the full design (current as of commit
+	aa6f650 - "virtual poly cable", multi-binding per Expander, Track & Hold, unfiltered but
+	color-coded browse list).
 
 	Unlike LANES (Lanes.hpp/LanesShared.hpp), a Host is only ever recognized attached to an
 	Expander's own RIGHT side - these are inputs, and panel signal flow runs left to right, so
@@ -34,33 +36,47 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 	strict singly-linked list (Expander -> Expander -> ... -> Host, walking rightward), so unlike
 	LANES there is no possible fork and therefore no conflict/ambiguity case to detect at all.
 
-	Step 1 (2026-07-15): only the resolution logic + a single connection light + the seamless
-	panel-merge strip are wired up. No host implements XHostInterface yet (Morpheus doesn't yet),
-	so resolveXHost() always returns nullptr for now - that's fine, it just means the light stays
-	off until a real host exists. No param browsing/engaging/buffer access yet.
+	Binding (which Expander currently drives which candidate param) lives entirely on the Host
+	side as a stable Rack module ID per param - nothing here needs to know about it beyond the
+	passive getters below, which the Host reads during its own process(). The Expander never
+	calls into the Host.
 */
+enum XParamType {
+	X_PARAM_CONTINUOUS,
+	X_PARAM_TOGGLE,      // click flips state, stays until clicked again
+	X_PARAM_CLICK,       // single fixed-length pulse fired on click, independent of hold duration
+	X_PARAM_MOMENTARY    // value is high only while the control is actively held down
+};
+
 struct XHostInterface
 {
 	virtual int getXParamCount() = 0;
 	virtual const char* getXParamName(int index) = 0;
-	virtual const char* getXParamShortName(int index) = 0;
+	virtual XParamType getXParamType(int index) = 0;
 	virtual NVGcolor getXParamColor(int index) = 0;
 
+	// Red/Green - derived from the binding, not separately stored: true iff this
+	// param currently has a bound Expander. Also read directly by Expanders to
+	// color their own (unfiltered) browse list.
 	virtual bool isXParamEngaged(int index) = 0;
-	virtual void setXParamEngaged(int index, bool engaged) = 0;
 
+	// Which module currently holds the binding for this param, or -1. An Expander
+	// compares this against its own Rack-native `id` to know whether it's the one.
+	virtual int64_t getXParamBoundId(int index) = 0;
+
+	// True while a real cable is patched into the host's own poly CV jack for this
+	// param - overrides everything else, see "Real-cable override" in the spec.
 	virtual bool isXParamCableConnected(int index) = 0;
 
+	// 1-16, default 16 - the only thing about a candidate param that is actually
+	// persisted.
 	virtual int getXParamChannelLimit(int index) = 0;
 	virtual void setXParamChannelLimit(int index, int limit) = 0;
 
-	virtual float getXParamChannelValue(int index, int channel) = 0;
-	virtual void setXParamChannelValue(int index, int channel, float value) = 0;
-
+	// Right-click action: clears the binding for this param -> Red.
 	virtual void resetXParam(int index) = 0;
-	virtual void initializeXParam(int index) = 0;
 
-	virtual std::string formatXParamValue(int index, float value) = 0;
+	virtual std::string formatXParamValue(int index, float value) = 0; // continuous only
 
 	// This module's own STYLE_JSON value (STYLE_ORANGE/BRIGHT/DARK) - purely for the cosmetic
 	// seam-bridging strip (see getXNeighborStyle() below), unrelated to host-resolution health.
@@ -76,6 +92,20 @@ struct XExpanderInterface
 	virtual XHostInterface* getXHost() = 0;
 	// See XHostInterface::getXStyle() above.
 	virtual float getXStyle() = 0;
+
+	// Fully self-managed by the Expander (own debounce/edge-detection, own browse-index
+	// bookkeeping) - the Host only ever reads these, during its OWN process(). The
+	// Expander never calls back into the Host with them.
+	virtual int getXKnobCount() = 0;              // 8 (X8/X8D) or 16 (X16/X16D)
+	virtual float getXKnobValue(int channel) = 0; // one-line passthrough into OL_state -
+	                                               // no separate storage needed
+	virtual int getXBrowseIndex() = 0;             // which host param this Expander's
+	                                                // controls currently point at - never
+	                                                // locked, freely navigable
+	virtual bool consumeEngagePress() = 0;         // one-shot: true exactly once per
+	                                                // physical click, debounced locally -
+	                                                // the Host decides what it means
+
 	virtual ~XExpanderInterface() {}
 };
 

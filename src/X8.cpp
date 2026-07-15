@@ -34,9 +34,15 @@ struct X8 : Module, XExpanderInterface
 	bool widgetReady = false;
 
 	// Resolved every moduleProcess() tick by looking only at rightExpander.module (never
-	// leftExpander.module - see XShared.hpp's left-only-attachment note). Nothing implements
-	// XHostInterface yet, so this stays nullptr for now - that's the expected step-1 state.
+	// leftExpander.module - see XShared.hpp's left-only-attachment note).
 	XHostInterface *xHost = nullptr;
+
+	// Fully self-managed local state (see ExpanderParamAccessSpec.md's "Expander manages
+	// itself completely") - the Host only ever reads these through XExpanderInterface, it
+	// never writes them.
+	int browseIndex = 0;
+	dsp::SchmittTrigger engageTrigger, leftTrigger, rightTrigger;
+	bool pendingEngagePress = false;
 
 	X8()
 	{
@@ -64,6 +70,11 @@ struct X8 : Module, XExpanderInterface
 
 	inline void moduleParamConfig()
 	{
+		for (int i = 0; i < NUM_X8_KNOBS; i++)
+			configParam(KNOB_PARAM + i, 0.f, 1.f, 0.5f, "Value");
+		configParam(LEFT_PARAM, 0.f, 1.f, 0.f, "Previous parameter");
+		configParam(RIGHT_PARAM, 0.f, 1.f, 0.f, "Next parameter");
+		configParam(ENGAGE_PARAM, 0.f, 1.f, 0.f, "Engage");
 	}
 
 	inline void moduleCustomInitialize() {}
@@ -72,6 +83,7 @@ struct X8 : Module, XExpanderInterface
 	void moduleReset()
 	{
 		styleChanged = true;
+		browseIndex = 0;
 	}
 
 	inline void moduleProcess(const ProcessArgs &args)
@@ -89,6 +101,32 @@ struct X8 : Module, XExpanderInterface
 
 		xHost = resolveXHost(rightExpander.module);
 		setStateLight(CONN_LIGHT, xHost ? 255.f : 0.f);
+
+		// Browsing: unconditional, unfiltered stepping through every candidate param the
+		// currently-resolved Host reports - see "Browsing is never locked or filtered" in
+		// ExpanderParamAccessSpec.md. If no Host is resolved (or it has zero candidates),
+		// browseIndex just stays at 0 and stepping has no visible effect.
+		int count = xHost ? xHost->getXParamCount() : 0;
+		if (count > 0)
+		{
+			browseIndex = clamp(browseIndex, 0, count - 1);
+			if (leftTrigger.process(params[LEFT_PARAM].getValue()))
+				browseIndex = (browseIndex - 1 + count) % count;
+			if (rightTrigger.process(params[RIGHT_PARAM].getValue()))
+				browseIndex = (browseIndex + 1) % count;
+		}
+		else
+		{
+			browseIndex = 0;
+			leftTrigger.process(params[LEFT_PARAM].getValue());
+			rightTrigger.process(params[RIGHT_PARAM].getValue());
+		}
+
+		// Engage button: local debounce only - this Expander has no idea whether a click will
+		// actually bind, unbind, or do nothing at all. The Host decides that, during its own
+		// process(), the next time it reads consumeEngagePress().
+		if (engageTrigger.process(params[ENGAGE_PARAM].getValue()))
+			pendingEngagePress = true;
 	}
 
 	inline void moduleProcessState() {}
@@ -97,6 +135,15 @@ struct X8 : Module, XExpanderInterface
 	// XExpanderInterface
 	XHostInterface* getXHost() override { return xHost; }
 	float getXStyle() override { return OL_state[STYLE_JSON]; }
+	int getXKnobCount() override { return NUM_X8_KNOBS; }
+	float getXKnobValue(int channel) override { return getStateParam(KNOB_PARAM + channel); }
+	int getXBrowseIndex() override { return browseIndex; }
+	bool consumeEngagePress() override
+	{
+		bool fired = pendingEngagePress;
+		pendingEngagePress = false;
+		return fired;
+	}
 };
 
 /**
@@ -126,6 +173,24 @@ struct X8Widget : ModuleWidget
 		}
 
 		addChild(createLightCentered<AutoHideLight<TinyLight<GreenLight>>>(calculateCoordinates(X8_PANEL_WIDTH_MM - 3.5f, 4.f, 0.f), module, CONN_LIGHT));
+
+		// LEFT/RIGHT/ENGAGE - functional placeholders using the stock LEDButton component for
+		// now; the panel's own custom rounded-rect button art (res/X8Work.svg's LEFT/RIGHT/
+		// ENGAGE groups) still needs a dedicated custom ParamWidget to actually match visually -
+		// deferred, tracked as follow-up work.
+		addParam(createParamCentered<LEDButton>(calculateCoordinates(4.713f, 18.998f, OFFSET_LEDButton), module, LEFT_PARAM));
+		addParam(createParamCentered<LEDButton>(calculateCoordinates(10.527f, 18.998f, OFFSET_LEDButton), module, RIGHT_PARAM));
+		addParam(createParamCentered<LEDButton>(calculateCoordinates(7.62f, 25.601f, OFFSET_LEDButton), module, ENGAGE_PARAM));
+
+		// 8 channel knobs, top (channel 1) to bottom (channel 8) - matches the panel's own
+		// "1".."8" labels, which run top-to-bottom while the underlying knobring elements in the
+		// SVG are numbered bottom-to-top (knobring8 is physically at the top).
+		static const float knobY[NUM_X8_KNOBS] = {
+			37.339944f, 48.294524f, 59.249103f, 70.203682f,
+			81.158262f, 92.112841f, 103.06742f, 114.022f
+		};
+		for (int i = 0; i < NUM_X8_KNOBS; i++)
+			addParam(createParamCentered<RoundSmallBlackKnob>(calculateCoordinates(7.62f, knobY[i], OFFSET_RoundSmallBlackKnob), module, KNOB_PARAM + i));
 
 		extStrip = addXExtStrip(this, X8_PANEL_WIDTH_MM);
 

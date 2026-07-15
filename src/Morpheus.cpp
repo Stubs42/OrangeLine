@@ -869,20 +869,18 @@ struct Morpheus : Module, XHostInterface
 	// XHostInterface (step 1: connection detection only, see ExpanderParamAccessSpec.md) -
 	// getXParamCount() deliberately returns 0 for now, so none of the other methods below are
 	// actually called by anything yet. Real candidate-param wiring (LOCK/BALANCE/... per the
-	// spec's confirmed table) is a later step.
+	// spec's confirmed table, plus boundExpanderId[]/channelLimit[] storage and the once-per-tick
+	// refresh step) is a later, separate step.
 	int getXParamCount() override { return 0; }
 	const char* getXParamName(int index) override { return ""; }
-	const char* getXParamShortName(int index) override { return ""; }
+	XParamType getXParamType(int index) override { return X_PARAM_CONTINUOUS; }
 	NVGcolor getXParamColor(int index) override { return nvgRGB(0xff, 0x66, 0x00); }
 	bool isXParamEngaged(int index) override { return false; }
-	void setXParamEngaged(int index, bool engaged) override {}
+	int64_t getXParamBoundId(int index) override { return -1; }
 	bool isXParamCableConnected(int index) override { return false; }
 	int getXParamChannelLimit(int index) override { return POLY_CHANNELS; }
 	void setXParamChannelLimit(int index, int limit) override {}
-	float getXParamChannelValue(int index, int channel) override { return 0.f; }
-	void setXParamChannelValue(int index, int channel, float value) override {}
 	void resetXParam(int index) override {}
-	void initializeXParam(int index) override {}
 	std::string formatXParamValue(int index, float value) override { return ""; }
 	float getXStyle() override { return OL_state[STYLE_JSON]; }
 };

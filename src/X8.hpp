@@ -35,9 +35,16 @@ enum jsonIds {
 };
 
 //
-// Parameter Ids - step 1 has no real channel/browse/engage controls yet, only connection logic
+// Parameter Ids
 //
+#define NUM_X8_KNOBS 8
 enum ParamIds {
+	KNOB_PARAM,
+	KNOB_PARAM_LAST = KNOB_PARAM + NUM_X8_KNOBS - 1,
+	LEFT_PARAM,
+	RIGHT_PARAM,
+	ENGAGE_PARAM,
+
 	NUM_PARAMS
 };
 
