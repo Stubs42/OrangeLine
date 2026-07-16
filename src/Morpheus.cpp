@@ -1351,7 +1351,7 @@ struct MorpheusDisplayWidget : Widget
 };
 
 // Tunable by eye - play with these until the ring sits right against the jack's own footprint.
-#define X_SLOT_RING_RADIUS_OFFSET_MM 0.6f
+#define X_SLOT_RING_RADIUS_OFFSET_MM -1.9f
 #define X_SLOT_RING_STROKE_WIDTH_MM  0.6f
 
 /**
