@@ -74,6 +74,8 @@ struct X8Widget : ModuleWidget
 
 	XExtStripWidget *extStrip = nullptr;     // right edge - toward the Host (or a further Expander)
 	XExtStripWidget *extStripLeft = nullptr; // left edge - toward a further chained Expander
+	X8LogoCover *logoCover1 = nullptr;
+	X8LogoCover *logoCover2 = nullptr;
 
 	// One knob and one value-button share each of the 8 channel slots, same position, only one
 	// ever visible - see step() below. Both stay fully constructed/bound to the same param the
@@ -142,6 +144,7 @@ struct X8Widget : ModuleWidget
 
 		extStrip = addXExtStrip(this, X8_PANEL_WIDTH_MM);
 		extStripLeft = addXExtStripLeft(this);
+		addXLogoCovers(this, X8_PANEL_WIDTH_MM, &logoCover1, &logoCover2);
 
 		if (module)
 			module->widgetReady = true;
@@ -154,6 +157,7 @@ struct X8Widget : ModuleWidget
 		{
 			updateXExtStrip(extStrip, x8Module, x8Module->rightExpander.module);
 			updateXExtStripLeft(extStripLeft, x8Module, x8Module->leftExpander.module);
+			updateXLogoCovers(logoCover1, logoCover2, x8Module);
 			// Type-based morph (ExpanderParamAccessSpec.md's "Type-based appearance"): continuous
 			// -> knob, toggle/click/push -> button. One type governs all 8 channels at once,
 			// since it's a property of the browsed param, not of any individual channel.

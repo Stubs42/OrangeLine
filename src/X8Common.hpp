@@ -18,6 +18,73 @@
 	X8DButtonCover/X8DValueDisplay.
 */
 
+// Position/size of the two OrangeLine wordmark pieces ("orange" + "Line", stacked) - measured
+// directly from res/X8DWork.svg's own "LogoCover" guide layer. Fixed regardless of panel width
+// (the logo itself never changes size) - only the horizontal centering shifts per module, see
+// addXLogoCovers() below.
+#define X8_LOGO_COVER1_Y_MM      121.41325f
+#define X8_LOGO_COVER1_WIDTH_MM  12.7f
+#define X8_LOGO_COVER1_HEIGHT_MM 2.9735825f
+#define X8_LOGO_COVER2_Y_MM      125.03953f
+#define X8_LOGO_COVER2_WIDTH_MM  7.6199994f
+#define X8_LOGO_COVER2_HEIGHT_MM 2.9777272f
+
+/**
+	Static background-colored cover for one piece of the OrangeLine wordmark - purely cosmetic,
+	shown only while this Expander is actually connected to a Host (see updateXLogoCovers()),
+	hiding the brand text behind a plain rect matching the current theme's own panel background.
+	Per Dieter: hide the logo TEXT specifically when connected, not the physical accent line.
+*/
+struct X8LogoCover : TransparentWidget
+{
+	Module *module = nullptr;
+
+	void draw(const DrawArgs &args) override
+	{
+		XExpanderInterface *expander = module ? dynamic_cast<XExpanderInterface*>(module) : nullptr;
+		float style = expander ? expander->getXStyle() : STYLE_ORANGE;
+		NVGcolor fill = (style == STYLE_DARK) ? nvgRGB(0x20, 0x20, 0x20)
+		              : (style == STYLE_BRIGHT) ? nvgRGB(0xe6, 0xe6, 0xe6)
+		              : nvgRGB(0x15, 0x15, 0x2b); // STYLE_ORANGE
+		nvgBeginPath(args.vg);
+		nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+		nvgFillColor(args.vg, fill);
+		nvgFill(args.vg);
+	}
+};
+
+// Both rects are horizontally centered on the module regardless of panel width (verified against
+// res/X8DWork.svg's own guide rects - each one's own x + width/2 lands exactly on panelWidthMm/2)
+// - only the Y position/size are fixed absolutes, matching the logo's own fixed size.
+inline void addXLogoCovers(ModuleWidget *w, float panelWidthMm, X8LogoCover **cover1Out, X8LogoCover **cover2Out)
+{
+	X8LogoCover *cover1 = new X8LogoCover();
+	cover1->box.pos = calculateCoordinates(panelWidthMm / 2.f - X8_LOGO_COVER1_WIDTH_MM / 2.f, X8_LOGO_COVER1_Y_MM, 0.f);
+	cover1->box.size = mm2px(Vec(X8_LOGO_COVER1_WIDTH_MM, X8_LOGO_COVER1_HEIGHT_MM));
+	cover1->visible = false;
+	w->addChild(cover1);
+	*cover1Out = cover1;
+
+	X8LogoCover *cover2 = new X8LogoCover();
+	cover2->box.pos = calculateCoordinates(panelWidthMm / 2.f - X8_LOGO_COVER2_WIDTH_MM / 2.f, X8_LOGO_COVER2_Y_MM, 0.f);
+	cover2->box.size = mm2px(Vec(X8_LOGO_COVER2_WIDTH_MM, X8_LOGO_COVER2_HEIGHT_MM));
+	cover2->visible = false;
+	w->addChild(cover2);
+	*cover2Out = cover2;
+}
+
+// Called every widget step() (UI frame rate, cosmetic only) - both covers show together, exactly
+// while a Host is resolved (regardless of whether this Expander is actually bound/engaged to any
+// specific param - "connected to a host" per Dieter's own wording, not "actively controlling
+// something").
+inline void updateXLogoCovers(X8LogoCover *cover1, X8LogoCover *cover2, Module *module)
+{
+	XExpanderInterface *expander = module ? dynamic_cast<XExpanderInterface*>(module) : nullptr;
+	bool connected = expander && expander->getXHost() != nullptr;
+	cover1->visible = connected;
+	cover2->visible = connected;
+}
+
 // Shared by every LCD-style display in this file - per Dieter's own "simple and stupid"
 // convention: text is ALWAYS drawn left-aligned (NVG_ALIGN_LEFT) at local x=0, never using
 // NanoVG's own CENTER/RIGHT text-align modes (their metrics drift off true visual center for

@@ -359,3 +359,31 @@ Use this pattern when several modules need to share state where one module colle
      of neighbor possible on a given edge, like X-family's Host-is-always-rightward rule) changes
      which edges need a strip at all, never whether both sides of an actual seam need one.
   6. Usual per-module checklist (above) for each Hub/Expander's own `.hpp`/`.cpp`/`JsonLabels.hpp`/`plugin.hpp`/`plugin.cpp`/`plugin.json`/panel files.
+
+- **Near-identical sibling modules (e.g. X8/X8D, and eventually X16/X16D) — share code via two
+  headers, don't copy-paste.** X8D started as a literal copy of X8 (different panel width, extra
+  per-channel display) with every identifier renamed to avoid ODR clashes - by the time X8D grew
+  its own numeric-display/tooltip work, ~95% of the two files was byte-identical logic under
+  different names, which Dieter flagged directly ("we have two modules with about 95% identical
+  code, we should not duplicate this much"). Fixed by splitting into:
+  - **`<Family>Common.hpp`** — every widget/control class that doesn't hardcode a size/position
+    (e.g. `X8Knob`, `X8ValueButton`, `X8NameDisplay`, the custom `ParamQuantity`, any shared free
+    function like `x8BrowsedParamTaken()`). These must operate on a plain `Module*` +
+    `dynamic_cast<FamilyExpanderInterface*>`, never on the concrete sibling type (`X8*`/`X8D*`) -
+    which usually means promoting a few more accessors onto the family's own `ExpanderInterface`
+    (in `<Family>Shared.hpp`) so shared code never needs to know which sibling it's attached to.
+    Reused verbatim (`#include`'d at file scope) by every sibling's own `.cpp`.
+  - **`<Family>ModuleCommon.hpp`** — the module struct's entire body *except the constructor*
+    (`#include`'d inside each sibling's own `struct <Name> : Module, <Family>ExpanderInterface {
+    ... }`, same composition pattern as `OrangeLineCommon.hpp` itself). The constructor can't be
+    shared this way - a C++ constructor's name must exactly match its enclosing class - so it's
+    the one deliberate, small, per-file duplication (a few lines, otherwise identical).
+  - If the siblings' enums are byte-identical except a macro name (e.g. `NUM_X8_KNOBS` vs.
+    `NUM_X8D_KNOBS`), unify the macro name and delete the redundant `.hpp` entirely - X8D.cpp just
+    `#include`s X8's own `X8.hpp` directly rather than keeping a near-empty `X8D.hpp` around.
+  - What does **NOT** get shared: the constructor (see above); any widget class that hardcodes a
+    size/position that genuinely differs per sibling (e.g. X8D's wider `ENGAGE` button) - nest
+    these small sized subclasses *inside* each sibling's own `Widget` struct (not file scope), so
+    a same-named-but-differently-sized class in the other sibling's `.cpp` can never collide
+    across translation units; and anything one sibling has that the other structurally lacks
+    (X8D's per-channel numeric display column has no X8 equivalent at all).

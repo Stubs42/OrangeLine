@@ -178,6 +178,8 @@ struct X8DWidget : ModuleWidget
 
 	XExtStripWidget *extStrip = nullptr;     // right edge - toward the Host (or a further Expander)
 	XExtStripWidget *extStripLeft = nullptr; // left edge - toward a further chained Expander
+	X8LogoCover *logoCover1 = nullptr;
+	X8LogoCover *logoCover2 = nullptr;
 
 	// One knob and one value-button share each of the 8 channel slots, same position, only one
 	// ever visible - see step() below. Both stay fully constructed/bound to the same param the
@@ -265,6 +267,7 @@ struct X8DWidget : ModuleWidget
 
 		extStrip = addXExtStrip(this, X8D_PANEL_WIDTH_MM);
 		extStripLeft = addXExtStripLeft(this);
+		addXLogoCovers(this, X8D_PANEL_WIDTH_MM, &logoCover1, &logoCover2);
 
 		// Position/size measured directly from res/X8DWork.svg's own "ButtonCover" guide layer -
 		// see X8DButtonCover's own comment. Hidden by default (matches the knob column's own
@@ -287,6 +290,7 @@ struct X8DWidget : ModuleWidget
 		{
 			updateXExtStrip(extStrip, x8dModule, x8dModule->rightExpander.module);
 			updateXExtStripLeft(extStripLeft, x8dModule, x8dModule->leftExpander.module);
+			updateXLogoCovers(logoCover1, logoCover2, x8dModule);
 			// Type-based morph (ExpanderParamAccessSpec.md's "Type-based appearance"): continuous
 			// -> knob, toggle/click/push -> button. One type governs all 8 channels at once,
 			// since it's a property of the browsed param, not of any individual channel.
