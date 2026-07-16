@@ -147,6 +147,111 @@ struct X8 : Module, XExpanderInterface
 };
 
 /**
+	Squarish rounded-rect button matching the panel's own LEFT/RIGHT/ENGAGE artwork (see
+	ExpanderParamAccessSpec.md's "Button visual design") - DisplayFill background per theme,
+	fixed orange (#ff6600) stroke/label, momentary (value 1 while held, 0 on release) so the
+	module's own SchmittTrigger-based edge detection in moduleProcess() keeps working unchanged.
+*/
+struct X8ButtonBase : ParamWidget
+{
+	std::string label;
+
+	void onButton(const event::Button &e) override
+	{
+		engine::ParamQuantity *pq = getParamQuantity();
+		if (e.button == GLFW_MOUSE_BUTTON_LEFT && pq)
+		{
+			if (e.action == GLFW_PRESS)
+			{
+				pq->setValue(1.f);
+				e.consume(this);
+			}
+			else if (e.action == GLFW_RELEASE)
+			{
+				pq->setValue(0.f);
+			}
+		}
+		ParamWidget::onButton(e);
+	}
+
+	void draw(const DrawArgs &args) override
+	{
+		float style = STYLE_ORANGE;
+		engine::ParamQuantity *pq = getParamQuantity();
+		if (pq && pq->module)
+		{
+			X8 *module = dynamic_cast<X8*>(pq->module);
+			if (module)
+				style = module->OL_state[STYLE_JSON];
+		}
+		NVGcolor fill = (style == STYLE_DARK) ? nvgRGB(0x17, 0x17, 0x17)
+		              : (style == STYLE_BRIGHT) ? nvgRGB(0x15, 0x15, 0x2b)
+		              : nvgRGB(0x10, 0x06, 0x00);
+
+		float r = mm2px(Vec(0.529f, 0.f)).x;
+		nvgBeginPath(args.vg);
+		nvgRoundedRect(args.vg, 0.f, 0.f, box.size.x, box.size.y, r);
+		nvgFillColor(args.vg, fill);
+		nvgFill(args.vg);
+		nvgStrokeWidth(args.vg, mm2px(Vec(0.3f, 0.f)).x);
+		nvgStrokeColor(args.vg, ORANGE);
+		nvgStroke(args.vg);
+
+		if (!label.empty())
+		{
+			// 8pt, per Dieter (matches the panel's own BUTTON_TEXT tspan override,
+			// "2.82222px" - this SVG's viewBox makes 1 user unit == 1mm, so that raw number
+			// already IS the mm size directly: 8pt * 0.3528 mm/pt == 2.82222mm).
+			std::shared_ptr<Font> font = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
+			nvgFontFaceId(args.vg, font->handle);
+			nvgFontSize(args.vg, mm2px(Vec(2.82222f, 0.f)).x);
+			nvgFillColor(args.vg, ORANGE);
+			nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+			nvgText(args.vg, box.size.x / 2.f, box.size.y / 2.f, label.c_str(), nullptr);
+		}
+	}
+};
+
+// Sizes measured from the actual button-frame path's bounding box (including its rounded
+// corners), not just the straight-edge segment lengths - the earlier version used the latter
+// and came out visibly too small.
+struct X8StepButton : X8ButtonBase { X8StepButton() { box.size = mm2px(Vec(4.6f, 4.6f)); } };
+struct X8EngageButton : X8ButtonBase { X8EngageButton() { box.size = mm2px(Vec(10.69f, 5.61f)); } };
+
+/**
+	Currently-browsed param name, green LCD-style like every other OrangeLine display - shows a
+	placeholder when no Host is resolved or it has no candidate params yet.
+*/
+struct X8NameDisplay : TransparentWidget
+{
+	X8 *module = nullptr;
+
+	void drawLayer(const DrawArgs &args, int layer) override
+	{
+		if (layer != 1)
+		{
+			Widget::drawLayer(args, layer);
+			return;
+		}
+		std::shared_ptr<Font> font = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
+		nvgFontFaceId(args.vg, font->handle);
+		nvgFontSize(args.vg, mm2px(Vec(4.49792f, 0.f)).x);
+		nvgFillColor(args.vg, nvgRGB(0x00, 0xdd, 0x00));
+		nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_BASELINE);
+
+		const char *text = "XXXXX";
+		if (module && module->xHost)
+		{
+			int count = module->xHost->getXParamCount();
+			if (count > 0)
+				text = module->xHost->getXParamName(clamp(module->browseIndex, 0, count - 1));
+		}
+		nvgText(args.vg, 0.f, 0.f, text, nullptr);
+		Widget::drawLayer(args, 1);
+	}
+};
+
+/**
 	Main Module Widget
 */
 struct X8Widget : ModuleWidget
@@ -174,13 +279,21 @@ struct X8Widget : ModuleWidget
 
 		addChild(createLightCentered<AutoHideLight<TinyLight<GreenLight>>>(calculateCoordinates(X8_PANEL_WIDTH_MM - 3.5f, 4.f, 0.f), module, CONN_LIGHT));
 
-		// LEFT/RIGHT/ENGAGE - functional placeholders using the stock LEDButton component for
-		// now; the panel's own custom rounded-rect button art (res/X8Work.svg's LEFT/RIGHT/
-		// ENGAGE groups) still needs a dedicated custom ParamWidget to actually match visually -
-		// deferred, tracked as follow-up work.
-		addParam(createParamCentered<LEDButton>(calculateCoordinates(4.713f, 18.998f, OFFSET_LEDButton), module, LEFT_PARAM));
-		addParam(createParamCentered<LEDButton>(calculateCoordinates(10.527f, 18.998f, OFFSET_LEDButton), module, RIGHT_PARAM));
-		addParam(createParamCentered<LEDButton>(calculateCoordinates(7.62f, 25.601f, OFFSET_LEDButton), module, ENGAGE_PARAM));
+		X8StepButton *leftButton = createParamCentered<X8StepButton>(calculateCoordinates(4.550f, 18.034f, 0.f), module, LEFT_PARAM);
+		leftButton->label = "<";
+		addParam(leftButton);
+		X8StepButton *rightButton = createParamCentered<X8StepButton>(calculateCoordinates(10.657f, 18.035f, 0.f), module, RIGHT_PARAM);
+		rightButton->label = ">";
+		addParam(rightButton);
+		X8EngageButton *engageButton = createParamCentered<X8EngageButton>(calculateCoordinates(7.609f, 24.629f, 0.f), module, ENGAGE_PARAM);
+		engageButton->label = "ENGAGE";
+		addParam(engageButton);
+
+		X8NameDisplay *nameDisplay = new X8NameDisplay();
+		nameDisplay->module = module;
+		nameDisplay->box.pos = calculateCoordinates(1.41287f, 12.449f, 0.f);
+		nameDisplay->box.size = mm2px(Vec(13.f, 5.f));
+		addChild(nameDisplay);
 
 		// 8 channel knobs, top (channel 1) to bottom (channel 8) - matches the panel's own
 		// "1".."8" labels, which run top-to-bottom while the underlying knobring elements in the
@@ -190,7 +303,7 @@ struct X8Widget : ModuleWidget
 			81.158262f, 92.112841f, 103.06742f, 114.022f
 		};
 		for (int i = 0; i < NUM_X8_KNOBS; i++)
-			addParam(createParamCentered<RoundSmallBlackKnob>(calculateCoordinates(7.62f, knobY[i], OFFSET_RoundSmallBlackKnob), module, KNOB_PARAM + i));
+			addParam(createParamCentered<RoundSmallBlackKnob>(calculateCoordinates(7.62f, knobY[i], 0.f), module, KNOB_PARAM + i));
 
 		extStrip = addXExtStrip(this, X8_PANEL_WIDTH_MM);
 
