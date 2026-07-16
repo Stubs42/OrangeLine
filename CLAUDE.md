@@ -136,6 +136,67 @@ label: "Wakeup/Ready Ports" — internal identifiers/comments/filenames still sa
 - **A module with zero real inputs or zero real outputs** (first occurred with `CC2CV`/`CV2CC`, pure MIDI-port modules with no CV on one side) makes one of `OrangeLineCommon.hpp`'s `memset` calls degenerate to a zero-length array, which triggers a harmless `-Wmemset-elt-size` warning ("length equal to number of elements without multiplication by element size"). It's a false positive (memset of 0 bytes is a correct no-op) — silenced locally around `initializeInstance()`'s memset block rather than being a sign of a real bug.
 - **System MIDI messages (status nibble `0xf` — SysEx `0xF0-0xF7`, Clock `0xF8`, Start/Continue/Stop `0xFA-0xFC`, etc.) bypass `midi::Port.channel` filtering entirely**, verified directly in `Rack/src/midi.cpp`'s `InputDevice::onMessage`/`Output::sendMessage` (not just the SDK headers): `if (message.getStatus() != 0xf && input->channel >= 0 && message.getChannel() != input->channel) continue;`. They arrive in `tryPop()` regardless of the selected channel, and `sendMessage()` never overwrites their channel-nibble byte (which, for status `0xf`, is actually the message *sub-type*, not a channel) with the port's configured channel. See `MidiBus.cpp`'s `handleIncomingSystemMessage`/`sendSystemRealtime` for the pattern of manually stamping/reading that sub-type nibble.
 - **When a `CCGridWidget` needs a visual state that reflects "did an override actually change something" rather than just "is something patched"**, and that override only fires at a specific event (e.g. a one-shot snapshot) rather than continuously: latch the comparison result *at that same event*, don't recompute it continuously against whatever the live baseline has since drifted to. RECALL's TX grid hit this: comparing a frozen snapshot against the *current* live receive value would keep "diverging" over time even with no override at all, simply because the live side kept moving after the freeze while the snapshot didn't. Compare the override's incoming value against the baseline's value *at the moment of the snapshot*, store the boolean result, and leave it alone until the next such event — a genuinely continuous override (recomputed every tick) is a separate, simpler case and doesn't need latching.
+- **`moduleCustomInitialize()` runs on *every* non-skipped `process()` tick, not once at construction** — despite the name, and unlike `moduleInitialize()` (which really is gated to run only when `!OL_initialized`, i.e. genuinely once per fresh instance or patch/preset reload). `OrangeLineCommon.hpp`'s `initialize()` calls `moduleCustomInitialize()` unconditionally as its very first line, every single tick. Using it to set a one-time default for an `OL_state`/JSON-backed value (e.g. a right-click menu's persisted setting) silently re-stamps that default every ~1ms, so any user change made via a menu item appears to do nothing — the checkmark/value snaps right back before it's even noticeable. Fix: set genuine one-time defaults directly in the module's own constructor, *after* `initializeInstance()` — the constructor runs exactly once, before either `dataToJson()` (fresh module) or `dataFromJson()` (loaded module/patch) is ever called, so a saved value still correctly overrides the default afterward. Reserve `moduleCustomInitialize()` for things that genuinely need reasserting every tick (same category as `setOutPolyChannels()` above). First hit building X8's per-Expander "Channels" menu.
+
+## Right-click context menu: submenu/radio-style item, step by step
+
+Every module's plain top-level items (e.g. the Style Orange/Bright/Dark switch) already follow
+the `<Name>StyleItem : MenuItem` pattern described in "Widget/panel conventions" above. A
+**submenu with a radio-style checkmark list** (e.g. Morpheus's own "Poly Channels", X8's
+"Channels") is a second, slightly more involved shape that has bitten twice already — follow
+this exact sequence, don't reinvent it:
+
+1. **Nest the leaf-item struct inside the submenu-parent struct** (matches Morpheus's
+   `PolyChannelsItem`/`PolyChannelItem` and X8's `X8ChannelsItem`/`X8ChannelItem`):
+   ```cpp
+   struct XChannelsItem : MenuItem {
+       X *module;
+       struct XChannelItem : MenuItem {
+           X *module;
+           int channels;
+           void onAction(const event::Action &e) override {
+               module->OL_setOutState(CHANNEL_LIMIT_JSON, float(channels));
+           }
+           void step() override {
+               if (module)
+                   rightText = (module->OL_state[CHANNEL_LIMIT_JSON] == channels) ? "✔" : "";
+           }
+       };
+       Menu *createChildMenu() override {
+           Menu *menu = new Menu;
+           for (int channel = 1; channel <= N; channel++) {
+               XChannelItem *item = new XChannelItem();
+               item->module = module;
+               item->channels = channel;
+               item->text = module->channelNumbers[channel - 1]; // shared "1".."16" array,
+                                                                   // already on every module
+                                                                   // via OrangeLineCommon.hpp
+               item->setSize(Vec(50, 20));   // <-- do not skip, see step 2
+               menu->addChild(item);
+           }
+           return menu;
+       }
+   };
+   ```
+2. **Every leaf item's `setSize()` must be called explicitly** - omitting it produced a
+   right-click submenu that opened as a completely empty shadow/box (X8's first "Channels"
+   attempt): the items exist and their `onAction`/`step()` are wired correctly, they just render
+   at zero size, so nothing is visible or clickable. `Vec(50, 20)` (Dejavu) / `Vec(70, 20)`
+   (Morpheus) are the established sizes to match - pick one and stay consistent within a module.
+3. **In `appendContextMenu()`**, add the parent item with `rightText = RIGHT_ARROW` (not the
+   checkmark logic - that only lives on the leaf items) so it visually reads as "opens a
+   submenu":
+   ```cpp
+   XChannelsItem *channelsItem = new XChannelsItem();
+   channelsItem->module = module;
+   channelsItem->text = "Channels";
+   channelsItem->rightText = RIGHT_ARROW;
+   menu->addChild(channelsItem);
+   ```
+4. **The backing value's one-time default belongs in the module's own constructor, never in
+   `moduleCustomInitialize()`** - see the Pitfalls entry above (`moduleCustomInitialize()` runs
+   every tick, not once; a default set there re-stamps itself before a user's menu click can
+   ever be observed, so the checkmark appears permanently stuck).
 
 ## Workflow: building a new module step by step
 
