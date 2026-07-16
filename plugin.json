@@ -270,6 +270,24 @@
         "Utility",
         "Expander"
       ]
+    },
+    {
+      "slug": "X16",
+      "name": "X16",
+      "description": "Two columns of 8 knobs (16 channels) - attach to the left of a compatible host to remote-control one of its polyphonic params per channel",
+      "tags": [
+        "Utility",
+        "Expander"
+      ]
+    },
+    {
+      "slug": "X16D",
+      "name": "X16D",
+      "description": "Two knob+display columns (16 channels) - attach to the left of a compatible host to remote-control one of its polyphonic params per channel",
+      "tags": [
+        "Utility",
+        "Expander"
+      ]
     }
   ]
 }

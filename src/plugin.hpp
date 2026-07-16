@@ -34,6 +34,8 @@ extern Model *modelMidiBus;
 extern Model *modelJ;
 extern Model *modelX8;
 extern Model *modelX8D;
+extern Model *modelX16;
+extern Model *modelX16D;
 // extern Model *modelTemplate;
 // extern Model *modelWidgetTest;
 

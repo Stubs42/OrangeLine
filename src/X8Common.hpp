@@ -368,6 +368,13 @@ struct X8ValueButton : ParamWidget
 		return pq && pq->getValue() > 0.5f;
 	}
 
+	// Tracks the physical mouse hold, independent of the underlying param value - a Click type's
+	// own value is a short fixed pulse (X_VALUE_CLICK_SECONDS), so isPressed() alone would let go
+	// of the "pressed" look well before the user actually releases the mouse on a longer hold.
+	// Set in onButton() below, used by draw()'s mirror effect so the cap still reads as held down
+	// for the whole physical press, "for reality feeling" (Dieter).
+	bool mouseHeld = false;
+
 	// Covers the panel's own decorative knob-ring circle underneath (kept drawn normally, per
 	// Dieter's call - "die circles ganz normal auf dem panel lassen") with a plain, solid,
 	// themed window: Background fill + Frame stroke, straight from Colors.txt (NOT the fixed-
@@ -403,11 +410,25 @@ struct X8ValueButton : ParamWidget
 		XExpanderInterface *expander = pq && pq->module ? dynamic_cast<XExpanderInterface*>(pq->module) : nullptr;
 		drawThemeFrame(args, expander ? expander->getXStyle() : STYLE_ORANGE);
 
+		bool active = isActive();
 		nvgSave(args.vg);
-		if (!isActive())
+		if (!active)
 			nvgGlobalAlpha(args.vg, 0.3f);
+		// Mirror axis is horizontal (top and bottom swap) while lit/held OR physically held down -
+		// unlike the earlier abandoned attempt at this same flip (wrong pivot point, hunted
+		// against the OLD cap's asymmetric bounding box), the new SquareButton.svg cap is
+		// symmetric top-to-bottom, so flipping around the box's own plain geometric center
+		// (box.size.y/2) needs no separately measured pivot at all. mouseHeld (not just
+		// isPressed()) so a Click's own short pulse value doesn't let go of the "pressed" look
+		// before the user actually releases the mouse on a longer hold - purely a display
+		// decision, doesn't touch the value/pulse timing itself at all.
+		if (active && (isPressed() || mouseHeld))
+		{
+			nvgTranslate(args.vg, 0.f, box.size.y);
+			nvgScale(args.vg, 1.f, -1.f);
+		}
 		Widget::draw(args); // draws the cap child, simply centred - no offset needed
-		if (!isActive())
+		if (!active)
 			nvgGlobalAlpha(args.vg, 1.f);
 		nvgRestore(args.vg);
 	}
@@ -448,6 +469,7 @@ struct X8ValueButton : ParamWidget
 			if (e.action == GLFW_PRESS)
 			{
 				e.consume(this);
+				mouseHeld = true; // display-only - see its own comment, no effect on the value/timing below
 				switch (type)
 				{
 					case X_PARAM_TOGGLE:
@@ -464,9 +486,11 @@ struct X8ValueButton : ParamWidget
 						break;
 				}
 			}
-			else if (e.action == GLFW_RELEASE && type == X_PARAM_PUSH)
+			else if (e.action == GLFW_RELEASE)
 			{
-				pq->setValue(0.f);
+				mouseHeld = false;
+				if (type == X_PARAM_PUSH)
+					pq->setValue(0.f);
 			}
 		}
 		ParamWidget::onButton(e);

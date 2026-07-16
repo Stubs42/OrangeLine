@@ -34,6 +34,8 @@ void init(Plugin *p) {
 	p->addModel(modelJ);
 	p->addModel(modelX8);
 	p->addModel(modelX8D);
+	p->addModel(modelX16);
+	p->addModel(modelX16D);
 	// p->addModel(modelTemplate);
 	// p->addModel(modelWidgetTest);
 

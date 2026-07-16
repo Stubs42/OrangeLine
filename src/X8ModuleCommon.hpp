@@ -16,6 +16,9 @@
 	`#include "X8.hpp"` - X8D as well, rather than each declaring their own separate macro).
 */
 
+// X_PARAM_CLICK's fixed pulse duration - tunable here in one place for the whole family.
+#define X_VALUE_CLICK_SECONDS 0.06f
+
 bool widgetReady = false;
 
 // Resolved every moduleProcess() tick by looking only at rightExpander.module (never
@@ -269,7 +272,7 @@ inline void moduleProcess(const ProcessArgs &args)
 			if (pendingValueClick[c])
 			{
 				pendingValueClick[c] = false;
-				clickPulse[c].trigger(0.1f);
+				clickPulse[c].trigger(X_VALUE_CLICK_SECONDS);
 			}
 			// moduleProcess() only runs on ~1 in idleSkip samples (control-rate throttling),
 			// so a bare args.sampleTime here would underestimate elapsed real time by that
