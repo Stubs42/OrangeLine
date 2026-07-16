@@ -149,6 +149,31 @@ struct XExpanderInterface
 	                                                // physical click, debounced locally -
 	                                                // the Host decides what it means
 
+	// The four methods below resolve "whatever the resolved Host reports for the currently
+	// browsed param", each falling back to a sane default when no Host is resolved (or it has
+	// zero candidates) - see any concrete Expander's own implementation for the exact resolve-
+	// and-clamp logic. Promoted to the interface (rather than living only on X8/X8D directly) so
+	// shared widget code (X8Common.hpp) can call them through a plain XExpanderInterface*,
+	// without needing to know or dynamic_cast to the concrete Expander type at all - this is what
+	// makes X8 and X8D able to share their entire widget/control implementation verbatim.
+	virtual XParamType getXBrowsedParamType() = 0;
+	virtual NVGcolor getXBrowsedParamColor() = 0;
+	virtual XAlign getXBrowsedParamAlign() = 0;
+	// Formats a raw 0..1 knob value as the Host would display it for the currently browsed
+	// param - see XHostInterface::formatXParamValue(). Empty string when nothing meaningful is
+	// resolved, or for a digital-type param (its own lit/unlit state already shows everything).
+	virtual std::string formatXValue(float raw) = 0;
+
+	// The locked-in Host type name (see the concrete Expander's own lockedHostType comment), or
+	// an empty string if never locked to any type yet - shown on the name display while
+	// disconnected, so the type-lock itself is visible, not just silently enforced.
+	virtual const char* getXLockedHostType() = 0;
+
+	// One-shot request: the currently-browsed param is a Click type and this channel was just
+	// clicked - the Expander owns the actual pulse timing (a fixed duration independent of how
+	// long the mouse stays down), this just flags "start one now."
+	virtual void requestXValueClick(int channel) = 0;
+
 	virtual ~XExpanderInterface() {}
 };
 
