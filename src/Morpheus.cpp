@@ -620,6 +620,17 @@ struct Morpheus : Module, XHostInterface
 		// more tick, instead of immediately overwriting it with the Expander's own (not yet
 		// caught up) raw knob value. See the refresh loop's comments for why.
 		bool freshlyBound[NUM_X_CANDIDATES] = {false};
+		// candidateAdjacent is also purely local to this one tick - marks a candidate whose
+		// bound Expander is genuinely found in the chain walk right now (not just resolvable by
+		// id). The refresh loop below only treats a binding as truly LIVE while this holds -
+		// bound-but-not-currently-adjacent freezes exactly like Track & Hold. This is what makes
+		// moving one Expander between several same-type Hosts safe (only ever one Host reads it
+		// live at a time, whichever it's actually plugged into right now) and, per Dieter, is
+		// deliberately reused as a value-relay technique: engage on Host A, move the Expander to
+		// Host B and engage there too (A freezes, its last value stays exactly as it was), read
+		// off B's takeover value, then move back to A - A resumes live reading with whatever the
+		// Expander now holds, effectively having carried B's value over to A.
+		bool candidateAdjacent[NUM_X_CANDIDATES] = {false};
 		{
 			Module *m = leftExpander.module;
 			while (m)
@@ -627,6 +638,9 @@ struct Morpheus : Module, XHostInterface
 				XExpanderInterface *exp = dynamic_cast<XExpanderInterface*>(m);
 				if (!exp)
 					break; // chain broken - not an X-family module, stop walking
+				for (int i = 0; i < NUM_X_CANDIDATES; i++)
+					if (xCandidates[i].boundExpanderId == m->id)
+						candidateAdjacent[i] = true;
 				if (exp->consumeEngagePress())
 				{
 					int idx = exp->getXBrowseIndex();
@@ -637,6 +651,7 @@ struct Morpheus : Module, XHostInterface
 						{
 							xCandidates[idx].boundExpanderId = myId;   // bind (was available)
 							freshlyBound[idx] = true;
+							candidateAdjacent[idx] = true;
 						}
 						else if (xCandidates[idx].boundExpanderId == myId)
 							xCandidates[idx].boundExpanderId = -1;     // disengage (toggle)
@@ -688,6 +703,11 @@ struct Morpheus : Module, XHostInterface
 			xVirtualConnected[inputId] = true; // bound (even if not the live one right now) = Green
 			if (exp->getXBrowseIndex() != i)
 				continue; // bound, but looking elsewhere right now - hold last tick's values
+
+			if (!candidateAdjacent[i])
+				continue; // bound, but the Expander has physically moved out of this chain right
+				          // now - freeze exactly like the "looking elsewhere" case above, don't
+				          // keep reading a knob that isn't even pointed at us anymore
 
 			if (freshlyBound[i])
 				continue; // just bound this very tick - hold the takeover value one more tick
@@ -1077,6 +1097,7 @@ struct Morpheus : Module, XHostInterface
 	// list/order matches xCandidates[] above (verified against moduleInitStateTypes()/
 	// moduleParamConfig() directly, not just enum names - EXT_INPUT excluded, it's a real
 	// signal path, not a CV-modulates-a-knob candidate).
+	const char* getXHostTypeName() override { return "MORPH"; }
 	int getXParamCount() override { return NUM_X_CANDIDATES; }
 	const char* getXParamName(int index) override { return xCandidates[index].name; }
 	const char* getXParamShortName(int index) override { return xCandidates[index].shortName; }

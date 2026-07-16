@@ -31,6 +31,11 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 enum jsonIds {
 	STYLE_JSON,
 	CHANNEL_LIMIT_JSON,
+	BROWSE_INDEX_JSON,  // persists the last browsed param - see X8.cpp's moduleProcess()
+	WAS_ENGAGED_JSON,   // persists whether this Expander was actively bound (not just browsing)
+	                    // - used to auto-restore the engagement after a patch reload, since the
+	                    // binding itself is session-only (Rack ids aren't safe to persist/compare
+	                    // across a reload)
 
 	NUM_JSONS
 };
@@ -68,6 +73,8 @@ enum OutputIds {
 //
 enum LightIds {
 	CONN_LIGHT,
+	CONN_LIGHT_LAST = CONN_LIGHT + 1, // GreenRedLight needs 2 consecutive ids (green, red) - see
+	                                  // the host type-lock feature in X8.cpp
 
 	NUM_LIGHTS
 };

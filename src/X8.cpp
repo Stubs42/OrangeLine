@@ -39,10 +39,17 @@ struct X8 : Module, XExpanderInterface
 
 	// Fully self-managed local state (see ExpanderParamAccessSpec.md's "Expander manages
 	// itself completely") - the Host only ever reads these through XExpanderInterface, it
-	// never writes them.
-	int browseIndex = 0;
+	// never writes them. The currently-browsed index itself lives in OL_state[BROWSE_INDEX_JSON]
+	// (not a plain member) so it round-trips through the normal JSON persistence automatically,
+	// same as CHANNEL_LIMIT_JSON - a separate cached member would go stale the moment
+	// dataFromJson() restores OL_state without also updating it.
 	dsp::SchmittTrigger engageTrigger, leftTrigger, rightTrigger;
 	bool pendingEngagePress = false;
+
+	// One-shot guard: attempt, exactly once after a compatible Host first resolves, to
+	// auto-restore an engagement that existed before a patch reload - see WAS_ENGAGED_JSON's
+	// comment in X8.hpp and the auto-reengage block in moduleProcess().
+	bool triedAutoReengage = false;
 
 	// Edge-detects "the param I'm currently standing on just became bound to me" (a fresh
 	// engage taking effect on the Host's side, possibly a few ticks after the physical press -
@@ -54,6 +61,13 @@ struct X8 : Module, XExpanderInterface
 	bool xLastBoundHere = false;
 	int xLastCheckedIndex = -1;
 
+	// Set the first time this Expander ever engages with a Host, to that Host's own
+	// getXHostTypeName() - permanent (persisted) from then on, regardless of whether that
+	// specific binding is later released. While set, a resolved Host of a *different* type is
+	// treated as if nothing were connected at all (see moduleProcess()) - only a right-click
+	// Initialize (moduleReset()) clears it. Empty = not yet locked to any type.
+	std::string lockedHostType;
+
 	X8()
 	{
 		initializeInstance();
@@ -61,6 +75,20 @@ struct X8 : Module, XExpanderInterface
 		// not just once - see the comment on that hook below) so a saved patch's own value
 		// (applied later by dataFromJson(), if the key exists) can still override it correctly.
 		OL_state[CHANNEL_LIMIT_JSON] = (float) NUM_X8_KNOBS;
+
+		// lockedHostType is a plain string, not a float - OL_state's JSON array can't carry it,
+		// so it uses the same moduleExtraDataToJson/FromJson hook CC2CV/CV2CC use for their own
+		// non-float persisted data (see CLAUDE.md's ODR-safety note on this pattern).
+		moduleExtraDataToJson = [this](json_t *rootJ)
+		{
+			json_object_set_new(rootJ, "lockedHostType", json_string(lockedHostType.c_str()));
+		};
+		moduleExtraDataFromJson = [this](json_t *rootJ)
+		{
+			json_t *lockedHostTypeJ = json_object_get(rootJ, "lockedHostType");
+			if (lockedHostTypeJ && json_is_string(lockedHostTypeJ))
+				lockedHostType = json_string_value(lockedHostTypeJ);
+		};
 	}
 
 	bool moduleSkipProcess()
@@ -79,6 +107,8 @@ struct X8 : Module, XExpanderInterface
 
 		setJsonLabel(STYLE_JSON, "style");
 		setJsonLabel(CHANNEL_LIMIT_JSON, "channelLimit");
+		setJsonLabel(BROWSE_INDEX_JSON, "browseIndex");
+		setJsonLabel(WAS_ENGAGED_JSON, "wasEngaged");
 
 #pragma GCC diagnostic pop
 	}
@@ -101,7 +131,9 @@ struct X8 : Module, XExpanderInterface
 	void moduleReset()
 	{
 		styleChanged = true;
-		browseIndex = 0;
+		OL_state[BROWSE_INDEX_JSON] = 0.f;
+		OL_state[WAS_ENGAGED_JSON] = 0.f;
+		lockedHostType.clear(); // right-click Initialize - the only way to release a host type-lock
 	}
 
 	inline void moduleProcess(const ProcessArgs &args)
@@ -117,13 +149,23 @@ struct X8 : Module, XExpanderInterface
 			styleChanged = false;
 		}
 
-		xHost = resolveXHost(rightExpander.module);
-		setStateLight(CONN_LIGHT, xHost ? 255.f : 0.f);
+		// Host type-lock: once this Expander has ever engaged with a Host type, a *different*
+		// type resolving here is treated as if nothing were connected at all - see
+		// lockedHostType's own comment. Green = connected (and compatible, or not yet locked to
+		// anything), Red = something's there but the wrong type, blocked.
+		XHostInterface *resolved = resolveXHost(rightExpander.module);
+		bool typeBlocked = resolved && !lockedHostType.empty() && lockedHostType != resolved->getXHostTypeName();
+		xHost = typeBlocked ? nullptr : resolved;
+		setStateLight(CONN_LIGHT,     xHost ? 255.f : 0.f);
+		setStateLight(CONN_LIGHT + 1, typeBlocked ? 255.f : 0.f);
 
 		// Browsing: unconditional, unfiltered stepping through every candidate param the
 		// currently-resolved Host reports - see "Browsing is never locked or filtered" in
 		// ExpanderParamAccessSpec.md. If no Host is resolved (or it has zero candidates),
-		// browseIndex just stays at 0 and stepping has no visible effect.
+		// browseIndex just stays put and stepping has no visible effect. Lives in
+		// OL_state[BROWSE_INDEX_JSON] (not a plain member) so it survives a patch reload - see
+		// that json id's own comment in X8.hpp.
+		int browseIndex = (int) OL_state[BROWSE_INDEX_JSON];
 		int count = xHost ? xHost->getXParamCount() : 0;
 		if (count > 0)
 		{
@@ -135,24 +177,45 @@ struct X8 : Module, XExpanderInterface
 		}
 		else
 		{
-			browseIndex = 0;
+			// Deliberately NOT reset to 0 here - reconnecting (to the same Host, or another of
+			// the same type) should land back on the same param it was last browsing, not jump
+			// back to the first candidate. Gets clamped into range again above once a Host with
+			// count > 0 resolves, so a narrower Host can't read this out of bounds.
 			leftTrigger.process(params[LEFT_PARAM].getValue());
 			rightTrigger.process(params[RIGHT_PARAM].getValue());
 		}
+		OL_state[BROWSE_INDEX_JSON] = (float) browseIndex;
 
 		// See xLastBoundHere's comment above: only a fresh bind while standing still on the
 		// same index snaps the knobs - browsing onto an already-bound index never re-fires.
 		if (xHost && count > 0)
 		{
 			bool boundHere = xHost->getXParamBoundId(browseIndex) == (int64_t) this->id;
+
+			// Auto-restore an engagement that existed before a patch reload: bindings themselves
+			// are session-only (Rack ids aren't safe to persist/compare across a reload - see
+			// WAS_ENGAGED_JSON's comment), so this just presses our own engage button once,
+			// through the ordinary mechanism, using whatever id this Expander currently has.
+			if (!triedAutoReengage)
+			{
+				triedAutoReengage = true;
+				if (OL_state[WAS_ENGAGED_JSON] > 0.f && !boundHere)
+					pendingEngagePress = true;
+			}
+
 			if (browseIndex == xLastCheckedIndex && boundHere && !xLastBoundHere)
 			{
 				int channels = getXKnobCount();
 				for (int c = 0; c < channels; c++)
 					params[KNOB_PARAM + c].setValue(xHost->getXParamTakeoverValue(browseIndex, c));
+				// First-ever successful engage locks this Expander to the Host's type from now
+				// on - see lockedHostType's own comment. Only Initialize releases it.
+				if (lockedHostType.empty())
+					lockedHostType = xHost->getXHostTypeName();
 			}
 			xLastBoundHere = boundHere;
 			xLastCheckedIndex = browseIndex;
+			OL_state[WAS_ENGAGED_JSON] = boundHere ? 1.f : 0.f;
 		}
 		else
 		{
@@ -175,7 +238,7 @@ struct X8 : Module, XExpanderInterface
 	float getXStyle() override { return OL_state[STYLE_JSON]; }
 	int getXKnobCount() override { return (int) OL_state[CHANNEL_LIMIT_JSON]; }
 	float getXKnobValue(int channel) override { return getStateParam(KNOB_PARAM + channel); }
-	int getXBrowseIndex() override { return browseIndex; }
+	int getXBrowseIndex() override { return (int) OL_state[BROWSE_INDEX_JSON]; }
 	bool consumeEngagePress() override
 	{
 		bool fired = pendingEngagePress;
@@ -194,10 +257,24 @@ struct X8ButtonBase : ParamWidget
 {
 	std::string label;
 
+	// No function at all while disconnected (no Host resolved, or blocked by the host
+	// type-lock) - LEFT/RIGHT/ENGAGE have nothing to step through or bind when there's nobody
+	// to browse. No module context at all (e.g. the module browser's preview) defaults active.
+	bool isActive()
+	{
+		engine::ParamQuantity *pq = getParamQuantity();
+		X8 *module = pq ? dynamic_cast<X8*>(pq->module) : nullptr;
+		return !module || module->xHost != nullptr;
+	}
+
 	void onButton(const event::Button &e) override
 	{
 		engine::ParamQuantity *pq = getParamQuantity();
-		if (e.button == GLFW_MOUSE_BUTTON_LEFT && pq)
+		// Only the LEFT-press press/release behavior is gated - right-click still passes
+		// through to ParamWidget::onButton() below regardless, same reasoning as X8Knob's own
+		// isActive() gating (see its comment): a dimmed/inactive control still shouldn't
+		// swallow the right-click context menu.
+		if (isActive() && e.button == GLFW_MOUSE_BUTTON_LEFT && pq)
 		{
 			if (e.action == GLFW_PRESS)
 			{
@@ -225,6 +302,7 @@ struct X8ButtonBase : ParamWidget
 		NVGcolor fill = (style == STYLE_DARK) ? nvgRGB(0x17, 0x17, 0x17)
 		              : (style == STYLE_BRIGHT) ? nvgRGB(0x15, 0x15, 0x2b)
 		              : nvgRGB(0x10, 0x06, 0x00);
+		NVGcolor accent = isActive() ? ORANGE : nvgRGB(0x55, 0x55, 0x55); // grey - disconnected
 
 		float r = mm2px(Vec(0.529f, 0.f)).x;
 		nvgBeginPath(args.vg);
@@ -232,7 +310,7 @@ struct X8ButtonBase : ParamWidget
 		nvgFillColor(args.vg, fill);
 		nvgFill(args.vg);
 		nvgStrokeWidth(args.vg, mm2px(Vec(0.3f, 0.f)).x);
-		nvgStrokeColor(args.vg, ORANGE);
+		nvgStrokeColor(args.vg, accent);
 		nvgStroke(args.vg);
 
 		if (!label.empty())
@@ -243,7 +321,7 @@ struct X8ButtonBase : ParamWidget
 			std::shared_ptr<Font> font = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
 			nvgFontFaceId(args.vg, font->handle);
 			nvgFontSize(args.vg, mm2px(Vec(2.82222f, 0.f)).x);
-			nvgFillColor(args.vg, ORANGE);
+			nvgFillColor(args.vg, accent);
 			nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
 			nvgText(args.vg, box.size.x / 2.f, box.size.y / 2.f, label.c_str(), nullptr);
 		}
@@ -272,7 +350,11 @@ struct X8Knob : RoundSmallBlackKnob
 	{
 		engine::ParamQuantity *pq = getParamQuantity();
 		X8 *module = pq ? dynamic_cast<X8*>(pq->module) : nullptr;
-		return !module || channel < (int) module->OL_state[CHANNEL_LIMIT_JSON];
+		if (!module)
+			return true;
+		if (!module->xHost)
+			return false; // disconnected (or blocked by the host type-lock) - nothing to control
+		return channel < (int) module->OL_state[CHANNEL_LIMIT_JSON];
 	}
 
 	void draw(const DrawArgs &args) override
@@ -324,8 +406,12 @@ struct X8Knob : RoundSmallBlackKnob
 };
 
 /**
-	Currently-browsed param name, green LCD-style like every other OrangeLine display - shows a
-	placeholder when no Host is resolved or it has no candidate params yet.
+	Currently-browsed param name, LCD-style like every other OrangeLine display - color-coded per
+	ExpanderParamAccessSpec.md's "Name display": grey dashes when no Host is resolved (doubles as
+	the "not connected" indicator, replacing an earlier "XXXXX" placeholder that misleadingly
+	looked like real content); otherwise green when this instance is the bound provider for the
+	browsed param, grey when it's taken (bound elsewhere, or a real cable is patched in), orange
+	when it's available (nobody holds it).
 
 	Always shows getXParamShortName(), never getXParamName() - this display is sized for and
 	assumes the interface's hard contract (see XShared.hpp): a Host's short name must never
@@ -344,12 +430,31 @@ struct X8NameDisplay : TransparentWidget
 			return;
 		}
 
-		const char *text = "XXXXX"; // 5 chars - matches the max-length contract, doubles as a placeholder
+		// No Host resolved (or blocked by the type-lock) - red placeholder, more attention-
+		// grabbing than the "taken" grey since it means this specific Expander has physically
+		// moved out of its chain (see the adjacency-gating feature) while still remembering a
+		// locked type. Shows that locked host type name (e.g. "MORPH") if this Expander has ever
+		// engaged with one, so the lock is visible, not just enforced silently - plain dashes if
+		// never locked at all.
+		const char *text = (module && !module->lockedHostType.empty()) ? module->lockedHostType.c_str() : "-----";
+		NVGcolor color = nvgRGB(0xdd, 0x00, 0x00); // red - no host / blocked by type-lock
+
 		if (module && module->xHost)
 		{
 			int count = module->xHost->getXParamCount();
 			if (count > 0)
-				text = module->xHost->getXParamShortName(clamp(module->browseIndex, 0, count - 1));
+			{
+				int idx = clamp((int) module->OL_state[BROWSE_INDEX_JSON], 0, count - 1);
+				text = module->xHost->getXParamShortName(idx);
+				bool mine = module->xHost->isXParamEngaged(idx) && module->xHost->getXParamBoundId(idx) == (int64_t) module->id;
+				bool taken = (module->xHost->isXParamEngaged(idx) && !mine) || module->xHost->isXParamCableConnected(idx);
+				if (mine)
+					color = nvgRGB(0x00, 0xdd, 0x00); // green - mine
+				else if (taken)
+					color = nvgRGB(0x55, 0x55, 0x55); // grey - taken/unavailable
+				else
+					color = ORANGE; // available
+			}
 		}
 		// Defense in depth beyond the documented contract: never even attempt to draw more than
 		// 5 characters, and clip drawing to this widget's own box - a Host violating the
@@ -361,7 +466,7 @@ struct X8NameDisplay : TransparentWidget
 		std::shared_ptr<Font> font = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
 		nvgFontFaceId(args.vg, font->handle);
 		nvgFontSize(args.vg, fontSizePx);
-		nvgFillColor(args.vg, nvgRGB(0x00, 0xdd, 0x00));
+		nvgFillColor(args.vg, color);
 
 		// Shorter-than-max short names (e.g. "REC", "LOCK") are centered rather than left-hung -
 		// only the full-width 5-char case actually needs the left edge as an anchor. Positions
@@ -412,7 +517,7 @@ struct X8Widget : ModuleWidget
 			addChild(darkPanel);
 		}
 
-		addChild(createLightCentered<AutoHideLight<TinyLight<GreenLight>>>(calculateCoordinates(X8_PANEL_WIDTH_MM - 3.5f, 4.f, 0.f), module, CONN_LIGHT));
+		addChild(createLightCentered<AutoHideLight<TinyLight<GreenRedLight>>>(calculateCoordinates(X8_PANEL_WIDTH_MM - 3.5f, 4.f, 0.f), module, CONN_LIGHT));
 
 		X8StepButton *leftButton = createParamCentered<X8StepButton>(calculateCoordinates(4.550f, 18.034f, 0.f), module, LEFT_PARAM);
 		leftButton->label = "<";

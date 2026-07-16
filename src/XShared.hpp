@@ -52,6 +52,13 @@ enum XParamType {
 
 struct XHostInterface
 {
+	// Short, fixed identity string for this Host's concrete type (e.g. "MORPH") - never varies
+	// per-instance or per-param. Same hard contract as getXParamShortName() below: max 5
+	// characters, no exceptions. Used by an Expander to lock itself to the first Host type it
+	// ever engages with (see X8.cpp's host type-lock feature) and, reusing the same string, as
+	// the display shown while disconnected but still locked to that type.
+	virtual const char* getXHostTypeName() = 0;
+
 	virtual int getXParamCount() = 0;
 	virtual const char* getXParamName(int index) = 0;      // full descriptive name
 	// Compact name - X8 always displays THIS, never getXParamName(). Hard contract: max 5
