@@ -47,6 +47,10 @@ struct X8 : Module, XExpanderInterface
 	X8()
 	{
 		initializeInstance();
+		// One-time default, set here (not in moduleCustomInitialize(), which runs every tick,
+		// not just once - see the comment on that hook below) so a saved patch's own value
+		// (applied later by dataFromJson(), if the key exists) can still override it correctly.
+		OL_state[CHANNEL_LIMIT_JSON] = (float) NUM_X8_KNOBS;
 	}
 
 	bool moduleSkipProcess()
@@ -64,6 +68,7 @@ struct X8 : Module, XExpanderInterface
 #pragma GCC diagnostic ignored "-Wwrite-strings"
 
 		setJsonLabel(STYLE_JSON, "style");
+		setJsonLabel(CHANNEL_LIMIT_JSON, "channelLimit");
 
 #pragma GCC diagnostic pop
 	}
@@ -77,6 +82,9 @@ struct X8 : Module, XExpanderInterface
 		configParam(ENGAGE_PARAM, 0.f, 1.f, 0.f, "Engage");
 	}
 
+	// moduleCustomInitialize() runs on every single non-skipped process() tick (not just once -
+	// see initialize() in OrangeLineCommon.hpp), so it must never be used for a one-time
+	// default - see the constructor above instead for CHANNEL_LIMIT_JSON's default.
 	inline void moduleCustomInitialize() {}
 	inline void moduleInitialize() {}
 
@@ -135,7 +143,7 @@ struct X8 : Module, XExpanderInterface
 	// XExpanderInterface
 	XHostInterface* getXHost() override { return xHost; }
 	float getXStyle() override { return OL_state[STYLE_JSON]; }
-	int getXKnobCount() override { return NUM_X8_KNOBS; }
+	int getXKnobCount() override { return (int) OL_state[CHANNEL_LIMIT_JSON]; }
 	float getXKnobValue(int channel) override { return getStateParam(KNOB_PARAM + channel); }
 	int getXBrowseIndex() override { return browseIndex; }
 	bool consumeEngagePress() override
@@ -217,6 +225,73 @@ struct X8ButtonBase : ParamWidget
 // and came out visibly too small.
 struct X8StepButton : X8ButtonBase { X8StepButton() { box.size = mm2px(Vec(4.6f, 4.6f)); } };
 struct X8EngageButton : X8ButtonBase { X8EngageButton() { box.size = mm2px(Vec(10.69f, 5.61f)); } };
+
+/**
+	Channel knob that dims and stops accepting input once its own channel index is at or beyond
+	the Expander's current "Channels" limit (see the right-click menu) - "channels above the
+	limit simply aren't there", same as ExpanderParamAccessSpec.md already says for a real
+	under-populated cable. No built-in Rack concept for this (checked Knob.hpp/ParamWidget.hpp/
+	Widget.hpp - nothing like a generic "disabled" state), so both the dimming and the input
+	block are done here by hand.
+*/
+struct X8Knob : RoundSmallBlackKnob
+{
+	int channel = 0;
+
+	bool isActive()
+	{
+		engine::ParamQuantity *pq = getParamQuantity();
+		X8 *module = pq ? dynamic_cast<X8*>(pq->module) : nullptr;
+		return !module || channel < (int) module->OL_state[CHANNEL_LIMIT_JSON];
+	}
+
+	void draw(const DrawArgs &args) override
+	{
+		if (isActive())
+		{
+			RoundSmallBlackKnob::draw(args);
+			return;
+		}
+		nvgGlobalAlpha(args.vg, 0.3f);
+		RoundSmallBlackKnob::draw(args);
+		nvgGlobalAlpha(args.vg, 1.f);
+	}
+
+	// Value-changing interactions only - onButton() is left alone so right-click (context menu)
+	// still works even on a dimmed/inactive knob.
+	void onDragMove(const DragMoveEvent &e) override
+	{
+		if (!isActive())
+			return;
+		RoundSmallBlackKnob::onDragMove(e);
+	}
+
+	void onHoverScroll(const HoverScrollEvent &e) override
+	{
+		if (!isActive())
+			return;
+		RoundSmallBlackKnob::onHoverScroll(e);
+	}
+
+	// ParamWidget::onEnter() is what creates the hover tooltip, and Knob::onHover() is what
+	// claims the hover (cursor/highlight) - skip both while inactive so a dimmed knob reads as
+	// truly inert, not just visually dimmed. onLeave() always runs the base, unconditionally,
+	// so a tooltip that was already open (e.g. channel limit changed while hovering) still gets
+	// cleaned up properly.
+	void onEnter(const EnterEvent &e) override
+	{
+		if (!isActive())
+			return;
+		RoundSmallBlackKnob::onEnter(e);
+	}
+
+	void onHover(const HoverEvent &e) override
+	{
+		if (!isActive())
+			return;
+		RoundSmallBlackKnob::onHover(e);
+	}
+};
 
 /**
 	Currently-browsed param name, green LCD-style like every other OrangeLine display - shows a
@@ -303,7 +378,11 @@ struct X8Widget : ModuleWidget
 			81.158262f, 92.112841f, 103.06742f, 114.022f
 		};
 		for (int i = 0; i < NUM_X8_KNOBS; i++)
-			addParam(createParamCentered<RoundSmallBlackKnob>(calculateCoordinates(7.62f, knobY[i], 0.f), module, KNOB_PARAM + i));
+		{
+			X8Knob *knob = createParamCentered<X8Knob>(calculateCoordinates(7.62f, knobY[i], 0.f), module, KNOB_PARAM + i);
+			knob->channel = i;
+			addParam(knob);
+		}
 
 		extStrip = addXExtStrip(this, X8_PANEL_WIDTH_MM);
 
@@ -318,6 +397,43 @@ struct X8Widget : ModuleWidget
 			updateXExtStrip(extStrip, x8Module, x8Module->rightExpander.module);
 		ModuleWidget::step();
 	}
+
+	// Channel count is Expander-owned (the "sender" decides, see moduleCustomInitialize() in
+	// the module struct above) - same radio-submenu pattern as Morpheus's own "Poly Channels".
+	struct X8ChannelsItem : MenuItem
+	{
+		X8 *module;
+
+		struct X8ChannelItem : MenuItem
+		{
+			X8 *module;
+			int channels;
+			void onAction(const event::Action &e) override
+			{
+				module->OL_setOutState(CHANNEL_LIMIT_JSON, float(channels));
+			}
+			void step() override
+			{
+				if (module)
+					rightText = (module->OL_state[CHANNEL_LIMIT_JSON] == channels) ? "✔" : "";
+			}
+		};
+
+		Menu *createChildMenu() override
+		{
+			Menu *menu = new Menu;
+			for (int channel = 1; channel <= NUM_X8_KNOBS; channel++)
+			{
+				X8ChannelItem *item = new X8ChannelItem();
+				item->module = module;
+				item->channels = channel;
+				item->text = module->channelNumbers[channel - 1];
+				item->setSize(Vec(50, 20));
+				menu->addChild(item);
+			}
+			return menu;
+		}
+	};
 
 	struct X8StyleItem : MenuItem
 	{
@@ -342,6 +458,15 @@ struct X8Widget : ModuleWidget
 
 		X8 *module = dynamic_cast<X8 *>(this->module);
 		assert(module);
+
+		X8ChannelsItem *channelsItem = new X8ChannelsItem();
+		channelsItem->module = module;
+		channelsItem->text = "Channels";
+		channelsItem->rightText = RIGHT_ARROW;
+		menu->addChild(channelsItem);
+
+		spacerLabel = new MenuLabel();
+		menu->addChild(spacerLabel);
 
 		MenuLabel *styleLabel = new MenuLabel();
 		styleLabel->text = "Style";

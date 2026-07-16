@@ -68,11 +68,6 @@ struct XHostInterface
 	// param - overrides everything else, see "Real-cable override" in the spec.
 	virtual bool isXParamCableConnected(int index) = 0;
 
-	// 1-16, default 16 - the only thing about a candidate param that is actually
-	// persisted.
-	virtual int getXParamChannelLimit(int index) = 0;
-	virtual void setXParamChannelLimit(int index, int limit) = 0;
-
 	// Right-click action: clears the binding for this param -> Red.
 	virtual void resetXParam(int index) = 0;
 
@@ -96,7 +91,11 @@ struct XExpanderInterface
 	// Fully self-managed by the Expander (own debounce/edge-detection, own browse-index
 	// bookkeeping) - the Host only ever reads these, during its OWN process(). The
 	// Expander never calls back into the Host with them.
-	virtual int getXKnobCount() = 0;              // 8 (X8/X8D) or 16 (X16/X16D)
+	virtual int getXKnobCount() = 0;              // up to 8 (X8/X8D) or 16 (X16/X16D) - the
+	                                               // Expander's own "Channels" right-click
+	                                               // menu can reduce this; it's the sender in
+	                                               // the virtual-cable metaphor, so it alone
+	                                               // decides how many channels it feeds in
 	virtual float getXKnobValue(int channel) = 0; // one-line passthrough into OL_state -
 	                                               // no separate storage needed
 	virtual int getXBrowseIndex() = 0;             // which host param this Expander's

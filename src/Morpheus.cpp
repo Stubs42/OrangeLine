@@ -24,6 +24,30 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "Morpheus.hpp"
 
+// X-family candidate params - compact index (0..NUM_X_CANDIDATES-1), separate from the sparse
+// InputIds/ParamIds enums. See ExpanderParamAccessSpec.md's "Confirmed candidate list: Morpheus"
+// table. EXT_INPUT is deliberately excluded - it's a real signal path (MEM/EXT source switch),
+// not a CV-modulates-a-knob candidate.
+enum XCandidateIndex {
+	XC_LOCK, XC_BALANCE, XC_LOOP_LEN, XC_HLD, XC_RND, XC_SHIFT_LEFT, XC_SHIFT_RIGHT,
+	XC_CLR, XC_REC, XC_GTP, XC_SCL, XC_OFS,
+	NUM_X_CANDIDATES
+};
+
+static const int xCandidateInputId[NUM_X_CANDIDATES] = {
+	LOCK_INPUT, BALANCE_INPUT, LOOP_LEN_INPUT, HLD_INPUT, RND_INPUT,
+	SHIFT_LEFT_INPUT, SHIFT_RIGHT_INPUT, CLR_INPUT, REC_INPUT, GTP_INPUT, SCL_INPUT, OFS_INPUT
+};
+static const char *xCandidateName[NUM_X_CANDIDATES] = {
+	"Lock", "Balance", "Loop Length", "Hold", "Randomize", "Shift Left",
+	"Shift Right", "Clear Loop", "Record", "Gate Probability", "CV Scale", "CV Offset"
+};
+static const XParamType xCandidateType[NUM_X_CANDIDATES] = {
+	X_PARAM_CONTINUOUS, X_PARAM_CONTINUOUS, X_PARAM_CONTINUOUS, X_PARAM_TOGGLE, X_PARAM_CLICK,
+	X_PARAM_CLICK, X_PARAM_CLICK, X_PARAM_CLICK, X_PARAM_CLICK,
+	X_PARAM_CONTINUOUS, X_PARAM_CONTINUOUS, X_PARAM_CONTINUOUS
+};
+
 struct Morpheus : Module, XHostInterface
 {
 	float oldClkInputVoltage = 0;
@@ -32,10 +56,35 @@ struct Morpheus : Module, XHostInterface
 	bool isShiftLeft[POLY_CHANNELS];
 	bool isShiftRight[POLY_CHANNELS];
 
-	// X-family param-access Expander connection (step 1: detection + connection light only,
-	// see ExpanderParamAccessSpec.md - no real param exposure yet, getXParamCount() below
-	// deliberately returns 0 for now). An Expander only ever attaches to a Host's LEFT side.
+	// X-family param-access Expander connection. An Expander only ever attaches to a Host's
+	// LEFT side. xConnected drives the cosmetic connection light only; the real mechanism is
+	// xCandidate[]/xVirtualChannels[] below, walked/refreshed every moduleProcess() tick.
 	bool xConnected = false;
+
+	// Per-candidate binding state (see ExpanderParamAccessSpec.md's "Architecture: Expander =
+	// a virtual poly cable"). Session-only, never persisted - every param loads unbound after
+	// a save/reload. No channel-limit field here - the Expander (the "sender") decides its own
+	// channel count via getXKnobCount(), the Host just takes whatever it provides.
+	struct XCandidateState
+	{
+		int64_t boundExpanderId = -1;
+	};
+	XCandidateState xCandidate[NUM_X_CANDIDATES];
+
+	// Mirrors inputs[i].getChannels() for a virtually-bound candidate input, since a receiving
+	// module can't override a real Port's own channel count - see getXAwareChannels() below.
+	// Zeroed whenever that input has no live virtual source this tick (real cable, or nothing
+	// bound/live) so existing reader code falls back to its own default behavior correctly.
+	int xVirtualChannels[NUM_INPUTS] = {0};
+
+	// Existing per-candidate reader functions (getChannelLock() etc.) call this instead of
+	// inputs[i].getChannels() directly, so they transparently see a bound Expander's channel
+	// count exactly as if it were a real cable's - the rest of each function (mono/poly
+	// branching, scaling formulas) needs no changes at all.
+	inline int getXAwareChannels(int inputId)
+	{
+		return inputs[inputId].isConnected() ? inputs[inputId].getChannels() : xVirtualChannels[inputId];
+	}
 
 #include "OrangeLineCommon.hpp"
 
@@ -246,7 +295,7 @@ struct Morpheus : Module, XHostInterface
 	{
 		float lock = getStateParam(LOCK_PARAM);
 		if (getInputConnected(LOCK_INPUT)) {
-			int channels = inputs[LOCK_INPUT].getChannels();
+			int channels = getXAwareChannels(LOCK_INPUT);
             if (channels == 1) {
 				return lock + OL_statePoly[LOCK_INPUT * POLY_CHANNELS] * 10; // input is scaled so lock 10V is lock 100 %
             }
@@ -261,7 +310,7 @@ struct Morpheus : Module, XHostInterface
 	{
 		float balance = getStateParam(BALANCE_PARAM);
 		if (getInputConnected(BALANCE_INPUT)) {
-			int channels = inputs[BALANCE_INPUT].getChannels();
+			int channels = getXAwareChannels(BALANCE_INPUT);
             if (channels == 1) {
 				return balance + OL_statePoly[BALANCE_INPUT * POLY_CHANNELS] * 10; // input is scaled so balance 10V is lock 100 %
             }
@@ -276,7 +325,7 @@ struct Morpheus : Module, XHostInterface
 	{
 		float loopLen = 0.f;
 		if (getInputConnected(LOOP_LEN_INPUT)) {
-			int channels = inputs[LOOP_LEN_INPUT].getChannels();
+			int channels = getXAwareChannels(LOOP_LEN_INPUT);
             if (channels == 1) {
 				loopLen = floor(OL_statePoly[LOOP_LEN_INPUT * POLY_CHANNELS] * 100.f + 0.001); // input is scaled so 0.16 is length 16
             }
@@ -293,7 +342,7 @@ struct Morpheus : Module, XHostInterface
 	inline bool checkForEditHld() {
 		int channels = 0;
 		if (getInputConnected(HLD_INPUT) && getStateJson(SMART_HOLD_JSON) == 1.0f) {
-			channels = inputs[HLD_INPUT].getChannels();
+			channels = getXAwareChannels(HLD_INPUT);
 			if (channels > 1) {
 				for (int channel = 0; channel < channels; channel ++) {
 					if (OL_statePoly[HLD_INPUT * POLY_CHANNELS + channel] > 7.5) {
@@ -312,7 +361,7 @@ struct Morpheus : Module, XHostInterface
 		}
 		float hld = 0.f;
 		if (getInputConnected(HLD_INPUT)) {
-			int channels = inputs[HLD_INPUT].getChannels();
+			int channels = getXAwareChannels(HLD_INPUT);
             if (channels == 1) {
 				hld = OL_statePoly[HLD_INPUT * POLY_CHANNELS];
             }
@@ -339,7 +388,7 @@ struct Morpheus : Module, XHostInterface
 			return getStateParam(REC_PARAM);
 		}
 		if (getInputConnected(REC_INPUT)) {
-			int channels = inputs[REC_INPUT].getChannels();
+			int channels = getXAwareChannels(REC_INPUT);
             if (channels == 1) {
 				return OL_statePoly[REC_INPUT * POLY_CHANNELS] > 5.f ? 10.f : 0.f;
             }
@@ -356,7 +405,7 @@ struct Morpheus : Module, XHostInterface
 			return getStateParam(RND_PARAM);
 		}
 		if (getInputConnected(RND_INPUT)) {
-			int channels = inputs[RND_INPUT].getChannels();
+			int channels = getXAwareChannels(RND_INPUT);
             if (channels == 1) {
 				return OL_statePoly[RND_INPUT * POLY_CHANNELS] > 5.f ? 10.f : 0.f;
             }
@@ -373,7 +422,7 @@ struct Morpheus : Module, XHostInterface
 			return getStateParam(CLR_PARAM);
 		}
 		if (getInputConnected(CLR_INPUT)) {
-			int channels = inputs[CLR_INPUT].getChannels();
+			int channels = getXAwareChannels(CLR_INPUT);
             if (channels == 1) {
 				return OL_statePoly[CLR_INPUT * POLY_CHANNELS] > 5.f ? 10.f : 0.f;
             }
@@ -387,7 +436,7 @@ struct Morpheus : Module, XHostInterface
 	inline float getChannelGtp(int channel)
 	{
 		if (getInputConnected(GTP_INPUT)) {
-			int channels = inputs[GTP_INPUT].getChannels();
+			int channels = getXAwareChannels(GTP_INPUT);
             if (channels == 1) {
 				return OL_statePoly[GTP_INPUT * POLY_CHANNELS] * 10.f; // input is scaled so 5V is Probability 50%
             }
@@ -401,7 +450,7 @@ struct Morpheus : Module, XHostInterface
 	inline float getChannelScl(int channel)
 	{
 		if (getInputConnected(SCL_INPUT)) {
-			int channels = inputs[SCL_INPUT].getChannels();
+			int channels = getXAwareChannels(SCL_INPUT);
             if (channels == 1) {
 				return OL_statePoly[SCL_INPUT * POLY_CHANNELS];
             }
@@ -415,7 +464,7 @@ struct Morpheus : Module, XHostInterface
 	inline float getChannelOfs(int channel)
 	{
 		if (getInputConnected(OFS_INPUT)) {
-			int channels = inputs[OFS_INPUT].getChannels();
+			int channels = getXAwareChannels(OFS_INPUT);
             if (channels == 1) {
 				return OL_statePoly[OFS_INPUT * POLY_CHANNELS];
             }
@@ -497,10 +546,76 @@ struct Morpheus : Module, XHostInterface
 			styleChanged = false;
 		}
 
-		// X-family param-access Expander connection (step 1: detection only, see
-		// ExpanderParamAccessSpec.md) - only ever check leftExpander, never rightExpander.
+		// X-family param-access Expander connection - only ever check leftExpander, never
+		// rightExpander (see ExpanderParamAccessSpec.md's left-only-attachment architecture).
 		xConnected = dynamic_cast<XExpanderInterface*>(leftExpander.module) != nullptr;
 		setStateLight(X_CONN_LIGHT, xConnected ? 255.f : 0.f);
+
+		// Walk the *whole* left-side chain (not just the immediate neighbor - several
+		// Expanders can be strung together) looking for a fresh engage/disengage request from
+		// any of them. Each Expander debounces its own button locally and exposes only a
+		// one-shot event - Morpheus does all the deciding here.
+		{
+			Module *m = leftExpander.module;
+			while (m)
+			{
+				XExpanderInterface *exp = dynamic_cast<XExpanderInterface*>(m);
+				if (!exp)
+					break; // chain broken - not an X-family module, stop walking
+				if (exp->consumeEngagePress())
+				{
+					int idx = exp->getXBrowseIndex();
+					if (idx >= 0 && idx < NUM_X_CANDIDATES)
+					{
+						int64_t myId = m->id;
+						if (xCandidate[idx].boundExpanderId == -1)
+							xCandidate[idx].boundExpanderId = myId;   // bind (was available)
+						else if (xCandidate[idx].boundExpanderId == myId)
+							xCandidate[idx].boundExpanderId = -1;     // disengage (toggle)
+						// else: taken by someone else, or cable-connected - no-op
+					}
+				}
+				m = m->leftExpander.module;
+			}
+		}
+
+		// Once per tick, per candidate param: let a real cable win outright (and actively
+		// clear any stale binding rather than leaving it dormant), or pull live values from
+		// whichever bound Expander is currently browsing that exact param (Track & Hold - if
+		// it's bound but looking elsewhere right now, leave last tick's values/channel count
+		// exactly as they were). See "No separate per-channel value buffer" in the spec.
+		for (int i = 0; i < NUM_X_CANDIDATES; i++)
+		{
+			int inputId = xCandidateInputId[i];
+
+			if (inputs[inputId].isConnected())
+			{
+				if (xCandidate[i].boundExpanderId != -1)
+					xCandidate[i].boundExpanderId = -1;
+				xVirtualChannels[inputId] = 0;
+				continue;
+			}
+
+			if (xCandidate[i].boundExpanderId < 0)
+			{
+				xVirtualChannels[inputId] = 0;
+				continue;
+			}
+
+			Module *bm = APP->engine->getModule(xCandidate[i].boundExpanderId);
+			XExpanderInterface *exp = bm ? dynamic_cast<XExpanderInterface*>(bm) : nullptr;
+			if (!exp)
+				continue; // bound module gone - stays stale (per spec) until an explicit Reset
+
+			OL_inputConnected[inputId] = true; // bound (even if not the live one right now) = Green
+			if (exp->getXBrowseIndex() != i)
+				continue; // bound, but looking elsewhere right now - hold last tick's values
+
+			int channels = exp->getXKnobCount(); // sender (the Expander) decides, not us
+			xVirtualChannels[inputId] = channels;
+			for (int c = 0; c < channels; c++)
+				OL_statePoly[inputId * POLY_CHANNELS + c] = exp->getXKnobValue(c);
+		}
 
 		// Handle Reset
 		if (changeInput (RST_INPUT) || OL_initialized == false) {
@@ -550,7 +665,7 @@ struct Morpheus : Module, XHostInterface
 			}
 			// Shift channel on polyphonic shift left input
             if (getInputConnected(SHIFT_LEFT_INPUT)) {
-				int channels = inputs[SHIFT_LEFT_INPUT].getChannels();
+				int channels = getXAwareChannels(SHIFT_LEFT_INPUT);
 				float state;
 				if (channels == 1) {
 					state = OL_statePoly[SHIFT_LEFT_INPUT * POLY_CHANNELS];
@@ -575,7 +690,7 @@ struct Morpheus : Module, XHostInterface
 			}
 			// shift channel on polyphonic shift right input
             if (getInputConnected(SHIFT_RIGHT_INPUT)) {
-				int channels = inputs[SHIFT_RIGHT_INPUT].getChannels();
+				int channels = getXAwareChannels(SHIFT_RIGHT_INPUT);
 				float state;
 				if (channels == 1) {
 					state = OL_statePoly[SHIFT_RIGHT_INPUT * POLY_CHANNELS];
@@ -866,22 +981,19 @@ struct Morpheus : Module, XHostInterface
 		setStateLight (EXT_ON_LIGHT, getStateJson (EXT_ON_JSON) * 255.f);
 	}
 
-	// XHostInterface (step 1: connection detection only, see ExpanderParamAccessSpec.md) -
-	// getXParamCount() deliberately returns 0 for now, so none of the other methods below are
-	// actually called by anything yet. Real candidate-param wiring (LOCK/BALANCE/... per the
-	// spec's confirmed table, plus boundExpanderId[]/channelLimit[] storage and the once-per-tick
-	// refresh step) is a later, separate step.
-	int getXParamCount() override { return 0; }
-	const char* getXParamName(int index) override { return ""; }
-	XParamType getXParamType(int index) override { return X_PARAM_CONTINUOUS; }
-	NVGcolor getXParamColor(int index) override { return nvgRGB(0xff, 0x66, 0x00); }
-	bool isXParamEngaged(int index) override { return false; }
-	int64_t getXParamBoundId(int index) override { return -1; }
-	bool isXParamCableConnected(int index) override { return false; }
-	int getXParamChannelLimit(int index) override { return POLY_CHANNELS; }
-	void setXParamChannelLimit(int index, int limit) override {}
-	void resetXParam(int index) override {}
-	std::string formatXParamValue(int index, float value) override { return ""; }
+	// XHostInterface - see ExpanderParamAccessSpec.md's "Host Interface" section. Candidate
+	// list/order matches xCandidate*[] above (verified against moduleInitStateTypes()/
+	// moduleParamConfig() directly, not just enum names - EXT_INPUT excluded, it's a real
+	// signal path, not a CV-modulates-a-knob candidate).
+	int getXParamCount() override { return NUM_X_CANDIDATES; }
+	const char* getXParamName(int index) override { return xCandidateName[index]; }
+	XParamType getXParamType(int index) override { return xCandidateType[index]; }
+	NVGcolor getXParamColor(int index) override { return nvgRGB(0xff, 0x66, 0x00); } // TODO: per-candidate colors, deferred
+	bool isXParamEngaged(int index) override { return xCandidate[index].boundExpanderId != -1; }
+	int64_t getXParamBoundId(int index) override { return xCandidate[index].boundExpanderId; }
+	bool isXParamCableConnected(int index) override { return inputs[xCandidateInputId[index]].isConnected(); }
+	void resetXParam(int index) override { xCandidate[index].boundExpanderId = -1; }
+	std::string formatXParamValue(int index, float value) override { return ""; } // TODO: needs X8's custom ParamQuantity first, deferred
 	float getXStyle() override { return OL_state[STYLE_JSON]; }
 };
 
