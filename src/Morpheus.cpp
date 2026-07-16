@@ -51,7 +51,15 @@ struct XCandidate
 	const char *shortName;          // matches the real Morpheus panel's own printed labels -
 	                                 // XHostInterface::getXParamShortName()
 	XParamType type;
-	int64_t boundExpanderId = -1;  // -1 = unbound; session-only, never persisted
+	// -1 = unbound. Persisted (see Morpheus's own moduleExtraDataToJson/FromJson) as a
+	// best-effort id: if Rack happens to preserve module ids across a reload (the common case
+	// for a plain save+reopen of the same patch), the binding resolves live again exactly as
+	// before, including adjacency-gating; if the id doesn't resolve to anything, the existing
+	// "bound module gone" handling in the refresh loop already shows this as engaged (green) and
+	// frozen until an explicit Reset - so restoring a stale/foreign id is always safe, never
+	// silently wrong. Chosen deliberately over dropping the binding (and its green indicator) on
+	// every reload.
+	int64_t boundExpanderId = -1;
 };
 
 struct Morpheus : Module, XHostInterface
@@ -148,6 +156,28 @@ struct Morpheus : Module, XHostInterface
 	Morpheus()
 	{
 		initializeInstance();
+
+		// boundExpanderId is int64_t, not a float OL_state slot - same reasoning/pattern as
+		// CC2CV/CV2CC's own moduleExtraDataToJson/FromJson use for non-float persisted data.
+		moduleExtraDataToJson = [this](json_t *rootJ)
+		{
+			json_t *boundJ = json_array();
+			for (int i = 0; i < NUM_X_CANDIDATES; i++)
+				json_array_append_new(boundJ, json_integer(xCandidates[i].boundExpanderId));
+			json_object_set_new(rootJ, "xBoundExpanderId", boundJ);
+		};
+		moduleExtraDataFromJson = [this](json_t *rootJ)
+		{
+			json_t *boundJ = json_object_get(rootJ, "xBoundExpanderId");
+			if (!boundJ)
+				return;
+			for (int i = 0; i < NUM_X_CANDIDATES; i++)
+			{
+				json_t *idJ = json_array_get(boundJ, i);
+				if (idJ && json_is_integer(idJ))
+					xCandidates[i].boundExpanderId = json_integer_value(idJ);
+			}
+		};
 	}
 	/*
 		Method to decide whether this call of process() should be skipped
