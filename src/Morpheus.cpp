@@ -828,7 +828,7 @@ struct Morpheus : Module, XHostInterface
 					state = OL_statePoly[SHIFT_LEFT_INPUT * POLY_CHANNELS];
 				}
 				else {
-					state = OL_statePoly[SHIFT_LEFT_INPUT * POLY_CHANNELS] + channel;
+					state = OL_statePoly[SHIFT_LEFT_INPUT * POLY_CHANNELS + channel];
 				}
 				if (state > 0.f) {
 					if (!isShiftLeft[channel]) {
@@ -853,7 +853,7 @@ struct Morpheus : Module, XHostInterface
 					state = OL_statePoly[SHIFT_RIGHT_INPUT * POLY_CHANNELS];
 				}
 				else {
-					state = OL_statePoly[SHIFT_RIGHT_INPUT * POLY_CHANNELS] + channel;
+					state = OL_statePoly[SHIFT_RIGHT_INPUT * POLY_CHANNELS + channel];
 				}
 				if (state > 0.f) {
 					if (!isShiftRight[channel]) {
