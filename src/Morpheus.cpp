@@ -430,7 +430,9 @@ struct Morpheus : Module, XHostInterface
 				hld = OL_statePoly[HLD_INPUT * POLY_CHANNELS + channel];
 				if (getStateJson(SMART_HOLD_JSON) == 1.0f) {
 					if (haveEditHld) {
-						if (hld <= 7.5f) {
+						// 0.75, not 7.5 - X8's own knob/button raw range is 0..1 (see
+						// getChannelRnd()'s own comment on this same X8-vs-real-cable mismatch).
+						if (hld <= 0.75f) {
 							return true;
 						}
 						else {
@@ -440,7 +442,8 @@ struct Morpheus : Module, XHostInterface
 				}
             }
 		}
-		return (hld > 5.f);
+		// 0.5, not 5.f - see getChannelRnd()'s own comment.
+		return (hld > 0.5f);
 	}
 
 	inline float getChannelRec(int channel)
@@ -450,11 +453,12 @@ struct Morpheus : Module, XHostInterface
 		}
 		if (getXAwareConnected(REC_INPUT)) {
 			int channels = getXAwareChannels(REC_INPUT);
+            // 0.5, not 5.f - see getChannelRnd()'s own comment on this same threshold.
             if (channels == 1) {
-				return OL_statePoly[REC_INPUT * POLY_CHANNELS] > 5.f ? 10.f : 0.f;
+				return OL_statePoly[REC_INPUT * POLY_CHANNELS] > 0.5f ? 10.f : 0.f;
             }
 			else if (channels >= channel) {
-				return OL_statePoly[REC_INPUT * POLY_CHANNELS + channel] > 5.f ? 10.f : 0.f;;
+				return OL_statePoly[REC_INPUT * POLY_CHANNELS + channel] > 0.5f ? 10.f : 0.f;;
             }
 		}
 		return 0.f;
@@ -467,11 +471,21 @@ struct Morpheus : Module, XHostInterface
 		}
 		if (getXAwareConnected(RND_INPUT)) {
 			int channels = getXAwareChannels(RND_INPUT);
+            // Threshold is 0.5, not 5.f, here (and in the analogous REC/CLR/HLD reader
+            // functions) - unlike REC_PARAM/RND_PARAM/CLR_PARAM above (Morpheus's own physical
+            // buttons, correctly calibrated 0..10 via their own configParam), a bound candidate
+            // input can be a real cable (0..10V) OR a virtual X8 Expander, whose own knob/button
+            // raw range is 0..1 (X8.cpp's configParam(KNOB_PARAM+i, 0.f, 1.f, ...)) - its max
+            // reachable value (1.0) never crosses a 5.f threshold, so RND/REC/CLR/HLD could never
+            // register as engaged through X8 at all. 0.5 correctly distinguishes on/off for both
+            // conventions (a real gate's usual 0V/10V swing clears 0.5 by just as wide a margin
+            // as it clears 5.f) - LOOP_LEN never had this problem since its own scale (raw*100)
+            // already assumes a 0..1-ish raw range, not a full 0..10V swing.
             if (channels == 1) {
-				return OL_statePoly[RND_INPUT * POLY_CHANNELS] > 5.f ? 10.f : 0.f;
+				return OL_statePoly[RND_INPUT * POLY_CHANNELS] > 0.5f ? 10.f : 0.f;
             }
 			else if (channels >= channel) {
-				return OL_statePoly[RND_INPUT * POLY_CHANNELS + channel] > 5.f ? 10.f : 0.f;;
+				return OL_statePoly[RND_INPUT * POLY_CHANNELS + channel] > 0.5f ? 10.f : 0.f;;
             }
 		}
 		return 0.f;
@@ -484,11 +498,12 @@ struct Morpheus : Module, XHostInterface
 		}
 		if (getXAwareConnected(CLR_INPUT)) {
 			int channels = getXAwareChannels(CLR_INPUT);
+            // 0.5, not 5.f - see getChannelRnd()'s own comment on this same threshold.
             if (channels == 1) {
-				return OL_statePoly[CLR_INPUT * POLY_CHANNELS] > 5.f ? 10.f : 0.f;
+				return OL_statePoly[CLR_INPUT * POLY_CHANNELS] > 0.5f ? 10.f : 0.f;
             }
 			else if (channels >= channel) {
-				return OL_statePoly[CLR_INPUT * POLY_CHANNELS + channel] > 5.f ? 10.f : 0.f;;
+				return OL_statePoly[CLR_INPUT * POLY_CHANNELS + channel] > 0.5f ? 10.f : 0.f;;
             }
 		}
 		return 0.f;

@@ -264,7 +264,11 @@ struct X8 : Module, XExpanderInterface
 					pendingValueClick[c] = false;
 					clickPulse[c].trigger(0.1f);
 				}
-				params[KNOB_PARAM + c].setValue(clickPulse[c].process(args.sampleTime) ? 1.f : 0.f);
+				// moduleProcess() only runs on ~1 in idleSkip samples (control-rate throttling),
+				// so a bare args.sampleTime here would underestimate elapsed real time by that
+				// same factor, making the pulse take ~43x longer than intended - see CLAUDE.md's
+				// "dsp::Timer inside moduleProcess() must scale by (samplesSkipped + 1)" pitfall.
+				params[KNOB_PARAM + c].setValue(clickPulse[c].process(args.sampleTime * (samplesSkipped + 1)) ? 1.f : 0.f);
 			}
 		}
 	}
