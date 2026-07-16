@@ -660,6 +660,33 @@ struct X8DValueButton : ParamWidget
 };
 
 /**
+	Static background-colored cover for the (not yet built) per-channel numeric display column -
+	shown only while buttons are visible (Toggle/Click/Push params have no numeric value worth
+	showing), hiding the whole display area behind a plain rect matching the current theme's own
+	panel background. Position/size measured directly from res/X8DWork.svg's own "ButtonCover"
+	guide layer (one rect spanning all 8 rows at once, not per-channel). Once the actual numeric
+	display widget exists, it must skip rendering under this exact same condition
+	(X8DWidget::step()'s own showButton flag) - this cover exists only because there is nothing
+	else there yet to make that skip visible.
+*/
+struct X8DButtonCover : TransparentWidget
+{
+	X8D *module = nullptr;
+
+	void draw(const DrawArgs &args) override
+	{
+		float style = module ? module->OL_state[STYLE_JSON] : STYLE_ORANGE;
+		NVGcolor fill = (style == STYLE_DARK) ? nvgRGB(0x20, 0x20, 0x20)
+		              : (style == STYLE_BRIGHT) ? nvgRGB(0xe6, 0xe6, 0xe6)
+		              : nvgRGB(0x15, 0x15, 0x2b); // STYLE_ORANGE
+		nvgBeginPath(args.vg);
+		nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+		nvgFillColor(args.vg, fill);
+		nvgFill(args.vg);
+	}
+};
+
+/**
 	Currently-browsed param name, LCD-style like every other OrangeLine display - color-coded per
 	ExpanderParamAccessSpec.md's "Name display": grey dashes when no Host is resolved (doubles as
 	the "not connected" indicator, replacing an earlier "XXXXX" placeholder that misleadingly
@@ -772,6 +799,7 @@ struct X8DWidget : ModuleWidget
 	// existing Wakeup/Ready port precedent - a hidden widget doesn't claim input either) switch.
 	X8DKnob *knobs[NUM_X8D_KNOBS] = {};
 	X8DValueButton *valueButtons[NUM_X8D_KNOBS] = {};
+	X8DButtonCover *buttonCover = nullptr;
 
 	X8DWidget(X8D *module)
 	{
@@ -836,6 +864,16 @@ struct X8DWidget : ModuleWidget
 		extStrip = addXExtStrip(this, X8D_PANEL_WIDTH_MM);
 		extStripLeft = addXExtStripLeft(this);
 
+		// Position/size measured directly from res/X8DWork.svg's own "ButtonCover" guide layer -
+		// see X8DButtonCover's own comment. Hidden by default (matches the knob column's own
+		// "continuous shown until step() knows better" default above).
+		buttonCover = new X8DButtonCover();
+		buttonCover->module = module;
+		buttonCover->box.pos = calculateCoordinates(12.342694f, 32.76725f, 0.f);
+		buttonCover->box.size = mm2px(Vec(16.867304f, 85.090004f));
+		buttonCover->visible = false;
+		addChild(buttonCover);
+
 		if (module)
 			module->widgetReady = true;
 	}
@@ -856,6 +894,9 @@ struct X8DWidget : ModuleWidget
 				knobs[i]->visible = !showButton;
 				valueButtons[i]->visible = showButton;
 			}
+			// No numeric display exists yet to hide behind this cover - see X8DButtonCover's own
+			// comment - so for now it's simply the mirror image of showButton.
+			buttonCover->visible = showButton;
 		}
 		ModuleWidget::step();
 	}
