@@ -261,6 +261,15 @@
         "Utility",
         "Expander"
       ]
+    },
+    {
+      "slug": "X8D",
+      "name": "X8D",
+      "description": "Wider X8 (6HP) with room for a per-channel numeric display next to each knob - attach to the left of a compatible host to remote-control one of its polyphonic params per channel",
+      "tags": [
+        "Utility",
+        "Expander"
+      ]
     }
   ]
 }
