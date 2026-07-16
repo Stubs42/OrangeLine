@@ -101,6 +101,22 @@ struct Morpheus : Module, XHostInterface
 		return inputs[inputId].isConnected() ? inputs[inputId].getChannels() : xVirtualChannels[inputId];
 	}
 
+	// Deliberately NOT reusing the framework's own OL_inputConnected[] for this - that array is
+	// unconditionally overwritten every tick by processParamsAndInputs() (real cable state only,
+	// runs *before* this module's own moduleProcess()), so writing "bound = true" into it here
+	// would only ever be visible for the remainder of the same tick; from the very start of the
+	// *next* tick it reads false again until moduleProcess() catches up. Both states exist for a
+	// real slice of audio-thread time every ~1ms, and the widget's draw() runs on a separate,
+	// unsynchronized UI thread that can sample mid-flip - observed as the loop-length (or any
+	// other candidate) briefly showing the local knob's value instead of the bound Expander's,
+	// with nothing touched. A dedicated flag, written only here, removes the flip entirely.
+	bool xVirtualConnected[NUM_INPUTS] = {false};
+
+	inline bool getXAwareConnected(int inputId)
+	{
+		return inputs[inputId].isConnected() || xVirtualConnected[inputId];
+	}
+
 #include "OrangeLineCommon.hpp"
 
 	// ********************************************************************************************************************************
@@ -309,7 +325,7 @@ struct Morpheus : Module, XHostInterface
 	inline float getChannelLock(int channel)
 	{
 		float lock = getStateParam(LOCK_PARAM);
-		if (getInputConnected(LOCK_INPUT)) {
+		if (getXAwareConnected(LOCK_INPUT)) {
 			int channels = getXAwareChannels(LOCK_INPUT);
             if (channels == 1) {
 				return lock + OL_statePoly[LOCK_INPUT * POLY_CHANNELS] * 10; // input is scaled so lock 10V is lock 100 %
@@ -324,7 +340,7 @@ struct Morpheus : Module, XHostInterface
 	inline float getChannelBalance(int channel)
 	{
 		float balance = getStateParam(BALANCE_PARAM);
-		if (getInputConnected(BALANCE_INPUT)) {
+		if (getXAwareConnected(BALANCE_INPUT)) {
 			int channels = getXAwareChannels(BALANCE_INPUT);
             if (channels == 1) {
 				return balance + OL_statePoly[BALANCE_INPUT * POLY_CHANNELS] * 10; // input is scaled so balance 10V is lock 100 %
@@ -339,7 +355,7 @@ struct Morpheus : Module, XHostInterface
 	inline float getChannelLoopLength(int channel)
 	{
 		float loopLen = 0.f;
-		if (getInputConnected(LOOP_LEN_INPUT)) {
+		if (getXAwareConnected(LOOP_LEN_INPUT)) {
 			int channels = getXAwareChannels(LOOP_LEN_INPUT);
             if (channels == 1) {
 				loopLen = floor(OL_statePoly[LOOP_LEN_INPUT * POLY_CHANNELS] * 100.f + 0.001); // input is scaled so 0.16 is length 16
@@ -356,7 +372,7 @@ struct Morpheus : Module, XHostInterface
 
 	inline bool checkForEditHld() {
 		int channels = 0;
-		if (getInputConnected(HLD_INPUT) && getStateJson(SMART_HOLD_JSON) == 1.0f) {
+		if (getXAwareConnected(HLD_INPUT) && getStateJson(SMART_HOLD_JSON) == 1.0f) {
 			channels = getXAwareChannels(HLD_INPUT);
 			if (channels > 1) {
 				for (int channel = 0; channel < channels; channel ++) {
@@ -375,7 +391,7 @@ struct Morpheus : Module, XHostInterface
 			return true;
 		}
 		float hld = 0.f;
-		if (getInputConnected(HLD_INPUT)) {
+		if (getXAwareConnected(HLD_INPUT)) {
 			int channels = getXAwareChannels(HLD_INPUT);
             if (channels == 1) {
 				hld = OL_statePoly[HLD_INPUT * POLY_CHANNELS];
@@ -402,7 +418,7 @@ struct Morpheus : Module, XHostInterface
 		if (getStateParam(REC_PARAM) > 5.f) {
 			return getStateParam(REC_PARAM);
 		}
-		if (getInputConnected(REC_INPUT)) {
+		if (getXAwareConnected(REC_INPUT)) {
 			int channels = getXAwareChannels(REC_INPUT);
             if (channels == 1) {
 				return OL_statePoly[REC_INPUT * POLY_CHANNELS] > 5.f ? 10.f : 0.f;
@@ -419,7 +435,7 @@ struct Morpheus : Module, XHostInterface
 		if (getStateParam(RND_PARAM) > 5.f) {
 			return getStateParam(RND_PARAM);
 		}
-		if (getInputConnected(RND_INPUT)) {
+		if (getXAwareConnected(RND_INPUT)) {
 			int channels = getXAwareChannels(RND_INPUT);
             if (channels == 1) {
 				return OL_statePoly[RND_INPUT * POLY_CHANNELS] > 5.f ? 10.f : 0.f;
@@ -436,7 +452,7 @@ struct Morpheus : Module, XHostInterface
 		if (getStateParam(CLR_PARAM) > 5.f) {
 			return getStateParam(CLR_PARAM);
 		}
-		if (getInputConnected(CLR_INPUT)) {
+		if (getXAwareConnected(CLR_INPUT)) {
 			int channels = getXAwareChannels(CLR_INPUT);
             if (channels == 1) {
 				return OL_statePoly[CLR_INPUT * POLY_CHANNELS] > 5.f ? 10.f : 0.f;
@@ -450,7 +466,7 @@ struct Morpheus : Module, XHostInterface
 
 	inline float getChannelGtp(int channel)
 	{
-		if (getInputConnected(GTP_INPUT)) {
+		if (getXAwareConnected(GTP_INPUT)) {
 			int channels = getXAwareChannels(GTP_INPUT);
             if (channels == 1) {
 				return OL_statePoly[GTP_INPUT * POLY_CHANNELS] * 10.f; // input is scaled so 5V is Probability 50%
@@ -464,7 +480,7 @@ struct Morpheus : Module, XHostInterface
 
 	inline float getChannelScl(int channel)
 	{
-		if (getInputConnected(SCL_INPUT)) {
+		if (getXAwareConnected(SCL_INPUT)) {
 			int channels = getXAwareChannels(SCL_INPUT);
             if (channels == 1) {
 				return OL_statePoly[SCL_INPUT * POLY_CHANNELS];
@@ -478,7 +494,7 @@ struct Morpheus : Module, XHostInterface
 
 	inline float getChannelOfs(int channel)
 	{
-		if (getInputConnected(OFS_INPUT)) {
+		if (getXAwareConnected(OFS_INPUT)) {
 			int channels = getXAwareChannels(OFS_INPUT);
             if (channels == 1) {
 				return OL_statePoly[OFS_INPUT * POLY_CHANNELS];
@@ -488,6 +504,33 @@ struct Morpheus : Module, XHostInterface
             }
 		}
 		return getStateParam(OFS_PARAM);
+	}
+
+	// Inverse of whatever scaling each getChannelXXX() above applies to a bound candidate's raw
+	// input - called continuously, every tick, for every still-unbound candidate (see the
+	// refresh loop below), to keep OL_statePoly always holding "what a bound Expander's raw
+	// knob would need to read to reproduce the current fallback value". A fresh bind then finds
+	// the right value already sitting there, ready to read via getXParamTakeoverValue() - no
+	// separate snapshot storage needed. KISS on purpose: this mirrors each reader's own existing
+	// formula, it doesn't attempt to redesign their value ranges.
+	inline float computeTakeoverRaw(int index, int channel)
+	{
+		switch (index)
+		{
+			// LOOP_LEN/GTP/SCL/OFS are pure overrides (no cable/binding -> knob only) - inverse
+			// of "raw*100"/"raw*10"/"raw" respectively, clamped into the Expander's own 0..1
+			// knob range (values outside what a 0..1 knob can reach - e.g. SCL/OFS's negative
+			// half - clamp to the nearest end, same limitation as today, not new).
+			case XC_LOOP_LEN: return clamp(getChannelLoopLength(channel) / 100.f, 0.f, 1.f);
+			case XC_GTP:       return clamp(getChannelGtp(channel) / 10.f, 0.f, 1.f);
+			case XC_SCL:       return clamp(getChannelScl(channel), 0.f, 1.f);
+			case XC_OFS:       return clamp(getChannelOfs(channel), 0.f, 1.f);
+			// LOCK/BALANCE are additive (knob + raw*10) - right now nothing is contributing, so
+			// the CV-neutral raw value is 0, not an inverse of the knob (that would double it).
+			// HLD/RND/SHIFT_LEFT/SHIFT_RIGHT/CLR/REC are digital push/click/toggle types -
+			// "not currently triggered" is also 0.
+			default: return 0.f;
+		}
 	}
 
 	inline void shiftChannel(int channel, int direction)
@@ -570,6 +613,13 @@ struct Morpheus : Module, XHostInterface
 		// Expanders can be strung together) looking for a fresh engage/disengage request from
 		// any of them. Each Expander debounces its own button locally and exposes only a
 		// one-shot event - Morpheus does all the deciding here.
+		//
+		// freshlyBound is purely local to this one tick (not persisted state) - it marks a
+		// candidate that just transitioned from unbound to bound right here, so the refresh
+		// loop below can leave OL_statePoly exactly as the idle branch last left it for one
+		// more tick, instead of immediately overwriting it with the Expander's own (not yet
+		// caught up) raw knob value. See the refresh loop's comments for why.
+		bool freshlyBound[NUM_X_CANDIDATES] = {false};
 		{
 			Module *m = leftExpander.module;
 			while (m)
@@ -584,7 +634,10 @@ struct Morpheus : Module, XHostInterface
 					{
 						int64_t myId = m->id;
 						if (xCandidates[idx].boundExpanderId == -1)
+						{
 							xCandidates[idx].boundExpanderId = myId;   // bind (was available)
+							freshlyBound[idx] = true;
+						}
 						else if (xCandidates[idx].boundExpanderId == myId)
 							xCandidates[idx].boundExpanderId = -1;     // disengage (toggle)
 						// else: taken by someone else, or cable-connected - no-op
@@ -608,12 +661,22 @@ struct Morpheus : Module, XHostInterface
 				if (xCandidates[i].boundExpanderId != -1)
 					xCandidates[i].boundExpanderId = -1;
 				xVirtualChannels[inputId] = 0;
+				xVirtualConnected[inputId] = false;
 				continue;
 			}
 
 			if (xCandidates[i].boundExpanderId < 0)
 			{
+				// Idle: keep OL_statePoly continuously consistent with "the value Morpheus is
+				// actually using for this channel right now", already inverse-scaled into the
+				// same raw units a bound Expander's own knob supplies (see computeTakeoverRaw()
+				// above). No separate snapshot storage needed - a fresh bind always finds the
+				// right value already sitting here, ready for the Expander to read via
+				// getXParamTakeoverValue() and take over as its own knob's starting position.
+				for (int c = 0; c < POLY_CHANNELS; c++)
+					OL_statePoly[inputId * POLY_CHANNELS + c] = computeTakeoverRaw(i, c);
 				xVirtualChannels[inputId] = 0;
+				xVirtualConnected[inputId] = false;
 				continue;
 			}
 
@@ -622,14 +685,26 @@ struct Morpheus : Module, XHostInterface
 			if (!exp)
 				continue; // bound module gone - stays stale (per spec) until an explicit Reset
 
-			OL_inputConnected[inputId] = true; // bound (even if not the live one right now) = Green
+			xVirtualConnected[inputId] = true; // bound (even if not the live one right now) = Green
 			if (exp->getXBrowseIndex() != i)
 				continue; // bound, but looking elsewhere right now - hold last tick's values
+
+			if (freshlyBound[i])
+				continue; // just bound this very tick - hold the takeover value one more tick
+				          // so the Expander has a chance to read and apply it before its own
+				          // (not yet updated) raw knob value starts being read instead
 
 			int channels = exp->getXKnobCount(); // sender (the Expander) decides, not us
 			xVirtualChannels[inputId] = channels;
 			for (int c = 0; c < channels; c++)
 				OL_statePoly[inputId * POLY_CHANNELS + c] = exp->getXKnobValue(c);
+			// Channels beyond what THIS Expander actually supplies still need a correct
+			// fallback value - Morpheus's own per-channel reader functions fall back to the
+			// knob for any channel index >= channels, so keep those slots consistent too, same
+			// reasoning as the idle branch above. Otherwise a wider Expander binding later (or
+			// per-channel monitoring while not engaged) would find stale leftovers instead.
+			for (int c = channels; c < POLY_CHANNELS; c++)
+				OL_statePoly[inputId * POLY_CHANNELS + c] = computeTakeoverRaw(i, c);
 		}
 
 		// Handle Reset
@@ -647,10 +722,12 @@ struct Morpheus : Module, XHostInterface
 		polyChannels = getStateJson(POLY_CHANNELS_JSON); 
 		if (polyChannels == 0) {
 			polyChannels = 1;
-			// channels is auto, derive maximum channels of all polyphonic inputs
+			// channels is auto, derive maximum channels of all polyphonic inputs - EXT_INPUT
+			// (not a candidate) falls out of this range harmlessly, both helpers below reduce
+			// to plain real-cable behavior for any input the X-family refresh loop never touches.
 			for (int i = LOCK_INPUT; i <= OFS_INPUT; i ++) {
-				if (getInputConnected(i)) {
-					int channels = inputs[i].getChannels();
+				if (getXAwareConnected(i)) {
+					int channels = getXAwareChannels(i);
 					if (channels > polyChannels) {
 						polyChannels = channels;
 					}
@@ -679,7 +756,7 @@ struct Morpheus : Module, XHostInterface
 				shiftChannel(channel, 1);
 			}
 			// Shift channel on polyphonic shift left input
-            if (getInputConnected(SHIFT_LEFT_INPUT)) {
+            if (getXAwareConnected(SHIFT_LEFT_INPUT)) {
 				int channels = getXAwareChannels(SHIFT_LEFT_INPUT);
 				float state;
 				if (channels == 1) {
@@ -704,7 +781,7 @@ struct Morpheus : Module, XHostInterface
 				shiftChannel(channel, -1);
 			}
 			// shift channel on polyphonic shift right input
-            if (getInputConnected(SHIFT_RIGHT_INPUT)) {
+            if (getXAwareConnected(SHIFT_RIGHT_INPUT)) {
 				int channels = getXAwareChannels(SHIFT_RIGHT_INPUT);
 				float state;
 				if (channels == 1) {
@@ -1009,6 +1086,7 @@ struct Morpheus : Module, XHostInterface
 	int64_t getXParamBoundId(int index) override { return xCandidates[index].boundExpanderId; }
 	bool isXParamCableConnected(int index) override { return inputs[xCandidates[index].inputId].isConnected(); }
 	void resetXParam(int index) override { xCandidates[index].boundExpanderId = -1; }
+	float getXParamTakeoverValue(int index, int channel) override { return OL_statePoly[xCandidates[index].inputId * POLY_CHANNELS + channel]; }
 	std::string formatXParamValue(int index, float value) override { return ""; } // TODO: needs X8's custom ParamQuantity first, deferred
 	float getXStyle() override { return OL_state[STYLE_JSON]; }
 };

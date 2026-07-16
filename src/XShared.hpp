@@ -77,6 +77,14 @@ struct XHostInterface
 	// Right-click action: clears the binding for this param -> Red.
 	virtual void resetXParam(int index) = 0;
 
+	// "The value this Host was actually using for this channel", captured once at the exact
+	// moment this param became bound, already inverse-scaled into the Expander's own 0..1 raw
+	// knob range (see XExpanderInterface::getXKnobValue()). An Expander reads this exactly once,
+	// the tick it notices its own binding took effect, and sets its own knob(s) to match - so
+	// engaging doesn't change anything the Host is currently outputting. A Host with no
+	// meaningful scaling for a given candidate (e.g. a push/click/toggle type) can just return 0.
+	virtual float getXParamTakeoverValue(int index, int channel) = 0;
+
 	virtual std::string formatXParamValue(int index, float value) = 0; // continuous only
 
 	// This module's own STYLE_JSON value (STYLE_ORANGE/BRIGHT/DARK) - purely for the cosmetic

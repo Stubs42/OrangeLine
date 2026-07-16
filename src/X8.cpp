@@ -44,6 +44,16 @@ struct X8 : Module, XExpanderInterface
 	dsp::SchmittTrigger engageTrigger, leftTrigger, rightTrigger;
 	bool pendingEngagePress = false;
 
+	// Edge-detects "the param I'm currently standing on just became bound to me" (a fresh
+	// engage taking effect on the Host's side, possibly a few ticks after the physical press -
+	// Host and Expander each run on their own throttled cycle) so knobs can be snapped exactly
+	// once. Keyed to the index itself, not just a bare bool: browsing away and back onto a
+	// param this Expander already holds (Track & Hold) must NOT re-fire and stomp live knob
+	// positions with the old snapshot - only a genuine unbound->bound transition while standing
+	// still on the same index counts.
+	bool xLastBoundHere = false;
+	int xLastCheckedIndex = -1;
+
 	X8()
 	{
 		initializeInstance();
@@ -128,6 +138,26 @@ struct X8 : Module, XExpanderInterface
 			browseIndex = 0;
 			leftTrigger.process(params[LEFT_PARAM].getValue());
 			rightTrigger.process(params[RIGHT_PARAM].getValue());
+		}
+
+		// See xLastBoundHere's comment above: only a fresh bind while standing still on the
+		// same index snaps the knobs - browsing onto an already-bound index never re-fires.
+		if (xHost && count > 0)
+		{
+			bool boundHere = xHost->getXParamBoundId(browseIndex) == (int64_t) this->id;
+			if (browseIndex == xLastCheckedIndex && boundHere && !xLastBoundHere)
+			{
+				int channels = getXKnobCount();
+				for (int c = 0; c < channels; c++)
+					params[KNOB_PARAM + c].setValue(xHost->getXParamTakeoverValue(browseIndex, c));
+			}
+			xLastBoundHere = boundHere;
+			xLastCheckedIndex = browseIndex;
+		}
+		else
+		{
+			xLastBoundHere = false;
+			xLastCheckedIndex = -1;
 		}
 
 		// Engage button: local debounce only - this Expander has no idea whether a click will
