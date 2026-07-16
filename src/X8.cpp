@@ -68,6 +68,29 @@ struct X8 : Module, XExpanderInterface
 	// Initialize (moduleReset()) clears it. Empty = not yet locked to any type.
 	std::string lockedHostType;
 
+	// X_PARAM_CLICK needs a fixed-length pulse "independent of hold duration" (XShared.hpp) -
+	// unlike TOGGLE/PUSH, which the widget can drive directly via plain setValue() calls, CLICK
+	// needs module-owned timing so the value (and therefore the light, which just mirrors it -
+	// see X8ValueButton) always drops back to 0 after a fixed duration regardless of how long
+	// the mouse stays down. pendingValueClick[c] is a one-shot request the widget sets on press;
+	// clickPulse[c] is the actual timer, consumed once per tick in moduleProcess().
+	dsp::PulseGenerator clickPulse[NUM_X8_KNOBS];
+	bool pendingValueClick[NUM_X8_KNOBS] = {false};
+
+	// The type governing all 8 channels right now - one type applies to the whole browsed param,
+	// never per-channel. Defaults to continuous (knob) whenever nothing meaningful is resolved,
+	// so callers never need their own separate "no Host" fallback.
+	XParamType getXBrowsedParamType()
+	{
+		if (!xHost)
+			return X_PARAM_CONTINUOUS;
+		int count = xHost->getXParamCount();
+		if (count <= 0)
+			return X_PARAM_CONTINUOUS;
+		int idx = clamp((int) OL_state[BROWSE_INDEX_JSON], 0, count - 1);
+		return xHost->getXParamType(idx);
+	}
+
 	X8()
 	{
 		initializeInstance();
@@ -228,6 +251,22 @@ struct X8 : Module, XExpanderInterface
 		// process(), the next time it reads consumeEngagePress().
 		if (engageTrigger.process(params[ENGAGE_PARAM].getValue()))
 			pendingEngagePress = true;
+
+		// X_PARAM_CLICK's fixed-length pulse, independent of hold duration - see
+		// pendingValueClick's own comment above. Only touches the params while the browsed type
+		// is actually CLICK, so it never fights TOGGLE/PUSH's own direct widget-driven values.
+		if (getXBrowsedParamType() == X_PARAM_CLICK)
+		{
+			for (int c = 0; c < NUM_X8_KNOBS; c++)
+			{
+				if (pendingValueClick[c])
+				{
+					pendingValueClick[c] = false;
+					clickPulse[c].trigger(0.1f);
+				}
+				params[KNOB_PARAM + c].setValue(clickPulse[c].process(args.sampleTime) ? 1.f : 0.f);
+			}
+		}
 	}
 
 	inline void moduleProcessState() {}
@@ -444,6 +483,160 @@ struct X8Knob : RoundSmallBlackKnob
 };
 
 /**
+	Toggle/Click/Push channel control - replaces the knob whenever the currently-browsed param
+	isn't continuous (see X8Widget's own visibility-toggle in step()). Uses SquareButton.svg
+	(Dieter's own squared-off cap art, built directly in Inkscape from the real
+	RoundSmallBlackKnob artwork) plus one square "LIGHT" indicator drawn on top in C++ - one
+	visual mechanism, three timings:
+	  - Toggle: click flips it, the light holds either state with no animation.
+	  - Click: light flashes for a fixed duration regardless of hold time (X8's own
+	    moduleProcess() owns this timing via a PulseGenerator - see pendingValueClick).
+	  - Push: light lit only while the mouse is actually held down.
+	The light always just mirrors the underlying param's own current value (>0.5 = lit) - it
+	never needs separate state, since all three interaction modes above drive that same value.
+*/
+struct X8ValueButton : ParamWidget
+{
+	int channel = 0;
+	widget::SvgWidget *cap = nullptr;
+
+	// LIGHT square - SquareButton.svg (unlike the earlier cap attempts) has no built-in overflow
+	// to work around, so this is simply centred in the widget's own box rather than pinned to
+	// absolute coordinates from an old file's specific internal layout.
+	static constexpr float LIGHT_SIZE_MM = 4.572f;
+
+	X8ValueButton()
+	{
+		cap = new widget::SvgWidget();
+		cap->setSvg(APP->window->loadSvg(asset::plugin(pluginInstance, "res/SquareButton.svg")));
+		addChild(cap);
+		box.size = cap->box.size; // matches the loaded SVG's own physical size exactly
+	}
+
+	// Same disconnected/taken/channel-limit gating as X8Knob - see its own comment for why each
+	// case applies.
+	bool isActive()
+	{
+		engine::ParamQuantity *pq = getParamQuantity();
+		X8 *module = pq ? dynamic_cast<X8*>(pq->module) : nullptr;
+		if (!module)
+			return true;
+		if (!module->xHost)
+			return false;
+		if (x8BrowsedParamTaken(module))
+			return false;
+		return channel < (int) module->OL_state[CHANNEL_LIMIT_JSON];
+	}
+
+	bool isPressed()
+	{
+		engine::ParamQuantity *pq = getParamQuantity();
+		return pq && pq->getValue() > 0.5f;
+	}
+
+	// Covers the panel's own decorative knob-ring circle underneath (kept drawn normally, per
+	// Dieter's call - "die circles ganz normal auf dem panel lassen") with a plain, solid,
+	// themed window: Background fill + Frame stroke, straight from Colors.txt (NOT the fixed-
+	// orange-accent convention X8ButtonBase's own LEFT/RIGHT/ENGAGE use - this one deliberately
+	// follows the panel frame's own per-theme convention instead). No mask/hole needed - the new
+	// cap has no overflow to work around, so this is just a solid rounded rect sized to hide the
+	// circle, drawn BEHIND the cap (not on top, unlike the earlier masking attempt).
+	void drawThemeFrame(const DrawArgs &args, float style)
+	{
+		NVGcolor background, frame;
+		switch ((int) style)
+		{
+			case STYLE_DARK:   background = nvgRGB(0x20, 0x20, 0x20); frame = nvgRGB(0x60, 0x60, 0x60); break;
+			case STYLE_BRIGHT: background = nvgRGB(0xe6, 0xe6, 0xe6); frame = nvgRGB(0x60, 0x60, 0x80); break;
+			default:           background = nvgRGB(0x15, 0x15, 0x2b); frame = nvgRGB(0x80, 0x33, 0x00); break; // STYLE_ORANGE
+		}
+		float w = mm2px(9.144f), h = mm2px(9.144f), r = mm2px(1.852f);
+		float x = box.size.x / 2.f - w / 2.f, y = box.size.y / 2.f - h / 2.f;
+
+		nvgBeginPath(args.vg);
+		nvgRoundedRect(args.vg, x, y, w, h, r);
+		nvgFillColor(args.vg, background);
+		nvgFill(args.vg);
+		nvgStrokeWidth(args.vg, mm2px(0.3f));
+		nvgStrokeColor(args.vg, frame);
+		nvgStroke(args.vg);
+	}
+
+	void draw(const DrawArgs &args) override
+	{
+		// Themed background window drawn BEHIND the cap - see drawThemeFrame()'s own comment.
+		engine::ParamQuantity *pq = getParamQuantity();
+		X8 *module = pq ? dynamic_cast<X8*>(pq->module) : nullptr;
+		drawThemeFrame(args, module ? module->OL_state[STYLE_JSON] : STYLE_ORANGE);
+
+		nvgSave(args.vg);
+		if (!isActive())
+			nvgGlobalAlpha(args.vg, 0.3f);
+		Widget::draw(args); // draws the cap child, simply centred - no offset needed
+		if (!isActive())
+			nvgGlobalAlpha(args.vg, 1.f);
+		nvgRestore(args.vg);
+	}
+
+	void drawLayer(const DrawArgs &args, int layer) override
+	{
+		if (layer != 1)
+		{
+			Widget::drawLayer(args, layer);
+			return;
+		}
+		bool active = isActive();
+		nvgSave(args.vg);
+		if (!active)
+			nvgGlobalAlpha(args.vg, 0.3f);
+		float lightSize = mm2px(LIGHT_SIZE_MM);
+		nvgBeginPath(args.vg);
+		nvgRect(args.vg, box.size.x / 2.f - lightSize / 2.f, box.size.y / 2.f - lightSize / 2.f, lightSize, lightSize);
+		nvgStrokeColor(args.vg, (active && isPressed()) ? ORANGE : nvgRGB(0x4a, 0x44, 0x3c));
+		nvgStrokeWidth(args.vg, mm2px(0.5f));
+		nvgStroke(args.vg);
+		if (!active)
+			nvgGlobalAlpha(args.vg, 1.f);
+		nvgRestore(args.vg);
+		Widget::drawLayer(args, 1);
+	}
+
+	void onButton(const event::Button &e) override
+	{
+		engine::ParamQuantity *pq = getParamQuantity();
+		if (isActive() && e.button == GLFW_MOUSE_BUTTON_LEFT && pq)
+		{
+			X8 *module = dynamic_cast<X8*>(pq->module);
+			XParamType type = module ? module->getXBrowsedParamType() : X_PARAM_TOGGLE;
+			if (e.action == GLFW_PRESS)
+			{
+				e.consume(this);
+				switch (type)
+				{
+					case X_PARAM_TOGGLE:
+						pq->setValue(pq->getValue() > 0.5f ? 0.f : 1.f);
+						break;
+					case X_PARAM_PUSH:
+						pq->setValue(1.f);
+						break;
+					case X_PARAM_CLICK:
+						if (module)
+							module->pendingValueClick[channel] = true;
+						break;
+					default:
+						break;
+				}
+			}
+			else if (e.action == GLFW_RELEASE && type == X_PARAM_PUSH)
+			{
+				pq->setValue(0.f);
+			}
+		}
+		ParamWidget::onButton(e);
+	}
+};
+
+/**
 	Currently-browsed param name, LCD-style like every other OrangeLine display - color-coded per
 	ExpanderParamAccessSpec.md's "Name display": grey dashes when no Host is resolved (doubles as
 	the "not connected" indicator, replacing an earlier "XXXXX" placeholder that misleadingly
@@ -536,6 +729,13 @@ struct X8Widget : ModuleWidget
 {
 	XExtStripWidget *extStrip = nullptr;
 
+	// One knob and one value-button share each of the 8 channel slots, same position, only one
+	// ever visible - see step() below. Both stay fully constructed/bound to the same param the
+	// whole time; morphing is purely a visibility (and therefore also hit-testing, per the
+	// existing Wakeup/Ready port precedent - a hidden widget doesn't claim input either) switch.
+	X8Knob *knobs[NUM_X8_KNOBS] = {};
+	X8ValueButton *valueButtons[NUM_X8_KNOBS] = {};
+
 	X8Widget(X8 *module)
 	{
 		setModule(module);
@@ -585,6 +785,13 @@ struct X8Widget : ModuleWidget
 			X8Knob *knob = createParamCentered<X8Knob>(calculateCoordinates(7.62f, knobY[i], 0.f), module, KNOB_PARAM + i);
 			knob->channel = i;
 			addParam(knob);
+			knobs[i] = knob;
+
+			X8ValueButton *button = createParamCentered<X8ValueButton>(calculateCoordinates(7.62f, knobY[i] , 0.f), module, KNOB_PARAM + i);
+			button->channel = i;
+			button->visible = false; // default: knob shown (continuous) until step() knows better
+			addParam(button);
+			valueButtons[i] = button;
 		}
 
 		extStrip = addXExtStrip(this, X8_PANEL_WIDTH_MM);
@@ -597,7 +804,18 @@ struct X8Widget : ModuleWidget
 	{
 		X8 *x8Module = dynamic_cast<X8 *>(module);
 		if (x8Module)
+		{
 			updateXExtStrip(extStrip, x8Module, x8Module->rightExpander.module);
+			// Type-based morph (ExpanderParamAccessSpec.md's "Type-based appearance"): continuous
+			// -> knob, toggle/click/push -> button. One type governs all 8 channels at once,
+			// since it's a property of the browsed param, not of any individual channel.
+			bool showButton = x8Module->getXBrowsedParamType() != X_PARAM_CONTINUOUS;
+			for (int i = 0; i < NUM_X8_KNOBS; i++)
+			{
+				knobs[i]->visible = !showButton;
+				valueButtons[i]->visible = showButton;
+			}
+		}
 		ModuleWidget::step();
 	}
 
