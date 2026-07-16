@@ -137,6 +137,8 @@ label: "Wakeup/Ready Ports" — internal identifiers/comments/filenames still sa
 - **System MIDI messages (status nibble `0xf` — SysEx `0xF0-0xF7`, Clock `0xF8`, Start/Continue/Stop `0xFA-0xFC`, etc.) bypass `midi::Port.channel` filtering entirely**, verified directly in `Rack/src/midi.cpp`'s `InputDevice::onMessage`/`Output::sendMessage` (not just the SDK headers): `if (message.getStatus() != 0xf && input->channel >= 0 && message.getChannel() != input->channel) continue;`. They arrive in `tryPop()` regardless of the selected channel, and `sendMessage()` never overwrites their channel-nibble byte (which, for status `0xf`, is actually the message *sub-type*, not a channel) with the port's configured channel. See `MidiBus.cpp`'s `handleIncomingSystemMessage`/`sendSystemRealtime` for the pattern of manually stamping/reading that sub-type nibble.
 - **When a `CCGridWidget` needs a visual state that reflects "did an override actually change something" rather than just "is something patched"**, and that override only fires at a specific event (e.g. a one-shot snapshot) rather than continuously: latch the comparison result *at that same event*, don't recompute it continuously against whatever the live baseline has since drifted to. RECALL's TX grid hit this: comparing a frozen snapshot against the *current* live receive value would keep "diverging" over time even with no override at all, simply because the live side kept moving after the freeze while the snapshot didn't. Compare the override's incoming value against the baseline's value *at the moment of the snapshot*, store the boolean result, and leave it alone until the next such event — a genuinely continuous override (recomputed every tick) is a separate, simpler case and doesn't need latching.
 - **`moduleCustomInitialize()` runs on *every* non-skipped `process()` tick, not once at construction** — despite the name, and unlike `moduleInitialize()` (which really is gated to run only when `!OL_initialized`, i.e. genuinely once per fresh instance or patch/preset reload). `OrangeLineCommon.hpp`'s `initialize()` calls `moduleCustomInitialize()` unconditionally as its very first line, every single tick. Using it to set a one-time default for an `OL_state`/JSON-backed value (e.g. a right-click menu's persisted setting) silently re-stamps that default every ~1ms, so any user change made via a menu item appears to do nothing — the checkmark/value snaps right back before it's even noticeable. Fix: set genuine one-time defaults directly in the module's own constructor, *after* `initializeInstance()` — the constructor runs exactly once, before either `dataToJson()` (fresh module) or `dataFromJson()` (loaded module/patch) is ever called, so a saved value still correctly overrides the default afterward. Reserve `moduleCustomInitialize()` for things that genuinely need reasserting every tick (same category as `setOutPolyChannels()` above). First hit building X8's per-Expander "Channels" menu.
+- **Rack's own SVG loader (NanoSVG) does not support `<clipPath>` at all** — verified directly in the vendored `nanosvg.h` (zero occurrences of "clip" anywhere in the file). A hand-authored panel/widget SVG that relies on `clipPath` to mask overflowing artwork (e.g. shading that pokes past a rounded-corner silhouette) will render correctly in Inkscape or a browser but silently show the *unclipped* content once loaded through `APP->window->loadSvg()` in Rack itself — there's no error, no warning, the element is just ignored. Don't try to work around this with `nvgScissor()` either unless a plain axis-aligned rectangle genuinely covers the overflow — `nvgScissor()` can't do rounded corners, so it only helps if the overflow reaches the widget's outer bounding box, not just past an inner rounded silhouette. The robust fix for "hide whatever pokes out past a rounded shape" is a same-color mask shape (solid fill with a same-shaped hole, standard `nvgPathWinding(NVG_HOLE)` donut technique) drawn on top in NanoVG, or — simpler still — author the source artwork so nothing overflows its own rounded silhouette in the first place, so no masking is needed at all. First hit building X8's Toggle/Click/Push value-button cap.
+- **A candidate input read via a Host/Expander binding (X-family) can carry values in a completely different unit convention than what the Host's own reader function assumes.** Morpheus's `getChannelRnd()`/`getChannelRec()`/`getChannelClr()`/`getChannelHld()` all compared the raw candidate value against `> 5.f`, matching a real cable's 0..10V gate convention — but a bound X8 Expander's own knob/button range is `configParam(KNOB_PARAM+i, 0.f, 1.f, ...)`, i.e. 0..1, whose maximum (1.0) can never cross a 5.0 threshold. The candidate would resolve as "connected" (green, correctly bound) yet never actually register as engaged, with no error anywhere — it just silently never fired. `LOOP_LEN` happened to escape this because its own scale (`raw*100`) already assumed a 0..1-ish raw range, not a full 0..10V swing, so it's easy to test one working candidate and assume the pattern is fine for all of them. Fix candidate-input thresholds to a value that correctly distinguishes on/off for *both* conventions (e.g. `0.5f` instead of `5.f` — a real gate's usual 0V/10V swing clears 0.5 by just as wide a margin as it clears 5), and audit every reader function a new Expander-compatible candidate touches, not just the first one tested.
 
 ## Right-click context menu: submenu/radio-style item, step by step
 
@@ -320,9 +322,40 @@ Use this pattern when several modules need to share state where one module colle
     ```
     This is what makes `HubA | Expander | HubB` light up red on the Expander-facing side of *both* Hubs, not just on the Expander itself — a Hub can't tell this just from its immediate neighbor's *type* (the immediate neighbor is a perfectly normal Expander), it has to ask that Expander whether it's `getLanesHubAmbiguous()` or serving someone else.
 
+- **Seam-bridging "Ext" strip** — a thin full-height sliver, drawn flat-color (no SVG asset) in
+  `draw()`, matching that theme's panel background plus a continuation of the panel's own accent
+  line, drawn right at a module's own left/right edge. Purpose: two touching same-themed family
+  members read as one continuous panel instead of two separate ones with a visible gap/border
+  between them.
+  - **Rack DOES clip a widget's rendering to its own `ModuleWidget`'s bounds** (confirmed live,
+    2026-07-16, correcting an earlier wrong assumption in this file that it didn't) — a widget
+    positioned or sized past its own module's edge does NOT reach across the seam into the
+    neighbor's rendered surface; that portion is simply clipped away and never drawn at all.
+  - **Consequence: there is no such thing as a strip "reaching into" or "covering" the neighbor.**
+    The illusion of a continuous panel only works because each module fills its own strip flush
+    to its own edge, using up the space right up to (never past) its own boundary — when two
+    same-themed modules sit flush against each other, both edges independently show matching
+    background/accent color right at the boundary, and the seam disappears purely because both
+    sides look identical there, not because either one draws over the gap.
+  - **Both sides of every seam always need their own strip — this is not optional insurance, it's
+    the only way it can work at all**, precisely *because* of the clipping above: neither module
+    can compensate for the other's missing strip, since neither can paint outside its own bounds.
+    LANES already does this correctly (`LanesShared.hpp`'s `LanesExtStripWidget`/
+    `addLanesExtStrips()`/`updateLanesExtStrips()` give every Hub/Expander both a `left` and a
+    `right` strip). The X-family's `XShared.hpp` version (`XExtStripWidget`/`addXExtStrip()`/
+    `updateXExtStrip()`) originally gave only the Expander a right-edge strip, reasoning that the
+    attachment direction is architecturally fixed so only one "owner" edge should be needed — that
+    reasoning was wrong given clipping, and Dieter is reworking the X-family strip geometry
+    directly as of this writing (2026-07-16) to fix it; check `XShared.hpp`'s current state rather
+    than assuming any specific constant/geometry described in an earlier version of this file.
+
 - **New Expander/Hub family checklist**:
   1. `src/<Family>Shared.hpp` — shared constants + the two interfaces + `resolveLanesHub()`/`classifyLanesNeighborForHub()` (rename the `Lanes`-prefixed identifiers to your family's name).
   2. `src/<Family>VoiceAllocator.hpp` (if the family involves merging/polyphony at all) — the reusable `template <int CAPACITY>` allocator, one instance per Expander.
   3. Each Hub: `struct <Name> : Module, <Family>HubInterface`, implements the raw-state getters, plus the two connection lights using `classifyLanesNeighborForHub()`.
   4. Each Expander: `struct <Name> : Module, <Family>ExpanderInterface`, implements `getLanesHub()`/`getLanesHubAmbiguous()`, resolves both sides every tick, plus the two connection lights using the green/yellow/red logic above.
-  5. Usual per-module checklist (above) for each Hub/Expander's own `.hpp`/`.cpp`/`JsonLabels.hpp`/`plugin.hpp`/`plugin.cpp`/`plugin.json`/panel files.
+  5. The seam-bridging Ext strip (above) — every member needs its own strip on every edge that
+     can ever face a same-family neighbor, full stop; a fixed attachment direction (only one type
+     of neighbor possible on a given edge, like X-family's Host-is-always-rightward rule) changes
+     which edges need a strip at all, never whether both sides of an actual seam need one.
+  6. Usual per-module checklist (above) for each Hub/Expander's own `.hpp`/`.cpp`/`JsonLabels.hpp`/`plugin.hpp`/`plugin.cpp`/`plugin.json`/panel files.

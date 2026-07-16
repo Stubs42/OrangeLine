@@ -177,26 +177,34 @@ inline float getXNeighborStyle(Module *neighbor)
 #define X_STRIP_ACCENT_Y_MM 124.71525f
 #define X_STRIP_ACCENT_THICKNESS_MM 0.3f
 
+// How far past the bare seam-bridging sliver the whole strip (background fill AND the orange
+// accent line together) reaches into EACH of the two neighboring panels - a first-guess tuning
+// value (2026-07-16), not yet visually confirmed in Rack. Widen/narrow freely; Dieter reviews
+// this live since it's a pixel-perfect panel-art judgement call, not something derivable from
+// the code alone. See CLAUDE.md's Expander-modules section for the open coverage question this
+// addresses (the accent line needs to visibly continue the panel's own orange line motif on
+// both sides, not just bridge the physical gap between the two modules).
+#define X_STRIP_SEEM_WIDTH_MM 2.f //1.524f
+#define X_STRIP_LINE_ADD_MM   1.f
+
 /**
-	Seamless panel-merge strip (Dieter's design, same mechanism as LANES' Ext strip): a thin
-	(1.524mm) full-height sliver drawn right at a module's own edge, matching that theme's panel
-	background color, so two touching same-themed X-family modules read as one continuous panel
-	across the seam. X-family only ever needs this on the RIGHT edge (toward wherever the Host
-	is, directly or via a further Expander) - there is deliberately no left-side strip, since the
-	X family's own left side never connects to anything meaningful (see the left-only-attachment
-	note above).
+	Seamless panel-merge strip 
 */
 struct XExtStripWidget : Widget
 {
 	int style = STYLE_ORANGE;
 	float topInsetMm = 0.f;
+	// true for the Host's own left-edge strip (addXExtStripLeft) - mirrors which direction the
+	// background's small alignment offset points, so the same draw() shape works for both the
+	// Expander's right-edge strip and the Host's left-edge one without duplicating the logic.
+	bool mirror = false;
 
 	void draw(const DrawArgs &args) override
 	{
 		if (!visible)
 			return;
 		nvgBeginPath(args.vg);
-		nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+		nvgRect(args.vg, mirror ? -X_STRIP_LINE_ADD_MM : X_STRIP_LINE_ADD_MM, 0.f, box.size.x, box.size.y);
 		nvgFillColor(args.vg, (style == STYLE_ORANGE) ? X_STRIP_BG_ORANGE : (style == STYLE_DARK) ? X_STRIP_BG_DARK : X_STRIP_BG_BRIGHT);
 		nvgFill(args.vg);
 
@@ -211,8 +219,8 @@ struct XExtStripWidget : Widget
 inline XExtStripWidget* addXExtStrip(ModuleWidget *w, float panelWidthMm)
 {
 	XExtStripWidget *strip = new XExtStripWidget();
-	strip->box.pos = mm2px(Vec(panelWidthMm - 1.524f / 2.f + 0.1f, 0.35f));
-	strip->box.size = mm2px(Vec(1.524f, PANELHEIGHT - 0.5f));
+	strip->box.pos = mm2px(Vec(panelWidthMm - X_STRIP_SEEM_WIDTH_MM / 2.f , 0.35f));
+	strip->box.size = mm2px(Vec(X_STRIP_SEEM_WIDTH_MM + X_STRIP_LINE_ADD_MM, PANELHEIGHT - 0.5f));
 	strip->topInsetMm = 0.35f;
 	strip->visible = false;
 	w->addChild(strip);
@@ -233,6 +241,37 @@ inline void updateXExtStrip(XExtStripWidget *strip, Module *self, Module *rightN
 	float rightStyle = getXNeighborStyle(rightNeighbor);
 	strip->style = (int) myStyle;
 	strip->visible = (rightStyle >= 0.f) && (rightStyle == myStyle);
+}
+
+/**
+	Host-side counterpart of addXExtStrip() - a mirror image around a module's own LEFT edge
+	(x=0) instead of the right edge (panelWidthMm), same total width/constants. Needed because
+	Rack clips a widget's rendering to its own ModuleWidget's bounds: the Expander's right-edge
+	strip can only ever cover pixels within the Expander's own panel, never the Host's, so the
+	seam only disappears if the Host draws its own matching strip on its own left edge too - see
+	CLAUDE.md's Expander-modules section.
+*/
+inline XExtStripWidget* addXExtStripLeft(ModuleWidget *w)
+{
+	XExtStripWidget *strip = new XExtStripWidget();
+	strip->box.pos = mm2px(Vec(-X_STRIP_SEEM_WIDTH_MM / 2.f - X_STRIP_LINE_ADD_MM, 0.35f));
+	strip->box.size = mm2px(Vec(X_STRIP_SEEM_WIDTH_MM + X_STRIP_LINE_ADD_MM, PANELHEIGHT - 0.5f));
+	strip->topInsetMm = 0.35f;
+	strip->mirror = true;
+	strip->visible = false;
+	w->addChild(strip);
+	return strip;
+}
+
+// See updateXExtStrip() above - identical logic, just checking the LEFT neighbor instead.
+inline void updateXExtStripLeft(XExtStripWidget *strip, Module *self, Module *leftNeighbor)
+{
+	float myStyle = getXNeighborStyle(self);
+	if (myStyle < 0.f)
+		return;
+	float leftStyle = getXNeighborStyle(leftNeighbor);
+	strip->style = (int) myStyle;
+	strip->visible = (leftStyle >= 0.f) && (leftStyle == myStyle);
 }
 
 #endif

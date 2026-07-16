@@ -1350,12 +1350,48 @@ struct MorpheusDisplayWidget : Widget
 	}
 };
 
+// Tunable by eye - play with these until the ring sits right against the jack's own footprint.
+#define X_SLOT_RING_RADIUS_OFFSET_MM 0.6f
+#define X_SLOT_RING_STROKE_WIDTH_MM  0.6f
+
+/**
+	A plain PJ301MPort with a thin ring drawn around it in its X-candidate's own accent color
+	(XHostInterface::getXParamColor()) - a static "this socket offers an X-slot" marker, always
+	shown regardless of connection/binding state, so a glance at the panel tells you which jacks
+	are X8-bindable and lets you match them up against the Expander's own color-coded display.
+*/
+struct MorpheusXSlotPort : PJ301MPort
+{
+	void drawLayer(const DrawArgs &args, int layer) override
+	{
+		PJ301MPort::drawLayer(args, layer);
+		if (layer != 1)
+			return;
+		Morpheus *m = module ? dynamic_cast<Morpheus*>(module) : nullptr;
+		if (!m)
+			return;
+		for (int i = 0; i < NUM_X_CANDIDATES; i++)
+		{
+			if (m->xCandidates[i].inputId != portId)
+				continue;
+			float r = box.size.x / 2.f + mm2px(X_SLOT_RING_RADIUS_OFFSET_MM);
+			nvgBeginPath(args.vg);
+			nvgCircle(args.vg, box.size.x / 2.f, box.size.y / 2.f, r);
+			nvgStrokeWidth(args.vg, mm2px(X_SLOT_RING_STROKE_WIDTH_MM));
+			nvgStrokeColor(args.vg, m->xCandidates[i].color);
+			nvgStroke(args.vg);
+			break;
+		}
+	}
+};
+
 /**
 	Main Module Widget
 */
 struct MorpheusWidget : ModuleWidget
 {
 	char memBuffer[3];
+	XExtStripWidget *extStrip = nullptr;
 
 	MorpheusWidget(Morpheus *module)
 	{
@@ -1390,16 +1426,16 @@ struct MorpheusWidget : ModuleWidget
 		// throughout (adding the usual OFFSET_* constants on top would double-shift, as it did
 		// briefly for RECALL/CV2CC's lock buttons - see CLAUDE.md).
 		addParam (createParamCentered<RoundLargeBlackKnob> (calculateCoordinates (17.780, 16.511, 0.f),  module, LOCK_PARAM));
-		addInput (createInputCentered<PJ301MPort> (calculateCoordinates ( 6.154, 16.511, 0.f), module, LOCK_INPUT));
+		addInput (createInputCentered<MorpheusXSlotPort> (calculateCoordinates ( 6.154, 16.511, 0.f), module, LOCK_INPUT));
 		addParam (createParamCentered<RoundLargeBlackKnob> (calculateCoordinates (33.020, 16.511, 0.f),  module, BALANCE_PARAM));
-		addInput (createInputCentered<PJ301MPort> (calculateCoordinates (44.704, 16.511, 0.f), module, BALANCE_INPUT));
+		addInput (createInputCentered<MorpheusXSlotPort> (calculateCoordinates (44.704, 16.511, 0.f), module, BALANCE_INPUT));
 
         RoundSmallBlackKnob *knob;
         knob = createParamCentered<RoundSmallBlackKnob> (calculateCoordinates ( 6.117, 52.275, 0.f),  module, LOOP_LEN_PARAM);
         knob->snap = true;
         addParam (knob);
 
-		addInput (createInputCentered<PJ301MPort> (calculateCoordinates ( 6.154, 61.469, 0.f), module, LOOP_LEN_INPUT));
+		addInput (createInputCentered<MorpheusXSlotPort> (calculateCoordinates ( 6.154, 61.469, 0.f), module, LOOP_LEN_INPUT));
 		addParam (createParamCentered<LEDButton> (calculateCoordinates  (15.769, 52.245, 0.f),  module, MEM_UP_PARAM));
 		addParam (createParamCentered<LEDButton> (calculateCoordinates  (15.806, 61.200, 0.f),  module, MEM_DOWN_PARAM));
 		addInput (createInputCentered<PJ301MPort> (calculateCoordinates (25.458, 61.469, 0.f), module, MEM_INPUT));
@@ -1410,27 +1446,27 @@ struct MorpheusWidget : ModuleWidget
 
 		addParam (createParamCentered<VCVLatch> (calculateCoordinates  ( 6.111, 72.948, 0.f),  module, HLD_ON_PARAM));
  		addChild (createLightCentered<LargeLight<YellowLight>>	(calculateCoordinates  ( 6.111, 72.948, 0.f), module, HLD_ON_LIGHT));
-		addInput (createInputCentered<PJ301MPort> (calculateCoordinates ( 6.096, 80.519, 0.f), module, HLD_INPUT));
+		addInput (createInputCentered<MorpheusXSlotPort> (calculateCoordinates ( 6.096, 80.519, 0.f), module, HLD_INPUT));
 		addParam (createParamCentered<LEDButton> (calculateCoordinates  (15.762, 72.948, 0.f),  module, RND_PARAM));
-		addInput (createInputCentered<PJ301MPort> (calculateCoordinates (15.748, 80.519, 0.f), module, RND_INPUT));
+		addInput (createInputCentered<MorpheusXSlotPort> (calculateCoordinates (15.748, 80.519, 0.f), module, RND_INPUT));
 		addParam (createParamCentered<LEDButton> (calculateCoordinates  (25.415, 72.948, 0.f),  module, SHIFT_LEFT_PARAM));
-		addInput (createInputCentered<PJ301MPort> (calculateCoordinates (25.400, 80.519, 0.f), module, SHIFT_LEFT_INPUT));
+		addInput (createInputCentered<MorpheusXSlotPort> (calculateCoordinates (25.400, 80.519, 0.f), module, SHIFT_LEFT_INPUT));
 		addParam (createParamCentered<LEDButton> (calculateCoordinates  (35.066, 72.948, 0.f),  module, SHIFT_RIGHT_PARAM));
-		addInput (createInputCentered<PJ301MPort> (calculateCoordinates (35.052, 80.519, 0.f), module, SHIFT_RIGHT_INPUT));
+		addInput (createInputCentered<MorpheusXSlotPort> (calculateCoordinates (35.052, 80.519, 0.f), module, SHIFT_RIGHT_INPUT));
 		addParam (createParamCentered<LEDButton> (calculateCoordinates  (44.718, 72.948, 0.f),  module, CLR_PARAM));
-		addInput (createInputCentered<PJ301MPort> (calculateCoordinates (44.704, 80.519, 0.f), module, CLR_INPUT));
+		addInput (createInputCentered<MorpheusXSlotPort> (calculateCoordinates (44.704, 80.519, 0.f), module, CLR_INPUT));
 
 		addParam (createParamCentered<VCVLatch> (calculateCoordinates  ( 6.096, 93.219, 0.f),  module, EXT_ON_PARAM));
  		addChild (createLightCentered<LargeLight<YellowLight>>	(calculateCoordinates  ( 6.096, 93.219, 0.f), module, EXT_ON_LIGHT));
 		addInput (createInputCentered<PJ301MPort> (calculateCoordinates ( 6.096,102.363, 0.f), module, EXT_INPUT));
 		addParam (createParamCentered<LEDButton> (calculateCoordinates  (15.749, 93.219, 0.f),  module, REC_PARAM));
-		addInput (createInputCentered<PJ301MPort> (calculateCoordinates (15.748,102.363, 0.f), module, REC_INPUT));
+		addInput (createInputCentered<MorpheusXSlotPort> (calculateCoordinates (15.748,102.363, 0.f), module, REC_INPUT));
 		addParam (createParamCentered<RoundSmallBlackKnob> (calculateCoordinates (25.400, 93.219, 0.f),  module, GTP_PARAM));
-		addInput (createInputCentered<PJ301MPort> (calculateCoordinates (25.400,102.363, 0.f), module, GTP_INPUT));
+		addInput (createInputCentered<MorpheusXSlotPort> (calculateCoordinates (25.400,102.363, 0.f), module, GTP_INPUT));
 		addParam (createParamCentered<RoundSmallBlackKnob> (calculateCoordinates (35.052, 93.219, 0.f),  module, SCL_PARAM));
-		addInput (createInputCentered<PJ301MPort> (calculateCoordinates (35.052,102.363, 0.f), module, SCL_INPUT));
+		addInput (createInputCentered<MorpheusXSlotPort> (calculateCoordinates (35.052,102.363, 0.f), module, SCL_INPUT));
 		addParam (createParamCentered<RoundSmallBlackKnob> (calculateCoordinates (44.704, 93.219, 0.f),  module, OFS_PARAM));
-		addInput (createInputCentered<PJ301MPort> (calculateCoordinates (44.704,102.363, 0.f), module, OFS_INPUT));
+		addInput (createInputCentered<MorpheusXSlotPort> (calculateCoordinates (44.704,102.363, 0.f), module, OFS_INPUT));
 
 		addInput (createInputCentered<PJ301MPort> (calculateCoordinates ( 6.096,115.574, 0.f), module, RST_INPUT));
 		addInput (createInputCentered<PJ301MPort> (calculateCoordinates (15.748,115.574, 0.f), module, CLK_INPUT));
@@ -1453,8 +1489,17 @@ struct MorpheusWidget : ModuleWidget
 		addOrangeLineTouchOutputOnly (this, module, NUM_OUTPUTS,
 			module ? &module->OL_touchOutPort : nullptr, module ? &module->OL_touchVisible : nullptr);
 
+		extStrip = addXExtStripLeft(this);
+
 		if (module)
 			module->widgetReady = true;
+	}
+
+	void step() override
+	{
+		if (module)
+			updateXExtStripLeft(extStrip, module, module->leftExpander.module);
+		ModuleWidget::step();
 	}
 
 	struct GateIsTrgItem : MenuItem
