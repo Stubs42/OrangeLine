@@ -247,6 +247,23 @@ struct X8 : Module, XExpanderInterface
 	}
 };
 
+// Shared by X8EngageButton/X8Knob below: is the currently-browsed param bound to a *different*
+// Expander, or is a real cable connected on the Host's own jack for it? Either way this Expander
+// has no control over it right now, regardless of the Channels limit or connection state
+// otherwise - matches ExpanderParamAccessSpec.md's "taken/unavailable" state (same computation
+// X8NameDisplay's own color-coding already does, kept separate there since it also needs "mine").
+static bool x8BrowsedParamTaken(X8 *module)
+{
+	if (!module || !module->xHost)
+		return false;
+	int count = module->xHost->getXParamCount();
+	if (count <= 0)
+		return false;
+	int idx = clamp((int) module->OL_state[BROWSE_INDEX_JSON], 0, count - 1);
+	bool mine = module->xHost->isXParamEngaged(idx) && module->xHost->getXParamBoundId(idx) == (int64_t) module->id;
+	return (module->xHost->isXParamEngaged(idx) && !mine) || module->xHost->isXParamCableConnected(idx);
+}
+
 /**
 	Squarish rounded-rect button matching the panel's own LEFT/RIGHT/ENGAGE artwork (see
 	ExpanderParamAccessSpec.md's "Button visual design") - DisplayFill background per theme,
@@ -260,7 +277,8 @@ struct X8ButtonBase : ParamWidget
 	// No function at all while disconnected (no Host resolved, or blocked by the host
 	// type-lock) - LEFT/RIGHT/ENGAGE have nothing to step through or bind when there's nobody
 	// to browse. No module context at all (e.g. the module browser's preview) defaults active.
-	bool isActive()
+	// Virtual so X8EngageButton can add its own extra "taken" condition on top - see there.
+	virtual bool isActive()
 	{
 		engine::ParamQuantity *pq = getParamQuantity();
 		X8 *module = pq ? dynamic_cast<X8*>(pq->module) : nullptr;
@@ -332,7 +350,25 @@ struct X8ButtonBase : ParamWidget
 // corners), not just the straight-edge segment lengths - the earlier version used the latter
 // and came out visibly too small.
 struct X8StepButton : X8ButtonBase { X8StepButton() { box.size = mm2px(Vec(4.6f, 4.6f)); } };
-struct X8EngageButton : X8ButtonBase { X8EngageButton() { box.size = mm2px(Vec(10.69f, 5.61f)); } };
+
+struct X8EngageButton : X8ButtonBase
+{
+	X8EngageButton() { box.size = mm2px(Vec(10.69f, 5.61f)); }
+
+	// Also inert (grey) whenever the currently-browsed param is "taken" - a click there is a
+	// no-op anyway per the spec ("the Host decides... do nothing at all if the browsed param is
+	// grey"). LEFT/RIGHT deliberately stay active in this case - browsing away from a taken slot
+	// must keep working (ExpanderParamAccessSpec.md: "browsing is never locked... stepping onto
+	// a grey entry is harmless read-only viewing, no restriction of any kind").
+	bool isActive() override
+	{
+		if (!X8ButtonBase::isActive())
+			return false;
+		engine::ParamQuantity *pq = getParamQuantity();
+		X8 *module = pq ? dynamic_cast<X8*>(pq->module) : nullptr;
+		return !x8BrowsedParamTaken(module);
+	}
+};
 
 /**
 	Channel knob that dims and stops accepting input once its own channel index is at or beyond
@@ -354,6 +390,8 @@ struct X8Knob : RoundSmallBlackKnob
 			return true;
 		if (!module->xHost)
 			return false; // disconnected (or blocked by the host type-lock) - nothing to control
+		if (x8BrowsedParamTaken(module))
+			return false; // bound to a different Expander, or a real cable - not ours to turn
 		return channel < (int) module->OL_state[CHANNEL_LIMIT_JSON];
 	}
 

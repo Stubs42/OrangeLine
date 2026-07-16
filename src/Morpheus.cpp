@@ -1199,14 +1199,26 @@ struct MorpheusDisplayWidget : Widget
 
 	void draw(const DrawArgs &args) override
 	{
-		// do not try to draw if module is not initielized yet.
-		if (!module)
-			return;
-
+		// Plain background only - always drawn regardless of the room-brightness/dim-lights
+		// setting, which only applies to the self-illuminating step/cursor content in
+		// drawLayer() below (same split NumberWidget/TextWidget already use for their own
+		// glowing text - this display just also needs its own non-glowing background layer).
 		nvgBeginPath(args.vg);
 		nvgRect(args.vg, 0, 0, box.size.x, box.size.y);
 		nvgFillColor(args.vg, DISPLAY_BG_COLOR);
 		nvgFill(args.vg);
+	}
+
+	void drawLayer(const DrawArgs &args, int layer) override
+	{
+		if (layer != 1)
+		{
+			Widget::drawLayer(args, layer);
+			return;
+		}
+		// do not try to draw if module is not initielized yet.
+		if (!module)
+			return;
 
 		// "Visual On/Off" right-click toggle - skip the per-channel/per-step content
 		// entirely (the actual CPU cost) when off, leaving just the plain black background.
@@ -1312,6 +1324,7 @@ struct MorpheusDisplayWidget : Widget
 			nvgStrokeColor(args.vg, DISPLAY_END_MARKER_COLOR);
 			nvgStroke(args.vg);
 		}
+		Widget::drawLayer(args, 1);
 	}
 };
 
