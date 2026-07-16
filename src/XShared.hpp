@@ -50,6 +50,15 @@ enum XParamType {
 	                     // project terminology
 };
 
+// Text alignment for a numeric display (X8D/X16D's per-channel value readout) - a per-candidate
+// property, same idea as getXParamColor(), since different value shapes read better differently
+// (e.g. a signed float vs. a plain step count).
+enum XAlign {
+	X_ALIGN_LEFT,
+	X_ALIGN_CENTER,
+	X_ALIGN_RIGHT
+};
+
 struct XHostInterface
 {
 	// Short, fixed identity string for this Host's concrete type (e.g. "MORPH") - never varies
@@ -66,6 +75,9 @@ struct XHostInterface
 	// and does not truncate or scroll. Every Host implementation must respect this.
 	virtual const char* getXParamShortName(int index) = 0;
 	virtual XParamType getXParamType(int index) = 0;
+	// How X8D/X16D should align this candidate's numeric display text - continuous types only,
+	// same reasoning as formatXParamValue() below (a digital type has no numeric display at all).
+	virtual XAlign getXParamAlign(int index) = 0;
 	virtual NVGcolor getXParamColor(int index) = 0;
 
 	// Red/Green - derived from the binding, not separately stored: true iff this
@@ -91,6 +103,17 @@ struct XHostInterface
 	// engaging doesn't change anything the Host is currently outputting. A Host with no
 	// meaningful scaling for a given candidate (e.g. a push/click/toggle type) can just return 0.
 	virtual float getXParamTakeoverValue(int index, int channel) = 0;
+
+	// Converts an Expander's own 0..1 raw knob value into whatever value THIS Host's own poly
+	// input actually expects to receive for this candidate - i.e. exactly what a real patch cable
+	// would have to deliver to produce the same result. The Expander itself has no idea about any
+	// Host's own CV scaling convention (a 0..1 knob is the ONE universal range every candidate
+	// type shares), so the Host must apply this conversion itself whenever it copies a bound
+	// Expander's raw knob value into its own live poly-input state - see Morpheus.cpp's
+	// moduleProcess() refresh loop for the call site. continuous types only; a Host can just
+	// return raw unchanged for a digital (Toggle/Click/Push) candidate, since those are read via
+	// a simple threshold, not a scaled real-world unit.
+	virtual float scaleXParamValue(int index, float raw) = 0;
 
 	virtual std::string formatXParamValue(int index, float value) = 0; // continuous only
 

@@ -105,6 +105,37 @@ struct X8D : Module, XExpanderInterface
 		return xHost->getXParamColor(idx);
 	}
 
+	// The Host's own alignment choice for whatever's currently browsed - see
+	// XHostInterface::getXParamAlign(). Falls back to left when nothing meaningful is resolved,
+	// same reasoning as getXBrowsedParamType()/getXBrowsedParamColor() above.
+	XAlign getXBrowsedParamAlign()
+	{
+		if (!xHost)
+			return X_ALIGN_LEFT;
+		int count = xHost->getXParamCount();
+		if (count <= 0)
+			return X_ALIGN_LEFT;
+		int idx = clamp((int) OL_state[BROWSE_INDEX_JSON], 0, count - 1);
+		return xHost->getXParamAlign(idx);
+	}
+
+	// The single formatting function shared by the knob's hover tooltip (X8DKnobQuantity below)
+	// and the future per-channel numeric display - both must always show identical text for the
+	// same raw value, so both call through this one place rather than each separately resolving
+	// xHost/browseIndex and calling formatXParamValue() themselves. Empty string (no tooltip
+	// text at all) whenever nothing meaningful is resolved, or for a digital-type param (its own
+	// lit/unlit state already shows everything there is to show).
+	std::string formatXValue(float raw)
+	{
+		if (!xHost)
+			return "";
+		int count = xHost->getXParamCount();
+		if (count <= 0)
+			return "";
+		int idx = clamp((int) OL_state[BROWSE_INDEX_JSON], 0, count - 1);
+		return xHost->formatXParamValue(idx, raw);
+	}
+
 	X8D()
 	{
 		initializeInstance();
@@ -150,10 +181,24 @@ struct X8D : Module, XExpanderInterface
 #pragma GCC diagnostic pop
 	}
 
+	// Custom ParamQuantity so the knob's native Rack hover tooltip calls through the same
+	// formatXValue() the future numeric display will use, instead of a meaningless raw 0..1
+	// readout - the physical control represents a different candidate param over time, so a
+	// static configParam() unit string can never be right for more than one of them.
+	struct X8DKnobQuantity : ParamQuantity
+	{
+		std::string getDisplayValueString() override
+		{
+			X8D *module = dynamic_cast<X8D*>(this->module);
+			std::string formatted = module ? module->formatXValue(getValue()) : "";
+			return formatted.empty() ? ParamQuantity::getDisplayValueString() : formatted;
+		}
+	};
+
 	inline void moduleParamConfig()
 	{
 		for (int i = 0; i < NUM_X8D_KNOBS; i++)
-			configParam(KNOB_PARAM + i, 0.f, 1.f, 0.5f, "Value");
+			configParam<X8DKnobQuantity>(KNOB_PARAM + i, 0.f, 1.f, 0.5f, "Value");
 		configParam(LEFT_PARAM, 0.f, 1.f, 0.f, "Previous parameter");
 		configParam(RIGHT_PARAM, 0.f, 1.f, 0.f, "Next parameter");
 		configParam(ENGAGE_PARAM, 0.f, 1.f, 0.f, "Engage");
@@ -533,6 +578,12 @@ struct X8DValueButton : ParamWidget
 		box.size = cap->box.size; // matches the loaded SVG's own physical size exactly
 	}
 
+	// No tooltip at all, per Dieter - a Toggle/Click/Push control's own lit/unlit state already
+	// shows everything there is to show; a raw 0/1 value readout is useless on top of that.
+	// ParamWidget::onEnter() is what creates the tooltip - skipping it entirely (not calling the
+	// base) suppresses it, same technique X8DKnob's own comment describes for a different purpose.
+	void onEnter(const EnterEvent &e) override {}
+
 	// Same disconnected/taken/channel-limit gating as X8DKnob - see its own comment for why each
 	// case applies.
 	bool isActive()
@@ -660,14 +711,13 @@ struct X8DValueButton : ParamWidget
 };
 
 /**
-	Static background-colored cover for the (not yet built) per-channel numeric display column -
-	shown only while buttons are visible (Toggle/Click/Push params have no numeric value worth
-	showing), hiding the whole display area behind a plain rect matching the current theme's own
-	panel background. Position/size measured directly from res/X8DWork.svg's own "ButtonCover"
-	guide layer (one rect spanning all 8 rows at once, not per-channel). Once the actual numeric
-	display widget exists, it must skip rendering under this exact same condition
-	(X8DWidget::step()'s own showButton flag) - this cover exists only because there is nothing
-	else there yet to make that skip visible.
+	Static background-colored cover for the per-channel numeric display column - shown only while
+	buttons are visible (Toggle/Click/Push params have no numeric value worth showing), hiding the
+	whole display area behind a plain rect matching the current theme's own panel background.
+	Position/size measured directly from res/X8DWork.svg's own "ButtonCover" guide layer (one rect
+	spanning all 8 rows at once, not per-channel). X8DWidget::step() toggles this and the 8
+	X8DValueDisplay widgets as exact opposites of the same showButton flag, so exactly one of the
+	two ever shows for a given row.
 */
 struct X8DButtonCover : TransparentWidget
 {
@@ -685,6 +735,18 @@ struct X8DButtonCover : TransparentWidget
 		nvgFill(args.vg);
 	}
 };
+
+// Shared by every LCD-style display in this file (X8DNameDisplay/X8DValueDisplay) - per Dieter's
+// own "simple and stupid" convention: text is ALWAYS drawn left-aligned (NVG_ALIGN_LEFT) at
+// local x=0, never using NanoVG's own CENTER/RIGHT text-align modes (their metrics drift off
+// true visual center for this LCD-style font's side-bearings, same reasoning X8DNameDisplay
+// already worked out by hand). "Centered" and "right-aligned" are both simulated instead:
+// centered text picks its own hand-tuned starting x offset from this table (index = strlen,
+// still drawn flush-left from there); right-aligned text is left as NVG_ALIGN_LEFT at x=0 too,
+// but the STRING itself gets left-padded with blanks out to the full 5-character field width
+// first (see X8DValueDisplay), so the visible characters end up flush against the right edge
+// without ever touching NanoVG's own alignment modes.
+static const float X8D_CENTER_OFFSET_MM[6] = { 0.f, 3.725f + 1.242f, 3.725f, 2.483f, 1.242f, 0.f }; // index = strlen
 
 /**
 	Currently-browsed param name, LCD-style like every other OrangeLine display - color-coded per
@@ -758,15 +820,80 @@ struct X8DNameDisplay : TransparentWidget
 		// metrics, which drift off true visual center for this LCD-style font's side-bearings):
 		// 5 chars x=1.570 (this is the widget's own local x=0 anchor, unchanged), 4 chars
 		// x=2.812, 3 chars x=4.053, 2 chars x=5.295, 1 char x=9.389 - offsets below are each
-		// relative to the 5-char reference.
-		static const float xOffsetMm[6] = { 0.f, 7.819f, 3.725f, 2.483f, 1.242f, 0.f }; // index = strlen
+		// relative to the 5-char reference. Shared with X8DValueDisplay - see X8D_CENTER_OFFSET_MM.
 		nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_BASELINE);
-		float x = mm2px(xOffsetMm[strlen(buffer)]);
+		float x = mm2px(X8D_CENTER_OFFSET_MM[strlen(buffer)]);
 
 		// Text is drawn at local x with baseline alignment, so glyphs extend upward (ascenders)
 		// from y=0, not downward - box.size.y (an arbitrary hit-test size, not a text-metrics
 		// box) doesn't describe where the glyphs actually render. Scissor a generous band around
 		// the baseline instead of assuming (0,0,w,h) covers the glyphs.
+		nvgSave(args.vg);
+		nvgScissor(args.vg, 0.f, -fontSizePx * 1.2f, box.size.x, fontSizePx * 1.6f);
+		nvgText(args.vg, x, 0.f, buffer, nullptr);
+		nvgRestore(args.vg);
+		Widget::drawLayer(args, 1);
+	}
+};
+
+/**
+	Per-channel numeric readout, LCD-style like every other OrangeLine display - shows exactly the
+	same formatted text as this channel's own knob tooltip (X8DKnobQuantity/X8D::formatXValue()),
+	so the two can never disagree, per Dieter's own request. Reads THIS channel's own knob value
+	(not just channel 0 - each of the 8 channels has its own independent value), colored to match
+	the browsed candidate's own slot color (same convention as X8DNameDisplay/X8DValueButton).
+	Only relevant while a continuous param is browsed - X8DWidget's own step() hides these exactly
+	when X8DButtonCover shows instead (a digital Toggle/Click/Push param has no numeric value
+	worth showing).
+*/
+struct X8DValueDisplay : TransparentWidget
+{
+	X8D *module = nullptr;
+	int channel = 0;
+
+	void drawLayer(const DrawArgs &args, int layer) override
+	{
+		if (layer != 1)
+		{
+			Widget::drawLayer(args, layer);
+			return;
+		}
+		if (!module)
+			return;
+
+		// Same hard contract as X8DNameDisplay's own getXParamShortName() text: max 5 characters,
+		// no truncation/scrolling fallback beyond a defensive cutoff - a Host that returns more
+		// can't make text bleed outside this widget either way.
+		char raw[6];
+		snprintf(raw, sizeof(raw), "%s", module->formatXValue(module->getStateParam(KNOB_PARAM + channel)).c_str());
+		if (raw[0] == '\0')
+			return;
+
+		// "Simple and stupid" per Dieter: always draw NVG_ALIGN_LEFT, never NanoVG's own
+		// CENTER/RIGHT modes (see X8D_CENTER_OFFSET_MM's own comment on why) - right-alignment is
+		// simulated by left-padding the STRING itself with blanks out to the full 5-character
+		// field width, and centering reuses the exact same hand-tuned offset table as the name
+		// display above, keyed on the un-padded length.
+		XAlign align = module->getXBrowsedParamAlign();
+		char buffer[6];
+		float x = 0.f;
+		if (align == X_ALIGN_RIGHT)
+			snprintf(buffer, sizeof(buffer), "%5s", raw);
+		else
+		{
+			snprintf(buffer, sizeof(buffer), "%s", raw);
+			if (align == X_ALIGN_CENTER)
+				x = mm2px(X8D_CENTER_OFFSET_MM[strlen(buffer)]);
+		}
+
+		float fontSizePx = mm2px(Vec(4.49792f, 0.f)).x;
+		std::shared_ptr<Font> font = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
+		nvgFontFaceId(args.vg, font->handle);
+		nvgFontSize(args.vg, fontSizePx);
+		nvgFillColor(args.vg, module->getXBrowsedParamColor());
+		nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_BASELINE);
+
+		// Same baseline-anchor/scissor reasoning as X8DNameDisplay above.
 		nvgSave(args.vg);
 		nvgScissor(args.vg, 0.f, -fontSizePx * 1.2f, box.size.x, fontSizePx * 1.6f);
 		nvgText(args.vg, x, 0.f, buffer, nullptr);
@@ -800,6 +927,7 @@ struct X8DWidget : ModuleWidget
 	X8DKnob *knobs[NUM_X8D_KNOBS] = {};
 	X8DValueButton *valueButtons[NUM_X8D_KNOBS] = {};
 	X8DButtonCover *buttonCover = nullptr;
+	X8DValueDisplay *displays[NUM_X8D_KNOBS] = {};
 
 	X8DWidget(X8D *module)
 	{
@@ -847,6 +975,13 @@ struct X8DWidget : ModuleWidget
 			37.339944f, 48.294524f, 59.249103f, 70.203682f,
 			81.158262f, 92.112841f, 103.06742f, 114.022f
 		};
+		// Per-channel numeric display position - measured directly from res/X8DWork.svg's own
+		// "DISPLAY"-labeled guide texts (not simply knobY + a fixed offset - each row's baseline
+		// sits a slightly different distance below its own knob's y, per the real measurements).
+		static const float displayY[NUM_X8D_KNOBS] = {
+			38.873039f, 49.784458f, 60.717041f, 71.639038f,
+			82.815041f, 93.646629f, 104.65906f, 115.58104f
+		};
 		for (int i = 0; i < NUM_X8D_KNOBS; i++)
 		{
 			X8DKnob *knob = createParamCentered<X8DKnob>(calculateCoordinates(7.62f, knobY[i], 0.f), module, KNOB_PARAM + i);
@@ -859,6 +994,14 @@ struct X8DWidget : ModuleWidget
 			button->visible = false; // default: knob shown (continuous) until step() knows better
 			addParam(button);
 			valueButtons[i] = button;
+
+			X8DValueDisplay *display = new X8DValueDisplay();
+			display->module = module;
+			display->channel = i;
+			display->box.pos = calculateCoordinates(15.12887f, displayY[i], 0.f);
+			display->box.size = mm2px(Vec(15.f, 5.f));
+			addChild(display);
+			displays[i] = display;
 		}
 
 		extStrip = addXExtStrip(this, X8D_PANEL_WIDTH_MM);
@@ -893,9 +1036,8 @@ struct X8DWidget : ModuleWidget
 			{
 				knobs[i]->visible = !showButton;
 				valueButtons[i]->visible = showButton;
+				displays[i]->visible = !showButton;
 			}
-			// No numeric display exists yet to hide behind this cover - see X8DButtonCover's own
-			// comment - so for now it's simply the mirror image of showButton.
 			buttonCover->visible = showButton;
 		}
 		ModuleWidget::step();

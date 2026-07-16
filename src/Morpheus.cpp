@@ -38,13 +38,24 @@ enum XCandidateIndex {
 	NUM_X_CANDIDATES
 };
 
+// XCandidate::format's own signature - takes the "cable value" (post scaleXParamValue: X8's raw
+// knob already converted into whatever real units this input expects, e.g. 1-128 steps for LEN,
+// 0-10 for GTP) and returns the exact text XHostInterface::formatXParamValue() should hand back.
+// A plain function pointer (not std::function) so a non-capturing lambda literal (or, as used
+// below, a plain named function) can sit right in the xCandidates[] table with zero overhead and
+// no lifetime concerns - nullptr for every digital (Toggle/Click/Push) candidate, which has no
+// numeric display at all.
+typedef std::string (*XFormatFn)(float cableValue);
+
 struct XCandidate
 {
 	// A constructor (rather than plain aggregate init) because a default member initializer
 	// on boundExpanderId would otherwise disqualify this struct from C++11 aggregate init
 	// (relaxed in C++14+, but this project builds with -std=c++11).
-	XCandidate(int inputId, const char *name, const char *shortName, XParamType type, NVGcolor color)
-		: inputId(inputId), name(name), shortName(shortName), type(type), color(color) {}
+	XCandidate(int inputId, const char *name, const char *shortName, XParamType type, NVGcolor color,
+	           float rawScale = 1.f, float rawOffset = 0.f, XFormatFn format = nullptr, XAlign align = X_ALIGN_LEFT)
+		: inputId(inputId), name(name), shortName(shortName), type(type), color(color),
+		  rawScale(rawScale), rawOffset(rawOffset), format(format), align(align) {}
 
 	int inputId;                   // which InputIds enum value this candidate corresponds to
 	const char *name;               // full descriptive name - XHostInterface::getXParamName()
@@ -54,6 +65,22 @@ struct XCandidate
 	NVGcolor color;                 // this slot's own accent color - XHostInterface::getXParamColor(),
 	                                 // shown on a bound Expander's display and as its value button's
 	                                 // "on" light color
+	// scaleXParamValue()'s own per-candidate factors: realValue = x8Raw * rawScale + rawOffset,
+	// where realValue is exactly what a real patch cable would need to deliver on this input for
+	// the SAME result - per Dieter: "the X modules do not know anything about that scaling, those
+	// are the values a connected cable has to deliver." Defaults (1, 0) are a no-op, correct for
+	// every digital (Toggle/Click/Push) candidate, which never calls this for anything but a
+	// threshold comparison. Only the six continuous candidates below override these.
+	float rawScale;
+	float rawOffset;
+	// XHostInterface::formatXParamValue() delegates straight to this - see XFormatFn's own
+	// comment above. Deliberately kept right here, in the same row as color/rawScale/rawOffset/
+	// align, so everything about one candidate's own display behavior lives in exactly one place
+	// instead of being scattered across separate functions elsewhere in the file.
+	XFormatFn format;
+	// XHostInterface::getXParamAlign() - X8D's numeric display alignment. Irrelevant for digital
+	// types (no numeric display at all), left at the default.
+	XAlign align;
 	// -1 = unbound. Persisted (see Morpheus's own moduleExtraDataToJson/FromJson) as a
 	// best-effort id: if Rack happens to preserve module ids across a reload (the common case
 	// for a plain save+reopen of the same patch), the binding resolves live again exactly as
@@ -64,6 +91,20 @@ struct XCandidate
 	// every reload.
 	int64_t boundExpanderId = -1;
 };
+
+// Per-candidate format functions for the xCandidates[] table below - see XFormatFn's own comment.
+// Kept immediately above the table that uses them, so "what does candidate X's display show" is
+// always answerable by looking in exactly one place, not a separate switch statement elsewhere in
+// the file. Each takes the "cable value" (post scaleXParamValue - already in real units).
+static std::string formatXPercent(float cable) { return string::f("%.0f%%", cable * 10.f); } // GTP/LOCK/BALANCE - all share the same 0..10 cable range
+static std::string formatXSigned(float cable)  { return string::f("%.2f", cable); }           // SCL/OFS - the cable value already IS the real value
+static std::string formatXLoopLen(float cable)
+{
+	int len = (int) floor(cable * 100.f + 0.5f);
+	if (len < 1)   len = 1;
+	if (len > 128) len = 128;
+	return string::f("%d", len);
+}
 
 struct Morpheus : Module, XHostInterface
 {
@@ -87,18 +128,27 @@ struct Morpheus : Module, XHostInterface
 	// Dieter's own example; REC gets a distinct amber rather than the same red so the two don't
 	// read as the same action at a glance.
 	XCandidate xCandidates[NUM_X_CANDIDATES] = {
-		{ LOCK_INPUT,        "Lock",              "LOCK", X_PARAM_CONTINUOUS, nvgRGB(0x33, 0x99, 0xff) },
-		{ BALANCE_INPUT,     "Balance",           "BAL",  X_PARAM_CONTINUOUS, nvgRGB(0x33, 0xcc, 0xcc) },
-		{ LOOP_LEN_INPUT,    "Loop Length",       "LEN",  X_PARAM_CONTINUOUS, nvgRGB(0xff, 0x99, 0x00) },
+		// rawScale/rawOffset match each getChannelXXX() reader's own real-cable convention
+		// exactly: LOCK/BALANCE/GTP all expect 0..10 (raw*10 in the reader, "10V is 100%");
+		// LOOP_LEN expects 0.01..1.28 (raw*100 in the reader, so 1.28 reaches length 128 -
+		// MAX_LOOP_LEN - per Dieter's own example); SCL/OFS expect their own full -10..10 knob
+		// range directly (no multiplier in the reader), which a unipolar 0..1 knob can only reach
+		// via a real scale+offset (20/-10), not scale alone.
+		// align: X_ALIGN_LEFT (the default) is what was already sitting correctly on the panel
+		// before this field existed - only retune a specific row's alignment if it actually needs
+		// to be different, don't default the whole table to something else.
+		{ LOCK_INPUT,        "Lock",              "LOCK", X_PARAM_CONTINUOUS, nvgRGB(0x33, 0x99, 0xff), 10.f, 0.f,   formatXPercent, X_ALIGN_RIGHT },
+		{ BALANCE_INPUT,     "Balance",           "BAL",  X_PARAM_CONTINUOUS, nvgRGB(0x33, 0xcc, 0xcc), 10.f, 0.f,   formatXPercent, X_ALIGN_RIGHT },
+		{ LOOP_LEN_INPUT,    "Loop Length",       "LEN",  X_PARAM_CONTINUOUS, nvgRGB(0xff, 0x99, 0x00), 1.28f, 0.f,  formatXLoopLen, X_ALIGN_CENTER },
 		{ HLD_INPUT,         "Hold",              "HLD",  X_PARAM_TOGGLE,     nvgRGB(0x66, 0x66, 0xff) },
 		{ RND_INPUT,         "Randomize",         "RND",  X_PARAM_PUSH,       nvgRGB(0xcc, 0x00, 0xcc) }, // pushbutton, effect while held
 		{ SHIFT_LEFT_INPUT,  "Shift Left",        "<<",   X_PARAM_CLICK,      nvgRGB(0x00, 0xaa, 0x88) },
 		{ SHIFT_RIGHT_INPUT, "Shift Right",       ">>",   X_PARAM_CLICK,      nvgRGB(0x00, 0x88, 0xaa) },
 		{ CLR_INPUT,         "Clear Loop",        "CLR",  X_PARAM_PUSH,       nvgRGB(0xdd, 0x00, 0x00) }, // pushbutton, effect while held
 		{ REC_INPUT,         "Record",            "REC",  X_PARAM_CLICK,      nvgRGB(0xff, 0xaa, 0x00) },
-		{ GTP_INPUT,         "Gate Probability",  "GTP",  X_PARAM_CONTINUOUS, nvgRGB(0x99, 0xcc, 0x00) },
-		{ SCL_INPUT,         "CV Scale",          "SCL",  X_PARAM_CONTINUOUS, nvgRGB(0x00, 0xcc, 0xff) },
-		{ OFS_INPUT,         "CV Offset",         "OFS",  X_PARAM_CONTINUOUS, nvgRGB(0xff, 0x00, 0x66) },
+		{ GTP_INPUT,         "Gate Probability",  "GTP",  X_PARAM_CONTINUOUS, nvgRGB(0x99, 0xcc, 0x00), 10.f, 0.f,   formatXPercent, X_ALIGN_RIGHT },
+		{ SCL_INPUT,         "CV Scale",          "SCL",  X_PARAM_CONTINUOUS, nvgRGB(0x00, 0xcc, 0xff), 20.f, -10.f, formatXSigned, X_ALIGN_RIGHT  },
+		{ OFS_INPUT,         "CV Offset",         "OFS",  X_PARAM_CONTINUOUS, nvgRGB(0xff, 0x00, 0x66), 20.f, -10.f, formatXSigned, X_ALIGN_RIGHT  },
 	};
 
 	// Mirrors inputs[i].getChannels() for a virtually-bound candidate input, since a receiving
@@ -558,25 +608,24 @@ struct Morpheus : Module, XHostInterface
 		return getStateParam(OFS_PARAM);
 	}
 
-	// Inverse of whatever scaling each getChannelXXX() above applies to a bound candidate's raw
-	// input - called continuously, every tick, for every still-unbound candidate (see the
-	// refresh loop below), to keep OL_statePoly always holding "what a bound Expander's raw
-	// knob would need to read to reproduce the current fallback value". A fresh bind then finds
-	// the right value already sitting there, ready to read via getXParamTakeoverValue() - no
-	// separate snapshot storage needed. KISS on purpose: this mirrors each reader's own existing
-	// formula, it doesn't attempt to redesign their value ranges.
+	// The exact inverse of scaleXParamValue() below, composed with each getChannelXXX() reader's
+	// own final real-unit multiplier (undone first to recover the "cable value" convention
+	// scaleXParamValue() itself produces) - called continuously, every tick, for every still-
+	// unbound candidate (see the refresh loop below), to keep OL_statePoly always holding "what a
+	// bound Expander's raw knob would need to read to reproduce the current fallback value". A
+	// fresh bind then finds the right value already sitting there, ready to read via
+	// getXParamTakeoverValue() - no separate snapshot storage needed. Clamped into the Expander's
+	// own 0..1 knob range - a real cable can still reach values a unipolar knob can't reproduce
+	// (e.g. deep into SCL/OFS's negative half if rawOffset/rawScale don't fully cover it), same
+	// limitation as before, not new.
 	inline float computeTakeoverRaw(int index, int channel)
 	{
 		switch (index)
 		{
-			// LOOP_LEN/GTP/SCL/OFS are pure overrides (no cable/binding -> knob only) - inverse
-			// of "raw*100"/"raw*10"/"raw" respectively, clamped into the Expander's own 0..1
-			// knob range (values outside what a 0..1 knob can reach - e.g. SCL/OFS's negative
-			// half - clamp to the nearest end, same limitation as today, not new).
-			case XC_LOOP_LEN: return clamp(getChannelLoopLength(channel) / 100.f, 0.f, 1.f);
-			case XC_GTP:       return clamp(getChannelGtp(channel) / 10.f, 0.f, 1.f);
-			case XC_SCL:       return clamp(getChannelScl(channel), 0.f, 1.f);
-			case XC_OFS:       return clamp(getChannelOfs(channel), 0.f, 1.f);
+			case XC_LOOP_LEN: return clamp((getChannelLoopLength(channel) / 100.f - xCandidates[XC_LOOP_LEN].rawOffset) / xCandidates[XC_LOOP_LEN].rawScale, 0.f, 1.f);
+			case XC_GTP:       return clamp((getChannelGtp(channel) / 10.f - xCandidates[XC_GTP].rawOffset) / xCandidates[XC_GTP].rawScale, 0.f, 1.f);
+			case XC_SCL:       return clamp((getChannelScl(channel) - xCandidates[XC_SCL].rawOffset) / xCandidates[XC_SCL].rawScale, 0.f, 1.f);
+			case XC_OFS:       return clamp((getChannelOfs(channel) - xCandidates[XC_OFS].rawOffset) / xCandidates[XC_OFS].rawScale, 0.f, 1.f);
 			// LOCK/BALANCE are additive (knob + raw*10) - right now nothing is contributing, so
 			// the CV-neutral raw value is 0, not an inverse of the knob (that would double it).
 			// HLD/RND/SHIFT_LEFT/SHIFT_RIGHT/CLR/REC are digital push/click/toggle types -
@@ -769,7 +818,10 @@ struct Morpheus : Module, XHostInterface
 			int channels = exp->getXKnobCount(); // sender (the Expander) decides, not us
 			xVirtualChannels[inputId] = channels;
 			for (int c = 0; c < channels; c++)
-				OL_statePoly[inputId * POLY_CHANNELS + c] = exp->getXKnobValue(c);
+				// scaleXParamValue() converts the Expander's own 0..1 raw knob into whatever THIS
+				// input actually expects (matching a real cable's convention) - the Expander has
+				// no idea about that scaling itself, see the interface method's own comment.
+				OL_statePoly[inputId * POLY_CHANNELS + c] = scaleXParamValue(i, exp->getXKnobValue(c));
 			// Channels beyond what THIS Expander actually supplies still need a correct
 			// fallback value - Morpheus's own per-channel reader functions fall back to the
 			// knob for any channel index >= channels, so keep those slots consistent too, same
@@ -1154,13 +1206,31 @@ struct Morpheus : Module, XHostInterface
 	const char* getXParamName(int index) override { return xCandidates[index].name; }
 	const char* getXParamShortName(int index) override { return xCandidates[index].shortName; }
 	XParamType getXParamType(int index) override { return xCandidates[index].type; }
+	XAlign getXParamAlign(int index) override { return xCandidates[index].align; }
 	NVGcolor getXParamColor(int index) override { return xCandidates[index].color; }
 	bool isXParamEngaged(int index) override { return xCandidates[index].boundExpanderId != -1; }
 	int64_t getXParamBoundId(int index) override { return xCandidates[index].boundExpanderId; }
 	bool isXParamCableConnected(int index) override { return inputs[xCandidates[index].inputId].isConnected(); }
 	void resetXParam(int index) override { xCandidates[index].boundExpanderId = -1; }
 	float getXParamTakeoverValue(int index, int channel) override { return OL_statePoly[xCandidates[index].inputId * POLY_CHANNELS + channel]; }
-	std::string formatXParamValue(int index, float value) override { return ""; } // TODO: needs X8's custom ParamQuantity first, deferred
+	// X8's own 0..1 raw knob -> the "cable value" this input actually expects, per candidate -
+	// see the interface method's own comment. Digital types just pass raw straight through,
+	// unused (they're read via a threshold, not scaled).
+	float scaleXParamValue(int index, float raw) override
+	{
+		return raw * xCandidates[index].rawScale + xCandidates[index].rawOffset;
+	}
+	// Continuous candidates only. Delegates entirely to xCandidates[index].format - see
+	// XFormatFn's own comment for why: every candidate's own display behavior (color, scale,
+	// align, AND format) now lives in one row of that one table, not scattered across a separate
+	// switch statement here.
+	std::string formatXParamValue(int index, float value) override
+	{
+		XFormatFn format = xCandidates[index].format;
+		if (!format)
+			return ""; // digital types (Toggle/Click/Push) - no numeric display at all
+		return format(scaleXParamValue(index, value));
+	}
 	float getXStyle() override { return OL_state[STYLE_JSON]; }
 };
 
