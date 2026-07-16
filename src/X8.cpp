@@ -91,6 +91,20 @@ struct X8 : Module, XExpanderInterface
 		return xHost->getXParamType(idx);
 	}
 
+	// The Host's own per-slot accent color for whatever's currently browsed - see
+	// XHostInterface::getXParamColor(). Falls back to the fixed panel ORANGE when nothing
+	// meaningful is resolved, same reasoning as getXBrowsedParamType() above.
+	NVGcolor getXBrowsedParamColor()
+	{
+		if (!xHost)
+			return ORANGE;
+		int count = xHost->getXParamCount();
+		if (count <= 0)
+			return ORANGE;
+		int idx = clamp((int) OL_state[BROWSE_INDEX_JSON], 0, count - 1);
+		return xHost->getXParamColor(idx);
+	}
+
 	X8()
 	{
 		initializeInstance();
@@ -590,13 +604,16 @@ struct X8ValueButton : ParamWidget
 			return;
 		}
 		bool active = isActive();
+		engine::ParamQuantity *pq = getParamQuantity();
+		X8 *module = pq ? dynamic_cast<X8*>(pq->module) : nullptr;
+		NVGcolor onColor = module ? module->getXBrowsedParamColor() : ORANGE;
 		nvgSave(args.vg);
 		if (!active)
 			nvgGlobalAlpha(args.vg, 0.3f);
 		float lightSize = mm2px(LIGHT_SIZE_MM);
 		nvgBeginPath(args.vg);
 		nvgRect(args.vg, box.size.x / 2.f - lightSize / 2.f, box.size.y / 2.f - lightSize / 2.f, lightSize, lightSize);
-		nvgStrokeColor(args.vg, (active && isPressed()) ? ORANGE : nvgRGB(0x4a, 0x44, 0x3c));
+		nvgStrokeColor(args.vg, (active && isPressed()) ? onColor : nvgRGB(0x4a, 0x44, 0x3c));
 		nvgStrokeWidth(args.vg, mm2px(0.5f));
 		nvgStroke(args.vg);
 		if (!active)
@@ -683,12 +700,15 @@ struct X8NameDisplay : TransparentWidget
 				text = module->xHost->getXParamShortName(idx);
 				bool mine = module->xHost->isXParamEngaged(idx) && module->xHost->getXParamBoundId(idx) == (int64_t) module->id;
 				bool taken = (module->xHost->isXParamEngaged(idx) && !mine) || module->xHost->isXParamCableConnected(idx);
+				NVGcolor slotColor = module->xHost->getXParamColor(idx);
 				if (mine)
-					color = nvgRGB(0x00, 0xdd, 0x00); // green - mine
+					color = slotColor; // this slot's own color, full brightness - it's bound to me
 				else if (taken)
 					color = nvgRGB(0x55, 0x55, 0x55); // grey - taken/unavailable
 				else
-					color = ORANGE; // available
+					color = nvgLerpRGBA(slotColor, nvgRGB(0x55, 0x55, 0x55), 0.5f); // available - same
+					                                 // slot color, dimmed toward grey so "mine" still
+					                                 // reads as visually distinct from "free to take"
 			}
 		}
 		// Defense in depth beyond the documented contract: never even attempt to draw more than

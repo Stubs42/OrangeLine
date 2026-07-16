@@ -43,14 +43,17 @@ struct XCandidate
 	// A constructor (rather than plain aggregate init) because a default member initializer
 	// on boundExpanderId would otherwise disqualify this struct from C++11 aggregate init
 	// (relaxed in C++14+, but this project builds with -std=c++11).
-	XCandidate(int inputId, const char *name, const char *shortName, XParamType type)
-		: inputId(inputId), name(name), shortName(shortName), type(type) {}
+	XCandidate(int inputId, const char *name, const char *shortName, XParamType type, NVGcolor color)
+		: inputId(inputId), name(name), shortName(shortName), type(type), color(color) {}
 
 	int inputId;                   // which InputIds enum value this candidate corresponds to
 	const char *name;               // full descriptive name - XHostInterface::getXParamName()
 	const char *shortName;          // matches the real Morpheus panel's own printed labels -
 	                                 // XHostInterface::getXParamShortName()
 	XParamType type;
+	NVGcolor color;                 // this slot's own accent color - XHostInterface::getXParamColor(),
+	                                 // shown on a bound Expander's display and as its value button's
+	                                 // "on" light color
 	// -1 = unbound. Persisted (see Morpheus's own moduleExtraDataToJson/FromJson) as a
 	// best-effort id: if Rack happens to preserve module ids across a reload (the common case
 	// for a plain save+reopen of the same patch), the binding resolves live again exactly as
@@ -79,19 +82,23 @@ struct Morpheus : Module, XHostInterface
 	// in res/MorpheusWork.svg: LOCK/LEN/HLD/RND/CLR/REC/GTP/SCL/OFS are already there; BAL and
 	// <</>> for Shift Left/Right per Dieter). All are <= 5 characters - X8's display has no
 	// truncation fallback, see XShared.hpp's getXParamShortName() contract.
+	// Per-slot accent color (XHostInterface::getXParamColor()) - a first-pass palette, deliberately
+	// just a literal per row so it's trivial to retune any single one later. CLR is red per
+	// Dieter's own example; REC gets a distinct amber rather than the same red so the two don't
+	// read as the same action at a glance.
 	XCandidate xCandidates[NUM_X_CANDIDATES] = {
-		{ LOCK_INPUT,        "Lock",              "LOCK", X_PARAM_CONTINUOUS },
-		{ BALANCE_INPUT,     "Balance",           "BAL",  X_PARAM_CONTINUOUS },
-		{ LOOP_LEN_INPUT,    "Loop Length",       "LEN",  X_PARAM_CONTINUOUS },
-		{ HLD_INPUT,         "Hold",              "HLD",  X_PARAM_TOGGLE },
-		{ RND_INPUT,         "Randomize",         "RND",  X_PARAM_PUSH }, // pushbutton, effect while held
-		{ SHIFT_LEFT_INPUT,  "Shift Left",        "<<",   X_PARAM_CLICK },
-		{ SHIFT_RIGHT_INPUT, "Shift Right",       ">>",   X_PARAM_CLICK },
-		{ CLR_INPUT,         "Clear Loop",        "CLR",  X_PARAM_PUSH }, // pushbutton, effect while held
-		{ REC_INPUT,         "Record",            "REC",  X_PARAM_CLICK },
-		{ GTP_INPUT,         "Gate Probability",  "GTP",  X_PARAM_CONTINUOUS },
-		{ SCL_INPUT,         "CV Scale",          "SCL",  X_PARAM_CONTINUOUS },
-		{ OFS_INPUT,         "CV Offset",         "OFS",  X_PARAM_CONTINUOUS },
+		{ LOCK_INPUT,        "Lock",              "LOCK", X_PARAM_CONTINUOUS, nvgRGB(0x33, 0x99, 0xff) },
+		{ BALANCE_INPUT,     "Balance",           "BAL",  X_PARAM_CONTINUOUS, nvgRGB(0x33, 0xcc, 0xcc) },
+		{ LOOP_LEN_INPUT,    "Loop Length",       "LEN",  X_PARAM_CONTINUOUS, nvgRGB(0xff, 0x99, 0x00) },
+		{ HLD_INPUT,         "Hold",              "HLD",  X_PARAM_TOGGLE,     nvgRGB(0x66, 0x66, 0xff) },
+		{ RND_INPUT,         "Randomize",         "RND",  X_PARAM_PUSH,       nvgRGB(0xcc, 0x00, 0xcc) }, // pushbutton, effect while held
+		{ SHIFT_LEFT_INPUT,  "Shift Left",        "<<",   X_PARAM_CLICK,      nvgRGB(0x00, 0xaa, 0x88) },
+		{ SHIFT_RIGHT_INPUT, "Shift Right",       ">>",   X_PARAM_CLICK,      nvgRGB(0x00, 0x88, 0xaa) },
+		{ CLR_INPUT,         "Clear Loop",        "CLR",  X_PARAM_PUSH,       nvgRGB(0xdd, 0x00, 0x00) }, // pushbutton, effect while held
+		{ REC_INPUT,         "Record",            "REC",  X_PARAM_CLICK,      nvgRGB(0xff, 0xaa, 0x00) },
+		{ GTP_INPUT,         "Gate Probability",  "GTP",  X_PARAM_CONTINUOUS, nvgRGB(0x99, 0xcc, 0x00) },
+		{ SCL_INPUT,         "CV Scale",          "SCL",  X_PARAM_CONTINUOUS, nvgRGB(0x00, 0xcc, 0xff) },
+		{ OFS_INPUT,         "CV Offset",         "OFS",  X_PARAM_CONTINUOUS, nvgRGB(0xff, 0x00, 0x66) },
 	};
 
 	// Mirrors inputs[i].getChannels() for a virtually-bound candidate input, since a receiving
@@ -1147,7 +1154,7 @@ struct Morpheus : Module, XHostInterface
 	const char* getXParamName(int index) override { return xCandidates[index].name; }
 	const char* getXParamShortName(int index) override { return xCandidates[index].shortName; }
 	XParamType getXParamType(int index) override { return xCandidates[index].type; }
-	NVGcolor getXParamColor(int index) override { return nvgRGB(0xff, 0x66, 0x00); } // TODO: per-candidate colors, deferred
+	NVGcolor getXParamColor(int index) override { return xCandidates[index].color; }
 	bool isXParamEngaged(int index) override { return xCandidates[index].boundExpanderId != -1; }
 	int64_t getXParamBoundId(int index) override { return xCandidates[index].boundExpanderId; }
 	bool isXParamCableConnected(int index) override { return inputs[xCandidates[index].inputId].isConnected(); }
