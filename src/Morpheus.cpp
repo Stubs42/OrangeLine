@@ -1710,6 +1710,21 @@ struct MorpheusWidget : ModuleWidget
 		}
 	};
 
+	// Last-resort recovery: clears every candidate's binding at once, same effect as calling
+	// resetXParam() on all of them individually. Meant for "I deleted an X module (or otherwise
+	// made a mess) and something's stuck bound" - the normal way to release one binding is either
+	// the bound Expander's own engage button, or a real cable taking over that input; this is the
+	// blunt manual override when that's not practical anymore.
+	struct XDisengageAllItem : MenuItem
+	{
+		Morpheus *module;
+		void onAction(const event::Action &e) override
+		{
+			for (int i = 0; i < NUM_X_CANDIDATES; i++)
+				module->resetXParam(i);
+		}
+	};
+
 	struct MorpheusStyleItem : MenuItem
 	{
 		Morpheus *module;
@@ -1825,6 +1840,18 @@ struct MorpheusWidget : ModuleWidget
 		visualOnItem->module = module;
 		visualOnItem->text = "Visual On/Off";
 		menu->addChild(visualOnItem);
+
+		spacerLabel = new MenuLabel();
+		menu->addChild(spacerLabel);
+
+		MenuLabel *expandersLabel = new MenuLabel();
+		expandersLabel->text = "Expanders";
+		menu->addChild(expandersLabel);
+
+		XDisengageAllItem *disengageAllItem = new XDisengageAllItem();
+		disengageAllItem->module = module;
+		disengageAllItem->text = "Disengage All";
+		menu->addChild(disengageAllItem);
 
 		spacerLabel = new MenuLabel();
 		menu->addChild(spacerLabel);
