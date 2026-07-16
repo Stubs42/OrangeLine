@@ -45,13 +45,19 @@ enum XParamType {
 	X_PARAM_CONTINUOUS,
 	X_PARAM_TOGGLE,      // click flips state, stays until clicked again
 	X_PARAM_CLICK,       // single fixed-length pulse fired on click, independent of hold duration
-	X_PARAM_MOMENTARY    // value is high only while the control is actively held down
+	X_PARAM_PUSH         // value is high only while the control is actively held down - named
+	                     // "Push" (not "Momentary") to stay consistent with Dieter's YATOF
+	                     // project terminology
 };
 
 struct XHostInterface
 {
 	virtual int getXParamCount() = 0;
-	virtual const char* getXParamName(int index) = 0;
+	virtual const char* getXParamName(int index) = 0;      // full descriptive name
+	// Compact name - X8 always displays THIS, never getXParamName(). Hard contract: max 5
+	// characters, no exceptions - X8's name display is sized/laid out for exactly that width
+	// and does not truncate or scroll. Every Host implementation must respect this.
+	virtual const char* getXParamShortName(int index) = 0;
 	virtual XParamType getXParamType(int index) = 0;
 	virtual NVGcolor getXParamColor(int index) = 0;
 

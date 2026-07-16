@@ -296,6 +296,11 @@ struct X8Knob : RoundSmallBlackKnob
 /**
 	Currently-browsed param name, green LCD-style like every other OrangeLine display - shows a
 	placeholder when no Host is resolved or it has no candidate params yet.
+
+	Always shows getXParamShortName(), never getXParamName() - this display is sized for and
+	assumes the interface's hard contract (see XShared.hpp): a Host's short name must never
+	exceed 5 characters. There is no truncation/scrolling fallback here, by design - respecting
+	the contract is the Host's responsibility, not this widget's.
 */
 struct X8NameDisplay : TransparentWidget
 {
@@ -308,20 +313,45 @@ struct X8NameDisplay : TransparentWidget
 			Widget::drawLayer(args, layer);
 			return;
 		}
-		std::shared_ptr<Font> font = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
-		nvgFontFaceId(args.vg, font->handle);
-		nvgFontSize(args.vg, mm2px(Vec(4.49792f, 0.f)).x);
-		nvgFillColor(args.vg, nvgRGB(0x00, 0xdd, 0x00));
-		nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_BASELINE);
 
-		const char *text = "XXXXX";
+		const char *text = "XXXXX"; // 5 chars - matches the max-length contract, doubles as a placeholder
 		if (module && module->xHost)
 		{
 			int count = module->xHost->getXParamCount();
 			if (count > 0)
-				text = module->xHost->getXParamName(clamp(module->browseIndex, 0, count - 1));
+				text = module->xHost->getXParamShortName(clamp(module->browseIndex, 0, count - 1));
 		}
-		nvgText(args.vg, 0.f, 0.f, text, nullptr);
+		// Defense in depth beyond the documented contract: never even attempt to draw more than
+		// 5 characters, and clip drawing to this widget's own box - a Host violating the
+		// contract can't make text bleed outside the display area.
+		char buffer[6];
+		snprintf(buffer, sizeof(buffer), "%s", text);
+
+		float fontSizePx = mm2px(Vec(4.49792f, 0.f)).x;
+		std::shared_ptr<Font> font = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
+		nvgFontFaceId(args.vg, font->handle);
+		nvgFontSize(args.vg, fontSizePx);
+		nvgFillColor(args.vg, nvgRGB(0x00, 0xdd, 0x00));
+
+		// Shorter-than-max short names (e.g. "REC", "LOCK") are centered rather than left-hung -
+		// only the full-width 5-char case actually needs the left edge as an anchor. Positions
+		// measured by hand in Inkscape against the real font/panel (not computed from font
+		// metrics, which drift off true visual center for this LCD-style font's side-bearings):
+		// 5 chars x=1.570 (this is the widget's own local x=0 anchor, unchanged), 4 chars
+		// x=2.812, 3 chars x=4.053, 2 chars x=5.295, 1 char x=9.389 - offsets below are each
+		// relative to the 5-char reference.
+		static const float xOffsetMm[6] = { 0.f, 7.819f, 3.725f, 2.483f, 1.242f, 0.f }; // index = strlen
+		nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_BASELINE);
+		float x = mm2px(xOffsetMm[strlen(buffer)]);
+
+		// Text is drawn at local x with baseline alignment, so glyphs extend upward (ascenders)
+		// from y=0, not downward - box.size.y (an arbitrary hit-test size, not a text-metrics
+		// box) doesn't describe where the glyphs actually render. Scissor a generous band around
+		// the baseline instead of assuming (0,0,w,h) covers the glyphs.
+		nvgSave(args.vg);
+		nvgScissor(args.vg, 0.f, -fontSizePx * 1.2f, box.size.x, fontSizePx * 1.6f);
+		nvgText(args.vg, x, 0.f, buffer, nullptr);
+		nvgRestore(args.vg);
 		Widget::drawLayer(args, 1);
 	}
 };

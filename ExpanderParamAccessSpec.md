@@ -273,7 +273,8 @@ enum XParamType {
     X_PARAM_CONTINUOUS,
     X_PARAM_TOGGLE,      // click flips state, stays until clicked again
     X_PARAM_CLICK,       // single fixed-length pulse fired on click, independent of hold duration
-    X_PARAM_MOMENTARY    // buffer value is high only while the control is actively held down
+    X_PARAM_PUSH         // value is high only while the control is actively held down - named
+                         // "Push" (not "Momentary") for consistency with Dieter's YATOF project
 };
 
 struct XHostInterface {
@@ -441,13 +442,14 @@ press/long-press (see point 2 under "8 or 16 value controls" below).
   orthogonal render/behavior axes**:
   1. **Type-based appearance** (Dieter: "der Expander muss dann auch beim Umschalten sein
      Aussehen ändern können, aus Buttons werden dann Knobs und umgekehrt") - continuous ->
-     rotary knob; toggle/click/momentary -> button, differing only in click semantics:
+     rotary knob; toggle/click/push -> button, differing only in click semantics:
      - **Toggle**: click flips the control's own param value between two states, stays until
        clicked again.
      - **Click**: fires a single fixed-length pulse on click, regardless of how long the mouse
        is held down (what earlier drafts called "Trigger").
-     - **Momentary**: value is high only while the mouse button is actually held down, drops the
-       instant it's released - a live gate-follow, not a pulse.
+     - **Push**: value is high only while the mouse button is actually held down, drops the
+       instant it's released - a live gate-follow, not a pulse (named "Push", not "Momentary",
+       for consistency with Dieter's YATOF project terminology).
      Button state is always shown via the button's own appearance - no numeric readout needed
      for these three types (see below).
   2. **Engagement-based interactivity** (new, 2026-07-15, see "No motorized-knob sync" above):
@@ -462,7 +464,7 @@ press/long-press (see point 2 under "8 or 16 value controls" below).
   read-only-motorized-knob; same for each button type.
 - **Numeric display only for continuous-type params, on X8D/X16D** - X8/X16 (no per-channel
   display) rely on the knob's own rotation (read-only/motorized case) or hover tooltip
-  (interactive case) instead; toggle/click/momentary never need a digit readout regardless of
+  (interactive case) instead; toggle/click/push never need a digit readout regardless of
   variant, their own appearance already shows the state.
 - Each continuous-type control needs a **custom `ParamQuantity`** (not a plain static
   `configParam()`) so its native VCV hover tooltip calls `formatXParamValue()` live, using
@@ -475,7 +477,7 @@ press/long-press (see point 2 under "8 or 16 value controls" below).
   with rounded corners (small ~0.53mm radius), fill = that theme's DisplayFill color, stroke =
   `#ff6600` (the fixed orange accent, not the theme Frame color) - see `res/X8Work.svg`'s
   LEFT/RIGHT/ENGAGE groups for the concrete pattern. Same shape reused for the per-channel
-  controls when they're in button mode (toggle/click/momentary).
+  controls when they're in button mode (toggle/click/push).
 
 ## Lifecycle / state rules
 
@@ -543,10 +545,10 @@ real trap (see `EXT_INPUT` below).
 | `BALANCE_INPUT` | continuous | 0-100% | Source(0%) to Random(100%) Balance |
 | `LOOP_LEN_INPUT` | continuous (int, snap) | 1-128 | Loop Length |
 | `HLD_INPUT` | toggle | 0/1 | Hold |
-| `RND_INPUT` | click | 0-10 | Randomize |
+| `RND_INPUT` | push | 0-10 | Randomize |
 | `SHIFT_LEFT_INPUT` | click | 0-10 | Shift Left One Step |
 | `SHIFT_RIGHT_INPUT` | click | 0-10 | Shift Right One Step |
-| `CLR_INPUT` | click | 0-10 | Clear Loop (CV -> 0V) |
+| `CLR_INPUT` | push | 0-10 | Clear Loop (CV -> 0V) |
 | `REC_INPUT` | click | 0-10 | Record from External Source |
 | `GTP_INPUT` | continuous | 0-100% | Random Gate Probability |
 | `SCL_INPUT` | continuous | -10 to 10 | Random CV Scale |
@@ -559,8 +561,10 @@ signal itself being switched in - a real signal path like `CLK_INPUT`, not a CV-
 knob input. `MEM_INPUT`/`STO_INPUT`/`RCL_INPUT`/`RST_INPUT`/`CLK_INPUT` are excluded too, but
 for a simpler reason - they're mono, so criterion (a) alone rules them out already.
 
-None of Morpheus's own candidates need `X_PARAM_MOMENTARY` - it's supported in the interface
-for generality (future host modules), not exercised by this first candidate list.
+`RND_INPUT`/`CLR_INPUT` are `X_PARAM_PUSH` (real pushbuttons, effect while held), not
+`X_PARAM_CLICK` - confirmed directly by Dieter, correcting an earlier draft of this table that
+had them as click-type. `SHIFT_LEFT_INPUT`/`SHIFT_RIGHT_INPUT`/`REC_INPUT` really are
+`X_PARAM_CLICK` (fixed one-shot pulse regardless of hold duration).
 
 ## Open items before implementation
 

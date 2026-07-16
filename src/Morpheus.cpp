@@ -24,28 +24,34 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "Morpheus.hpp"
 
-// X-family candidate params - compact index (0..NUM_X_CANDIDATES-1), separate from the sparse
-// InputIds/ParamIds enums. See ExpanderParamAccessSpec.md's "Confirmed candidate list: Morpheus"
-// table. EXT_INPUT is deliberately excluded - it's a real signal path (MEM/EXT source switch),
-// not a CV-modulates-a-knob candidate.
+// X-family candidate params ("potential virtual cables" - see ExpanderParamAccessSpec.md's
+// "Architecture: Expander = a virtual poly cable"). Everything belonging to *one* candidate
+// lives together in a single struct - its constant identity (which InputIds it is, its display
+// name/type) right alongside the one piece of mutable session state (which Expander, if any,
+// currently holds it) - rather than several parallel arrays indexed by the same int. Order/
+// content matches ExpanderParamAccessSpec.md's "Confirmed candidate list: Morpheus" table.
+// EXT_INPUT is deliberately excluded - it's a real signal path (MEM/EXT source switch), not a
+// CV-modulates-a-knob candidate.
 enum XCandidateIndex {
 	XC_LOCK, XC_BALANCE, XC_LOOP_LEN, XC_HLD, XC_RND, XC_SHIFT_LEFT, XC_SHIFT_RIGHT,
 	XC_CLR, XC_REC, XC_GTP, XC_SCL, XC_OFS,
 	NUM_X_CANDIDATES
 };
 
-static const int xCandidateInputId[NUM_X_CANDIDATES] = {
-	LOCK_INPUT, BALANCE_INPUT, LOOP_LEN_INPUT, HLD_INPUT, RND_INPUT,
-	SHIFT_LEFT_INPUT, SHIFT_RIGHT_INPUT, CLR_INPUT, REC_INPUT, GTP_INPUT, SCL_INPUT, OFS_INPUT
-};
-static const char *xCandidateName[NUM_X_CANDIDATES] = {
-	"Lock", "Balance", "Loop Length", "Hold", "Randomize", "Shift Left",
-	"Shift Right", "Clear Loop", "Record", "Gate Probability", "CV Scale", "CV Offset"
-};
-static const XParamType xCandidateType[NUM_X_CANDIDATES] = {
-	X_PARAM_CONTINUOUS, X_PARAM_CONTINUOUS, X_PARAM_CONTINUOUS, X_PARAM_TOGGLE, X_PARAM_CLICK,
-	X_PARAM_CLICK, X_PARAM_CLICK, X_PARAM_CLICK, X_PARAM_CLICK,
-	X_PARAM_CONTINUOUS, X_PARAM_CONTINUOUS, X_PARAM_CONTINUOUS
+struct XCandidate
+{
+	// A constructor (rather than plain aggregate init) because a default member initializer
+	// on boundExpanderId would otherwise disqualify this struct from C++11 aggregate init
+	// (relaxed in C++14+, but this project builds with -std=c++11).
+	XCandidate(int inputId, const char *name, const char *shortName, XParamType type)
+		: inputId(inputId), name(name), shortName(shortName), type(type) {}
+
+	int inputId;                   // which InputIds enum value this candidate corresponds to
+	const char *name;               // full descriptive name - XHostInterface::getXParamName()
+	const char *shortName;          // matches the real Morpheus panel's own printed labels -
+	                                 // XHostInterface::getXParamShortName()
+	XParamType type;
+	int64_t boundExpanderId = -1;  // -1 = unbound; session-only, never persisted
 };
 
 struct Morpheus : Module, XHostInterface
@@ -58,18 +64,27 @@ struct Morpheus : Module, XHostInterface
 
 	// X-family param-access Expander connection. An Expander only ever attaches to a Host's
 	// LEFT side. xConnected drives the cosmetic connection light only; the real mechanism is
-	// xCandidate[]/xVirtualChannels[] below, walked/refreshed every moduleProcess() tick.
+	// xCandidates[]/xVirtualChannels[] below, walked/refreshed every moduleProcess() tick.
 	bool xConnected = false;
 
-	// Per-candidate binding state (see ExpanderParamAccessSpec.md's "Architecture: Expander =
-	// a virtual poly cable"). Session-only, never persisted - every param loads unbound after
-	// a save/reload. No channel-limit field here - the Expander (the "sender") decides its own
-	// channel count via getXKnobCount(), the Host just takes whatever it provides.
-	struct XCandidateState
-	{
-		int64_t boundExpanderId = -1;
+	// Short names match what's actually printed on the real Morpheus panel (verified directly
+	// in res/MorpheusWork.svg: LOCK/LEN/HLD/RND/CLR/REC/GTP/SCL/OFS are already there; BAL and
+	// <</>> for Shift Left/Right per Dieter). All are <= 5 characters - X8's display has no
+	// truncation fallback, see XShared.hpp's getXParamShortName() contract.
+	XCandidate xCandidates[NUM_X_CANDIDATES] = {
+		{ LOCK_INPUT,        "Lock",              "LOCK", X_PARAM_CONTINUOUS },
+		{ BALANCE_INPUT,     "Balance",           "BAL",  X_PARAM_CONTINUOUS },
+		{ LOOP_LEN_INPUT,    "Loop Length",       "LEN",  X_PARAM_CONTINUOUS },
+		{ HLD_INPUT,         "Hold",              "HLD",  X_PARAM_TOGGLE },
+		{ RND_INPUT,         "Randomize",         "RND",  X_PARAM_PUSH }, // pushbutton, effect while held
+		{ SHIFT_LEFT_INPUT,  "Shift Left",        "<<",   X_PARAM_CLICK },
+		{ SHIFT_RIGHT_INPUT, "Shift Right",       ">>",   X_PARAM_CLICK },
+		{ CLR_INPUT,         "Clear Loop",        "CLR",  X_PARAM_PUSH }, // pushbutton, effect while held
+		{ REC_INPUT,         "Record",            "REC",  X_PARAM_CLICK },
+		{ GTP_INPUT,         "Gate Probability",  "GTP",  X_PARAM_CONTINUOUS },
+		{ SCL_INPUT,         "CV Scale",          "SCL",  X_PARAM_CONTINUOUS },
+		{ OFS_INPUT,         "CV Offset",         "OFS",  X_PARAM_CONTINUOUS },
 	};
-	XCandidateState xCandidate[NUM_X_CANDIDATES];
 
 	// Mirrors inputs[i].getChannels() for a virtually-bound candidate input, since a receiving
 	// module can't override a real Port's own channel count - see getXAwareChannels() below.
@@ -568,10 +583,10 @@ struct Morpheus : Module, XHostInterface
 					if (idx >= 0 && idx < NUM_X_CANDIDATES)
 					{
 						int64_t myId = m->id;
-						if (xCandidate[idx].boundExpanderId == -1)
-							xCandidate[idx].boundExpanderId = myId;   // bind (was available)
-						else if (xCandidate[idx].boundExpanderId == myId)
-							xCandidate[idx].boundExpanderId = -1;     // disengage (toggle)
+						if (xCandidates[idx].boundExpanderId == -1)
+							xCandidates[idx].boundExpanderId = myId;   // bind (was available)
+						else if (xCandidates[idx].boundExpanderId == myId)
+							xCandidates[idx].boundExpanderId = -1;     // disengage (toggle)
 						// else: taken by someone else, or cable-connected - no-op
 					}
 				}
@@ -586,23 +601,23 @@ struct Morpheus : Module, XHostInterface
 		// exactly as they were). See "No separate per-channel value buffer" in the spec.
 		for (int i = 0; i < NUM_X_CANDIDATES; i++)
 		{
-			int inputId = xCandidateInputId[i];
+			int inputId = xCandidates[i].inputId;
 
 			if (inputs[inputId].isConnected())
 			{
-				if (xCandidate[i].boundExpanderId != -1)
-					xCandidate[i].boundExpanderId = -1;
+				if (xCandidates[i].boundExpanderId != -1)
+					xCandidates[i].boundExpanderId = -1;
 				xVirtualChannels[inputId] = 0;
 				continue;
 			}
 
-			if (xCandidate[i].boundExpanderId < 0)
+			if (xCandidates[i].boundExpanderId < 0)
 			{
 				xVirtualChannels[inputId] = 0;
 				continue;
 			}
 
-			Module *bm = APP->engine->getModule(xCandidate[i].boundExpanderId);
+			Module *bm = APP->engine->getModule(xCandidates[i].boundExpanderId);
 			XExpanderInterface *exp = bm ? dynamic_cast<XExpanderInterface*>(bm) : nullptr;
 			if (!exp)
 				continue; // bound module gone - stays stale (per spec) until an explicit Reset
@@ -982,17 +997,18 @@ struct Morpheus : Module, XHostInterface
 	}
 
 	// XHostInterface - see ExpanderParamAccessSpec.md's "Host Interface" section. Candidate
-	// list/order matches xCandidate*[] above (verified against moduleInitStateTypes()/
+	// list/order matches xCandidates[] above (verified against moduleInitStateTypes()/
 	// moduleParamConfig() directly, not just enum names - EXT_INPUT excluded, it's a real
 	// signal path, not a CV-modulates-a-knob candidate).
 	int getXParamCount() override { return NUM_X_CANDIDATES; }
-	const char* getXParamName(int index) override { return xCandidateName[index]; }
-	XParamType getXParamType(int index) override { return xCandidateType[index]; }
+	const char* getXParamName(int index) override { return xCandidates[index].name; }
+	const char* getXParamShortName(int index) override { return xCandidates[index].shortName; }
+	XParamType getXParamType(int index) override { return xCandidates[index].type; }
 	NVGcolor getXParamColor(int index) override { return nvgRGB(0xff, 0x66, 0x00); } // TODO: per-candidate colors, deferred
-	bool isXParamEngaged(int index) override { return xCandidate[index].boundExpanderId != -1; }
-	int64_t getXParamBoundId(int index) override { return xCandidate[index].boundExpanderId; }
-	bool isXParamCableConnected(int index) override { return inputs[xCandidateInputId[index]].isConnected(); }
-	void resetXParam(int index) override { xCandidate[index].boundExpanderId = -1; }
+	bool isXParamEngaged(int index) override { return xCandidates[index].boundExpanderId != -1; }
+	int64_t getXParamBoundId(int index) override { return xCandidates[index].boundExpanderId; }
+	bool isXParamCableConnected(int index) override { return inputs[xCandidates[index].inputId].isConnected(); }
+	void resetXParam(int index) override { xCandidates[index].boundExpanderId = -1; }
 	std::string formatXParamValue(int index, float value) override { return ""; } // TODO: needs X8's custom ParamQuantity first, deferred
 	float getXStyle() override { return OL_state[STYLE_JSON]; }
 };
