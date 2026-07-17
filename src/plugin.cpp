@@ -42,6 +42,8 @@ void init(Plugin *p) {
 	p->addModel(modelXO16);
 	p->addModel(modelXD16);
 	p->addModel(modelXOD16);
+	p->addModel(modelXR8);
+	p->addModel(modelXR16);
 	// p->addModel(modelTemplate);
 	// p->addModel(modelWidgetTest);
 

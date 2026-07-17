@@ -96,6 +96,28 @@ typedef struct OrangeLineRandom {
 	unsigned long getCount = 0;
 } OrangeLineRandom;
 
+/*
+	SplitMix64 - a small, fast, deterministic 64-bit mixing function (public domain, Vigna),
+	used where a single seed needs to expand into one well-distributed pseudo-random draw with no
+	persistent generator state at all - unlike OrangeLineRandom/MT19937 above (624 words of state,
+	built for Dejavu's own advancing multi-draw sequences), this is a pure uint64_t -> uint64_t
+	hash: same input always yields the same output, good statistical distribution for musical/
+	non-cryptographic use, no clustering or short cycles to worry about. First user: XR8/XR16.
+*/
+inline uint64_t splitMix64(uint64_t x)
+{
+	x += 0x9E3779B97F4A7C15ULL;
+	x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ULL;
+	x = (x ^ (x >> 27)) * 0x94D049BB133111EBULL;
+	return x ^ (x >> 31);
+}
+
+// Low 32 bits of a splitMix64() draw, normalized to [0,1) - plenty of precision for CV purposes.
+inline float splitMix64Normalized(uint64_t raw)
+{
+	return (float)(raw & 0xFFFFFFFFULL) / 4294967296.f;
+}
+
 #define stateIdxJson(i)   (i)
 #define stateIdxParam(i)  (NUM_JSONS + (i))
 #define stateIdxInput(i)  (NUM_JSONS + NUM_PARAMS + (i))

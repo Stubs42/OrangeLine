@@ -342,6 +342,26 @@
         "Utility",
         "Expander"
       ]
+    },
+    {
+      "slug": "XR8",
+      "name": "XR8",
+      "description": "8 channels of deterministic seeded-random values, derived from a compatible host's polyphonic output - attach to the right of a compatible host",
+      "tags": [
+        "Utility",
+        "Expander",
+        "Random"
+      ]
+    },
+    {
+      "slug": "XR16",
+      "name": "XR16",
+      "description": "16 channels of deterministic seeded-random values, derived from a compatible host's polyphonic output - attach to the right of a compatible host",
+      "tags": [
+        "Utility",
+        "Expander",
+        "Random"
+      ]
     }
   ]
 }
