@@ -122,6 +122,67 @@ label: "Wakeup/Ready Ports" — internal identifiers/comments/filenames still sa
   about" ("die community soll noch was zum rätseln haben"). This file (developer-facing) is the
   only place the mechanism is described.
 
+## Self-drawn widget backgrounds vs. static panel decoration
+
+A recurring pattern first worked out on the XO-family (XO8/XD8/XOD8/XO16/XD16/XOD16) displays and
+gate indicators, generalizing the "cover the panel's own decoration when a widget's visual state
+changes" idea already used by `X8DButtonCover`/`X16DButtonCover`/`X8ValueButton`. Read this before
+adding a new per-channel display/indicator cell to any module, or before touching an existing
+one's sizing/coloring.
+
+1. **A widget that needs to render more than one mutually-exclusive "look" in the same panel
+   cell (e.g. a numeric readout vs. a lit/unlit gate square) needs an opaque background under
+   *both* looks, not just under whichever one used to rely on the static SVG art.** If the panel's
+   own decorative rect is only masked while one look is showing (the historical X8D pattern —
+   mask only appears for the button look, the continuous look still relies on the real SVG art
+   underneath), removing that static art later breaks the OTHER look, which never had its own
+   cover. Once a cell's decoration is going away entirely, give it an **always-visible** cover
+   (never toggled), and let each look draw its own content on top of that shared, guaranteed-
+   opaque background.
+2. **Order of operations when replacing static decoration with a code-drawn cover**: get the
+   cover's geometry/color right and confirmed live *first*, with the static SVG art still present
+   as a safety net (any coverage gap just shows old art peeking through, not a hole). Only once
+   that's confirmed should the static decoration actually be deleted from the `Work.svg` source —
+   and if Dieter is doing that deletion himself, explicitly confirm every coordinate/color you
+   still need has already been extracted into the C++ side first, since once it's gone from the
+   file it can't be re-measured.
+3. **A themed cover/frame's own corner radius must match the *real* underlying artwork's radius
+   exactly** if the cover is meant to fully hide it — a bigger rounded corner cuts away more area
+   near each corner than a smaller one, so a mismatched (typically larger, "looks about right")
+   radius leaves the real artwork's own corners poking out as small visible slivers even when the
+   width/height match perfectly. Get the true radius from the SVG itself: an
+   `inkscape:path-effect`'s `nodesatellites_param` fillet value, or `0` (sharp corners, no
+   rounding at all) for a plain `<rect>` with no `rx`/`ry`. Don't assume every sibling module uses
+   the same radius — check each `Work.svg` directly (XD8's own display cell turned out to be a
+   plain sharp rect while XOD8/XOD16/XD16 all use a ~0.77258mm fillet).
+4. **A control widget that loads its own fixed-size asset (e.g. a shared button-cap SVG,
+   `res/SquareButton.svg`) should own a box sized to that asset's *natural* size and be
+   positioned by its own center point — never scaled to fit a differently-sized panel cell.**
+   Scaling distorts stroke widths and forces any separately-drawn themed frame around it to
+   choose between matching the scaled (fragile, cell-geometry-dependent) size or the asset's true
+   size (mismatching whatever covers the surrounding cell) — see `X8ValueButton`
+   (`X8Common.hpp`) for the reference convention: `box.size = cap->box.size` set once in the
+   constructor, never touched afterward, with the frame drawn at its own fixed size independent
+   of `box.size`. Position via `box.pos = calculateCoordinates(centerX, centerY,
+   0.f).minus(box.size.div(2.f))` (mirrors what `createWidgetCentered` does internally) — never
+   top-left-anchor a differently-sized box to a panel rect's own top-left corner.
+5. **A "digital display" cell's own background is a genuinely different per-theme color from the
+   general panel/strip background** — this codebase's convention is `X_DISPLAY_BG_*` (matching
+   `tools/bake_panel_theme.py`'s own `THEME_DISPLAYFILL_COLOR`: `#100600`/`#171717`/`#15152b`)
+   vs. `X_STRIP_BG_*` (the plain panel background, used e.g. behind a knob-ring cover). Mixing
+   these up is easy to miss in isolation (both are dark, plausible-looking colors) but creates a
+   visible mismatch the moment two widgets sharing a cell use different ones — e.g. a themed
+   frame drawn on top using the correct color suddenly doesn't blend with a cover drawn
+   underneath using the wrong one. Check which semantic field a widget is meant to represent
+   before picking a color constant, don't assume all dark backgrounds are interchangeable.
+6. **When insetting an opaque cover to avoid painting over an adjacent decorative element (e.g.
+   the panel's own outer frame), the inset *shrinks* the covered rectangle on the affected
+   side(s) — it never expands it.** Easy to get backwards when adjusting a second axis right
+   after correctly inset-ing the first one (a real mistake made live: correctly shrank left/right,
+   then wrongly *expanded* top/bottom by the same amount when asked for an analogous vertical
+   nudge). If unsure which direction a requested nudge means, match whatever the
+   already-confirmed-correct axis did.
+
 ## Pitfalls learned the hard way (read before writing `moduleProcess()`)
 
 - **`setOutPolyChannels()` must be (re)asserted every tick inside `moduleProcess()`, never only once in `moduleInitStateTypes()`/the constructor.** `initializeInstance()` does `memset(OL_polyChannels, 0, ...)` immediately *after* `moduleInitStateTypes()` runs, silently wiping a one-time call and leaving the output permanently at 0 channels — with no compile error and no obvious symptom besides "no output at all". This holds even when the channel count is constant (K2C: always `POLY_CHANNELS`) — constant doesn't mean "set once", it means "assert the same value every tick".
