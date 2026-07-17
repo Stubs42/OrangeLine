@@ -288,6 +288,60 @@
         "Utility",
         "Expander"
       ]
+    },
+    {
+      "slug": "XO8",
+      "name": "XO8",
+      "description": "Read-only output-side Expander - attach to the right of a compatible host to split one of its polyphonic outputs into 8 mono jacks",
+      "tags": [
+        "Utility",
+        "Expander"
+      ]
+    },
+    {
+      "slug": "XD8",
+      "name": "XD8",
+      "description": "Read-only output-side monitor, no jacks - attach to the right of a compatible host to watch one of its polyphonic outputs (8 channels)",
+      "tags": [
+        "Utility",
+        "Expander"
+      ]
+    },
+    {
+      "slug": "XOD8",
+      "name": "XOD8",
+      "description": "Wider XO8 (6HP) with a per-channel value/gate display next to each jack - attach to the right of a compatible host to split and monitor one of its polyphonic outputs",
+      "tags": [
+        "Utility",
+        "Expander"
+      ]
+    },
+    {
+      "slug": "XO16",
+      "name": "XO16",
+      "description": "Two columns of 8 jacks (16 channels) - attach to the right of a compatible host to split one of its polyphonic outputs",
+      "tags": [
+        "Utility",
+        "Expander"
+      ]
+    },
+    {
+      "slug": "XD16",
+      "name": "XD16",
+      "description": "Read-only output-side monitor, no jacks - attach to the right of a compatible host to watch one of its polyphonic outputs (16 channels)",
+      "tags": [
+        "Utility",
+        "Expander"
+      ]
+    },
+    {
+      "slug": "XOD16",
+      "name": "XOD16",
+      "description": "Two jack+display columns (16 channels) - attach to the right of a compatible host to split and monitor one of its polyphonic outputs",
+      "tags": [
+        "Utility",
+        "Expander"
+      ]
     }
   ]
 }

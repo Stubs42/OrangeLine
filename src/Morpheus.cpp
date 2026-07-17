@@ -106,7 +106,34 @@ static std::string formatXLoopLen(float cable)
 	return string::f("%d", len);
 }
 
-struct Morpheus : Module, XHostInterface
+// XO-family candidates - Morpheus's own real outputs, declared as selectable slots for any
+// XO8/XD8/XOD8/XO16/XD16/XOD16 attached to its RIGHT side (see XOShared.hpp's own architecture
+// comment). Unlike xCandidates[] above, there is no engagement/binding here at all - reading a
+// Host's output is never exclusive, so this table only needs display metadata, never a
+// "currently bound to" slot.
+enum XOCandidateIndex { XOC_SRC, XOC_GATE, XOC_CV, NUM_XO_CANDIDATES };
+
+// XOCandidate::format's own signature - takes the real Host voltage directly (no scaling step
+// exists on this side at all, unlike XFormatFn's own "cable value" - see XOHostInterface's own
+// comment in XOShared.hpp) and returns the exact text XOHostInterface::formatXOValue() should
+// hand back. nullptr for XO_TYPE_GATE, which has no numeric display at all.
+typedef std::string (*XOFormatFn)(float value);
+static std::string formatXOSigned(float value) { return string::f("%.2f", value); }
+
+struct XOCandidate
+{
+	int outputId;           // which OutputIds enum value this candidate corresponds to
+	const char *name;       // full descriptive name - XOHostInterface::getXOName()
+	const char *shortName;  // XOHostInterface::getXOShortName() - same 5-char hard contract
+	XOType type;
+	NVGcolor color;         // this slot's own accent color, same convention as XCandidate::color -
+	                        // picked distinct from every xCandidates[] hue above so an input slot
+	                        // and an output slot are never confused at a glance
+	XAlign align;
+	XOFormatFn format;      // nullptr for XO_TYPE_GATE
+};
+
+struct Morpheus : Module, XHostInterface, XOHostInterface
 {
 	float oldClkInputVoltage = 0;
     int polyChannels = 1;
@@ -155,6 +182,18 @@ struct Morpheus : Module, XHostInterface
 		{ GTP_INPUT,         "Gate Probability",  "GTP",  X_PARAM_CONTINUOUS, nvgRGB(0x99, 0xcc, 0x00), 10.f, 0.f,   formatXPercent, X_ALIGN_RIGHT },
 		{ SCL_INPUT,         "CV Scale",          "SCL",  X_PARAM_CONTINUOUS, nvgRGB(0x00, 0xcc, 0xff), 20.f, -10.f, formatXSigned, X_ALIGN_RIGHT  },
 		{ OFS_INPUT,         "CV Offset",         "OFS",  X_PARAM_CONTINUOUS, nvgRGB(0xff, 0x00, 0x66), 20.f, -10.f, formatXSigned, X_ALIGN_RIGHT  },
+	};
+
+	// XO-family candidates - Morpheus's own real outputs, declared as selectable slots for any
+	// XO8/XD8/XOD8/XO16/XD16/XOD16 attached to its RIGHT side (see XOShared.hpp's own
+	// architecture comment). Unlike xCandidates[] above, there is no engagement/binding here at
+	// all - reading a Host's output is never exclusive, so this table only needs display
+	// metadata. First-pass palette (trivially retuned later, same as xCandidates[] above): SRC
+	// teal, GATE pink, CV purple, none overlapping any xCandidates[] color above.
+	XOCandidate xOutputCandidates[NUM_XO_CANDIDATES] = {
+		{ SRC_OUTPUT,  "Source", "SRC",  XO_TYPE_CONTINUOUS, nvgRGB(0x00, 0xff, 0xaa), X_ALIGN_RIGHT, formatXOSigned },
+		{ GATE_OUTPUT, "Gate",   "GATE", XO_TYPE_GATE,        nvgRGB(0xff, 0x33, 0x99), X_ALIGN_LEFT,  nullptr },
+		{ CV_OUTPUT,   "CV",     "CV",   XO_TYPE_CONTINUOUS, nvgRGB(0x99, 0x33, 0xff), X_ALIGN_RIGHT, formatXOSigned },
 	};
 
 	// Mirrors inputs[i].getChannels() for a virtually-bound candidate input, since a receiving
@@ -722,6 +761,13 @@ struct Morpheus : Module, XHostInterface
 		xConnected = dynamic_cast<XExpanderInterface*>(leftExpander.module) != nullptr;
 		setStateLight(X_CONN_LIGHT, xConnected ? 255.f : 0.f);
 
+		// XO-family output-side Expander connection - mirror image of the above: only ever check
+		// rightExpander, since this family attaches to a Host's RIGHT side (see XOShared.hpp).
+		// Purely cosmetic (the light itself) - XO-family Expanders read outputs[]/xOutputCandidates
+		// directly through XOHostInterface, nothing here needs to track who's currently watching.
+		bool xoConnected = dynamic_cast<XOExpanderInterface*>(rightExpander.module) != nullptr;
+		setStateLight(XO_CONN_LIGHT, xoConnected ? 255.f : 0.f);
+
 		// Walk the *whole* left-side chain (not just the immediate neighbor - several
 		// Expanders can be strung together) looking for a fresh engage/disengage request from
 		// any of them. Each Expander debounces its own button locally and exposes only a
@@ -1244,6 +1290,31 @@ struct Morpheus : Module, XHostInterface
 	}
 	float getXStyle() override { return OL_state[STYLE_JSON]; }
 	std::string getXHostName() override { return customName; }
+
+	// XOHostInterface - see XOShared.hpp's own architecture comment. No engagement-related
+	// methods at all here (unlike XHostInterface above) - reading an output is never exclusive.
+	int getXOCount() override { return NUM_XO_CANDIDATES; }
+	const char* getXOName(int index) override { return xOutputCandidates[index].name; }
+	const char* getXOShortName(int index) override { return xOutputCandidates[index].shortName; }
+	XOType getXOType(int index) override { return xOutputCandidates[index].type; }
+	XAlign getXOAlign(int index) override { return xOutputCandidates[index].align; }
+	NVGcolor getXOColor(int index) override { return xOutputCandidates[index].color; }
+	// NOT outputs[id].getChannels() - Rack's own Port::setChannels() silently no-ops while
+	// disconnected ("if (this->channels == 0) return;", confirmed directly in the SDK's
+	// Port.hpp), so a real cable being unplugged would freeze this at 0 forever regardless of
+	// what Morpheus actually computes every tick. getOutPolyChannels() reads the framework's own
+	// OL_polyChannels bookkeeping instead - the same indirection setOutPolyChannels() already
+	// exists for, unaffected by real-cable connection state.
+	int getXOChannelCount(int index) override { return getOutPolyChannels(xOutputCandidates[index].outputId); }
+	float getXOChannelValue(int index, int channel) override { return outputs[xOutputCandidates[index].outputId].getVoltage(channel); }
+	std::string formatXOValue(int index, float value) override
+	{
+		XOFormatFn format = xOutputCandidates[index].format;
+		if (!format)
+			return ""; // XO_TYPE_GATE - no numeric display at all
+		return format(value);
+	}
+	float getXOStyle() override { return OL_state[STYLE_JSON]; }
 };
 
 // ********************************************************************************************************************************
@@ -1468,12 +1539,44 @@ struct MorpheusXSlotPort : PJ301MPort
 };
 
 /**
+	Output-side counterpart of MorpheusXSlotPort above - same static accent-ring marker, but for
+	xOutputCandidates[] and matched against portId as an OUTPUT id instead of an input id. Kept
+	Morpheus-specific like its input-side sibling rather than promoted into XOCommon.hpp - would
+	only be worth generalizing once a second real Host needs the exact same ring.
+*/
+struct MorpheusXOSlotPort : PJ301MPort
+{
+	void drawLayer(const DrawArgs &args, int layer) override
+	{
+		PJ301MPort::drawLayer(args, layer);
+		if (layer != 1)
+			return;
+		Morpheus *m = module ? dynamic_cast<Morpheus*>(module) : nullptr;
+		if (!m)
+			return;
+		for (int i = 0; i < NUM_XO_CANDIDATES; i++)
+		{
+			if (m->xOutputCandidates[i].outputId != portId)
+				continue;
+			float r = box.size.x / 2.f + mm2px(X_SLOT_RING_RADIUS_OFFSET_MM);
+			nvgBeginPath(args.vg);
+			nvgCircle(args.vg, box.size.x / 2.f, box.size.y / 2.f, r);
+			nvgStrokeWidth(args.vg, mm2px(X_SLOT_RING_STROKE_WIDTH_MM));
+			nvgStrokeColor(args.vg, m->xOutputCandidates[i].color);
+			nvgStroke(args.vg);
+			break;
+		}
+	}
+};
+
+/**
 	Main Module Widget
 */
 struct MorpheusWidget : ModuleWidget
 {
 	char memBuffer[3];
 	XExtStripWidget *extStrip = nullptr;
+	XExtStripWidget *extStripXO = nullptr; // right edge - toward the first XO-family Expander
 
 	MorpheusWidget(Morpheus *module)
 	{
@@ -1501,6 +1604,9 @@ struct MorpheusWidget : ModuleWidget
 		// Expander only ever attaches to a Host's LEFT side. Same corner-light convention as the
 		// LANES family (CLAUDE.md).
 		addChild(createLightCentered<AutoHideLight<TinyLight<GreenLight>>>(calculateCoordinates(3.5f, 4.f, 0.f), module, X_CONN_LIGHT));
+		// XO-family connection light, mirrored to the top-right corner since that family attaches
+		// to this Host's RIGHT side (same reasoning as X_CONN_LIGHT's own top-left placement).
+		addChild(createLightCentered<AutoHideLight<TinyLight<GreenLight>>>(calculateCoordinates(MORPHEUS_PANEL_WIDTH_MM - 3.5f, 4.f, 0.f), module, XO_CONN_LIGHT));
 
 		// Positions extracted from res/MorpheusWorkTest.svg's Controls layer (2026-07-13) -
 		// panel reorganized to make room for the future visualization display (reserved band
@@ -1552,9 +1658,9 @@ struct MorpheusWidget : ModuleWidget
 
 		addInput (createInputCentered<PJ301MPort> (calculateCoordinates ( 6.096,115.574, 0.f), module, RST_INPUT));
 		addInput (createInputCentered<PJ301MPort> (calculateCoordinates (15.748,115.574, 0.f), module, CLK_INPUT));
-   		addOutput (createOutputCentered<PJ301MPort>	(calculateCoordinates (25.400,115.574, 0.f),  module, SRC_OUTPUT));
-   		addOutput (createOutputCentered<PJ301MPort>	(calculateCoordinates (35.052,115.574, 0.f),  module, GATE_OUTPUT));
-   		addOutput (createOutputCentered<PJ301MPort>	(calculateCoordinates (44.704,115.574, 0.f),  module, CV_OUTPUT));
+   		addOutput (createOutputCentered<MorpheusXOSlotPort>	(calculateCoordinates (25.400,115.574, 0.f),  module, SRC_OUTPUT));
+   		addOutput (createOutputCentered<MorpheusXOSlotPort>	(calculateCoordinates (35.052,115.574, 0.f),  module, GATE_OUTPUT));
+   		addOutput (createOutputCentered<MorpheusXOSlotPort>	(calculateCoordinates (44.704,115.574, 0.f),  module, CV_OUTPUT));
 
 		float *pvalue = (module != nullptr ? &(module->selectedMem) : nullptr);
 		if (module) {
@@ -1572,6 +1678,7 @@ struct MorpheusWidget : ModuleWidget
 			module ? &module->OL_touchOutPort : nullptr, module ? &module->OL_touchVisible : nullptr);
 
 		extStrip = addXExtStripLeft(this);
+		extStripXO = addXExtStrip(this, MORPHEUS_PANEL_WIDTH_MM);
 
 		if (module)
 			module->widgetReady = true;
@@ -1580,7 +1687,10 @@ struct MorpheusWidget : ModuleWidget
 	void step() override
 	{
 		if (module)
+		{
 			updateXExtStripLeft(extStrip, module, module->leftExpander.module);
+			updateXOExtStrip(extStripXO, module, module->rightExpander.module);
+		}
 		ModuleWidget::step();
 	}
 

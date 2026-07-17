@@ -36,6 +36,12 @@ extern Model *modelX8;
 extern Model *modelX8D;
 extern Model *modelX16;
 extern Model *modelX16D;
+extern Model *modelXO8;
+extern Model *modelXD8;
+extern Model *modelXOD8;
+extern Model *modelXO16;
+extern Model *modelXD16;
+extern Model *modelXOD16;
 // extern Model *modelTemplate;
 // extern Model *modelWidgetTest;
 
