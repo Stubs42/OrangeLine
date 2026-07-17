@@ -59,6 +59,9 @@ struct X8LogoCover : TransparentWidget
 inline void addXLogoCovers(ModuleWidget *w, float panelWidthMm, X8LogoCover **cover1Out, X8LogoCover **cover2Out)
 {
 	X8LogoCover *cover1 = new X8LogoCover();
+	cover1->module = w->module; // was never set at all - draw() then always saw a null module,
+	                            // silently falling back to STYLE_ORANGE's own dark background
+	                            // regardless of the module's actual selected style
 	cover1->box.pos = calculateCoordinates(panelWidthMm / 2.f - X8_LOGO_COVER1_WIDTH_MM / 2.f, X8_LOGO_COVER1_Y_MM, 0.f);
 	cover1->box.size = mm2px(Vec(X8_LOGO_COVER1_WIDTH_MM, X8_LOGO_COVER1_HEIGHT_MM));
 	cover1->visible = false;
@@ -66,6 +69,7 @@ inline void addXLogoCovers(ModuleWidget *w, float panelWidthMm, X8LogoCover **co
 	*cover1Out = cover1;
 
 	X8LogoCover *cover2 = new X8LogoCover();
+	cover2->module = w->module;
 	cover2->box.pos = calculateCoordinates(panelWidthMm / 2.f - X8_LOGO_COVER2_WIDTH_MM / 2.f, X8_LOGO_COVER2_Y_MM, 0.f);
 	cover2->box.size = mm2px(Vec(X8_LOGO_COVER2_WIDTH_MM, X8_LOGO_COVER2_HEIGHT_MM));
 	cover2->visible = false;
