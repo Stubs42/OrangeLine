@@ -40,20 +40,6 @@ struct X8 : Module, XExpanderInterface
 		// not just once - see the comment on that hook below) so a saved patch's own value
 		// (applied later by dataFromJson(), if the key exists) can still override it correctly.
 		OL_state[CHANNEL_LIMIT_JSON] = (float) NUM_X8_KNOBS;
-
-		// lockedHostType is a plain string, not a float - OL_state's JSON array can't carry it,
-		// so it uses the same moduleExtraDataToJson/FromJson hook CC2CV/CV2CC use for their own
-		// non-float persisted data (see CLAUDE.md's ODR-safety note on this pattern).
-		moduleExtraDataToJson = [this](json_t *rootJ)
-		{
-			json_object_set_new(rootJ, "lockedHostType", json_string(lockedHostType.c_str()));
-		};
-		moduleExtraDataFromJson = [this](json_t *rootJ)
-		{
-			json_t *lockedHostTypeJ = json_object_get(rootJ, "lockedHostType");
-			if (lockedHostTypeJ && json_is_string(lockedHostTypeJ))
-				lockedHostType = json_string_value(lockedHostTypeJ);
-		};
 	}
 };
 
@@ -62,15 +48,15 @@ struct X8 : Module, XExpanderInterface
 */
 struct X8Widget : ModuleWidget
 {
-	// ENGAGE/LEFT/RIGHT sizes are the only thing that actually differs from X8D here - everything
-	// else (X8ButtonBase/X8EngageButtonBase's own logic) is shared, see X8Common.hpp. Nested
+	// BIND/LEFT/RIGHT sizes are the only thing that actually differs from X8D here - everything
+	// else (X8ButtonBase/X8BindButtonBase's own logic) is shared, see X8Common.hpp. Nested
 	// (rather than file-scope) so a same-named-but-differently-sized X8D counterpart in X8D.cpp's
 	// own X8DWidget can't ever collide with this one across translation units - sizes measured
 	// from the actual button-frame path's bounding box (including its rounded corners), not just
 	// the straight-edge segment lengths - an earlier version used the latter and came out
 	// visibly too small.
 	struct X8StepButton : X8ButtonBase { X8StepButton() { box.size = mm2px(Vec(4.6f, 4.6f)); } };
-	struct X8EngageButton : X8EngageButtonBase { X8EngageButton() { box.size = mm2px(Vec(10.69f, 5.61f)); } };
+	struct X8BindButton : X8BindButtonBase { X8BindButton() { box.size = mm2px(Vec(10.69f, 5.61f)); } };
 
 	XExtStripWidget *extStrip = nullptr;     // right edge - toward the Host (or a further Expander)
 	XExtStripWidget *extStripLeft = nullptr; // left edge - toward a further chained Expander
@@ -111,9 +97,9 @@ struct X8Widget : ModuleWidget
 		X8StepButton *rightButton = createParamCentered<X8StepButton>(calculateCoordinates(10.657f, 18.035f, 0.f), module, RIGHT_PARAM);
 		rightButton->label = ">";
 		addParam(rightButton);
-		X8EngageButton *engageButton = createParamCentered<X8EngageButton>(calculateCoordinates(7.609f, 24.629f, 0.f), module, ENGAGE_PARAM);
-		engageButton->label = "ENGAGE";
-		addParam(engageButton);
+		X8BindButton *bindButton = createParamCentered<X8BindButton>(calculateCoordinates(7.609f, 24.629f, 0.f), module, ENGAGE_PARAM);
+		bindButton->label = "BIND";
+		addParam(bindButton);
 
 		X8NameDisplay *nameDisplay = new X8NameDisplay();
 		nameDisplay->module = module;
@@ -237,6 +223,15 @@ struct X8Widget : ModuleWidget
 		channelsItem->text = "Channels";
 		channelsItem->rightText = RIGHT_ARROW;
 		menu->addChild(channelsItem);
+
+		spacerLabel = new MenuLabel();
+		menu->addChild(spacerLabel);
+
+		MenuLabel *expandersLabel = new MenuLabel();
+		expandersLabel->text = "Expanders";
+		menu->addChild(expandersLabel);
+
+		addXBindsMenuItem(menu, module);
 
 		spacerLabel = new MenuLabel();
 		menu->addChild(spacerLabel);

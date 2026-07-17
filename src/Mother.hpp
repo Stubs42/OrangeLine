@@ -20,7 +20,11 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 #include "OrangeLine.hpp"
 
-#define GREETING    "Hey Gals !!!"
+// Was "Hey Gals !!!" - gendered wording, Dieter's call to retire it. Now shares the same
+// greeting used elsewhere on a "nothing bound yet" display (see OrangeLine.hpp's
+// OL_GREETING_WORD1/2/LONG) so there's one place to change the wording everywhere at once -
+// Mother's own display has plenty of room, so it always gets the full long form.
+#define GREETING    OL_GREETING_LONG
 #define NUM_SCALES  12
 #define NUM_CHLD    NUM_NOTES
 #define SEMITONE    (1.f / 12.f)

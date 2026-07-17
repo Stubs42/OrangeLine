@@ -56,6 +56,19 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define TEXT_SCROLL_DELAY   0.5f
 #define TEXT_SCROLL_PRE_DELAY   TEXT_SCROLL_DELAY * 4.f
 
+// Shared "nothing bound anywhere yet" greeting, three tiers from shortest to longest - the
+// X-family's own X8NameDisplay (X8Common.hpp) picks whichever one actually fits its own display
+// width (X8: WORD1 alone; X8D/X16: WORD1+WORD2; X16D: OL_GREETING_LONG, its display being wide
+// enough for essentially everything), and Mother's own startup greeting (Mother.hpp) always uses
+// the full OL_GREETING_LONG, having plenty of room. One place to change the wording later -
+// replaces Mother's old "Hey Gals !!!" (gendered wording, Dieter's call). Defined here (not
+// OrangeLineCommon.hpp) so headers like Mother.hpp/X8Common.hpp that are processed before a
+// module's own OrangeLineCommon.hpp include can still see it - see OrangeLine.hpp's own role as
+// the "include this first" shared header in CLAUDE.md.
+#define OL_GREETING_WORD1 "HELLO"
+#define OL_GREETING_WORD2 "BUDDY"
+#define OL_GREETING_LONG  "HELLO RACKHEADS !"
+
 #define PI            3.14159265
 
 #define VALUE_MODE_REPLACE 0

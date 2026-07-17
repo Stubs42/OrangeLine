@@ -4,7 +4,7 @@
 	Shared module-struct body for X8 and X8D - #include'd literally inside both `struct X8 :
 	Module, XExpanderInterface { ... }` and `struct X8D : Module, XExpanderInterface { ... }`,
 	same composition pattern as `OrangeLineCommon.hpp` itself. The two modules are otherwise
-	~95% identical code (same engagement/browsing/host-type-lock/reload-persistence logic, same
+	~95% identical code (same engagement/browsing/reload-persistence logic, same
 	XExpanderInterface implementation) - only the panel layout (widget-side, in each module's own
 	.cpp) and physical panel width genuinely differ.
 
@@ -48,13 +48,6 @@ bool triedAutoReengage = false;
 // still on the same index counts.
 bool xLastBoundHere = false;
 int xLastCheckedIndex = -1;
-
-// Set the first time this Expander ever engages with a Host, to that Host's own
-// getXHostTypeName() - permanent (persisted) from then on, regardless of whether that
-// specific binding is later released. While set, a resolved Host of a *different* type is
-// treated as if nothing were connected at all (see moduleProcess()) - only a right-click
-// Initialize (moduleReset()) clears it. Empty = not yet locked to any type.
-std::string lockedHostType;
 
 // X_PARAM_CLICK needs a fixed-length pulse "independent of hold duration" (XShared.hpp) -
 // unlike TOGGLE/PUSH, which the widget can drive directly via plain setValue() calls, CLICK
@@ -152,7 +145,7 @@ inline void moduleParamConfig()
 		configParam<X8KnobQuantity>(KNOB_PARAM + i, 0.f, 1.f, 0.5f, "Value");
 	configParam(LEFT_PARAM, 0.f, 1.f, 0.f, "Previous parameter");
 	configParam(RIGHT_PARAM, 0.f, 1.f, 0.f, "Next parameter");
-	configParam(ENGAGE_PARAM, 0.f, 1.f, 0.f, "Engage");
+	configParam(ENGAGE_PARAM, 0.f, 1.f, 0.f, "Bind");
 }
 
 // moduleCustomInitialize() runs on every single non-skipped process() tick (not just once -
@@ -166,7 +159,6 @@ void moduleReset()
 	styleChanged = true;
 	OL_state[BROWSE_INDEX_JSON] = 0.f;
 	OL_state[WAS_ENGAGED_JSON] = 0.f;
-	lockedHostType.clear(); // right-click Initialize - the only way to release a host type-lock
 }
 
 inline void moduleProcess(const ProcessArgs &args)
@@ -182,15 +174,13 @@ inline void moduleProcess(const ProcessArgs &args)
 		styleChanged = false;
 	}
 
-	// Host type-lock: once this Expander has ever engaged with a Host type, a *different*
-	// type resolving here is treated as if nothing were connected at all - see
-	// lockedHostType's own comment. Green = connected (and compatible, or not yet locked to
-	// anything), Red = something's there but the wrong type, blocked.
-	XHostInterface *resolved = resolveXHost(rightExpander.module);
-	bool typeBlocked = resolved && !lockedHostType.empty() && lockedHostType != resolved->getXHostTypeName();
-	xHost = typeBlocked ? nullptr : resolved;
-	setStateLight(CONN_LIGHT,     xHost ? 255.f : 0.f);
-	setStateLight(CONN_LIGHT + 1, typeBlocked ? 255.f : 0.f);
+	// No restriction on which Host TYPE this resolves to - an Expander can be engaged with any
+	// number of different Hosts (of the same or different types) over its lifetime, one at a
+	// time, each tracked independently via that Host's own boundExpanderId/adjacency-gating (see
+	// CLAUDE.md's Expander-modules section) - nothing here needs to know or care what kind of
+	// Host it's currently looking at.
+	xHost = resolveXHost(rightExpander.module);
+	setStateLight(CONN_LIGHT, xHost ? 255.f : 0.f);
 
 	// Browsing: unconditional, unfiltered stepping through every candidate param the
 	// currently-resolved Host reports - see "Browsing is never locked or filtered" in
@@ -241,10 +231,6 @@ inline void moduleProcess(const ProcessArgs &args)
 			int channels = getXKnobCount();
 			for (int c = 0; c < channels; c++)
 				params[KNOB_PARAM + c].setValue(xHost->getXParamTakeoverValue(browseIndex, c));
-			// First-ever successful engage locks this Expander to the Host's type from now
-			// on - see lockedHostType's own comment. Only Initialize releases it.
-			if (lockedHostType.empty())
-				lockedHostType = xHost->getXHostTypeName();
 		}
 		xLastBoundHere = boundHere;
 		xLastCheckedIndex = browseIndex;
@@ -298,5 +284,35 @@ bool consumeEngagePress() override
 	pendingEngagePress = false;
 	return fired;
 }
-const char* getXLockedHostType() override { return lockedHostType.c_str(); }
 void requestXValueClick(int channel) override { pendingValueClick[channel] = true; }
+
+// See XExpanderInterface::getXEngagedSummary()'s own comment - live, no persisted memory at
+// all: scans every module currently in the rack (Engine::getModuleIds(), Dieter's own idea) for
+// anything implementing XHostInterface and asks each one directly whether any of its own
+// candidates are bound to this Expander's id. Nothing here needs to survive a reload or worry
+// about stale ids, since it never remembers anything between calls - it just asks fresh, every
+// time. UI-thread only (drawLayer(), never audio-rate), so an O(modules x candidates) scan is
+// fine for realistic patch sizes; revisit with throttling only if it ever actually shows up as
+// a real cost in a very large patch.
+void getXEngagedSummary(int &hostCount, int &slotCount) override
+{
+	hostCount = 0;
+	slotCount = 0;
+	for (int64_t moduleId : APP->engine->getModuleIds())
+	{
+		Module *m = APP->engine->getModule(moduleId);
+		XHostInterface *host = m ? dynamic_cast<XHostInterface*>(m) : nullptr;
+		if (!host)
+			continue;
+		int count = 0;
+		int paramCount = host->getXParamCount();
+		for (int i = 0; i < paramCount; i++)
+			if (host->getXParamBoundId(i) == (int64_t) this->id)
+				count++;
+		if (count > 0)
+		{
+			hostCount++;
+			slotCount += count;
+		}
+	}
+}

@@ -13,8 +13,8 @@
 
 	NOT shared here (each module's own .cpp keeps these, since they differ in size/position or,
 	for X8D's per-channel display, don't exist on X8 at all): the module struct's constructor,
-	the sized X8StepButton/X8EngageButton subclasses (only the ENGAGE-specific isActive() logic is
-	shared, via X8EngageButtonBase below), X8Widget/X8DWidget themselves, and X8D's own
+	the sized X8StepButton/X8BindButton subclasses (only the BIND-specific isActive() logic is
+	shared, via X8BindButtonBase below), X8Widget/X8DWidget themselves, and X8D's own
 	X8DButtonCover/X8DValueDisplay.
 */
 
@@ -43,9 +43,9 @@ struct X8LogoCover : TransparentWidget
 	{
 		XExpanderInterface *expander = module ? dynamic_cast<XExpanderInterface*>(module) : nullptr;
 		float style = expander ? expander->getXStyle() : STYLE_ORANGE;
-		NVGcolor fill = (style == STYLE_DARK) ? nvgRGB(0x20, 0x20, 0x20)
-		              : (style == STYLE_BRIGHT) ? nvgRGB(0xe6, 0xe6, 0xe6)
-		              : nvgRGB(0x15, 0x15, 0x2b); // STYLE_ORANGE
+		NVGcolor fill = (style == STYLE_DARK) ? X_STRIP_BG_DARK
+		              : (style == STYLE_BRIGHT) ? X_STRIP_BG_BRIGHT
+		              : X_STRIP_BG_ORANGE;
 		nvgBeginPath(args.vg);
 		nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
 		nvgFillColor(args.vg, fill);
@@ -103,13 +103,33 @@ inline void updateXLogoCovers(X8LogoCover *cover1, X8LogoCover *cover2, Module *
 // 5-char reference.
 static const float X8_CENTER_OFFSET_MM[6] = { 0.f, 3.725f + 1.242f, 3.725f, 2.483f, 1.242f, 0.f }; // index = strlen
 
-// Shared by X8EngageButtonBase/X8Knob/X8ValueButton below: is the currently-browsed param bound
-// to a *different* Expander, or is a real cable connected on the Host's own jack for it? Either
-// way this Expander has no control over it right now, regardless of the Channels limit or
-// connection state otherwise - matches ExpanderParamAccessSpec.md's "taken/unavailable" state
-// (same computation X8NameDisplay's own color-coding already does, kept separate there since it
-// also needs "mine"). Takes a plain Module* (works for X8 or X8D transparently) rather than a
-// concrete Expander type.
+// Shared by X8BindButtonBase/X8Knob/X8ValueButton below: is the currently-browsed param
+// actually bound to THIS Expander right now? Only this state means the knob/button's own value
+// is genuinely being read by the Host - an available-but-unbound slot never reads the raw knob
+// at all until Engage is pressed (see the takeover-value mechanism in Morpheus.cpp's own
+// moduleProcess()), so "available" alone is NOT enough to call a control active/live - it would
+// otherwise let the knob be turned while doing nothing at all, silently. Takes a plain Module*
+// (works for X8/X8D/X16/X16D transparently) rather than a concrete Expander type.
+static bool x8BrowsedParamMine(Module *module)
+{
+	XExpanderInterface *expander = module ? dynamic_cast<XExpanderInterface*>(module) : nullptr;
+	if (!expander)
+		return false;
+	XHostInterface *xHost = expander->getXHost();
+	if (!xHost)
+		return false;
+	int count = xHost->getXParamCount();
+	if (count <= 0)
+		return false;
+	int idx = clamp(expander->getXBrowseIndex(), 0, count - 1);
+	return xHost->isXParamEngaged(idx) && xHost->getXParamBoundId(idx) == (int64_t) module->id;
+}
+
+// Is the currently-browsed param bound to a *different* Expander, or is a real cable connected
+// on the Host's own jack for it? Either way this Expander has no control over it right now,
+// regardless of the Channels limit or connection state otherwise - matches
+// ExpanderParamAccessSpec.md's "taken/unavailable" state (same computation X8NameDisplay's own
+// color-coding already does, kept separate there since it also needs "mine").
 static bool x8BrowsedParamTaken(Module *module)
 {
 	XExpanderInterface *expander = module ? dynamic_cast<XExpanderInterface*>(module) : nullptr;
@@ -122,8 +142,7 @@ static bool x8BrowsedParamTaken(Module *module)
 	if (count <= 0)
 		return false;
 	int idx = clamp(expander->getXBrowseIndex(), 0, count - 1);
-	bool mine = xHost->isXParamEngaged(idx) && xHost->getXParamBoundId(idx) == (int64_t) module->id;
-	return (xHost->isXParamEngaged(idx) && !mine) || xHost->isXParamCableConnected(idx);
+	return (xHost->isXParamEngaged(idx) && !x8BrowsedParamMine(module)) || xHost->isXParamCableConnected(idx);
 }
 
 /**
@@ -153,10 +172,10 @@ struct X8ButtonBase : ParamWidget
 {
 	std::string label;
 
-	// No function at all while disconnected (no Host resolved, or blocked by the host
-	// type-lock) - LEFT/RIGHT/ENGAGE have nothing to step through or bind when there's nobody
-	// to browse. No module context at all (e.g. the module browser's preview) defaults active.
-	// Virtual so X8EngageButtonBase can add its own extra "taken" condition on top - see there.
+	// No function at all while disconnected (no Host resolved) - LEFT/RIGHT/ENGAGE have nothing
+	// to step through or bind when there's nobody to browse. No module context at all (e.g. the
+	// module browser's preview) defaults active.
+	// Virtual so X8BindButtonBase can add its own extra "taken" condition on top - see there.
 	virtual bool isActive()
 	{
 		engine::ParamQuantity *pq = getParamQuantity();
@@ -186,6 +205,18 @@ struct X8ButtonBase : ParamWidget
 		ParamWidget::onButton(e);
 	}
 
+	// Stroke/label color - split out from draw() as its own virtual so X8BindButtonBase can
+	// add a third, visually distinct "currently bound here" state (green) on top of the plain
+	// active/inactive (orange/grey) look every other button uses unchanged.
+	virtual NVGcolor getAccentColor()
+	{
+		return isActive() ? ORANGE : X_COLOR_INACTIVE_GREY;
+	}
+
+	// Displayed text - split out from draw() as its own virtual so X8BindButtonBase can show
+	// "BIND"/"UNBIND" depending on state instead of the fixed `label` every other button uses.
+	virtual std::string getLabel() { return label; }
+
 	void draw(const DrawArgs &args) override
 	{
 		float style = STYLE_ORANGE;
@@ -193,10 +224,10 @@ struct X8ButtonBase : ParamWidget
 		XExpanderInterface *expander = pq && pq->module ? dynamic_cast<XExpanderInterface*>(pq->module) : nullptr;
 		if (expander)
 			style = expander->getXStyle();
-		NVGcolor fill = (style == STYLE_DARK) ? nvgRGB(0x17, 0x17, 0x17)
-		              : (style == STYLE_BRIGHT) ? nvgRGB(0x15, 0x15, 0x2b)
-		              : nvgRGB(0x10, 0x06, 0x00);
-		NVGcolor accent = isActive() ? ORANGE : nvgRGB(0x55, 0x55, 0x55); // grey - disconnected
+		NVGcolor fill = (style == STYLE_DARK) ? X_BUTTON_FILL_DARK
+		              : (style == STYLE_BRIGHT) ? X_BUTTON_FILL_BRIGHT
+		              : X_BUTTON_FILL_ORANGE;
+		NVGcolor accent = getAccentColor();
 
 		float r = mm2px(Vec(0.529f, 0.f)).x;
 		nvgBeginPath(args.vg);
@@ -207,7 +238,8 @@ struct X8ButtonBase : ParamWidget
 		nvgStrokeColor(args.vg, accent);
 		nvgStroke(args.vg);
 
-		if (!label.empty())
+		std::string text = getLabel();
+		if (!text.empty())
 		{
 			// 8pt, per Dieter (matches the panel's own BUTTON_TEXT tspan override,
 			// "2.82222px" - this SVG's viewBox makes 1 user unit == 1mm, so that raw number
@@ -217,7 +249,7 @@ struct X8ButtonBase : ParamWidget
 			nvgFontSize(args.vg, mm2px(Vec(2.82222f, 0.f)).x);
 			nvgFillColor(args.vg, accent);
 			nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-			nvgText(args.vg, box.size.x / 2.f, box.size.y / 2.f, label.c_str(), nullptr);
+			nvgText(args.vg, box.size.x / 2.f, box.size.y / 2.f, text.c_str(), nullptr);
 		}
 	}
 };
@@ -227,8 +259,8 @@ struct X8ButtonBase : ParamWidget
 // LEFT/RIGHT deliberately stay plain X8ButtonBase (active in this case) - browsing away from a
 // taken slot must keep working (ExpanderParamAccessSpec.md: "browsing is never locked... stepping
 // onto a grey entry is harmless read-only viewing, no restriction of any kind"). Each module's own
-// .cpp adds only a one-line constructor setting box.size (ENGAGE's size differs between X8/X8D).
-struct X8EngageButtonBase : X8ButtonBase
+// .cpp adds only a one-line constructor setting box.size (BIND's size differs between X8/X8D).
+struct X8BindButtonBase : X8ButtonBase
 {
 	bool isActive() override
 	{
@@ -236,6 +268,31 @@ struct X8EngageButtonBase : X8ButtonBase
 			return false;
 		engine::ParamQuantity *pq = getParamQuantity();
 		return !x8BrowsedParamTaken(pq ? pq->module : nullptr);
+	}
+
+	// Red (not just plain orange) while the currently-browsed slot is actually bound to THIS
+	// Expander - makes "am I bound here right now" readable at a glance, not just inferrable
+	// from the knobs/buttons no longer being dimmed. Still plain grey whenever inactive
+	// (disconnected or taken elsewhere - X8ButtonBase's own getAccentColor() default already
+	// covers that case correctly, so only the active case needs a further distinction here).
+	NVGcolor getAccentColor() override
+	{
+		if (!isActive())
+			return X_COLOR_INACTIVE_GREY;
+		engine::ParamQuantity *pq = getParamQuantity();
+		if (x8BrowsedParamMine(pq ? pq->module : nullptr))
+			return X_COLOR_BOUND_RED; // bound to us at this exact slot right now
+		return ORANGE; // available - clickable to bind, but not bound to us yet
+	}
+
+	// "UNBIND" while bound here (clicking would release it), else the base "BIND" label
+	// (unchanged whether available, taken, or disconnected - color already distinguishes those).
+	std::string getLabel() override
+	{
+		engine::ParamQuantity *pq = getParamQuantity();
+		if (x8BrowsedParamMine(pq ? pq->module : nullptr))
+			return "UNBIND";
+		return label;
 	}
 };
 
@@ -259,9 +316,11 @@ struct X8Knob : RoundSmallBlackKnob
 		if (!module)
 			return true;
 		if (!expander || !expander->getXHost())
-			return false; // disconnected (or blocked by the host type-lock) - nothing to control
-		if (x8BrowsedParamTaken(module))
-			return false; // bound to a different Expander, or a real cable - not ours to turn
+			return false; // disconnected - nothing to control
+		if (!x8BrowsedParamMine(module))
+			return false; // not engaged at this exact slot yet - the Host never reads this knob's
+			              // raw value until Engage is pressed, so turning it now would be a
+			              // silent no-op; merely "available" (nobody else holds it) isn't enough
 		return channel < expander->getXKnobCount();
 	}
 
@@ -350,7 +409,7 @@ struct X8ValueButton : ParamWidget
 	// base) suppresses it, same technique X8Knob's own comment describes for a different purpose.
 	void onEnter(const EnterEvent &e) override {}
 
-	// Same disconnected/taken/channel-limit gating as X8Knob - see its own comment for why each
+	// Same disconnected/mine/channel-limit gating as X8Knob - see its own comment for why each
 	// case applies.
 	bool isActive()
 	{
@@ -361,7 +420,7 @@ struct X8ValueButton : ParamWidget
 			return true;
 		if (!expander || !expander->getXHost())
 			return false;
-		if (x8BrowsedParamTaken(module))
+		if (!x8BrowsedParamMine(module))
 			return false;
 		return channel < expander->getXKnobCount();
 	}
@@ -391,9 +450,9 @@ struct X8ValueButton : ParamWidget
 		NVGcolor background, frame;
 		switch ((int) style)
 		{
-			case STYLE_DARK:   background = nvgRGB(0x20, 0x20, 0x20); frame = nvgRGB(0x60, 0x60, 0x60); break;
-			case STYLE_BRIGHT: background = nvgRGB(0xe6, 0xe6, 0xe6); frame = nvgRGB(0x60, 0x60, 0x80); break;
-			default:           background = nvgRGB(0x15, 0x15, 0x2b); frame = nvgRGB(0x80, 0x33, 0x00); break; // STYLE_ORANGE
+			case STYLE_DARK:   background = X_STRIP_BG_DARK;   frame = X_FRAME_DARK;   break;
+			case STYLE_BRIGHT: background = X_STRIP_BG_BRIGHT; frame = X_FRAME_BRIGHT; break;
+			default:           background = X_STRIP_BG_ORANGE; frame = X_FRAME_ORANGE; break; // STYLE_ORANGE
 		}
 		float w = mm2px(9.144f), h = mm2px(9.144f), r = mm2px(1.852f);
 		float x = box.size.x / 2.f - w / 2.f, y = box.size.y / 2.f - h / 2.f;
@@ -454,7 +513,7 @@ struct X8ValueButton : ParamWidget
 		float lightSize = mm2px(LIGHT_SIZE_MM);
 		nvgBeginPath(args.vg);
 		nvgRect(args.vg, box.size.x / 2.f - lightSize / 2.f, box.size.y / 2.f - lightSize / 2.f, lightSize, lightSize);
-		nvgStrokeColor(args.vg, (active && isPressed()) ? onColor : nvgRGB(0x4a, 0x44, 0x3c));
+		nvgStrokeColor(args.vg, (active && isPressed()) ? onColor : X_VALUE_LIGHT_UNLIT);
 		nvgStrokeWidth(args.vg, mm2px(0.5f));
 		nvgStroke(args.vg);
 		if (!active)
@@ -501,6 +560,12 @@ struct X8ValueButton : ParamWidget
 	}
 };
 
+// Left/right margin this display's own box.pos/box.size are measured against in every widget
+// constructor (X8/X8D/X16/X16D all position it at this same x offset from their own left edge) -
+// shared here so the "how much room do we actually have" math below (widen for X8D/X16/X16D,
+// leave X8 at its own hand-tuned 13mm untouched) stays in one place.
+#define X8_NAME_DISPLAY_MARGIN_MM 1.41287f
+
 /**
 	Currently-browsed param name, LCD-style like every other OrangeLine display - color-coded per
 	ExpanderParamAccessSpec.md's "Name display": grey dashes when no Host is resolved (doubles as
@@ -509,14 +574,44 @@ struct X8ValueButton : ParamWidget
 	browsed param, grey when it's taken (bound elsewhere, or a real cable is patched in), orange
 	when it's available (nobody holds it).
 
-	Always shows getXParamShortName(), never getXParamName() - this display is sized for and
-	assumes the interface's hard contract (see XShared.hpp): a Host's short name must never
-	exceed 5 characters. There is no truncation/scrolling fallback here, by design - respecting
-	the contract is the Host's responsibility, not this widget's.
+	Three display-width tiers, all handled by ONE generic "does it fit?" measurement
+	(nvgTextBounds()) against this widget's own box.size.x - no per-module special-casing
+	anywhere, the tiering falls out purely from each widget's own box width (Dieter's own
+	breakdown): X8's narrow ~13mm display always shows getXParamShortName() centered (or just
+	OL_GREETING_WORD1 while unbound) - long content never fits there. X8D/X16's wider ~27mm
+	display shows the full getXParamName() left-aligned when it fits, else falls back to
+	getXParamShortName() centered (or the full "WORD1 WORD2" greeting, else just WORD1, while
+	unbound). X16D's widest ~58mm display uses the exact same logic, but its width means the long
+	name fits for essentially every candidate - "mostly showing the Long name of a slot" in
+	practice, not a separate code path.
 */
 struct X8NameDisplay : TransparentWidget
 {
 	Module *module = nullptr;
+
+	// True if `text` renders within this widget's own box width at the currently-set font/size -
+	// requires the font face/size to already be set on `vg` (drawLayer() does this before any
+	// call here).
+	bool fits(NVGcontext *vg, const std::string &text)
+	{
+		float bounds[4];
+		nvgTextBounds(vg, 0.f, 0.f, text.c_str(), nullptr, bounds);
+		return (bounds[2] - bounds[0]) <= box.size.x;
+	}
+
+	// Centers <=5-char content using the existing hand-tuned X8_CENTER_OFFSET_MM table (pixel-
+	// identical to the previous behavior); anything longer (a long name, or the full two-word
+	// greeting) is centered via a measured nvgTextBounds() width instead, since the hand-tuned
+	// table only ever covered up to 5 characters.
+	float centerX(NVGcontext *vg, const std::string &text)
+	{
+		if (text.size() <= 5)
+			return mm2px(X8_CENTER_OFFSET_MM[text.size()]);
+		float bounds[4];
+		nvgTextBounds(vg, 0.f, 0.f, text.c_str(), nullptr, bounds);
+		float x = (box.size.x - (bounds[2] - bounds[0])) / 2.f;
+		return (x > 0.f) ? x : 0.f;
+	}
 
 	void drawLayer(const DrawArgs &args, int layer) override
 	{
@@ -528,15 +623,42 @@ struct X8NameDisplay : TransparentWidget
 
 		XExpanderInterface *expander = module ? dynamic_cast<XExpanderInterface*>(module) : nullptr;
 
-		// No Host resolved (or blocked by the type-lock) - red placeholder, more attention-
-		// grabbing than the "taken" grey since it means this specific Expander has physically
-		// moved out of its chain (see the adjacency-gating feature) while still remembering a
-		// locked type. Shows that locked host type name (e.g. "MORPH") if this Expander has ever
-		// engaged with one, so the lock is visible, not just enforced silently - plain dashes if
-		// never locked at all.
-		const char *lockedType = expander ? expander->getXLockedHostType() : "";
-		const char *text = (lockedType && lockedType[0] != '\0') ? lockedType : "-----";
-		NVGcolor color = nvgRGB(0xdd, 0x00, 0x00); // red - no host / blocked by type-lock
+		float fontSizePx = mm2px(Vec(4.49792f, 0.f)).x;
+		std::shared_ptr<Font> font = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
+		nvgFontFaceId(args.vg, font->handle);
+		nvgFontSize(args.vg, fontSizePx);
+
+		// No Host resolved - show a live "HH:SS engaged" summary (HH = distinct hosts currently
+		// bound to at least one slot, SS = total bound slots across all of them) instead of a
+		// plain placeholder, using this otherwise-idle display slot - see
+		// XExpanderInterface::getXEngagedSummary(). Falls back to a friendly greeting (see
+		// OrangeLine.hpp's OL_GREETING_WORD1/2/LONG) rather than a plain "nothing here"
+		// placeholder when nothing's bound anywhere at all - widest-fitting tier wins (X16D's own
+		// generous width fits OL_GREETING_LONG, X8D/X16 fall back to WORD1+WORD2, X8's narrow
+		// display falls back all the way to just WORD1). Orange (not the red used elsewhere for
+		// "disconnected") since this is a welcome, not a problem.
+		std::string text = OL_GREETING_WORD1;
+		NVGcolor color = ORANGE;
+		bool leftAlign = false;
+		if (expander)
+		{
+			int hostCount = 0, slotCount = 0;
+			expander->getXEngagedSummary(hostCount, slotCount);
+			if (hostCount > 0)
+			{
+				char summaryBuffer[6];
+				snprintf(summaryBuffer, sizeof(summaryBuffer), "%02d:%02d", clamp(hostCount, 0, 99), clamp(slotCount, 0, 99));
+				text = summaryBuffer;
+			}
+			else if (fits(args.vg, OL_GREETING_LONG))
+				text = OL_GREETING_LONG;
+			else
+			{
+				std::string fullGreeting = std::string(OL_GREETING_WORD1) + " " + OL_GREETING_WORD2;
+				if (fits(args.vg, fullGreeting))
+					text = fullGreeting;
+			}
+		}
 
 		XHostInterface *xHost = expander ? expander->getXHost() : nullptr;
 		if (xHost)
@@ -545,37 +667,42 @@ struct X8NameDisplay : TransparentWidget
 			if (count > 0)
 			{
 				int idx = clamp(expander->getXBrowseIndex(), 0, count - 1);
-				text = xHost->getXParamShortName(idx);
 				bool mine = xHost->isXParamEngaged(idx) && xHost->getXParamBoundId(idx) == (int64_t) module->id;
 				bool taken = (xHost->isXParamEngaged(idx) && !mine) || xHost->isXParamCableConnected(idx);
 				NVGcolor slotColor = xHost->getXParamColor(idx);
 				if (mine)
 					color = slotColor; // this slot's own color, full brightness - it's bound to me
 				else if (taken)
-					color = nvgRGB(0x55, 0x55, 0x55); // grey - taken/unavailable
+					color = X_COLOR_INACTIVE_GREY;
 				else
-					color = nvgLerpRGBA(slotColor, nvgRGB(0x55, 0x55, 0x55), 0.5f); // available - same
+					color = nvgLerpRGBA(slotColor, X_COLOR_INACTIVE_GREY, 0.5f); // available - same
 					                                 // slot color, dimmed toward grey so "mine" still
 					                                 // reads as visually distinct from "free to take"
+
+				// Prefer the full descriptive name, left-aligned, whenever this display is wide
+				// enough to show it without clipping - falls back to the short name, centered,
+				// otherwise (X8's narrow display always takes this branch).
+				std::string longName = xHost->getXParamName(idx);
+				if (fits(args.vg, longName))
+				{
+					text = longName;
+					leftAlign = true;
+				}
+				else
+				{
+					// Defense in depth beyond the documented contract: never even attempt to draw
+					// more than 5 characters here - a Host violating getXParamShortName()'s own
+					// 5-char limit still can't make text bleed outside this widget.
+					char buffer[6];
+					snprintf(buffer, sizeof(buffer), "%s", xHost->getXParamShortName(idx));
+					text = buffer;
+				}
 			}
 		}
-		// Defense in depth beyond the documented contract: never even attempt to draw more than
-		// 5 characters, and clip drawing to this widget's own box - a Host violating the
-		// contract can't make text bleed outside the display area.
-		char buffer[6];
-		snprintf(buffer, sizeof(buffer), "%s", text);
 
-		float fontSizePx = mm2px(Vec(4.49792f, 0.f)).x;
-		std::shared_ptr<Font> font = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
-		nvgFontFaceId(args.vg, font->handle);
-		nvgFontSize(args.vg, fontSizePx);
 		nvgFillColor(args.vg, color);
-
-		// Shorter-than-max short names (e.g. "REC", "LOCK") are centered rather than left-hung -
-		// only the full-width 5-char case actually needs the left edge as an anchor. See
-		// X8_CENTER_OFFSET_MM's own comment above.
 		nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_BASELINE);
-		float x = mm2px(X8_CENTER_OFFSET_MM[strlen(buffer)]);
+		float x = leftAlign ? 0.f : centerX(args.vg, text);
 
 		// Text is drawn at local x with baseline alignment, so glyphs extend upward (ascenders)
 		// from y=0, not downward - box.size.y (an arbitrary hit-test size, not a text-metrics
@@ -583,8 +710,158 @@ struct X8NameDisplay : TransparentWidget
 		// the baseline instead of assuming (0,0,w,h) covers the glyphs.
 		nvgSave(args.vg);
 		nvgScissor(args.vg, 0.f, -fontSizePx * 1.2f, box.size.x, fontSizePx * 1.6f);
-		nvgText(args.vg, x, 0.f, buffer, nullptr);
+		nvgText(args.vg, x, 0.f, text.c_str(), nullptr);
 		nvgRestore(args.vg);
 		Widget::drawLayer(args, 1);
 	}
 };
+
+// ********************************************************************************************
+// Right-click "Binds" tree - see CLAUDE.md's submenu/radio-style item convention. Structure:
+// Binds -> Unbind All (every host at once) + one entry per Host currently holding at least one
+// of this Expander's slots -> that Host's own Unbind All + its individual bound slots
+// (checkmark, click unbinds just that one). Everything below operates on a plain Module*
+// (dynamic_cast to XExpanderInterface internally), so X8/X8D/X16/X16D all share this verbatim
+// via one call in each of their own appendContextMenu() - see CLAUDE.md's "near-identical
+// siblings" convention. "Bind"/"Unbind" replaces the earlier "Engage" wording throughout the
+// user-facing text (Dieter: too nerdy) - only the display strings changed, the underlying
+// interface methods (resetXParam() etc.) keep their original names.
+
+// Leaf: one slot this Expander currently holds on a specific Host - always shown checked (this
+// list only ever contains bound slots to begin with), click clears just this one.
+struct XBindSlotItem : MenuItem
+{
+	XHostInterface *host;
+	int index;
+	void onAction(const event::Action &e) override { host->resetXParam(index); }
+};
+
+// Clears every slot this Expander holds on ONE specific Host (not the other Hosts it may also
+// be bound to elsewhere) - the per-host counterpart of XUnbindAllItem below.
+struct XUnbindHostItem : MenuItem
+{
+	XHostInterface *host;
+	int64_t expanderId;
+	void onAction(const event::Action &e) override
+	{
+		int count = host->getXParamCount();
+		for (int i = 0; i < count; i++)
+			if (host->getXParamBoundId(i) == expanderId)
+				host->resetXParam(i);
+	}
+};
+
+// One entry per bound Host - text is "<custom name> (<slug>)" if a name was set (see
+// XHostInterface::getXHostName()), else "<slug> #<id>" so several unnamed same-type Hosts stay
+// distinguishable. Opens to that Host's own Unbind All plus its individual bound slots.
+struct XBindHostItem : MenuItem
+{
+	XHostInterface *host;
+	int64_t expanderId;
+
+	Menu *createChildMenu() override
+	{
+		Menu *menu = new Menu;
+
+		XUnbindHostItem *allItem = new XUnbindHostItem();
+		allItem->host = host;
+		allItem->expanderId = expanderId;
+		allItem->text = "Unbind All";
+		allItem->setSize(Vec(140, 20));
+		menu->addChild(allItem);
+
+		int count = host->getXParamCount();
+		for (int i = 0; i < count; i++)
+		{
+			if (host->getXParamBoundId(i) != expanderId)
+				continue;
+			XBindSlotItem *item = new XBindSlotItem();
+			item->host = host;
+			item->index = i;
+			item->text = host->getXParamName(i);
+			item->rightText = "✔";
+			item->setSize(Vec(140, 20));
+			menu->addChild(item);
+		}
+		return menu;
+	}
+};
+
+// Clears every slot this Expander holds, on every Host it's currently bound to anywhere - same
+// "blunt manual override" reasoning as Morpheus's own MorpheusUnbindAllItem, just scanning
+// every Host in the rack instead of one fixed instance's own candidate list.
+struct XUnbindAllItem : MenuItem
+{
+	Module *module;
+	void onAction(const event::Action &e) override
+	{
+		int64_t myId = module->id;
+		for (int64_t id : APP->engine->getModuleIds())
+		{
+			Module *m = APP->engine->getModule(id);
+			XHostInterface *host = m ? dynamic_cast<XHostInterface*>(m) : nullptr;
+			if (!host)
+				continue;
+			int count = host->getXParamCount();
+			for (int i = 0; i < count; i++)
+				if (host->getXParamBoundId(i) == myId)
+					host->resetXParam(i);
+		}
+	}
+};
+
+// Top-level "Binds" item - see this section's own header comment for the full tree shape.
+struct XBindsItem : MenuItem
+{
+	Module *module;
+
+	Menu *createChildMenu() override
+	{
+		Menu *menu = new Menu;
+		int64_t myId = module->id;
+
+		XUnbindAllItem *allItem = new XUnbindAllItem();
+		allItem->module = module;
+		allItem->text = "Unbind All";
+		allItem->setSize(Vec(140, 20));
+		menu->addChild(allItem);
+
+		for (int64_t id : APP->engine->getModuleIds())
+		{
+			Module *m = APP->engine->getModule(id);
+			XHostInterface *host = m ? dynamic_cast<XHostInterface*>(m) : nullptr;
+			if (!host)
+				continue;
+			int count = host->getXParamCount();
+			int bound = 0;
+			for (int i = 0; i < count; i++)
+				if (host->getXParamBoundId(i) == myId)
+					bound++;
+			if (bound == 0)
+				continue;
+
+			std::string name = host->getXHostName();
+			std::string label = name.empty()
+				? string::f("%s #%lld", m->model->slug.c_str(), (long long) id)
+				: string::f("%s (%s)", name.c_str(), m->model->slug.c_str());
+
+			XBindHostItem *hostItem = new XBindHostItem();
+			hostItem->host = host;
+			hostItem->expanderId = myId;
+			hostItem->text = label;
+			hostItem->rightText = RIGHT_ARROW;
+			hostItem->setSize(Vec(180, 20));
+			menu->addChild(hostItem);
+		}
+		return menu;
+	}
+};
+
+inline void addXBindsMenuItem(Menu *menu, Module *module)
+{
+	XBindsItem *item = new XBindsItem();
+	item->module = module;
+	item->text = "Binds";
+	item->rightText = RIGHT_ARROW;
+	menu->addChild(item);
+}

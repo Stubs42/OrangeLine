@@ -61,13 +61,6 @@ enum XAlign {
 
 struct XHostInterface
 {
-	// Short, fixed identity string for this Host's concrete type (e.g. "MORPH") - never varies
-	// per-instance or per-param. Same hard contract as getXParamShortName() below: max 5
-	// characters, no exceptions. Used by an Expander to lock itself to the first Host type it
-	// ever engages with (see X8.cpp's host type-lock feature) and, reusing the same string, as
-	// the display shown while disconnected but still locked to that type.
-	virtual const char* getXHostTypeName() = 0;
-
 	virtual int getXParamCount() = 0;
 	virtual const char* getXParamName(int index) = 0;      // full descriptive name
 	// Compact name - X8 always displays THIS, never getXParamName(). Hard contract: max 5
@@ -121,6 +114,13 @@ struct XHostInterface
 	// seam-bridging strip (see getXNeighborStyle() below), unrelated to host-resolution health.
 	virtual float getXStyle() = 0;
 
+	// Optional user-editable display label for this Host instance (e.g. Morpheus's own
+	// right-click "Name" field) - purely cosmetic, so an Expander's "Binds" menu can tell
+	// apart several same-type Hosts by name rather than just showing the module type over and
+	// over. May be empty (no custom name set) - callers fall back to the module's own
+	// Model::slug plus its Rack id in that case, see addXBindsMenuItem() in X8Common.hpp.
+	virtual std::string getXHostName() = 0;
+
 	virtual ~XHostInterface() {}
 };
 
@@ -164,15 +164,20 @@ struct XExpanderInterface
 	// resolved, or for a digital-type param (its own lit/unlit state already shows everything).
 	virtual std::string formatXValue(float raw) = 0;
 
-	// The locked-in Host type name (see the concrete Expander's own lockedHostType comment), or
-	// an empty string if never locked to any type yet - shown on the name display while
-	// disconnected, so the type-lock itself is visible, not just silently enforced.
-	virtual const char* getXLockedHostType() = 0;
-
 	// One-shot request: the currently-browsed param is a Click type and this channel was just
 	// clicked - the Expander owns the actual pulse timing (a fixed duration independent of how
 	// long the mouse stays down), this just flags "start one now."
 	virtual void requestXValueClick(int channel) = 0;
+
+	// Live "how many hosts, how many total slots" summary - shown on the name display while
+	// disconnected (see X8NameDisplay). hostCount = number of distinct hosts this Expander is
+	// CURRENTLY bound to at least one slot on; slotCount = total bound slots across all of them
+	// (always >= hostCount by construction). Recomputed fresh every call by scanning every module
+	// currently in the rack (Engine::getModuleIds()) for anything implementing XHostInterface and
+	// asking each one directly - nothing is remembered between calls, so there's no persisted/
+	// stale state at all, and a host that's deleted or has since disengaged everything just
+	// contributes 0.
+	virtual void getXEngagedSummary(int &hostCount, int &slotCount) = 0;
 
 	virtual ~XExpanderInterface() {}
 };
@@ -221,6 +226,33 @@ inline float getXNeighborStyle(Module *neighbor)
 #define X_STRIP_BG_ORANGE nvgRGB(0x15, 0x15, 0x2b)
 #define X_STRIP_BG_DARK   nvgRGB(0x20, 0x20, 0x20)
 #define X_STRIP_BG_BRIGHT nvgRGB(0xe6, 0xe6, 0xe6)
+
+// Every other hardcoded color used by the shared X-family widgets in X8Common.hpp - collected
+// here (rather than left as scattered nvgRGB() literals) so a future palette tweak only ever
+// touches one place. Grouped by meaning, not by which widget happens to use them - several
+// widgets share the exact same semantic color (e.g. "inactive/taken" grey).
+#define X_BUTTON_FILL_ORANGE nvgRGB(0x10, 0x06, 0x00) // X8ButtonBase's own button-body fill, per
+#define X_BUTTON_FILL_DARK   nvgRGB(0x17, 0x17, 0x17) // theme - a separate triplet from
+#define X_BUTTON_FILL_BRIGHT nvgRGB(0x15, 0x15, 0x2b) // X_STRIP_BG_* even though BRIGHT's own
+                                                       // value happens to coincide with
+                                                       // X_STRIP_BG_ORANGE (a dark navy fill
+                                                       // reads correctly against a light panel)
+
+#define X_FRAME_ORANGE nvgRGB(0x80, 0x33, 0x00) // X8ValueButton's drawThemeFrame() stroke color,
+#define X_FRAME_DARK   nvgRGB(0x60, 0x60, 0x60) // per theme (its background fill reuses
+#define X_FRAME_BRIGHT nvgRGB(0x60, 0x60, 0x80) // X_STRIP_BG_* directly, no separate constant
+                                                 // needed for that half)
+
+#define X_COLOR_INACTIVE_GREY nvgRGB(0x55, 0x55, 0x55) // disconnected/taken/unavailable - shared
+                                                        // by X8ButtonBase's default accent,
+                                                        // X8BindButtonBase's grey state, and
+                                                        // X8NameDisplay's "taken" text color
+#define X_COLOR_BOUND_RED   nvgRGB(0xdd, 0x00, 0x00)   // X8BindButtonBase - bound to THIS
+                                                        // Expander at the browsed slot right now
+                                                        // (was green - Dieter's own call)
+#define X_COLOR_NO_HOST_RED nvgRGB(0xdd, 0x00, 0x00)   // X8NameDisplay - no Host resolved at all
+#define X_VALUE_LIGHT_UNLIT nvgRGB(0x4a, 0x44, 0x3c)   // X8ValueButton's own square LIGHT
+                                                        // indicator while unlit
 
 #define X_STRIP_ACCENT_Y_MM 124.71525f
 #define X_STRIP_ACCENT_THICKNESS_MM 0.3f

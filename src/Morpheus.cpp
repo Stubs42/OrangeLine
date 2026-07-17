@@ -119,6 +119,12 @@ struct Morpheus : Module, XHostInterface
 	// xCandidates[]/xVirtualChannels[] below, walked/refreshed every moduleProcess() tick.
 	bool xConnected = false;
 
+	// User-editable label, set via the right-click menu's text field (see MorpheusNameField) -
+	// purely a human-facing identifier, mainly useful once a patch has more than one Morpheus
+	// instance and an X-family Expander's own "Engages" menu needs to say *which* one a slot
+	// belongs to (rather than just "Morpheus" for all of them). Empty by default.
+	std::string customName;
+
 	// Short names match what's actually printed on the real Morpheus panel (verified directly
 	// in res/MorpheusWork.svg: LOCK/LEN/HLD/RND/CLR/REC/GTP/SCL/OFS are already there; BAL and
 	// <</>> for Shift Left/Right per Dieter). All are <= 5 characters - X8's display has no
@@ -216,24 +222,30 @@ struct Morpheus : Module, XHostInterface
 
 		// boundExpanderId is int64_t, not a float OL_state slot - same reasoning/pattern as
 		// CC2CV/CV2CC's own moduleExtraDataToJson/FromJson use for non-float persisted data.
+		// customName (a plain string, see its own member comment) rides along in the same hook.
 		moduleExtraDataToJson = [this](json_t *rootJ)
 		{
 			json_t *boundJ = json_array();
 			for (int i = 0; i < NUM_X_CANDIDATES; i++)
 				json_array_append_new(boundJ, json_integer(xCandidates[i].boundExpanderId));
 			json_object_set_new(rootJ, "xBoundExpanderId", boundJ);
+			json_object_set_new(rootJ, "customName", json_string(customName.c_str()));
 		};
 		moduleExtraDataFromJson = [this](json_t *rootJ)
 		{
 			json_t *boundJ = json_object_get(rootJ, "xBoundExpanderId");
-			if (!boundJ)
-				return;
-			for (int i = 0; i < NUM_X_CANDIDATES; i++)
+			if (boundJ)
 			{
-				json_t *idJ = json_array_get(boundJ, i);
-				if (idJ && json_is_integer(idJ))
-					xCandidates[i].boundExpanderId = json_integer_value(idJ);
+				for (int i = 0; i < NUM_X_CANDIDATES; i++)
+				{
+					json_t *idJ = json_array_get(boundJ, i);
+					if (idJ && json_is_integer(idJ))
+						xCandidates[i].boundExpanderId = json_integer_value(idJ);
+				}
 			}
+			json_t *nameJ = json_object_get(rootJ, "customName");
+			if (nameJ && json_is_string(nameJ))
+				customName = json_string_value(nameJ);
 		};
 	}
 	/*
@@ -1201,7 +1213,6 @@ struct Morpheus : Module, XHostInterface
 	// list/order matches xCandidates[] above (verified against moduleInitStateTypes()/
 	// moduleParamConfig() directly, not just enum names - EXT_INPUT excluded, it's a real
 	// signal path, not a CV-modulates-a-knob candidate).
-	const char* getXHostTypeName() override { return "MORPH"; }
 	int getXParamCount() override { return NUM_X_CANDIDATES; }
 	const char* getXParamName(int index) override { return xCandidates[index].name; }
 	const char* getXParamShortName(int index) override { return xCandidates[index].shortName; }
@@ -1232,6 +1243,7 @@ struct Morpheus : Module, XHostInterface
 		return format(scaleXParamValue(index, value));
 	}
 	float getXStyle() override { return OL_state[STYLE_JSON]; }
+	std::string getXHostName() override { return customName; }
 };
 
 // ********************************************************************************************************************************
@@ -1710,18 +1722,124 @@ struct MorpheusWidget : ModuleWidget
 		}
 	};
 
+	// Collapses the 8 flat behaviour toggles above into one "Behaviour ->" submenu entry -
+	// same reasoning/pattern as Channels/Style, keeps the top-level menu short. Each leaf item
+	// needs its own explicit setSize() here (see CLAUDE.md's submenu pitfall) even though the
+	// exact same item classes didn't need it while added directly to the top-level menu.
+	struct BehaviourItem : MenuItem
+	{
+		Morpheus *module;
+
+		Menu *createChildMenu() override
+		{
+			Menu *menu = new Menu;
+
+			GateIsTrgItem *gateisTrgItem = new GateIsTrgItem();
+			gateisTrgItem->module = module;
+			gateisTrgItem->text = "Output Trg instead of Gate";
+			gateisTrgItem->setSize(Vec(220, 20));
+			menu->addChild(gateisTrgItem);
+
+			RecallOnMemCvChangeItem *recallOnMemCvChangeItem = new RecallOnMemCvChangeItem();
+			recallOnMemCvChangeItem->module = module;
+			recallOnMemCvChangeItem->text = "Recall on Mem CV Change";
+			recallOnMemCvChangeItem->setSize(Vec(220, 20));
+			menu->addChild(recallOnMemCvChangeItem);
+
+			LoadOnMemCvChangeItem *loadOnMemCvChangeItem = new LoadOnMemCvChangeItem();
+			loadOnMemCvChangeItem->module = module;
+			loadOnMemCvChangeItem->text = "Load on Mem CV Change";
+			loadOnMemCvChangeItem->setSize(Vec(220, 20));
+			menu->addChild(loadOnMemCvChangeItem);
+
+			SmartHoldItem *smartHoldItem = new SmartHoldItem();
+			smartHoldItem->module = module;
+			smartHoldItem->text = "Smart HLD";
+			smartHoldItem->setSize(Vec(220, 20));
+			menu->addChild(smartHoldItem);
+
+			MemIsHalftonesItem *memIsHalftonesItem = new MemIsHalftonesItem();
+			memIsHalftonesItem->module = module;
+			memIsHalftonesItem->text = "MEM is Note";
+			memIsHalftonesItem->setSize(Vec(220, 20));
+			menu->addChild(memIsHalftonesItem);
+
+			LoadHldChannelsItem *loadHldChannelsItem = new LoadHldChannelsItem();
+			loadHldChannelsItem->module = module;
+			loadHldChannelsItem->text = "Load Channels on HLD";
+			loadHldChannelsItem->setSize(Vec(220, 20));
+			menu->addChild(loadHldChannelsItem);
+
+			ScaleOnOutputItem *scaleOnOutputItem = new ScaleOnOutputItem();
+			scaleOnOutputItem->module = module;
+			scaleOnOutputItem->text = "Scale on Output";
+			scaleOnOutputItem->setSize(Vec(220, 20));
+			menu->addChild(scaleOnOutputItem);
+
+			VisualOnItem *visualOnItem = new VisualOnItem();
+			visualOnItem->module = module;
+			visualOnItem->text = "Visual On/Off";
+			visualOnItem->setSize(Vec(220, 20));
+			menu->addChild(visualOnItem);
+
+			return menu;
+		}
+	};
+
 	// Last-resort recovery: clears every candidate's binding at once, same effect as calling
 	// resetXParam() on all of them individually. Meant for "I deleted an X module (or otherwise
 	// made a mess) and something's stuck bound" - the normal way to release one binding is either
-	// the bound Expander's own engage button, or a real cable taking over that input; this is the
+	// the bound Expander's own Bind button, or a real cable taking over that input; this is the
 	// blunt manual override when that's not practical anymore.
-	struct XDisengageAllItem : MenuItem
+	struct MorpheusUnbindAllItem : MenuItem
 	{
 		Morpheus *module;
 		void onAction(const event::Action &e) override
 		{
 			for (int i = 0; i < NUM_X_CANDIDATES; i++)
 				module->resetXParam(i);
+		}
+	};
+
+	// Morpheus's own "Input Binds" tree - simpler than the X-family Expander's own "Binds" (see
+	// X8Common.hpp's addXBindsMenuItem()): Morpheus can only ever be bound BY Expanders, never
+	// bound TO another Host, so there's no hostname level here at all - just Unbind All plus
+	// whichever of Morpheus's own candidate slots are currently bound, each with a checkmark
+	// (this list only ever contains bound slots) and a click to unbind just that one.
+	struct MorpheusInputBindsItem : MenuItem
+	{
+		Morpheus *module;
+
+		struct SlotItem : MenuItem
+		{
+			Morpheus *module;
+			int index;
+			void onAction(const event::Action &e) override { module->resetXParam(index); }
+		};
+
+		Menu *createChildMenu() override
+		{
+			Menu *menu = new Menu;
+
+			MorpheusUnbindAllItem *unbindAllItem = new MorpheusUnbindAllItem();
+			unbindAllItem->module = module;
+			unbindAllItem->text = "Unbind All";
+			unbindAllItem->setSize(Vec(160, 20));
+			menu->addChild(unbindAllItem);
+
+			for (int i = 0; i < NUM_X_CANDIDATES; i++)
+			{
+				if (module->xCandidates[i].boundExpanderId == -1)
+					continue;
+				SlotItem *item = new SlotItem();
+				item->module = module;
+				item->index = i;
+				item->text = module->xCandidates[i].name;
+				item->rightText = "✔";
+				item->setSize(Vec(160, 20));
+				menu->addChild(item);
+			}
+			return menu;
 		}
 	};
 
@@ -1784,6 +1902,19 @@ struct MorpheusWidget : ModuleWidget
 		}
 	};
 
+	// Plain right-click-menu text field for customName (see its own member comment) - standard
+	// Rack pattern: ui::TextField fires onChange() on every edit, so just mirror `text` into the
+	// module straight away rather than needing a separate "confirm" step.
+	struct MorpheusNameField : ui::TextField
+	{
+		Morpheus *module;
+		void onChange(const ChangeEvent &e) override
+		{
+			if (module)
+				module->customName = text;
+		}
+	};
+
 	void appendContextMenu(Menu *menu) override
 	{
 		MenuLabel *spacerLabel = new MenuLabel();
@@ -1792,54 +1923,24 @@ struct MorpheusWidget : ModuleWidget
 		Morpheus *module = dynamic_cast<Morpheus *>(this->module);
 		assert(module);
 
-		addOrangeLineTouchMenuItem(menu, module->OL_touchInPort, module->OL_touchOutPort, &module->OL_touchVisible);
+		MenuLabel *nameLabel = new MenuLabel();
+		nameLabel->text = "Name";
+		menu->addChild(nameLabel);
+
+		MorpheusNameField *nameField = new MorpheusNameField();
+		nameField->module = module;
+		nameField->text = module->customName;
+		nameField->box.size = Vec(140.f, 20.f);
+		menu->addChild(nameField);
 
 		spacerLabel = new MenuLabel();
 		menu->addChild(spacerLabel);
 
-		MenuLabel *behaviourLabel = new MenuLabel();
-		behaviourLabel->text = "Behaviour";
-		menu->addChild(behaviourLabel);
-
-		GateIsTrgItem *gateisTrgItem = new GateIsTrgItem();
-		gateisTrgItem->module = module;
-		gateisTrgItem->text = "Output Trg instead of Gate";
-		menu->addChild(gateisTrgItem);
-
-		RecallOnMemCvChangeItem *recallOnMemCvChangeItem = new RecallOnMemCvChangeItem();
-		recallOnMemCvChangeItem->module = module;
-		recallOnMemCvChangeItem->text = "Recall on Mem CV Change";
-		menu->addChild(recallOnMemCvChangeItem);
-
-		LoadOnMemCvChangeItem *loadOnMemCvChangeItem = new LoadOnMemCvChangeItem();
-		loadOnMemCvChangeItem->module = module;
-		loadOnMemCvChangeItem->text = "Load on Mem CV Change";
-		menu->addChild(loadOnMemCvChangeItem);
-
-		SmartHoldItem *smartHoldItem = new SmartHoldItem();
-		smartHoldItem->module = module;
-		smartHoldItem->text = "Smart HLD";
-		menu->addChild(smartHoldItem);
-
-		MemIsHalftonesItem *memIsHalftonesItem = new MemIsHalftonesItem();
-		memIsHalftonesItem->module = module;
-		memIsHalftonesItem->text = "MEM is Note";
-		menu->addChild(memIsHalftonesItem);
-
-		LoadHldChannelsItem *loadHldChannelsItem = new LoadHldChannelsItem();
-		loadHldChannelsItem->module = module;
-		loadHldChannelsItem->text = "Load Channels on HLD";
-		menu->addChild(loadHldChannelsItem);
-
-		ScaleOnOutputItem *scaleOnOutputItem = new ScaleOnOutputItem();
-		scaleOnOutputItem->module = module;
-		scaleOnOutputItem->text = "Scale on Output";
-		menu->addChild(scaleOnOutputItem);
-
-		VisualOnItem *visualOnItem = new VisualOnItem();
-		visualOnItem->module = module;
-		visualOnItem->text = "Visual On/Off";
-		menu->addChild(visualOnItem);
+		BehaviourItem *behaviourItem = new BehaviourItem();
+		behaviourItem->module = module;
+		behaviourItem->text = "Behaviour";
+		behaviourItem->rightText = RIGHT_ARROW;
+		menu->addChild(behaviourItem);
 
 		spacerLabel = new MenuLabel();
 		menu->addChild(spacerLabel);
@@ -1848,10 +1949,11 @@ struct MorpheusWidget : ModuleWidget
 		expandersLabel->text = "Expanders";
 		menu->addChild(expandersLabel);
 
-		XDisengageAllItem *disengageAllItem = new XDisengageAllItem();
-		disengageAllItem->module = module;
-		disengageAllItem->text = "Disengage All";
-		menu->addChild(disengageAllItem);
+		MorpheusInputBindsItem *inputBindsItem = new MorpheusInputBindsItem();
+		inputBindsItem->module = module;
+		inputBindsItem->text = "Input Binds";
+		inputBindsItem->rightText = RIGHT_ARROW;
+		menu->addChild(inputBindsItem);
 
 		spacerLabel = new MenuLabel();
 		menu->addChild(spacerLabel);
@@ -1890,6 +1992,11 @@ struct MorpheusWidget : ModuleWidget
 		style3Item->module = module;
 		style3Item->style = STYLE_DARK;
 		menu->addChild(style3Item);
+
+		spacerLabel = new MenuLabel();
+		menu->addChild(spacerLabel);
+
+		addOrangeLineTouchMenuItem(menu, module->OL_touchInPort, module->OL_touchOutPort, &module->OL_touchVisible);
 	}
 };
 

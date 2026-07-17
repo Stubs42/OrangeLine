@@ -42,20 +42,6 @@ struct X8D : Module, XExpanderInterface
 		// not just once - see the comment on that hook below) so a saved patch's own value
 		// (applied later by dataFromJson(), if the key exists) can still override it correctly.
 		OL_state[CHANNEL_LIMIT_JSON] = (float) NUM_X8_KNOBS;
-
-		// lockedHostType is a plain string, not a float - OL_state's JSON array can't carry it,
-		// so it uses the same moduleExtraDataToJson/FromJson hook CC2CV/CV2CC use for their own
-		// non-float persisted data (see CLAUDE.md's ODR-safety note on this pattern).
-		moduleExtraDataToJson = [this](json_t *rootJ)
-		{
-			json_object_set_new(rootJ, "lockedHostType", json_string(lockedHostType.c_str()));
-		};
-		moduleExtraDataFromJson = [this](json_t *rootJ)
-		{
-			json_t *lockedHostTypeJ = json_object_get(rootJ, "lockedHostType");
-			if (lockedHostTypeJ && json_is_string(lockedHostTypeJ))
-				lockedHostType = json_string_value(lockedHostTypeJ);
-		};
 	}
 };
 
@@ -77,9 +63,9 @@ struct X8DButtonCover : TransparentWidget
 	{
 		XExpanderInterface *expander = module ? dynamic_cast<XExpanderInterface*>(module) : nullptr;
 		float style = expander ? expander->getXStyle() : STYLE_ORANGE;
-		NVGcolor fill = (style == STYLE_DARK) ? nvgRGB(0x20, 0x20, 0x20)
-		              : (style == STYLE_BRIGHT) ? nvgRGB(0xe6, 0xe6, 0xe6)
-		              : nvgRGB(0x15, 0x15, 0x2b); // STYLE_ORANGE
+		NVGcolor fill = (style == STYLE_DARK) ? X_STRIP_BG_DARK
+		              : (style == STYLE_BRIGHT) ? X_STRIP_BG_BRIGHT
+		              : X_STRIP_BG_ORANGE;
 		nvgBeginPath(args.vg);
 		nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
 		nvgFillColor(args.vg, fill);
@@ -168,13 +154,13 @@ struct X8DValueDisplay : TransparentWidget
 */
 struct X8DWidget : ModuleWidget
 {
-	// ENGAGE/LEFT/RIGHT sizes measured directly from res/X8DWork.svg's Controls layer
+	// BIND/LEFT/RIGHT sizes measured directly from res/X8DWork.svg's Controls layer
 	// (BUTTON_FRAME path bounding boxes) - the only thing that actually differs from X8 here, see
-	// X8Common.hpp for the shared X8ButtonBase/X8EngageButtonBase logic. Nested (rather than
+	// X8Common.hpp for the shared X8ButtonBase/X8BindButtonBase logic. Nested (rather than
 	// file-scope) so this can't ever collide with X8.cpp's own same-named, differently-sized
-	// X8Widget::X8StepButton/X8EngageButton across translation units.
+	// X8Widget::X8StepButton/X8BindButton across translation units.
 	struct X8StepButton : X8ButtonBase { X8StepButton() { box.size = mm2px(Vec(12.192f, 4.572f)); } };
-	struct X8EngageButton : X8EngageButtonBase { X8EngageButton() { box.size = mm2px(Vec(25.908f, 5.588f)); } };
+	struct X8BindButton : X8BindButtonBase { X8BindButton() { box.size = mm2px(Vec(25.908f, 5.588f)); } };
 
 	XExtStripWidget *extStrip = nullptr;     // right edge - toward the Host (or a further Expander)
 	XExtStripWidget *extStripLeft = nullptr; // left edge - toward a further chained Expander
@@ -211,22 +197,22 @@ struct X8DWidget : ModuleWidget
 
 		addChild(createLightCentered<AutoHideLight<TinyLight<GreenRedLight>>>(calculateCoordinates(X8D_PANEL_WIDTH_MM - 3.5f, 4.f, 0.f), module, CONN_LIGHT));
 
-		// LEFT/RIGHT/ENGAGE positions/sizes measured directly from res/X8DWork.svg's Controls
-		// layer (BUTTON_FRAME path bounding boxes) - see X8StepButton/X8EngageButton comments.
+		// LEFT/RIGHT/BIND positions/sizes measured directly from res/X8DWork.svg's Controls
+		// layer (BUTTON_FRAME path bounding boxes) - see X8StepButton/X8BindButton comments.
 		X8StepButton *leftButton = createParamCentered<X8StepButton>(calculateCoordinates(8.382f, 18.035f, 0.f), module, LEFT_PARAM);
 		leftButton->label = "<";
 		addParam(leftButton);
 		X8StepButton *rightButton = createParamCentered<X8StepButton>(calculateCoordinates(22.098f, 18.035f, 0.f), module, RIGHT_PARAM);
 		rightButton->label = ">";
 		addParam(rightButton);
-		X8EngageButton *engageButton = createParamCentered<X8EngageButton>(calculateCoordinates(15.24f, 24.639f, 0.f), module, ENGAGE_PARAM);
-		engageButton->label = "ENGAGE";
-		addParam(engageButton);
+		X8BindButton *bindButton = createParamCentered<X8BindButton>(calculateCoordinates(15.24f, 24.639f, 0.f), module, ENGAGE_PARAM);
+		bindButton->label = "BIND";
+		addParam(bindButton);
 
 		X8NameDisplay *nameDisplay = new X8NameDisplay();
 		nameDisplay->module = module;
 		nameDisplay->box.pos = calculateCoordinates(1.41287f, 12.449f, 0.f);
-		nameDisplay->box.size = mm2px(Vec(13.f, 5.f));
+		nameDisplay->box.size = mm2px(Vec(X8D_PANEL_WIDTH_MM - 2.f * X8_NAME_DISPLAY_MARGIN_MM, 5.f));
 		addChild(nameDisplay);
 
 		// 8 channel knobs, top (channel 1) to bottom (channel 8) - identical x/y to X8's own
@@ -372,6 +358,15 @@ struct X8DWidget : ModuleWidget
 		channelsItem->text = "Channels";
 		channelsItem->rightText = RIGHT_ARROW;
 		menu->addChild(channelsItem);
+
+		spacerLabel = new MenuLabel();
+		menu->addChild(spacerLabel);
+
+		MenuLabel *expandersLabel = new MenuLabel();
+		expandersLabel->text = "Expanders";
+		menu->addChild(expandersLabel);
+
+		addXBindsMenuItem(menu, module);
 
 		spacerLabel = new MenuLabel();
 		menu->addChild(spacerLabel);
