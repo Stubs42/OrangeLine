@@ -54,6 +54,7 @@ struct XD16Widget : ModuleWidget
 
 	XOValueDisplay *displays[XO_CAPACITY] = {};
 	XOGateIndicator *gates[XO_CAPACITY] = {};
+	XOButtonCover *covers[XO_CAPACITY] = {};
 
 	XD16Widget(XD16 *module)
 	{
@@ -90,16 +91,46 @@ struct XD16Widget : ModuleWidget
 		nameDisplay->box.size = mm2px(Vec(13.f, 5.f));
 		addChild(nameDisplay);
 
+		// Baseline Y values, NOT the same as the knob/jack row Y - text baseline sits a bit below
+		// each row's own nominal center, exactly like XOD16Widget's own displayY (reused verbatim
+		// here, since both share the same per-row hand-measured baseline positions).
 		static const float displayY[8] = {
-			37.339944f, 48.294524f, 59.249103f, 70.203682f,
-			81.158262f, 92.112841f, 103.06742f, 114.022f
+			38.873039f, 49.828312f, 60.78289f, 71.737473f,
+			82.692047f, 93.646629f, 104.60121f, 115.55579f
 		};
 		static const float columnX[2] = { 7.62f, 22.86f };
+		// The gate indicator's own frame needs to match the REAL decorative display cell's own
+		// bounding box (measured directly from res/XD16Work.svg's own edited "rect5-*"/
+		// "rect5-*b" paths: x=1.513/16.0, width=12.965, height=4.61 - not XOValueDisplay's
+		// baseline-anchored text position above, see XOD8Widget's own comment on this same
+		// distinction). box.size is now the cap's own natural (larger) size, set by
+		// XOGateIndicator's constructor, not the panel rect's own smaller size, so gates below
+		// are positioned by row CENTER (rect x + half width) rather than the rect's top-left.
+		static const float gateBoxY[8] = {
+			35.04f, 46.0f, 56.95f, 67.91f,
+			78.86f, 89.82f, 100.77f, 111.73f
+		};
+		static const float gateCenterX[2] = { 7.9955f, 22.4825f };
+		// Original rect5-* top-left x per column (1.513/16.0mm), matching gateCenterX - half the
+		// 12.965mm cell width - see the always-visible cover below.
+		static const float coverX[2] = { 1.513f, 16.0f };
 		for (int col = 0; col < 2; col++)
 		{
 			for (int row = 0; row < 8; row++)
 			{
 				int channel = col * 8 + row;
+
+				// Always-visible per-row background, sized to fully cover the real panel
+				// decoration underneath (res/XD16Work.svg's own edited "rect5-*"/"rect5-*b" paths:
+				// width=12.965, height=4.61) minus a 0.15mm inset on all four sides, same
+				// reasoning/values as XD8Widget's own per-row cover - never toggled, since both the
+				// value display and the gate indicator draw their own content on top of it.
+				XOButtonCover *cover = new XOButtonCover();
+				cover->module = module;
+				cover->box.pos = calculateCoordinates(coverX[col] + 0.15f, gateBoxY[row] + 0.15f, 0.f);
+				cover->box.size = mm2px(Vec(12.965f - 0.3f, 4.61f - 0.3f));
+				addChild(cover);
+				covers[channel] = cover;
 
 				XOValueDisplay *display = new XOValueDisplay();
 				display->module = module;
@@ -112,10 +143,7 @@ struct XD16Widget : ModuleWidget
 				XOGateIndicator *gate = new XOGateIndicator();
 				gate->module = module;
 				gate->channel = channel;
-				// Same box as the value display it morphs with (see step() below) - no separate
-				// hand-guessed offset/size, so the lit square lands exactly where the number would.
-				gate->box.pos = display->box.pos;
-				gate->box.size = display->box.size;
+				gate->box.pos = calculateCoordinates(gateCenterX[col], gateBoxY[row] + 2.305f, 0.f).minus(gate->box.size.div(2.f));
 				gate->visible = false;
 				addChild(gate);
 				gates[channel] = gate;

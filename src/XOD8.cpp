@@ -97,6 +97,17 @@ struct XOD8Widget : ModuleWidget
 		nameDisplay->box.size = mm2px(Vec(13.f, 5.f));
 		addChild(nameDisplay);
 
+		// Always-visible display-column background (the panel's own static decoration there has
+		// been removed entirely - see XD8Widget's own per-row cover for the same reasoning) -
+		// covers the whole column at once, geometry taken directly from Dieter's own MASK guide
+		// rect in res/XOD8Work.svg. Added BEFORE the per-channel gate indicators/displays below so
+		// it draws underneath them (addChild order is also draw order).
+		buttonCover = new XOButtonCover();
+		buttonCover->module = module;
+		buttonCover->box.pos = calculateCoordinates(12.342694f, 32.76725f, 0.f);
+		buttonCover->box.size = mm2px(Vec(16.867304f, 85.090004f));
+		addChild(buttonCover);
+
 		static const float portY[XO_CAPACITY] = {
 			37.339944f, 48.294524f, 59.249103f, 70.203682f,
 			81.158262f, 92.112841f, 103.06742f, 114.022f
@@ -106,6 +117,17 @@ struct XOD8Widget : ModuleWidget
 		static const float displayY[XO_CAPACITY] = {
 			38.873039f, 49.784458f, 60.717041f, 71.639038f,
 			82.815041f, 93.646629f, 104.65906f, 115.58104f
+		};
+		// The gate indicator's own box, by contrast, needs to match the REAL decorative display
+		// cell's own bounding box (measured directly from res/X8DWork.svg's own "rect5-*"
+		// elements: x=14.478, width=13.716, height=4.572, one row top per channel below) - not
+		// XOValueDisplay's baseline-anchored text position above, which has different geometry
+		// (box.size there barely matters beyond text width/scissor clipping, whereas the gate
+		// indicator paints an actual themed background frame that must land exactly on the real
+		// panel decoration it's covering).
+		static const float gateBoxY[XO_CAPACITY] = {
+			35.0532f, 45.9647f, 56.8973f, 67.8193f,
+			78.9953f, 89.8268f, 100.8393f, 111.7612f
 		};
 		for (int i = 0; i < XO_CAPACITY; i++)
 		{
@@ -125,24 +147,15 @@ struct XOD8Widget : ModuleWidget
 			XOGateIndicator *gate = new XOGateIndicator();
 			gate->module = module;
 			gate->channel = i;
-			// Same box as the value display it morphs with (see step() below) - no separate
-			// hand-guessed offset/size, so the lit square lands exactly where the number would.
-			gate->box.pos = display->box.pos;
-			gate->box.size = display->box.size;
+			// Center on the row's own center point (14.478 + 13.716/2, gateBoxY[i] + 4.572/2) -
+			// box.size is now the cap's own natural (larger) size, set by the constructor, not the
+			// panel rect's own smaller size, so this can't be positioned by the rect's top-left
+			// corner anymore (see XOGateIndicator's own comment on this).
+			gate->box.pos = calculateCoordinates(21.336f, gateBoxY[i] + 2.286f, 0.f).minus(gate->box.size.div(2.f));
 			gate->visible = false;
 			addChild(gate);
 			gates[i] = gate;
 		}
-
-		// Covers the display column's own panel decoration whenever a gate/button type is
-		// browsed - same single-rect-for-the-whole-column convention as X8DButtonCover, geometry
-		// taken directly from Dieter's own MASK guide rect in res/XOD8Work.svg.
-		buttonCover = new XOButtonCover();
-		buttonCover->module = module;
-		buttonCover->box.pos = calculateCoordinates(12.342694f, 32.76725f, 0.f);
-		buttonCover->box.size = mm2px(Vec(16.867304f, 85.090004f));
-		buttonCover->visible = false;
-		addChild(buttonCover);
 
 		extStrip = addXExtStrip(this, XOD8_PANEL_WIDTH_MM);
 		extStripLeft = addXExtStripLeft(this);
@@ -172,7 +185,6 @@ struct XOD8Widget : ModuleWidget
 				displays[i]->visible = !showGate;
 				gates[i]->visible = showGate;
 			}
-			buttonCover->visible = showGate;
 		}
 		ModuleWidget::step();
 	}

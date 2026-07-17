@@ -105,6 +105,37 @@ struct XOD16Widget : ModuleWidget
 		};
 		static const float portColumnX[2] = { 7.62f, 38.1f };
 		static const float displayColumnX[2] = { 15.12887f, 45.608871f };
+		// The gate indicator's own frame needs to match the REAL decorative display cell's own
+		// bounding box (measured directly from res/X16DWork.svg's own "rect5-*"/"rect5-*b"
+		// elements: x=14.478/44.958, width=13.716, height=4.572 - not XOValueDisplay's baseline-
+		// anchored text position above, see XOD8Widget's own comment on this same distinction).
+		// box.size is now the cap's own natural (larger) size, set by XOGateIndicator's
+		// constructor, not the panel rect's own smaller size, so gates below are positioned by
+		// row CENTER (rect x + half width) rather than the rect's top-left corner.
+		static const float gateBoxY[8] = {
+			35.0533f, 46.0085f, 56.9631f, 67.9177f,
+			78.8723f, 89.8268f, 100.7814f, 111.736f
+		};
+		static const float gateCenterX[2] = { 21.336f, 51.816f };
+
+		// Always-visible display-column background per column (the panel's own static decoration
+		// there has been removed entirely - see XD8Widget's own per-row cover for the same
+		// reasoning). Column 2's geometry comes directly from Dieter's own MASK guide rect in
+		// res/XOD16Work.svg; column 1's is the same rect shifted left by exactly one column's
+		// worth (displayColumnX[1] - displayColumnX[0] = 30.48mm), matching the same offset the
+		// guide rect itself sits at relative to displayColumnX[1]. Added BEFORE the per-channel
+		// gate indicators/displays below so it draws underneath them (addChild order is also draw
+		// order).
+		static const float coverX[2] = { 11.822242f, 42.302242f };
+		for (int col = 0; col < 2; col++)
+		{
+			XOButtonCover *cover = new XOButtonCover();
+			cover->module = module;
+			cover->box.pos = calculateCoordinates(coverX[col], 32.76725f, 0.f);
+			cover->box.size = mm2px(Vec(17.387756f, 85.090004f));
+			addChild(cover);
+			buttonCovers[col] = cover;
+		}
 
 		for (int col = 0; col < 2; col++)
 		{
@@ -128,32 +159,11 @@ struct XOD16Widget : ModuleWidget
 				XOGateIndicator *gate = new XOGateIndicator();
 				gate->module = module;
 				gate->channel = channel;
-				// Same box as the value display it morphs with (see step() below) - no separate
-				// hand-guessed offset/size, so the lit square lands exactly where the number would.
-				gate->box.pos = display->box.pos;
-				gate->box.size = display->box.size;
+				gate->box.pos = calculateCoordinates(gateCenterX[col], gateBoxY[row] + 2.286f, 0.f).minus(gate->box.size.div(2.f));
 				gate->visible = false;
 				addChild(gate);
 				gates[channel] = gate;
 			}
-		}
-
-		// Covers each display column's own panel decoration whenever a gate/button type is
-		// browsed - same single-rect-per-column convention as X16DButtonCover. Column 2's
-		// geometry comes directly from Dieter's own MASK guide rect in res/XOD16Work.svg; column
-		// 1's is the same rect shifted left by exactly one column's worth (displayColumnX[1] -
-		// displayColumnX[0] = 30.48mm), matching the same offset the guide rect itself sits at
-		// relative to displayColumnX[1].
-		static const float coverX[2] = { 11.822242f, 42.302242f };
-		for (int col = 0; col < 2; col++)
-		{
-			XOButtonCover *cover = new XOButtonCover();
-			cover->module = module;
-			cover->box.pos = calculateCoordinates(coverX[col], 32.76725f, 0.f);
-			cover->box.size = mm2px(Vec(17.387756f, 85.090004f));
-			cover->visible = false;
-			addChild(cover);
-			buttonCovers[col] = cover;
 		}
 
 		extStrip = addXExtStrip(this, XOD16_PANEL_WIDTH_MM);
@@ -181,8 +191,6 @@ struct XOD16Widget : ModuleWidget
 				displays[i]->visible = !showGate;
 				gates[i]->visible = showGate;
 			}
-			buttonCovers[0]->visible = showGate;
-			buttonCovers[1]->visible = showGate;
 		}
 		ModuleWidget::step();
 	}

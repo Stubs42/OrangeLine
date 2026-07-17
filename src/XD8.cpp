@@ -54,6 +54,7 @@ struct XD8Widget : ModuleWidget
 
 	XOValueDisplay *displays[XO_CAPACITY] = {};
 	XOGateIndicator *gates[XO_CAPACITY] = {};
+	XOButtonCover *covers[XO_CAPACITY] = {};
 
 	XD8Widget(XD8 *module)
 	{
@@ -92,13 +93,41 @@ struct XD8Widget : ModuleWidget
 
 		// Same column position as X8's own knobs / XO8's own jacks - a plain value/gate display
 		// cell instead, same narrow 13mm width as the name display above (XD8's panel is narrow,
-		// unlike XOD8's own wider per-channel display which sits beside a jack).
+		// unlike XOD8's own wider per-channel display which sits beside a jack). Baseline Y
+		// values are NOT the same as the knob/jack row Y above - text baseline sits a bit below
+		// each row's own nominal center, exactly like XOD8Widget's own displayY (reused verbatim
+		// here, since both share the same per-row hand-measured baseline positions).
 		static const float displayY[XO_CAPACITY] = {
-			37.339944f, 48.294524f, 59.249103f, 70.203682f,
-			81.158262f, 92.112841f, 103.06742f, 114.022f
+			38.873039f, 49.784458f, 60.717041f, 71.639038f,
+			82.815041f, 93.646629f, 104.65906f, 115.58104f
+		};
+		// The gate indicator's own box needs to match the REAL decorative display cell's own
+		// bounding box (measured directly from res/XD8Work.svg's own plain "rect1*" elements:
+		// x=0.762, width=13.716, height=4.064 - not XOValueDisplay's baseline-anchored text
+		// position above, see XOD8Widget's own comment on this same distinction).
+		static const float gateBoxY[XO_CAPACITY] = {
+			35.3073f, 46.2655f, 57.2238f, 68.1821f,
+			79.1404f, 90.0987f, 101.057f, 112.0153f
 		};
 		for (int i = 0; i < XO_CAPACITY; i++)
 		{
+			// Always-visible per-row background, sized to fully cover the real panel decoration
+			// underneath (res/XD8Work.svg's own plain "rect1*" elements: x=0.762, width=13.716,
+			// height=4.064) - unlike XOButtonCover elsewhere in this family (which only shows while
+			// a gate/button type is browsed), this one is never toggled: XD8's own display cell
+			// spans nearly the whole narrow 15.24mm module, too wide for the gate cap's own fixed
+			// 9.144mm frame to mask on its own, so the row is covered unconditionally and both the
+			// value display and the gate indicator draw their own content on top of it.
+			// Inset 0.15mm on all four sides (13.716x4.064mm -> 13.416x3.764mm) so this opaque
+			// cover doesn't paint over the module's own outer frame artwork/decoration lines, which
+			// run right up against the rect1 cell's own edges on this narrow (15.24mm) panel.
+			XOButtonCover *cover = new XOButtonCover();
+			cover->module = module;
+			cover->box.pos = calculateCoordinates(0.762f + 0.15f, gateBoxY[i] + 0.15f, 0.f);
+			cover->box.size = mm2px(Vec(13.716f - 0.3f, 4.064f - 0.3f));
+			addChild(cover);
+			covers[i] = cover;
+
 			XOValueDisplay *display = new XOValueDisplay();
 			display->module = module;
 			display->channel = i;
@@ -110,10 +139,11 @@ struct XD8Widget : ModuleWidget
 			XOGateIndicator *gate = new XOGateIndicator();
 			gate->module = module;
 			gate->channel = i;
-			// Same box as the value display it morphs with (see step() below) - no separate
-			// hand-guessed offset/size, so the lit square lands exactly where the number would.
-			gate->box.pos = display->box.pos;
-			gate->box.size = display->box.size;
+			// Center on the row's own center point (0.762 + 13.716/2, gateBoxY[i] + 4.064/2) -
+			// box.size is now the cap's own natural (larger) size, set by the constructor, not the
+			// panel rect's own smaller size, so this can't be positioned by the rect's top-left
+			// corner anymore (see XOGateIndicator's own comment on this).
+			gate->box.pos = calculateCoordinates(7.62f, gateBoxY[i] + 2.032f, 0.f).minus(gate->box.size.div(2.f));
 			gate->visible = false;
 			addChild(gate);
 			gates[i] = gate;
