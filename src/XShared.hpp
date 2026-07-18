@@ -89,26 +89,49 @@ struct XHostInterface
 	// Right-click action: clears the binding for this param -> Red.
 	virtual void resetXParam(int index) = 0;
 
-	// "The value this Host was actually using for this channel", captured once at the exact
-	// moment this param became bound, already inverse-scaled into the Expander's own 0..1 raw
-	// knob range (see XExpanderInterface::getXKnobValue()). An Expander reads this exactly once,
-	// the tick it notices its own binding took effect, and sets its own knob(s) to match - so
-	// engaging doesn't change anything the Host is currently outputting. A Host with no
-	// meaningful scaling for a given candidate (e.g. a push/click/toggle type) can just return 0.
+	// "The value this Host was actually using for this channel", in this candidate's own
+	// human-readable DISPLAY units (e.g. steps for a loop-length candidate, percent for a
+	// probability candidate) - the SAME units the Expander's own knob directly holds (see
+	// XExpanderInterface::getXBrowsedParamDisplayMin/Max/Default() and moduleProcess()'s own
+	// range-reconfiguration). An Expander reads this whenever it arrives on this candidate
+	// (a fresh bind, or navigating back onto one - see isXKnobReady()) and sets its own knob(s)
+	// to match, so engaging doesn't change anything the Host is currently outputting. A Host with
+	// no meaningful scaling for a given candidate (e.g. a push/click/toggle type) can just return 0.
 	virtual float getXParamTakeoverValue(int index, int channel) = 0;
 
-	// Converts an Expander's own 0..1 raw knob value into whatever value THIS Host's own poly
-	// input actually expects to receive for this candidate - i.e. exactly what a real patch cable
-	// would have to deliver to produce the same result. The Expander itself has no idea about any
-	// Host's own CV scaling convention (a 0..1 knob is the ONE universal range every candidate
-	// type shares), so the Host must apply this conversion itself whenever it copies a bound
-	// Expander's raw knob value into its own live poly-input state - see Morpheus.cpp's
-	// moduleProcess() refresh loop for the call site. continuous types only; a Host can just
-	// return raw unchanged for a digital (Toggle/Click/Push) candidate, since those are read via
-	// a simple threshold, not a scaled real-world unit.
-	virtual float scaleXParamValue(int index, float raw) = 0;
+	// Converts an Expander's own knob value (already in this candidate's own display units,
+	// e.g. steps, percent, volts - see getXParamDisplayMin/Max() below) into whatever value THIS
+	// Host's own poly input actually expects to receive for this candidate in CV/cable units -
+	// i.e. exactly what a real patch cable would have to deliver to produce the same result. The
+	// Expander itself has no idea about any Host's own CV scaling convention, so the Host must
+	// apply this conversion itself whenever it copies a bound Expander's knob value into its own
+	// live poly-input state - see Morpheus.cpp's moduleProcess() refresh loop for the call site.
+	// continuous types only; a Host can just return the value unchanged for a digital
+	// (Toggle/Click/Push) candidate, since those are read via a simple threshold, not a scaled
+	// real-world unit.
+	virtual float scaleXParamValue(int index, float displayValue) = 0;
 
-	virtual std::string formatXParamValue(int index, float value) = 0; // continuous only
+	virtual std::string formatXParamValue(int index, float value) = 0; // continuous only - value
+	                                                                     // already in display units
+
+	// This candidate's own human-readable display range/behavior - the Expander's own knob gets
+	// dynamically reconfigured (minValue/maxValue/defaultValue/snapEnabled) to exactly this
+	// range whenever it's the currently-browsed candidate (see moduleProcess()'s own
+	// range-reconfiguration and X8Knob::step()'s own unit sync), so Rack's built-in hover tooltip
+	// and right-click "Enter value" editing both work correctly with zero custom parsing needed.
+	// Meaningless for digital (Toggle/Click/Push) candidates - a Host can just return the same
+	// harmless (0, 1, 0.5, false, "") defaults X8ModuleCommon.hpp's own disconnected fallback uses.
+	virtual float getXParamDisplayMin(int index) = 0;
+	virtual float getXParamDisplayMax(int index) = 0;
+	virtual float getXParamDisplayDefault(int index) = 0;
+	// Rounds the knob to the nearest whole display unit (Rack's own ParamQuantity::snapEnabled) -
+	// only meaningful once minValue/maxValue directly span the display range, which the
+	// reconfiguration above already ensures.
+	virtual bool getXParamSnap(int index) = 0;
+	// Rack's own separate ParamQuantity::unit field (e.g. "%") - deliberately never baked into
+	// formatXParamValue()'s own returned string, since Rack's built-in value-entry parses that
+	// string as a tinyexpr math expression and "%" is a registered (modulo) operator there.
+	virtual const char* getXParamUnit(int index) = 0;
 
 	// This module's own STYLE_JSON value (STYLE_ORANGE/BRIGHT/DARK) - purely for the cosmetic
 	// seam-bridging strip (see getXNeighborStyle() below), unrelated to host-resolution health.
@@ -159,10 +182,20 @@ struct XExpanderInterface
 	virtual XParamType getXBrowsedParamType() = 0;
 	virtual NVGcolor getXBrowsedParamColor() = 0;
 	virtual XAlign getXBrowsedParamAlign() = 0;
-	// Formats a raw 0..1 knob value as the Host would display it for the currently browsed
-	// param - see XHostInterface::formatXParamValue(). Empty string when nothing meaningful is
-	// resolved, or for a digital-type param (its own lit/unlit state already shows everything).
-	virtual std::string formatXValue(float raw) = 0;
+	// Formats a value (already in the browsed candidate's own display units) as the Host would
+	// display it - see XHostInterface::formatXParamValue(). Empty string when nothing meaningful
+	// is resolved, or for a digital-type param (its own lit/unlit state already shows everything).
+	virtual std::string formatXValue(float value) = 0;
+	// The browsed candidate's own human-readable display range/behavior - see
+	// XHostInterface::getXParamDisplayMin()'s own comment for the full reasoning. Same
+	// resolve-Host-and-clamp-index-with-sane-fallback shape as getXBrowsedParamType()/Color()/
+	// Align() above; fallback (0, 1, 0.5, false, "") when nothing meaningful is resolved matches
+	// exactly what a disconnected X8's own knob already looks/behaves like.
+	virtual float getXBrowsedParamDisplayMin() = 0;
+	virtual float getXBrowsedParamDisplayMax() = 0;
+	virtual float getXBrowsedParamDisplayDefault() = 0;
+	virtual bool getXBrowsedParamSnap() = 0;
+	virtual const char* getXBrowsedParamUnit() = 0;
 
 	// One-shot request: the currently-browsed param is a Click type and this channel was just
 	// clicked - the Expander owns the actual pulse timing (a fixed duration independent of how

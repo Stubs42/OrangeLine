@@ -151,10 +151,14 @@ static bool x8BrowsedParamTaken(Module *module)
 
 /**
 	Custom ParamQuantity for a channel knob's own KNOB_PARAM - its native Rack hover tooltip calls
-	through XExpanderInterface::formatXValue() (in turn the Host's own formatXParamValue()),
-	instead of a meaningless raw 0..1 readout. The physical control represents a different
-	candidate param over time, so a static configParam() unit string can never be right for more
-	than one of them.
+	through XExpanderInterface::formatXValue() (in turn the Host's own formatXParamValue()), which
+	formats the value using the browsed candidate's own convention (e.g. a whole step count, a
+	percent, two decimal places) - Rack's own default "%.*g" formatting has no way to know that
+	per-candidate convention on its own. The physical control represents a different candidate
+	param over time, with its own dynamically-reconfigured min/max/default/snap/unit (see
+	X8Knob::step()'s own unit sync and X8ModuleCommon.hpp's moduleProcess() range-reconfiguration)
+	rather than a fixed universal range, so a static configParam() unit string can never be right
+	for more than one of them.
 */
 struct X8KnobQuantity : ParamQuantity
 {
@@ -312,6 +316,8 @@ struct X8Knob : RoundSmallBlackKnob
 {
 	int channel = 0;
 	float lastValue = NAN;
+	XHostInterface *lastUnitHost = nullptr;
+	int lastUnitIndex = -1;
 
 	// SvgKnob caches its rotated needle in a FramebufferWidget and only re-rasterizes on its own
 	// onChange() (normally dispatched by ParamWidget's own drag-driven interaction path) - a value
@@ -320,11 +326,31 @@ struct X8Knob : RoundSmallBlackKnob
 	// bitmap stays stale until some unrelated interaction (e.g. a click) happens to bust it. Force
 	// a redraw here instead, by comparing against the engine value directly every UI frame -
 	// robust regardless of what triggered the change.
+	//
+	// Also syncs the ParamQuantity's own `unit` field to whatever the currently-browsed candidate
+	// declares (see XExpanderInterface::getXBrowsedParamUnit()) - deliberately UI-thread-only
+	// (unlike minValue/maxValue/defaultValue/snapEnabled, which X8ModuleCommon.hpp's own
+	// moduleProcess() reconfigures on the audio thread, mirroring the existing Dejavu.cpp
+	// precedent): `unit` is a std::string, and a concurrent cross-thread reassignment of one is a
+	// genuine memory-safety hazard in a way a plain float/bool tear is not - and no engine-thread
+	// code ever reads `unit` anyway (only Quantity::getString(), called from UI-thread tooltip/
+	// label widgets), so there's no reason to risk it. Keyed on host+index change, not run
+	// unconditionally every frame.
 	void step() override
 	{
 		engine::ParamQuantity *pq = getParamQuantity();
 		if (pq)
 		{
+			Module *module = pq->module;
+			XExpanderInterface *expander = module ? dynamic_cast<XExpanderInterface*>(module) : nullptr;
+			XHostInterface *host = expander ? expander->getXHost() : nullptr;
+			int index = expander ? expander->getXBrowseIndex() : -1;
+			if (host != lastUnitHost || index != lastUnitIndex)
+			{
+				lastUnitHost = host;
+				lastUnitIndex = index;
+				pq->unit = expander ? expander->getXBrowsedParamUnit() : "";
+			}
 			float value = pq->getValue();
 			if (value != lastValue)
 			{
@@ -563,10 +589,19 @@ struct X8ValueButton : ParamWidget
 				switch (type)
 				{
 					case X_PARAM_TOGGLE:
-						pq->setValue(pq->getValue() > 0.5f ? 0.f : 1.f);
+						// Bypasses ParamQuantity::setValue()'s own min/max clamp deliberately -
+						// this KNOB_PARAM's range gets dynamically reconfigured per browsed
+						// candidate (see X8ModuleCommon.hpp's moduleProcess()), and if a
+						// continuous candidate's own range (e.g. LOOP_LEN's 1..128) is still
+						// configured from a previous browse when this button is used, a plain
+						// pq->setValue(0.f) would clamp UP to that stale minValue instead of
+						// actually reaching 0 - getParam()->setValue() is the same plain,
+						// unclamped engine::Param::setValue() moduleProcess() itself already uses
+						// for this same param elsewhere.
+						pq->getParam()->setValue(pq->getValue() > 0.5f ? 0.f : 1.f);
 						break;
 					case X_PARAM_PUSH:
-						pq->setValue(1.f);
+						pq->getParam()->setValue(1.f);
 						break;
 					case X_PARAM_CLICK:
 						if (expander)
@@ -580,7 +615,7 @@ struct X8ValueButton : ParamWidget
 			{
 				mouseHeld = false;
 				if (type == X_PARAM_PUSH)
-					pq->setValue(0.f);
+					pq->getParam()->setValue(0.f);
 			}
 		}
 		ParamWidget::onButton(e);

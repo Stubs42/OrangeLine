@@ -38,14 +38,14 @@ enum XCandidateIndex {
 	NUM_X_CANDIDATES
 };
 
-// XCandidate::format's own signature - takes the "cable value" (post scaleXParamValue: X8's raw
-// knob already converted into whatever real units this input expects, e.g. 1-128 steps for LEN,
-// 0-10 for GTP) and returns the exact text XHostInterface::formatXParamValue() should hand back.
-// A plain function pointer (not std::function) so a non-capturing lambda literal (or, as used
-// below, a plain named function) can sit right in the xCandidates[] table with zero overhead and
-// no lifetime concerns - nullptr for every digital (Toggle/Click/Push) candidate, which has no
-// numeric display at all.
-typedef std::string (*XFormatFn)(float cableValue);
+// XCandidate::format's own signature - takes the value already in DISPLAY units (the same value
+// the Expander's own knob directly holds - see the struct's own comment on displayMin/Max/Default/
+// cvScale below for why there's no separate "cable value" conversion step here anymore) and
+// returns the exact text XHostInterface::formatXParamValue() should hand back. A plain function
+// pointer (not std::function) so a non-capturing lambda literal (or, as used below, a plain named
+// function) can sit right in the xCandidates[] table with zero overhead and no lifetime concerns -
+// nullptr for every digital (Toggle/Click/Push) candidate, which has no numeric display at all.
+typedef std::string (*XFormatFn)(float displayValue);
 
 struct XCandidate
 {
@@ -53,9 +53,11 @@ struct XCandidate
 	// on boundExpanderId would otherwise disqualify this struct from C++11 aggregate init
 	// (relaxed in C++14+, but this project builds with -std=c++11).
 	XCandidate(int inputId, const char *name, const char *shortName, XParamType type, NVGcolor color,
-	           float rawScale = 1.f, float rawOffset = 0.f, XFormatFn format = nullptr, XAlign align = X_ALIGN_LEFT)
+	           float displayMin = 0.f, float displayMax = 1.f, float displayDefault = 0.5f, bool snap = false,
+	           const char *unit = "", float cvScale = 1.f, XFormatFn format = nullptr, XAlign align = X_ALIGN_LEFT)
 		: inputId(inputId), name(name), shortName(shortName), type(type), color(color),
-		  rawScale(rawScale), rawOffset(rawOffset), format(format), align(align) {}
+		  displayMin(displayMin), displayMax(displayMax), displayDefault(displayDefault), snap(snap),
+		  unit(unit), cvScale(cvScale), format(format), align(align) {}
 
 	int inputId;                   // which InputIds enum value this candidate corresponds to
 	const char *name;               // full descriptive name - XHostInterface::getXParamName()
@@ -65,18 +67,34 @@ struct XCandidate
 	NVGcolor color;                 // this slot's own accent color - XHostInterface::getXParamColor(),
 	                                 // shown on a bound Expander's display and as its value button's
 	                                 // "on" light color
-	// scaleXParamValue()'s own per-candidate factors: realValue = x8Raw * rawScale + rawOffset,
-	// where realValue is exactly what a real patch cable would need to deliver on this input for
-	// the SAME result - per Dieter: "the X modules do not know anything about that scaling, those
-	// are the values a connected cable has to deliver." Defaults (1, 0) are a no-op, correct for
-	// every digital (Toggle/Click/Push) candidate, which never calls this for anything but a
-	// threshold comparison. Only the six continuous candidates below override these.
-	float rawScale;
-	float rawOffset;
+	// The Expander's own knob directly holds a value in THIS candidate's own human-readable
+	// display range (e.g. 1..128 steps for LEN, -10..10 for SCL/OFS, -100..100% for LOCK/BALANCE)
+	// - not a universal 0..1 raw fraction anymore (see CLAUDE.md's own pitfall entry on the
+	// three-layer raw/CV/display confusion this replaces, and X8ModuleCommon.hpp's own
+	// moduleProcess() for where these get pushed onto the Expander's own ParamQuantity every time
+	// the browsed candidate changes). `snap` rounds to the nearest whole display unit (Rack's own
+	// ParamQuantity::snapEnabled) - only meaningful once minValue/maxValue directly span the
+	// display range, which is exactly what this achieves. `unit` is Rack's own separate
+	// ParamQuantity::unit field (never baked into a format string - see formatXPercent/etc below),
+	// so Rack's built-in right-click "Enter value" parsing (tinyexpr) never sees a stray "%" and
+	// silently fail to compile, which is what happened before this redesign. Defaults (0..1,
+	// default 0.5, no snap, no unit) are a no-op, correct for every digital (Toggle/Click/Push)
+	// candidate, which never uses any of this beyond a plain 0/1 threshold via X8ValueButton's own
+	// independent convention. Only the six continuous candidates below override these.
+	float displayMin, displayMax, displayDefault;
+	bool snap;
+	const char *unit;
+	// scaleXParamValue()'s own per-candidate factor: cv = displayValue * cvScale, where cv is
+	// exactly what a real patch cable would need to deliver on this input for the same result -
+	// per Dieter: "the X modules do not know anything about that scaling, those are the values a
+	// connected cable has to deliver." This is now the ONLY conversion needed (display <-> cv),
+	// since the Expander's own knob already holds the display value directly - no more separate
+	// raw<->display hop.
+	float cvScale;
 	// XHostInterface::formatXParamValue() delegates straight to this - see XFormatFn's own
-	// comment above. Deliberately kept right here, in the same row as color/rawScale/rawOffset/
-	// align, so everything about one candidate's own display behavior lives in exactly one place
-	// instead of being scattered across separate functions elsewhere in the file.
+	// comment above. Deliberately kept right here, in the same row as color/display range/align,
+	// so everything about one candidate's own display behavior lives in exactly one place instead
+	// of being scattered across separate functions elsewhere in the file.
 	XFormatFn format;
 	// XHostInterface::getXParamAlign() - X8D's numeric display alignment. Irrelevant for digital
 	// types (no numeric display at all), left at the default.
@@ -95,16 +113,12 @@ struct XCandidate
 // Per-candidate format functions for the xCandidates[] table below - see XFormatFn's own comment.
 // Kept immediately above the table that uses them, so "what does candidate X's display show" is
 // always answerable by looking in exactly one place, not a separate switch statement elsewhere in
-// the file. Each takes the "cable value" (post scaleXParamValue - already in real units).
-static std::string formatXPercent(float cable) { return string::f("%.0f%%", cable * 10.f); } // GTP/LOCK/BALANCE - all share the same 0..10 cable range
-static std::string formatXSigned(float cable)  { return string::f("%.2f", cable); }           // SCL/OFS - the cable value already IS the real value
-static std::string formatXLoopLen(float cable)
-{
-	int len = (int) floor(cable * 100.f + 0.5f);
-	if (len < 1)   len = 1;
-	if (len > 128) len = 128;
-	return string::f("%d", len);
-}
+// the file. Each takes the value already in display units - no unit suffix baked in here anymore
+// (unit is now Rack's own separate ParamQuantity::unit field, see the XCandidate struct's own
+// comment on why - tinyexpr's own "%" collision).
+static std::string formatXPercent(float display) { return string::f("%.0f", display); }
+static std::string formatXSigned(float display)  { return string::f("%.2f", display); }
+static std::string formatXLoopLen(float display) { return string::f("%.0f", display); }
 
 // XO-family candidates - Morpheus's own real outputs, declared as selectable slots for any
 // XO8/XD8/XOD8/XO16/XD16/XOD16 attached to its RIGHT side (see XOShared.hpp's own architecture
@@ -161,27 +175,27 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, StyxHostInterface
 	// Dieter's own example; REC gets a distinct amber rather than the same red so the two don't
 	// read as the same action at a glance.
 	XCandidate xCandidates[NUM_X_CANDIDATES] = {
-		// rawScale/rawOffset match each getChannelXXX() reader's own real-cable convention
-		// exactly: LOCK/BALANCE/GTP all expect 0..10 (raw*10 in the reader, "10V is 100%");
-		// LOOP_LEN expects 0.01..1.28 (raw*100 in the reader, so 1.28 reaches length 128 -
-		// MAX_LOOP_LEN - per Dieter's own example); SCL/OFS expect their own full -10..10 knob
-		// range directly (no multiplier in the reader), which a unipolar 0..1 knob can only reach
-		// via a real scale+offset (20/-10), not scale alone.
+		// displayMin/Max/Default/snap/unit/cvScale: the Expander's own knob directly holds a
+		// value in each candidate's own human-readable range - LOCK/BALANCE are additive/relative
+		// (bipolar -100..+100%, default 0 = "no contribution", matching real-world intuition with
+		// no raw-space special case needed); GTP is 0..100%; LOOP_LEN is 1..128 whole steps
+		// (snap=true); SCL/OFS are their own full -10..10 range directly (cvScale=1, no
+		// conversion needed - the display value already IS the cable value for these two).
 		// align: X_ALIGN_LEFT (the default) is what was already sitting correctly on the panel
 		// before this field existed - only retune a specific row's alignment if it actually needs
 		// to be different, don't default the whole table to something else.
-		{ LOCK_INPUT,        "Lock",              "LOCK", X_PARAM_CONTINUOUS, nvgRGB(0x33, 0x99, 0xff), 10.f, 0.f,   formatXPercent, X_ALIGN_RIGHT },
-		{ BALANCE_INPUT,     "Balance",           "BAL",  X_PARAM_CONTINUOUS, nvgRGB(0x33, 0xcc, 0xcc), 10.f, 0.f,   formatXPercent, X_ALIGN_RIGHT },
-		{ LOOP_LEN_INPUT,    "Loop Length",       "LEN",  X_PARAM_CONTINUOUS, nvgRGB(0xff, 0x99, 0x00), 1.28f, 0.f,  formatXLoopLen, X_ALIGN_CENTER },
+		{ LOCK_INPUT,        "Lock",              "LOCK", X_PARAM_CONTINUOUS, nvgRGB(0x33, 0x99, 0xff), -100.f, 100.f,   0.f, false, "%", 0.1f,  formatXPercent, X_ALIGN_RIGHT },
+		{ BALANCE_INPUT,     "Balance",           "BAL",  X_PARAM_CONTINUOUS, nvgRGB(0x33, 0xcc, 0xcc), -100.f, 100.f,   0.f, false, "%", 0.1f,  formatXPercent, X_ALIGN_RIGHT },
+		{ LOOP_LEN_INPUT,    "Loop Length",       "LEN",  X_PARAM_CONTINUOUS, nvgRGB(0xff, 0x99, 0x00),    1.f, 128.f,  16.f, true,  "",  0.01f, formatXLoopLen, X_ALIGN_CENTER },
 		{ HLD_INPUT,         "Hold",              "HLD",  X_PARAM_TOGGLE,     nvgRGB(0x66, 0x66, 0xff) },
 		{ RND_INPUT,         "Randomize",         "RND",  X_PARAM_PUSH,       nvgRGB(0xcc, 0x00, 0xcc) }, // pushbutton, effect while held
 		{ SHIFT_LEFT_INPUT,  "Shift Left",        "<<",   X_PARAM_CLICK,      nvgRGB(0x00, 0xaa, 0x88) },
 		{ SHIFT_RIGHT_INPUT, "Shift Right",       ">>",   X_PARAM_CLICK,      nvgRGB(0x00, 0x88, 0xaa) },
 		{ CLR_INPUT,         "Clear Loop",        "CLR",  X_PARAM_PUSH,       nvgRGB(0xdd, 0x00, 0x00) }, // pushbutton, effect while held
 		{ REC_INPUT,         "Record",            "REC",  X_PARAM_CLICK,      nvgRGB(0xff, 0xaa, 0x00) },
-		{ GTP_INPUT,         "Gate Probability",  "GTP",  X_PARAM_CONTINUOUS, nvgRGB(0x99, 0xcc, 0x00), 10.f, 0.f,   formatXPercent, X_ALIGN_RIGHT },
-		{ SCL_INPUT,         "CV Scale",          "SCL",  X_PARAM_CONTINUOUS, nvgRGB(0x00, 0xcc, 0xff), 20.f, -10.f, formatXSigned, X_ALIGN_RIGHT  },
-		{ OFS_INPUT,         "CV Offset",         "OFS",  X_PARAM_CONTINUOUS, nvgRGB(0xff, 0x00, 0x66), 20.f, -10.f, formatXSigned, X_ALIGN_RIGHT  },
+		{ GTP_INPUT,         "Gate Probability",  "GTP",  X_PARAM_CONTINUOUS, nvgRGB(0x99, 0xcc, 0x00),    0.f, 100.f,  50.f, false, "%", 0.1f,  formatXPercent, X_ALIGN_RIGHT },
+		{ SCL_INPUT,         "CV Scale",          "SCL",  X_PARAM_CONTINUOUS, nvgRGB(0x00, 0xcc, 0xff),  -10.f,  10.f,  10.f, false, "",  1.f,   formatXSigned, X_ALIGN_RIGHT  },
+		{ OFS_INPUT,         "CV Offset",         "OFS",  X_PARAM_CONTINUOUS, nvgRGB(0xff, 0x00, 0x66),  -10.f,  10.f,   0.f, false, "",  1.f,   formatXSigned, X_ALIGN_RIGHT  },
 	};
 
 	// XO-family candidates - Morpheus's own real outputs, declared as selectable slots for any
@@ -659,28 +673,32 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, StyxHostInterface
 		return getStateParam(OFS_PARAM);
 	}
 
-	// The exact inverse of scaleXParamValue() below, composed with each getChannelXXX() reader's
-	// own final real-unit multiplier (undone first to recover the "cable value" convention
-	// scaleXParamValue() itself produces) - called continuously, every tick, for every still-
-	// unbound candidate (see the refresh loop below), to keep OL_statePoly always holding "what a
-	// bound Expander's raw knob would need to read to reproduce the current fallback value". A
-	// fresh bind then finds the right value already sitting there, ready to read via
-	// getXParamTakeoverValue() - no separate snapshot storage needed. Clamped into the Expander's
-	// own 0..1 knob range - a real cable can still reach values a unipolar knob can't reproduce
-	// (e.g. deep into SCL/OFS's negative half if rawOffset/rawScale don't fully cover it), same
-	// limitation as before, not new.
-	inline float computeTakeoverRaw(int index, int channel)
+	// Returns the DISPLAY value ("what Morpheus is actually using for this channel right now",
+	// in the browsed candidate's own human-readable units - e.g. steps for LOOP_LEN, percent for
+	// GTP) - called continuously, every tick, for every still-unbound candidate (see the refresh
+	// loop below) to keep OL_statePoly's own CV/cable-unit convention correct (via
+	// scaleXParamValue(), applied by the caller - this function itself never touches CV units).
+	// A fresh bind then finds the right value ready to read via getXParamTakeoverValue() (which
+	// calls this directly) - no separate snapshot storage needed. Clamped into the candidate's
+	// own display range - Morpheus's internal state can in principle drift outside a knob's
+	// configured display bounds (e.g. via direct JSON editing), same defensive reasoning as
+	// before, not new.
+	inline float computeTakeoverDisplay(int index, int channel)
 	{
 		switch (index)
 		{
-			case XC_LOOP_LEN: return clamp((getChannelLoopLength(channel) / 100.f - xCandidates[XC_LOOP_LEN].rawOffset) / xCandidates[XC_LOOP_LEN].rawScale, 0.f, 1.f);
-			case XC_GTP:       return clamp((getChannelGtp(channel) / 10.f - xCandidates[XC_GTP].rawOffset) / xCandidates[XC_GTP].rawScale, 0.f, 1.f);
-			case XC_SCL:       return clamp((getChannelScl(channel) - xCandidates[XC_SCL].rawOffset) / xCandidates[XC_SCL].rawScale, 0.f, 1.f);
-			case XC_OFS:       return clamp((getChannelOfs(channel) - xCandidates[XC_OFS].rawOffset) / xCandidates[XC_OFS].rawScale, 0.f, 1.f);
-			// LOCK/BALANCE are additive (knob + raw*10) - right now nothing is contributing, so
-			// the CV-neutral raw value is 0, not an inverse of the knob (that would double it).
+			case XC_LOOP_LEN: return clamp((float) getChannelLoopLength(channel), xCandidates[XC_LOOP_LEN].displayMin, xCandidates[XC_LOOP_LEN].displayMax);
+			case XC_GTP:      return clamp(getChannelGtp(channel), xCandidates[XC_GTP].displayMin, xCandidates[XC_GTP].displayMax);
+			case XC_SCL:      return clamp(getChannelScl(channel), xCandidates[XC_SCL].displayMin, xCandidates[XC_SCL].displayMax);
+			case XC_OFS:      return clamp(getChannelOfs(channel), xCandidates[XC_OFS].displayMin, xCandidates[XC_OFS].displayMax);
+			// LOCK/BALANCE are additive (panel knob + a bipolar -100..+100% contribution, see the
+			// xCandidates table's own comment) - the neutral display value is simply 0 ("no
+			// contribution"), matching displayDefault exactly, no raw-space special case needed
+			// anymore.
+			case XC_LOCK:     return 0.f;
+			case XC_BALANCE:  return 0.f;
 			// HLD/RND/SHIFT_LEFT/SHIFT_RIGHT/CLR/REC are digital push/click/toggle types -
-			// "not currently triggered" is also 0.
+			// "not currently triggered" is 0.
 			default: return 0.f;
 		}
 	}
@@ -842,13 +860,15 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, StyxHostInterface
 			if (xCandidates[i].boundExpanderId < 0)
 			{
 				// Idle: keep OL_statePoly continuously consistent with "the value Morpheus is
-				// actually using for this channel right now", already inverse-scaled into the
-				// same raw units a bound Expander's own knob supplies (see computeTakeoverRaw()
-				// above). No separate snapshot storage needed - a fresh bind always finds the
-				// right value already sitting here, ready for the Expander to read via
-				// getXParamTakeoverValue() and take over as its own knob's starting position.
+				// actually using for this channel right now", in CV/cable units (same convention
+				// scaleXParamValue() produces in the active branch below) - computeTakeoverDisplay()
+				// itself returns DISPLAY units (what the Expander's own knob would show), so it
+				// still needs the same display->cv conversion scaleXParamValue() applies to a live
+				// knob read. No separate snapshot storage needed - a fresh bind always finds the
+				// right value already sitting here for getXParamTakeoverValue() (which computes the
+				// display value directly via computeTakeoverDisplay(), not from this array).
 				for (int c = 0; c < POLY_CHANNELS; c++)
-					OL_statePoly[inputId * POLY_CHANNELS + c] = computeTakeoverRaw(i, c);
+					OL_statePoly[inputId * POLY_CHANNELS + c] = scaleXParamValue(i, computeTakeoverDisplay(i, c));
 				xVirtualChannels[inputId] = 0;
 				xVirtualConnected[inputId] = false;
 				continue;
@@ -878,17 +898,20 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, StyxHostInterface
 			int channels = exp->getXKnobCount(); // sender (the Expander) decides, not us
 			xVirtualChannels[inputId] = channels;
 			for (int c = 0; c < channels; c++)
-				// scaleXParamValue() converts the Expander's own 0..1 raw knob into whatever THIS
-				// input actually expects (matching a real cable's convention) - the Expander has
-				// no idea about that scaling itself, see the interface method's own comment.
+				// scaleXParamValue() converts the Expander's own knob value (already in this
+				// candidate's own display units) into whatever THIS input actually expects in
+				// CV/cable units - the Expander has no idea about that scaling itself, see the
+				// interface method's own comment.
 				OL_statePoly[inputId * POLY_CHANNELS + c] = scaleXParamValue(i, exp->getXKnobValue(c));
 			// Channels beyond what THIS Expander actually supplies still need a correct
 			// fallback value - Morpheus's own per-channel reader functions fall back to the
 			// knob for any channel index >= channels, so keep those slots consistent too, same
-			// reasoning as the idle branch above. Otherwise a wider Expander binding later (or
-			// per-channel monitoring while not engaged) would find stale leftovers instead.
+			// reasoning as the idle branch above (same display->cv conversion, for the same
+			// reason - computeTakeoverDisplay() returns display units, not cv). Otherwise a wider
+			// Expander binding later (or per-channel monitoring while not engaged) would find
+			// stale leftovers instead.
 			for (int c = channels; c < POLY_CHANNELS; c++)
-				OL_statePoly[inputId * POLY_CHANNELS + c] = computeTakeoverRaw(i, c);
+				OL_statePoly[inputId * POLY_CHANNELS + c] = scaleXParamValue(i, computeTakeoverDisplay(i, c));
 		}
 
 		// Handle Reset
@@ -1271,33 +1294,39 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, StyxHostInterface
 	int64_t getXParamBoundId(int index) override { return xCandidates[index].boundExpanderId; }
 	bool isXParamCableConnected(int index) override { return inputs[xCandidates[index].inputId].isConnected(); }
 	void resetXParam(int index) override { xCandidates[index].boundExpanderId = -1; }
-	// NOT a direct OL_statePoly read - that array's own unit convention (raw 0..1 vs. real
-	// cable units) varies per candidate depending on what last wrote it (see computeTakeoverRaw's
-	// own comment and CLAUDE.md's Pitfalls entry on the divergent feedback this caused for
-	// SCL/OFS specifically). computeTakeoverRaw() is the one place that already knows, per
-	// candidate, how to convert "whatever Morpheus is actually using right now" into the raw
-	// 0..1 units this value is fed into (X8's own knob) - reusing it here keeps the takeover
-	// always correct regardless of binding state, instead of assuming OL_statePoly already
-	// holds the right unit.
-	float getXParamTakeoverValue(int index, int channel) override { return computeTakeoverRaw(index, channel); }
-	// X8's own 0..1 raw knob -> the "cable value" this input actually expects, per candidate -
-	// see the interface method's own comment. Digital types just pass raw straight through,
-	// unused (they're read via a threshold, not scaled).
-	float scaleXParamValue(int index, float raw) override
+	// Not a direct OL_statePoly read - that array holds CV/cable units, not display units (see
+	// computeTakeoverDisplay()'s own comment and CLAUDE.md's Pitfalls entry on the divergent
+	// feedback loop the old raw/CV mismatch caused for SCL/OFS specifically).
+	// computeTakeoverDisplay() is the one place that already knows, per candidate, how to convert
+	// "whatever Morpheus is actually using right now" into the display units the Expander's own
+	// knob directly holds - reusing it here keeps the takeover always correct regardless of
+	// binding state, instead of assuming OL_statePoly already holds the right unit.
+	float getXParamTakeoverValue(int index, int channel) override { return computeTakeoverDisplay(index, channel); }
+	// The Expander's own knob value (already in this candidate's own display units, e.g. steps
+	// for LOOP_LEN, percent for GTP/LOCK/BALANCE) -> the CV/cable value this input actually
+	// expects - see the interface method's own comment. Digital types just pass the value straight
+	// through, unused (they're read via a threshold, not scaled).
+	float scaleXParamValue(int index, float displayValue) override
 	{
-		return raw * xCandidates[index].rawScale + xCandidates[index].rawOffset;
+		return displayValue * xCandidates[index].cvScale;
 	}
 	// Continuous candidates only. Delegates entirely to xCandidates[index].format - see
-	// XFormatFn's own comment for why: every candidate's own display behavior (color, scale,
+	// XFormatFn's own comment for why: every candidate's own display behavior (color, range,
 	// align, AND format) now lives in one row of that one table, not scattered across a separate
-	// switch statement here.
+	// switch statement here. `value` already arrives in display units (the Expander's own knob
+	// value) - no scaleXParamValue() hop needed here, unlike before this redesign.
 	std::string formatXParamValue(int index, float value) override
 	{
 		XFormatFn format = xCandidates[index].format;
 		if (!format)
 			return ""; // digital types (Toggle/Click/Push) - no numeric display at all
-		return format(scaleXParamValue(index, value));
+		return format(value);
 	}
+	float getXParamDisplayMin(int index) override     { return xCandidates[index].displayMin; }
+	float getXParamDisplayMax(int index) override     { return xCandidates[index].displayMax; }
+	float getXParamDisplayDefault(int index) override { return xCandidates[index].displayDefault; }
+	bool getXParamSnap(int index) override            { return xCandidates[index].snap; }
+	const char* getXParamUnit(int index) override     { return xCandidates[index].unit; }
 	float getXStyle() override { return OL_state[STYLE_JSON]; }
 	std::string getXHostName() override { return customName; }
 

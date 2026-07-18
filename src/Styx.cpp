@@ -245,6 +245,11 @@ struct Styx : Module, XExpanderInterface, XOExpanderInterface, StyxExpanderInter
 	void requestXValueClick(int channel) override {}
 	void getXEngagedSummary(int &hostCount, int &slotCount) override { hostCount = 0; slotCount = 0; }
 	bool isXKnobReady(int index) override { return true; }
+	float getXBrowsedParamDisplayMin() override { return 0.f; }
+	float getXBrowsedParamDisplayMax() override { return 1.f; }
+	float getXBrowsedParamDisplayDefault() override { return 0.5f; }
+	bool getXBrowsedParamSnap() override { return false; }
+	const char* getXBrowsedParamUnit() override { return ""; }
 
 	// XOExpanderInterface - same pure-relay reasoning as above, for "STYX | XO8"-shaped chains.
 	XOHostInterface* getXOHost() override { return styxHostModule ? dynamic_cast<XOHostInterface*>(styxHostModule) : nullptr; }

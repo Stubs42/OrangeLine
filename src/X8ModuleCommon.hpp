@@ -49,6 +49,13 @@ bool triedAutoReengage = false;
 bool xLastBoundHere = false;
 int xLastCheckedIndex = -1;
 
+// Tracks whether the knob's own minValue/maxValue/defaultValue/snapEnabled are already
+// reconfigured for whatever (xHost, browseIndex) pair is current - see moduleProcess()'s own
+// range-reconfiguration block. Compared against xHost directly (not just the index) since
+// switching to a DIFFERENT Host while somehow landing on the same numeric index must still
+// re-trigger a reconfiguration.
+XHostInterface *xLastRangeHost = nullptr;
+
 // See XExpanderInterface::isXKnobReady()'s own comment (XShared.hpp) - false for exactly the
 // span between "just arrived on a (possibly bound) index" and "finished pulling the Host's
 // held value into the knob", true otherwise. A Host must not read getXKnobValue() while this
@@ -114,7 +121,7 @@ XAlign getXBrowsedParamAlign() override
 // resolving xHost/browseIndex and calling formatXParamValue() themselves. Empty string (no
 // tooltip/display text at all) whenever nothing meaningful is resolved, or for a digital-type
 // param (its own lit/unlit state already shows everything there is to show).
-std::string formatXValue(float raw) override
+std::string formatXValue(float value) override
 {
 	if (!xHost)
 		return "";
@@ -122,7 +129,61 @@ std::string formatXValue(float raw) override
 	if (count <= 0)
 		return "";
 	int idx = clamp((int) OL_state[BROWSE_INDEX_JSON], 0, count - 1);
-	return xHost->formatXParamValue(idx, raw);
+	return xHost->formatXParamValue(idx, value);
+}
+
+// See XHostInterface::getXParamDisplayMin()'s own comment (XShared.hpp) - resolve-and-fallback
+// shape identical to getXBrowsedParamType()/Color()/Align() above. Fallback (0, 1, 0.5, false,
+// "") matches exactly what a disconnected X8's own knob already looks/behaves like.
+float getXBrowsedParamDisplayMin() override
+{
+	if (!xHost)
+		return 0.f;
+	int count = xHost->getXParamCount();
+	if (count <= 0)
+		return 0.f;
+	int idx = clamp((int) OL_state[BROWSE_INDEX_JSON], 0, count - 1);
+	return xHost->getXParamDisplayMin(idx);
+}
+float getXBrowsedParamDisplayMax() override
+{
+	if (!xHost)
+		return 1.f;
+	int count = xHost->getXParamCount();
+	if (count <= 0)
+		return 1.f;
+	int idx = clamp((int) OL_state[BROWSE_INDEX_JSON], 0, count - 1);
+	return xHost->getXParamDisplayMax(idx);
+}
+float getXBrowsedParamDisplayDefault() override
+{
+	if (!xHost)
+		return 0.5f;
+	int count = xHost->getXParamCount();
+	if (count <= 0)
+		return 0.5f;
+	int idx = clamp((int) OL_state[BROWSE_INDEX_JSON], 0, count - 1);
+	return xHost->getXParamDisplayDefault(idx);
+}
+bool getXBrowsedParamSnap() override
+{
+	if (!xHost)
+		return false;
+	int count = xHost->getXParamCount();
+	if (count <= 0)
+		return false;
+	int idx = clamp((int) OL_state[BROWSE_INDEX_JSON], 0, count - 1);
+	return xHost->getXParamSnap(idx);
+}
+const char* getXBrowsedParamUnit() override
+{
+	if (!xHost)
+		return "";
+	int count = xHost->getXParamCount();
+	if (count <= 0)
+		return "";
+	int idx = clamp((int) OL_state[BROWSE_INDEX_JSON], 0, count - 1);
+	return xHost->getXParamUnit(idx);
 }
 
 bool moduleSkipProcess()
@@ -236,16 +297,57 @@ inline void moduleProcess(const ProcessArgs &args)
 				pendingEngagePress = true;
 		}
 
-		bool arrived = (browseIndex != xLastCheckedIndex) || (boundHere && !xLastBoundHere);
-		if (boundHere && arrived)
+		// Reconfigure the knob's own minValue/maxValue/defaultValue/snapEnabled to whatever the
+		// NEWLY-browsed candidate declares, in the SAME tick as (and strictly before) the value
+		// resync/preview below - so range and value always change together, never leaving a tick
+		// where a stale value is read against a fresh range or vice versa. Mirrors Dejavu.cpp's
+		// own reconfigureForState() pattern (OrangeLine.hpp's reConfigParam* macros) - reassigning
+		// plain float/bool ParamQuantity fields from moduleProcess() (the audio/engine thread) is
+		// already an established, working pattern in this codebase. Deliberately does NOT touch
+		// `unit` here (a std::string) - see X8Knob::step()'s own comment for why that half is
+		// UI-thread-only.
+		if (xHost != xLastRangeHost || browseIndex != xLastCheckedIndex)
 		{
-			xKnobReady = false; // not observable outside this same tick (resnap below
-			                    // completes synchronously), but keeps the state machine
-			                    // explicit - see isXKnobReady()'s own comment
+			float dispMin = xHost->getXParamDisplayMin(browseIndex);
+			float dispMax = xHost->getXParamDisplayMax(browseIndex);
+			float dispDefault = xHost->getXParamDisplayDefault(browseIndex);
+			bool dispSnap = xHost->getXParamSnap(browseIndex);
+			for (int c = 0; c < NUM_X8_KNOBS; c++)
+			{
+				ParamQuantity *pq = paramQuantities[KNOB_PARAM + c];
+				pq->minValue = dispMin;
+				pq->maxValue = dispMax;
+				pq->defaultValue = dispDefault;
+				pq->snapEnabled = dispSnap;
+			}
+			xLastRangeHost = xHost;
+		}
+
+		bool arrived = (browseIndex != xLastCheckedIndex) || (boundHere && !xLastBoundHere);
+		if (boundHere)
+		{
+			if (arrived)
+			{
+				xKnobReady = false; // not observable outside this same tick (resnap below
+				                    // completes synchronously), but keeps the state machine
+				                    // explicit - see isXKnobReady()'s own comment
+				int channels = getXKnobCount();
+				for (int c = 0; c < channels; c++)
+					params[KNOB_PARAM + c].setValue(xHost->getXParamTakeoverValue(browseIndex, c));
+				xKnobReady = true;
+			}
+		}
+		else
+		{
+			// Not bound here - continuously preview whatever value WOULD be taken over if
+			// bound, every tick (not just on arrival), so the disabled knob visibly tracks
+			// the Host's own live value (e.g. turning Morpheus's own real panel knob updates
+			// this disabled knob's display in real time). Safe unconditionally: nothing else
+			// ever writes to this Expander's own knob param while it isn't the bound owner -
+			// Morpheus's own refresh loop only ever touches a bound Expander's knob.
 			int channels = getXKnobCount();
 			for (int c = 0; c < channels; c++)
 				params[KNOB_PARAM + c].setValue(xHost->getXParamTakeoverValue(browseIndex, c));
-			xKnobReady = true;
 		}
 		xLastBoundHere = boundHere;
 		xLastCheckedIndex = browseIndex;
@@ -255,6 +357,7 @@ inline void moduleProcess(const ProcessArgs &args)
 	{
 		xLastBoundHere = false;
 		xLastCheckedIndex = -1;
+		xLastRangeHost = nullptr;
 	}
 
 	// Engage button: local debounce only - this Expander has no idea whether a click will
