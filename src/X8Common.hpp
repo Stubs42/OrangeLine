@@ -311,6 +311,29 @@ struct X8BindButtonBase : X8ButtonBase
 struct X8Knob : RoundSmallBlackKnob
 {
 	int channel = 0;
+	float lastValue = NAN;
+
+	// SvgKnob caches its rotated needle in a FramebufferWidget and only re-rasterizes on its own
+	// onChange() (normally dispatched by ParamWidget's own drag-driven interaction path) - a value
+	// set directly by the module itself (e.g. the takeover resnap in X8ModuleCommon.hpp, when
+	// browsing back onto an already-bound param) never goes through that path, so the cached
+	// bitmap stays stale until some unrelated interaction (e.g. a click) happens to bust it. Force
+	// a redraw here instead, by comparing against the engine value directly every UI frame -
+	// robust regardless of what triggered the change.
+	void step() override
+	{
+		engine::ParamQuantity *pq = getParamQuantity();
+		if (pq)
+		{
+			float value = pq->getValue();
+			if (value != lastValue)
+			{
+				lastValue = value;
+				fb->dirty = true;
+			}
+		}
+		RoundSmallBlackKnob::step();
+	}
 
 	bool isActive()
 	{

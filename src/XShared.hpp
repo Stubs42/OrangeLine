@@ -179,6 +179,19 @@ struct XExpanderInterface
 	// contributes 0.
 	virtual void getXEngagedSummary(int &hostCount, int &slotCount) = 0;
 
+	// True exactly when this Expander's own knob(s) are known to correctly reflect the Host's
+	// held value for candidate `index` right now - i.e. safe for a Host to read
+	// getXKnobValue()/getXKnobCount() for that candidate this tick. False for as long as a
+	// resync is still pending (right after browsing back onto an already-bound candidate, or a
+	// fresh engage) - the Expander clears this the instant it notices its own knob no longer
+	// matches `index`, and only sets it again once it has actually pulled the Host's current
+	// value into its own knob. A Host must treat false exactly like "not adjacent" (freeze, keep
+	// holding its own last value) - this is a plain level check, not a fixed tick count, since
+	// Rack's own engine does not guarantee any particular relative ordering between an
+	// Expander's and a Host's own, independently-throttled process() calls (see CLAUDE.md's own
+	// pitfall entry on the fixed-tick-count approach this replaces).
+	virtual bool isXKnobReady(int index) = 0;
+
 	virtual ~XExpanderInterface() {}
 };
 

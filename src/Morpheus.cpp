@@ -468,7 +468,7 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, StyxHostInterface
             if (channels == 1) {
 				return lock + OL_statePoly[LOCK_INPUT * POLY_CHANNELS] * 10; // input is scaled so lock 10V is lock 100 %
             }
-			else if (channels >= channel) {
+			else if (channels > channel) {
 				return lock + OL_statePoly[LOCK_INPUT * POLY_CHANNELS + channel] * 10; // input is scaled so lock 10V is lock 100 %
             }
 		}
@@ -483,7 +483,7 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, StyxHostInterface
             if (channels == 1) {
 				return balance + OL_statePoly[BALANCE_INPUT * POLY_CHANNELS] * 10; // input is scaled so balance 10V is lock 100 %
             }
-			else if (channels >= channel) {
+			else if (channels > channel) {
 				return balance + OL_statePoly[BALANCE_INPUT * POLY_CHANNELS + channel] *10;  // input is scaled so balance 10V is lock 100 %
             }
 		}
@@ -498,7 +498,7 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, StyxHostInterface
             if (channels == 1) {
 				loopLen = floor(OL_statePoly[LOOP_LEN_INPUT * POLY_CHANNELS] * 100.f + 0.001); // input is scaled so 0.16 is length 16
             }
-			else if (channels >= channel) {
+			else if (channels > channel) {
 				loopLen = floor(OL_statePoly[LOOP_LEN_INPUT * POLY_CHANNELS + channel] * 100.f + 0.001); // input is scaled so 0.16 is length 16
             }
 		}
@@ -534,7 +534,7 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, StyxHostInterface
             if (channels == 1) {
 				hld = OL_statePoly[HLD_INPUT * POLY_CHANNELS];
             }
-			else if (channels >= channel) {
+			else if (channels > channel) {
 				hld = OL_statePoly[HLD_INPUT * POLY_CHANNELS + channel];
 				if (getStateJson(SMART_HOLD_JSON) == 1.0f) {
 					if (haveEditHld) {
@@ -565,7 +565,7 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, StyxHostInterface
             if (channels == 1) {
 				return OL_statePoly[REC_INPUT * POLY_CHANNELS] > 0.5f ? 10.f : 0.f;
             }
-			else if (channels >= channel) {
+			else if (channels > channel) {
 				return OL_statePoly[REC_INPUT * POLY_CHANNELS + channel] > 0.5f ? 10.f : 0.f;;
             }
 		}
@@ -592,7 +592,7 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, StyxHostInterface
             if (channels == 1) {
 				return OL_statePoly[RND_INPUT * POLY_CHANNELS] > 0.5f ? 10.f : 0.f;
             }
-			else if (channels >= channel) {
+			else if (channels > channel) {
 				return OL_statePoly[RND_INPUT * POLY_CHANNELS + channel] > 0.5f ? 10.f : 0.f;;
             }
 		}
@@ -610,7 +610,7 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, StyxHostInterface
             if (channels == 1) {
 				return OL_statePoly[CLR_INPUT * POLY_CHANNELS] > 0.5f ? 10.f : 0.f;
             }
-			else if (channels >= channel) {
+			else if (channels > channel) {
 				return OL_statePoly[CLR_INPUT * POLY_CHANNELS + channel] > 0.5f ? 10.f : 0.f;;
             }
 		}
@@ -624,7 +624,7 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, StyxHostInterface
             if (channels == 1) {
 				return OL_statePoly[GTP_INPUT * POLY_CHANNELS] * 10.f; // input is scaled so 5V is Probability 50%
             }
-			else if (channels >= channel) {
+			else if (channels > channel) {
 				return OL_statePoly[GTP_INPUT * POLY_CHANNELS + channel] * 10.f; // input is scaled so 5V is Probability 50%
             }
 		}
@@ -638,7 +638,7 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, StyxHostInterface
             if (channels == 1) {
 				return OL_statePoly[SCL_INPUT * POLY_CHANNELS];
             }
-			else if (channels >= channel) {
+			else if (channels > channel) {
 				return OL_statePoly[SCL_INPUT * POLY_CHANNELS + channel];
             }
 		}
@@ -652,7 +652,7 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, StyxHostInterface
             if (channels == 1) {
 				return OL_statePoly[OFS_INPUT * POLY_CHANNELS];
             }
-			else if (channels >= channel) {
+			else if (channels > channel) {
 				return OL_statePoly[OFS_INPUT * POLY_CHANNELS + channel];
             }
 		}
@@ -780,13 +780,7 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, StyxHostInterface
 		// any of them. Each Expander debounces its own button locally and exposes only a
 		// one-shot event - Morpheus does all the deciding here.
 		//
-		// freshlyBound is purely local to this one tick (not persisted state) - it marks a
-		// candidate that just transitioned from unbound to bound right here, so the refresh
-		// loop below can leave OL_statePoly exactly as the idle branch last left it for one
-		// more tick, instead of immediately overwriting it with the Expander's own (not yet
-		// caught up) raw knob value. See the refresh loop's comments for why.
-		bool freshlyBound[NUM_X_CANDIDATES] = {false};
-		// candidateAdjacent is also purely local to this one tick - marks a candidate whose
+		// candidateAdjacent is purely local to this one tick - marks a candidate whose
 		// bound Expander is genuinely found in the chain walk right now (not just resolvable by
 		// id). The refresh loop below only treats a binding as truly LIVE while this holds -
 		// bound-but-not-currently-adjacent freezes exactly like Track & Hold. This is what makes
@@ -816,7 +810,6 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, StyxHostInterface
 						if (xCandidates[idx].boundExpanderId == -1)
 						{
 							xCandidates[idx].boundExpanderId = myId;   // bind (was available)
-							freshlyBound[idx] = true;
 							candidateAdjacent[idx] = true;
 						}
 						else if (xCandidates[idx].boundExpanderId == myId)
@@ -875,10 +868,12 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, StyxHostInterface
 				          // now - freeze exactly like the "looking elsewhere" case above, don't
 				          // keep reading a knob that isn't even pointed at us anymore
 
-			if (freshlyBound[i])
-				continue; // just bound this very tick - hold the takeover value one more tick
-				          // so the Expander has a chance to read and apply it before its own
-				          // (not yet updated) raw knob value starts being read instead
+			if (!exp->isXKnobReady(i))
+				continue; // Expander hasn't finished resyncing its own knob for this candidate
+				          // yet (fresh engage, or just navigated back onto an already-bound
+				          // slot) - hold last tick's values until it says it's ready. A plain
+				          // level check, not a fixed tick count - see isXKnobReady()'s own
+				          // comment (XShared.hpp) for why that matters.
 
 			int channels = exp->getXKnobCount(); // sender (the Expander) decides, not us
 			xVirtualChannels[inputId] = channels;
@@ -1276,7 +1271,15 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, StyxHostInterface
 	int64_t getXParamBoundId(int index) override { return xCandidates[index].boundExpanderId; }
 	bool isXParamCableConnected(int index) override { return inputs[xCandidates[index].inputId].isConnected(); }
 	void resetXParam(int index) override { xCandidates[index].boundExpanderId = -1; }
-	float getXParamTakeoverValue(int index, int channel) override { return OL_statePoly[xCandidates[index].inputId * POLY_CHANNELS + channel]; }
+	// NOT a direct OL_statePoly read - that array's own unit convention (raw 0..1 vs. real
+	// cable units) varies per candidate depending on what last wrote it (see computeTakeoverRaw's
+	// own comment and CLAUDE.md's Pitfalls entry on the divergent feedback this caused for
+	// SCL/OFS specifically). computeTakeoverRaw() is the one place that already knows, per
+	// candidate, how to convert "whatever Morpheus is actually using right now" into the raw
+	// 0..1 units this value is fed into (X8's own knob) - reusing it here keeps the takeover
+	// always correct regardless of binding state, instead of assuming OL_statePoly already
+	// holds the right unit.
+	float getXParamTakeoverValue(int index, int channel) override { return computeTakeoverRaw(index, channel); }
 	// X8's own 0..1 raw knob -> the "cable value" this input actually expects, per candidate -
 	// see the interface method's own comment. Digital types just pass raw straight through,
 	// unused (they're read via a threshold, not scaled).

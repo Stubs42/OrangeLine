@@ -39,15 +39,23 @@ bool pendingEngagePress = false;
 // comment in X8.hpp and the auto-reengage block in moduleProcess().
 bool triedAutoReengage = false;
 
-// Edge-detects "the param I'm currently standing on just became bound to me" (a fresh
-// engage taking effect on the Host's side, possibly a few ticks after the physical press -
-// Host and Expander each run on their own throttled cycle) so knobs can be snapped exactly
-// once. Keyed to the index itself, not just a bare bool: browsing away and back onto a
-// param this Expander already holds (Track & Hold) must NOT re-fire and stomp live knob
-// positions with the old snapshot - only a genuine unbound->bound transition while standing
-// still on the same index counts.
+// Edge-detects "the param I'm currently standing on just became bound to me, or I just
+// arrived on it" so knobs can be resynced. Keyed to the index itself: browsing away and back
+// onto a param this Expander already holds (Track & Hold) DOES need to re-resync (the knob is
+// one shared physical Param reused for whatever's currently displayed, so after browsing
+// elsewhere and back it's showing the wrong candidate's last value) - continuing to stand on
+// the same already-bound index tick after tick must NOT re-fire, or live knob turning would
+// be impossible.
 bool xLastBoundHere = false;
 int xLastCheckedIndex = -1;
+
+// See XExpanderInterface::isXKnobReady()'s own comment (XShared.hpp) - false for exactly the
+// span between "just arrived on a (possibly bound) index" and "finished pulling the Host's
+// held value into the knob", true otherwise. A Host must not read getXKnobValue() while this
+// is false. Correctness-based (a level the Host polls every tick, however many it takes),
+// not a fixed tick count - see CLAUDE.md's own pitfall entry on why a fixed-count grace
+// period on the Host side alone was tried and reverted the same day this replaced it.
+bool xKnobReady = true;
 
 // X_PARAM_CLICK needs a fixed-length pulse "independent of hold duration" (XShared.hpp) -
 // unlike TOGGLE/PUSH, which the widget can drive directly via plain setValue() calls, CLICK
@@ -209,8 +217,10 @@ inline void moduleProcess(const ProcessArgs &args)
 	}
 	OL_state[BROWSE_INDEX_JSON] = (float) browseIndex;
 
-	// See xLastBoundHere's comment above: only a fresh bind while standing still on the
-	// same index snaps the knobs - browsing onto an already-bound index never re-fires.
+	// See xLastBoundHere's comment above: resync whenever we just arrived on a bound-here
+	// index (either a fresh engage, or navigating back onto one) - safe to do on every
+	// arrival now, since isXKnobReady() (XShared.hpp) lets the Host wait however many
+	// ticks this side actually needs, rather than assuming a fixed count.
 	if (xHost && count > 0)
 	{
 		bool boundHere = xHost->getXParamBoundId(browseIndex) == (int64_t) this->id;
@@ -226,11 +236,16 @@ inline void moduleProcess(const ProcessArgs &args)
 				pendingEngagePress = true;
 		}
 
-		if (browseIndex == xLastCheckedIndex && boundHere && !xLastBoundHere)
+		bool arrived = (browseIndex != xLastCheckedIndex) || (boundHere && !xLastBoundHere);
+		if (boundHere && arrived)
 		{
+			xKnobReady = false; // not observable outside this same tick (resnap below
+			                    // completes synchronously), but keeps the state machine
+			                    // explicit - see isXKnobReady()'s own comment
 			int channels = getXKnobCount();
 			for (int c = 0; c < channels; c++)
 				params[KNOB_PARAM + c].setValue(xHost->getXParamTakeoverValue(browseIndex, c));
+			xKnobReady = true;
 		}
 		xLastBoundHere = boundHere;
 		xLastCheckedIndex = browseIndex;
@@ -278,6 +293,7 @@ float getXStyle() override { return OL_state[STYLE_JSON]; }
 int getXKnobCount() override { return (int) OL_state[CHANNEL_LIMIT_JSON]; }
 float getXKnobValue(int channel) override { return getStateParam(KNOB_PARAM + channel); }
 int getXBrowseIndex() override { return (int) OL_state[BROWSE_INDEX_JSON]; }
+bool isXKnobReady(int index) override { return xKnobReady && index == (int) OL_state[BROWSE_INDEX_JSON]; }
 bool consumeEngagePress() override
 {
 	bool fired = pendingEngagePress;
