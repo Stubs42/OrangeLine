@@ -253,6 +253,8 @@ struct Styx : Module, XExpanderInterface, XOExpanderInterface, StyxExpanderInter
 
 	// XOExpanderInterface - same pure-relay reasoning as above, for "STYX | XO8"-shaped chains.
 	XOHostInterface* getXOHost() override { return styxHostModule ? dynamic_cast<XOHostInterface*>(styxHostModule) : nullptr; }
+	int64_t getXOConnectedHostId() override { return -1; }
+	void disconnectXOHost() override {}
 	float getXOStyle() override { return OL_state[STYLE_JSON]; }
 	int getXOCapacity() override { return 0; }
 	int getXOBrowseIndex() override { return 0; }
@@ -552,7 +554,11 @@ struct StyxWidget : ModuleWidget
 		panelWidget->box.size = box.size;
 		addChild(panelWidget);
 
-		addChild(createLightCentered<AutoHideLight<TinyLight<GreenRedLight>>>(calculateCoordinates(3.5f, 4.f, 0.f), module, CONN_LIGHT));
+		// Connection light disabled 2026-07-18 (Dieter: more distracting than informative, breaks
+		// the header's optics - connection is already visible via the panel's own controls) -
+		// underlying setStateLight(CONN_LIGHT, ...) tracking logic left intact, only the widget
+		// itself is no longer added.
+		// addChild(createLightCentered<AutoHideLight<TinyLight<GreenRedLight>>>(calculateCoordinates(3.5f, 4.f, 0.f), module, CONN_LIGHT));
 
 		for (int r = 0; r < STYX_NUM_ROWS; r++)
 		{

@@ -84,7 +84,11 @@ struct XR16Widget : ModuleWidget
 			addChild(darkPanel);
 		}
 
-		addChild(createLightCentered<AutoHideLight<TinyLight<GreenRedLight>>>(calculateCoordinates(3.5f, 4.f, 0.f), module, CONN_LIGHT));
+		// Connection light disabled 2026-07-18 (Dieter: more distracting than informative, breaks
+		// the header's optics - connection is already visible via the panel's own controls) -
+		// underlying setStateLight(CONN_LIGHT, ...) tracking logic left intact, only the widget
+		// itself is no longer added.
+		// addChild(createLightCentered<AutoHideLight<TinyLight<GreenRedLight>>>(calculateCoordinates(3.5f, 4.f, 0.f), module, CONN_LIGHT));
 		addChild(createLightCentered<TinyLight<RedLight>>(calculateCoordinates(XR16_PANEL_WIDTH_MM - 3.5f, 4.f, 0.f), module, OVERFLOW_LIGHT));
 
 		XOStepButton *leftButton = createParamCentered<XOStepButton>(calculateCoordinates(8.382f, 18.035f, 0.f), module, LEFT_PARAM);
@@ -252,6 +256,8 @@ struct XR16Widget : ModuleWidget
 
 		spacerLabel = new MenuLabel();
 		menu->addChild(spacerLabel);
+
+		addXODisconnectMenuItem(menu, module);
 
 		XRChannelRangesItem *rangesItem = new XRChannelRangesItem();
 		rangesItem->module = module;

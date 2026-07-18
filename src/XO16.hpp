@@ -35,6 +35,10 @@ enum jsonIds {
 	STYLE_JSON,
 	BROWSE_INDEX_JSON, // persists the last browsed output slot - see XOModuleCommon.hpp's own
 	                   // moduleProcess()
+	// Persistent target Host module id for the non-adjacent stay-connected mechanism - mirrors
+	// Styx.hpp's own CONNECTED_HOST_ID_JSON. -1 means "none, resolve via left-side physical
+	// adjacency only". Unconditional/automatic, not a menu-driven Connect action like STYX's.
+	CONNECTED_HOST_ID_JSON,
 
 	NUM_JSONS
 };

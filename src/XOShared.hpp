@@ -98,9 +98,23 @@ struct XOHostInterface
 struct XOExpanderInterface
 {
 	// The Host pointer this Expander itself resolved via its own left-side chain-walk (mirrored
-	// direction from the X family - this family chains rightward off the Host), or nullptr.
+	// direction from the X family - this family chains rightward off the Host), or, if nothing's
+	// currently adjacent, its own remembered connection (see getXOConnectedHostId() below) -
+	// or nullptr.
 	virtual XOHostInterface* getXOHost() = 0;
 	virtual float getXOStyle() = 0;
+
+	// The remembered target Host's own module id (the "NFC touch once, stays connected" memory -
+	// see resolveXOHostPersistent() below), or -1 if none. XO-family has no
+	// engagement/binding/exclusivity concept at all (reading a Host's output is never exclusive),
+	// so unlike the X-family's own equivalent, there's nothing else this memory could conflict
+	// with - purely a convenience so a detached XO-family Expander keeps reading its Host live.
+	// Exposed purely for the right-click menu (a "Disconnect" item, mirroring the X-family's own).
+	virtual int64_t getXOConnectedHostId() = 0;
+	// Clears the remembered connection (getXOConnectedHostId() above) only. After this, the
+	// Expander only resolves a Host again via genuine physical adjacency, until either happens
+	// again.
+	virtual void disconnectXOHost() = 0;
 
 	// Fixed per-module constant (8 or 16) - there's no "Channels" menu on this side, since
 	// there's no sender deciding how many channels to feed; this is just how many mono jacks/
@@ -151,6 +165,42 @@ inline XOHostInterface* resolveXOHost(Module *neighbor)
 	XOExpanderInterface *link = dynamic_cast<XOExpanderInterface*>(neighbor);
 	if (link)
 		return link->getXOHost();
+	return nullptr;
+}
+
+/**
+	Resolves via adjacency first (resolveXOHost() above); on failure, falls back to a persisted
+	Host module id ("NFC touch once, stays connected until explicitly broken" - mirrors the
+	X-family's own CONNECTED_HOST_ID_JSON handling in X8ModuleCommon.hpp exactly, promoted to a
+	shared helper here since both XOModuleCommon.hpp and XRModuleCommon.hpp need this identical
+	logic at their own separate call sites, unlike the X-family which has only one call site and
+	keeps the logic inline). `connectedHostIdState` is the caller's own
+	OL_state[CONNECTED_HOST_ID_JSON] slot, passed by reference so this can both read the current
+	value and update/clear it in place.
+*/
+inline XOHostInterface* resolveXOHostPersistent(Module *neighbor, float &connectedHostIdState)
+{
+	XOHostInterface *host = resolveXOHost(neighbor);
+	if (host)
+	{
+		// Persist the RESOLVED HOST's own module id, not just the immediate neighbor's - a
+		// longer Expander chain may relay through intermediate XO-family members to reach the
+		// real Host. XOHostInterface is a sibling base class of Module, not Module itself -
+		// dynamic_cast across to the underlying Module is a valid C++ cross-cast here.
+		Module *hostModule = dynamic_cast<Module*>(host);
+		if (hostModule && (int64_t) connectedHostIdState != hostModule->id)
+			connectedHostIdState = (float) hostModule->id;
+		return host;
+	}
+	int64_t connectedId = (int64_t) connectedHostIdState;
+	if (connectedId >= 0)
+	{
+		Module *m = APP->engine->getModule(connectedId);
+		XOHostInterface *fallback = m ? dynamic_cast<XOHostInterface*>(m) : nullptr;
+		if (fallback)
+			return fallback;
+		connectedHostIdState = -1.f; // target vanished - clear stale id
+	}
 	return nullptr;
 }
 

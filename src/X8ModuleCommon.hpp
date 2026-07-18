@@ -21,8 +21,11 @@
 
 bool widgetReady = false;
 
-// Resolved every moduleProcess() tick by looking only at rightExpander.module (never
-// leftExpander.module - see XShared.hpp's left-only-attachment note).
+// Resolved every moduleProcess() tick: the Host currently binding this Expander (found via a
+// live full-rack scan, findXBoundHost() - XShared.hpp - regardless of physical position), or, if
+// not bound anywhere, whatever's genuinely adjacent right now via rightExpander.module (browsing
+// only - never leftExpander.module, see XShared.hpp's left-only-attachment note). See
+// moduleProcess()'s own resolution block for the full reasoning.
 XHostInterface *xHost = nullptr;
 
 // Fully self-managed local state (see ExpanderParamAccessSpec.md's "Expander manages
@@ -33,11 +36,6 @@ XHostInterface *xHost = nullptr;
 // dataFromJson() restores OL_state without also updating it.
 dsp::SchmittTrigger engageTrigger, leftTrigger, rightTrigger;
 bool pendingEngagePress = false;
-
-// One-shot guard: attempt, exactly once after a compatible Host first resolves, to
-// auto-restore an engagement that existed before a patch reload - see WAS_ENGAGED_JSON's
-// comment in X8.hpp and the auto-reengage block in moduleProcess().
-bool triedAutoReengage = false;
 
 // Edge-detects "the param I'm currently standing on just became bound to me, or I just
 // arrived on it" so knobs can be resynced. Keyed to the index itself: browsing away and back
@@ -203,7 +201,6 @@ inline void moduleInitJsonConfig()
 	setJsonLabel(STYLE_JSON, "style");
 	setJsonLabel(CHANNEL_LIMIT_JSON, "channelLimit");
 	setJsonLabel(BROWSE_INDEX_JSON, "browseIndex");
-	setJsonLabel(WAS_ENGAGED_JSON, "wasEngaged");
 
 #pragma GCC diagnostic pop
 }
@@ -227,7 +224,6 @@ void moduleReset()
 {
 	styleChanged = true;
 	OL_state[BROWSE_INDEX_JSON] = 0.f;
-	OL_state[WAS_ENGAGED_JSON] = 0.f;
 }
 
 inline void moduleProcess(const ProcessArgs &args)
@@ -245,10 +241,19 @@ inline void moduleProcess(const ProcessArgs &args)
 
 	// No restriction on which Host TYPE this resolves to - an Expander can be engaged with any
 	// number of different Hosts (of the same or different types) over its lifetime, one at a
-	// time, each tracked independently via that Host's own boundExpanderId/adjacency-gating (see
-	// CLAUDE.md's Expander-modules section) - nothing here needs to know or care what kind of
-	// Host it's currently looking at.
-	xHost = resolveXHost(rightExpander.module);
+	// time, tracked via that Host's own boundExpanderId (see CLAUDE.md's Expander-modules
+	// section) - nothing here needs to know or care what kind of Host it's currently looking at.
+	//
+	// Bound-first, adjacency-fallback: if some Host currently binds this Expander's id (found via
+	// a live full-rack scan, findXBoundHost() - XShared.hpp - regardless of physical position),
+	// that Host wins outright and is read fully live no matter where this Expander physically
+	// sits (Dieter: "why is there any code handling a disattach from the host's neighborhood
+	// anyway" - Morpheus already finds its bound Expander purely by id, so the Expander side
+	// should resolve its Host the same structurally-robust way, not by remembering a Host id that
+	// can drift out of sync with reality). Only when NOT bound anywhere does physical adjacency
+	// matter at all, purely so there's something to browse before ever engaging.
+	XHostInterface *boundHost = findXBoundHost((int64_t) this->id);
+	xHost = boundHost ? boundHost : resolveXHost(rightExpander.module);
 	setStateLight(CONN_LIGHT, xHost ? 255.f : 0.f);
 
 	// Browsing: unconditional, unfiltered stepping through every candidate param the
@@ -285,17 +290,6 @@ inline void moduleProcess(const ProcessArgs &args)
 	if (xHost && count > 0)
 	{
 		bool boundHere = xHost->getXParamBoundId(browseIndex) == (int64_t) this->id;
-
-		// Auto-restore an engagement that existed before a patch reload: bindings themselves
-		// are session-only (Rack ids aren't safe to persist/compare across a reload - see
-		// WAS_ENGAGED_JSON's comment), so this just presses our own engage button once,
-		// through the ordinary mechanism, using whatever id this Expander currently has.
-		if (!triedAutoReengage)
-		{
-			triedAutoReengage = true;
-			if (OL_state[WAS_ENGAGED_JSON] > 0.f && !boundHere)
-				pendingEngagePress = true;
-		}
 
 		// Reconfigure the knob's own minValue/maxValue/defaultValue/snapEnabled to whatever the
 		// NEWLY-browsed candidate declares, in the SAME tick as (and strictly before) the value
@@ -351,7 +345,6 @@ inline void moduleProcess(const ProcessArgs &args)
 		}
 		xLastBoundHere = boundHere;
 		xLastCheckedIndex = browseIndex;
-		OL_state[WAS_ENGAGED_JSON] = boundHere ? 1.f : 0.f;
 	}
 	else
 	{

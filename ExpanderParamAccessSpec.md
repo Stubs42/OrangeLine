@@ -51,6 +51,19 @@ already-resolved Host pointer (so several Expanders can still chain further left
 The Host itself only ever needs to check `leftExpander.module` to know whether at least one
 Expander is currently present at all.
 
+**Non-adjacent, persistent connection** (added 2026-07-18, generalizing a pattern STYX already
+used for its own single Host link): physical adjacency is only how a connection is *first*
+established, not a requirement for it to keep working - Dieter's own framing is an NFC handshake,
+touching two phones once exchanges a contact that then persists regardless of physical position.
+Each Expander persists the resolved Host's own module ID (`CONNECTED_HOST_ID_JSON`, -1 = none) and
+re-resolves it every tick: adjacency first (as above), and if nothing is adjacent, fall back to
+`APP->engine->getModule()` on the remembered ID, clearing it if that module no longer exists. A
+detached-but-connected Expander is read **fully live**, exactly as if it were still adjacent -
+this is what forced the single-binding-per-Expander rule above, since there is no longer an
+adjacency signal available to arbitrate between several simultaneously-live stale bindings. The
+connection can be broken explicitly, from the Expander's own right-click menu ("Disconnect"),
+independent of any param binding.
+
 Consequence for the connection-status indicator: **no dedicated light needed at all** (unlike
 LANES' two bi-color corner lights). Normally a header light would show connection state, but
 here it's already conveyed for free by the panel's own controls: LEFT/RIGHT/ENGAGE all render
@@ -85,12 +98,17 @@ mechanism, not just for the channel-limit feature.
 - **Engaging = plugging a virtual cable in.** Disengaging = unplugging it - and, taking the
   cable metaphor all the way, **a real cable can be unplugged from either end**, so this needs to
   work the same way here (see "four ways to disconnect" below), not just from the Host's side.
-- **One Expander instance can hold any number of simultaneous bindings, to different params**
-  (decided 2026-07-15, refining an earlier "one binding per Expander, LEFT/RIGHT locked while
-  bound" draft - see below for why that turned out to be an unnecessary restriction). Only the
-  1:1 rule *per param* still holds (never two Expanders bound to the same param at once) - an
-  Expander itself can be the bound provider for several different params at the same time, each
-  shown "engaged" (e.g. green) as it browses past them.
+- **One Expander instance may hold at most one binding, globally, at any time** (revised
+  2026-07-18, retiring an earlier 2026-07-15 "any number of simultaneous bindings, to different
+  params" rule - that rule enabled a deliberate "multi-host relay" trick, one Expander bound to
+  different candidates on different Hosts, with only the currently-adjacent one read live; it had
+  to be retired once bindings became readable live regardless of adjacency, see "Non-adjacent,
+  persistent connection" below - reading *every* stale binding live at once, with no adjacency
+  arbitration left to pick one, made the old multi-binding model incoherent). The 1:1 rule *per
+  param* still holds unchanged (never two Expanders bound to the same param at once). Engaging a
+  new, available param first clears this Expander's own existing binding everywhere in the rack
+  (any Host, any param, via a full-rack scan - `xUnbindExpanderEverywhere()` in `XShared.hpp`),
+  then grants the new one - so binding is now a strict *move*, never an *add*.
 - **The one piece of state this actually requires the Host to remember**: a small per-param
   binding, *which* Expander instance currently holds the plug. Concretely a stable Rack module
   ID, not a raw pointer:
@@ -139,8 +157,8 @@ mechanism, not just for the channel-limit feature.
   grey/disabled) - three visual states, all read straight off `isXParamEngaged()` +
   `getXParamBoundId()` + `isXParamCableConnected()`, nothing new to store. Clicking ENGAGE while
   browsing a grey (taken-elsewhere or cable-connected) entry is simply a no-op - see Red/Green
-  below. Clicking it on an available one *adds* a new binding (on top of any this instance
-  already holds elsewhere) - it never needs to replace anything first.
+  below. Clicking it on an available one *moves* this instance's one binding here, first clearing
+  whatever it held elsewhere (see "one binding, globally" above).
 - **Track & Hold, not "locked knobs"** (Dieter's own analogy, replacing the earlier "can't
   re-wire while bound" reasoning): an Expander only has one physical set of 8/16 knobs, so it can
   only ever *actively* represent whichever param it's currently browsing - but that's fine,
@@ -348,9 +366,9 @@ single knob:
   Expander's live array (see "No separate per-channel value buffer" above).
 
 Getting to Green: the Host, on seeing any Expander's `consumeEngagePress()` fire while it's
-browsing an available (untaken) param, records that Expander's module ID as the new binding for
-that param - **in addition to** any other bindings that same Expander already holds elsewhere
-(see "one Expander, several simultaneous bindings" above). Getting back to Red for one specific
+browsing an available (untaken) param, first clears that Expander's binding everywhere else in
+the rack (see "one binding, globally" above), then records its module ID as the new binding for
+that param. Getting back to Red for one specific
 param: any of the **four equally legitimate disconnect paths** above - Host Reset, the *bound*
 Expander's own engage button clicked again while browsing that specific param (a real toggle, but
 only ever effective for a param this same instance already holds - any other Expander's
@@ -428,10 +446,10 @@ press/long-press (see point 2 under "8 or 16 value controls" below).
   navigation than trying to land a rotary knob on an exact index). **Circular, over the complete,
   unfiltered list of every candidate param, always** - nothing is ever skipped or hidden, see
   above. Needs its own small custom SVG component (not an existing component-library part).
-  Browsing is **never locked** (see architecture section above) - stepping to a different param
-  one already holds elsewhere simply hands live control to that one instead (Track & Hold, see
-  above); stepping onto a grey (taken-elsewhere/cable-connected) one is harmless read-only
-  viewing, no restriction of any kind.
+  Browsing is **never locked** (see architecture section above) - since an Expander now holds at
+  most one binding, stepping away from it simply freezes its value (Track & Hold, see above) until
+  browsed back to; stepping onto a grey (taken-elsewhere/cable-connected) one is harmless
+  read-only viewing, no restriction of any kind.
 - **One engage button**: a plain click, self-debounced locally, exposed to the Host as
   `consumeEngagePress()` - the Expander itself has no idea whether this will actually do anything
   (the Host decides: *add* a new binding if the browsed param is currently available, *remove*
@@ -485,9 +503,10 @@ press/long-press (see point 2 under "8 or 16 value controls" below).
   today - the host's own knob drives all channels uniformly (Red).
 - **Engaging a param** (any Expander's engage click while browsing an available param, Red ->
   Green): the Host, during its own `process()`, sees that Expander's `consumeEngagePress()` fire
-  and records its module ID as `boundExpanderId[index]` - *added* to whatever other bindings that
-  same Expander might already hold elsewhere; the param now shows grey (taken) on every other
-  Expander's browse list, but is still visible there, just not actionable.
+  first clears that Expander's binding everywhere else in the rack, then records its module ID as
+  `boundExpanderId[index]` - this Expander now holds exactly one binding, globally; the param now
+  shows grey (taken) on every other Expander's browse list, but is still visible there, just not
+  actionable.
 - **Browsing, on any Expander, at any time**: never locked, never filtered, always the complete
   list - has no effect on any param's state by itself, whether landing on an available, own, or
   grey (taken-elsewhere/cable-connected) entry. Stepping onto a param this instance already holds

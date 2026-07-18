@@ -214,11 +214,15 @@ struct X8ButtonBase : ParamWidget
 	}
 
 	// Stroke/label color - split out from draw() as its own virtual so X8BindButtonBase can
-	// add a third, visually distinct "currently bound here" state (green) on top of the plain
-	// active/inactive (orange/grey) look every other button uses unchanged.
+	// add a third, visually distinct "currently bound here" state (red) on top of the plain
+	// active/inactive (themed/grey) look every other button uses unchanged.
 	virtual NVGcolor getAccentColor()
 	{
-		return isActive() ? ORANGE : X_COLOR_INACTIVE_GREY;
+		if (!isActive())
+			return X_COLOR_INACTIVE_GREY;
+		engine::ParamQuantity *pq = getParamQuantity();
+		XExpanderInterface *expander = pq && pq->module ? dynamic_cast<XExpanderInterface*>(pq->module) : nullptr;
+		return xThemedTextColor(expander ? expander->getXStyle() : STYLE_ORANGE);
 	}
 
 	// Displayed text - split out from draw() as its own virtual so X8BindButtonBase can show
@@ -290,7 +294,8 @@ struct X8BindButtonBase : X8ButtonBase
 		engine::ParamQuantity *pq = getParamQuantity();
 		if (x8BrowsedParamMine(pq ? pq->module : nullptr))
 			return X_COLOR_BOUND_RED; // bound to us at this exact slot right now
-		return ORANGE; // available - clickable to bind, but not bound to us yet
+		XExpanderInterface *expander = pq && pq->module ? dynamic_cast<XExpanderInterface*>(pq->module) : nullptr;
+		return xThemedTextColor(expander ? expander->getXStyle() : STYLE_ORANGE); // available
 	}
 
 	// "UNBIND" while bound here (clicking would release it), else the base "BIND" label
@@ -779,151 +784,82 @@ struct X8NameDisplay : TransparentWidget
 };
 
 // ********************************************************************************************
-// Right-click "Binds" tree - see CLAUDE.md's submenu/radio-style item convention. Structure:
-// Binds -> Unbind All (every host at once) + one entry per Host currently holding at least one
-// of this Expander's slots -> that Host's own Unbind All + its individual bound slots
-// (checkmark, click unbinds just that one). Everything below operates on a plain Module*
-// (dynamic_cast to XExpanderInterface internally), so X8/X8D/X16/X16D all share this verbatim
-// via one call in each of their own appendContextMenu() - see CLAUDE.md's "near-identical
-// siblings" convention. "Bind"/"Unbind" replaces the earlier "Engage" wording throughout the
-// user-facing text (Dieter: too nerdy) - only the display strings changed, the underlying
-// interface methods (resetXParam() etc.) keep their original names.
+// Right-click Bind items - since an Expander id may be bound to at most ONE candidate, on ONE
+// Host, anywhere in the rack, at any time (see xUnbindExpanderEverywhere(), XShared.hpp), the old
+// multi-level "Binds -> per-Host -> per-slot" tree is gone - there's never more than one candidate
+// to navigate to, so it collapses to a flat, single item shown directly (not inside a submenu).
+// No separate "Disconnect" concept exists any more - an Expander no longer remembers a Host id at
+// all, it resolves its Host live every tick via a full-rack scan for whoever currently binds it
+// (findXBoundHost(), XShared.hpp), so there's nothing to disconnect except the binding itself.
+// Everything below operates on a plain Module* (dynamic_cast to XExpanderInterface internally),
+// so X8/X8D/X16/X16D all share this verbatim via one call in each of their own
+// appendContextMenu(). "Bind"/"Unbind" wording (Dieter: too nerdy otherwise) - only the display
+// strings, the underlying interface methods keep their own names.
 
-// Leaf: one slot this Expander currently holds on a specific Host - always shown checked (this
-// list only ever contains bound slots to begin with), click clears just this one.
-struct XBindSlotItem : MenuItem
+// The single bound candidate, if any - click unbinds just that one.
+struct XUnbindCandidateItem : MenuItem
 {
 	XHostInterface *host;
 	int index;
 	void onAction(const event::Action &e) override { host->resetXParam(index); }
 };
 
-// Clears every slot this Expander holds on ONE specific Host (not the other Hosts it may also
-// be bound to elsewhere) - the per-host counterpart of XUnbindAllItem below.
-struct XUnbindHostItem : MenuItem
-{
-	XHostInterface *host;
-	int64_t expanderId;
-	void onAction(const event::Action &e) override
-	{
-		int count = host->getXParamCount();
-		for (int i = 0; i < count; i++)
-			if (host->getXParamBoundId(i) == expanderId)
-				host->resetXParam(i);
-	}
-};
-
-// One entry per bound Host - text is "<custom name> (<slug>)" if a name was set (see
-// XHostInterface::getXHostName()), else "<slug> #<id>" so several unnamed same-type Hosts stay
-// distinguishable. Opens to that Host's own Unbind All plus its individual bound slots.
-struct XBindHostItem : MenuItem
-{
-	XHostInterface *host;
-	int64_t expanderId;
-
-	Menu *createChildMenu() override
-	{
-		Menu *menu = new Menu;
-
-		XUnbindHostItem *allItem = new XUnbindHostItem();
-		allItem->host = host;
-		allItem->expanderId = expanderId;
-		allItem->text = "Unbind All";
-		allItem->setSize(Vec(140, 20));
-		menu->addChild(allItem);
-
-		int count = host->getXParamCount();
-		for (int i = 0; i < count; i++)
-		{
-			if (host->getXParamBoundId(i) != expanderId)
-				continue;
-			XBindSlotItem *item = new XBindSlotItem();
-			item->host = host;
-			item->index = i;
-			item->text = host->getXParamName(i);
-			item->rightText = "✔";
-			item->setSize(Vec(140, 20));
-			menu->addChild(item);
-		}
-		return menu;
-	}
-};
-
-// Clears every slot this Expander holds, on every Host it's currently bound to anywhere - same
-// "blunt manual override" reasoning as Morpheus's own MorpheusUnbindAllItem, just scanning
-// every Host in the rack instead of one fixed instance's own candidate list.
+// Clears whatever single candidate this Expander is currently bound to, on whichever Host holds
+// it, anywhere in the rack - a thin, always-available wrapper around
+// xUnbindExpanderEverywhere() (XShared.hpp), which now also does the exact same full-rack scan
+// this item always did, just centralized so Morpheus.cpp's own bind-granting can call it too.
 struct XUnbindAllItem : MenuItem
 {
 	Module *module;
 	void onAction(const event::Action &e) override
 	{
-		int64_t myId = module->id;
-		for (int64_t id : APP->engine->getModuleIds())
-		{
-			Module *m = APP->engine->getModule(id);
-			XHostInterface *host = m ? dynamic_cast<XHostInterface*>(m) : nullptr;
-			if (!host)
-				continue;
-			int count = host->getXParamCount();
-			for (int i = 0; i < count; i++)
-				if (host->getXParamBoundId(i) == myId)
-					host->resetXParam(i);
-		}
+		xUnbindExpanderEverywhere(module->id);
 	}
 };
 
-// Top-level "Binds" item - see this section's own header comment for the full tree shape.
-struct XBindsItem : MenuItem
+// Adds whichever of "Unbind: <Host> - <candidate>" / "Disconnect: <Host>" actually apply right
+// now (omitted entirely when nothing is bound/remembered - no dead/disabled menu clutter), plus
+// the always-available "Unbind All". Replaces the old addXBindsMenuItem() - call from the exact
+// same spot in each widget's own appendContextMenu().
+inline void addXBindMenuItems(Menu *menu, Module *module)
 {
-	Module *module;
+	XExpanderInterface *expander = dynamic_cast<XExpanderInterface*>(module);
+	if (!expander)
+		return;
+	int64_t myId = module->id;
 
-	Menu *createChildMenu() override
+	// The single bound candidate, if any - scan once, stop at the first match (there is never
+	// more than one, by construction).
+	for (int64_t id : APP->engine->getModuleIds())
 	{
-		Menu *menu = new Menu;
-		int64_t myId = module->id;
-
-		XUnbindAllItem *allItem = new XUnbindAllItem();
-		allItem->module = module;
-		allItem->text = "Unbind All";
-		allItem->setSize(Vec(140, 20));
-		menu->addChild(allItem);
-
-		for (int64_t id : APP->engine->getModuleIds())
+		Module *m = APP->engine->getModule(id);
+		XHostInterface *host = m ? dynamic_cast<XHostInterface*>(m) : nullptr;
+		if (!host)
+			continue;
+		int count = host->getXParamCount();
+		bool found = false;
+		for (int i = 0; i < count; i++)
 		{
-			Module *m = APP->engine->getModule(id);
-			XHostInterface *host = m ? dynamic_cast<XHostInterface*>(m) : nullptr;
-			if (!host)
+			if (host->getXParamBoundId(i) != myId)
 				continue;
-			int count = host->getXParamCount();
-			int bound = 0;
-			for (int i = 0; i < count; i++)
-				if (host->getXParamBoundId(i) == myId)
-					bound++;
-			if (bound == 0)
-				continue;
-
-			std::string name = host->getXHostName();
-			std::string label = name.empty()
-				? string::f("%s #%lld", m->model->slug.c_str(), (long long) id)
-				: string::f("%s (%s)", name.c_str(), m->model->slug.c_str());
-
-			XBindHostItem *hostItem = new XBindHostItem();
-			hostItem->host = host;
-			hostItem->expanderId = myId;
-			hostItem->text = label;
-			hostItem->rightText = RIGHT_ARROW;
-			hostItem->setSize(Vec(180, 20));
-			menu->addChild(hostItem);
+			std::string hostName = host->getXHostName();
+			std::string label = hostName.empty()
+				? string::f("Unbind: %s #%lld - %s", m->model->slug.c_str(), (long long) id, host->getXParamName(i))
+				: string::f("Unbind: %s - %s", hostName.c_str(), host->getXParamName(i));
+			XUnbindCandidateItem *item = new XUnbindCandidateItem();
+			item->host = host;
+			item->index = i;
+			item->text = label;
+			menu->addChild(item);
+			found = true;
+			break;
 		}
-		return menu;
+		if (found)
+			break;
 	}
-};
 
-inline void addXBindsMenuItem(Menu *menu, Module *module)
-{
-	XBindsItem *item = new XBindsItem();
-	item->module = module;
-	item->text = "Binds";
-	item->rightText = RIGHT_ARROW;
-	menu->addChild(item);
+	XUnbindAllItem *allItem = new XUnbindAllItem();
+	allItem->module = module;
+	allItem->text = "Unbind All";
+	menu->addChild(allItem);
 }

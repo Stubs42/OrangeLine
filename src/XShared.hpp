@@ -138,10 +138,10 @@ struct XHostInterface
 	virtual float getXStyle() = 0;
 
 	// Optional user-editable display label for this Host instance (e.g. Morpheus's own
-	// right-click "Name" field) - purely cosmetic, so an Expander's "Binds" menu can tell
-	// apart several same-type Hosts by name rather than just showing the module type over and
-	// over. May be empty (no custom name set) - callers fall back to the module's own
-	// Model::slug plus its Rack id in that case, see addXBindsMenuItem() in X8Common.hpp.
+	// right-click "Name" field) - purely cosmetic, so an Expander's own bind/connection menu
+	// items can tell apart several same-type Hosts by name rather than just showing the module
+	// type over and over. May be empty (no custom name set) - callers fall back to the module's
+	// own Model::slug plus its Rack id in that case, see addXBindMenuItems() in X8Common.hpp.
 	virtual std::string getXHostName() = 0;
 
 	virtual ~XHostInterface() {}
@@ -149,8 +149,11 @@ struct XHostInterface
 
 struct XExpanderInterface
 {
-	// The Host pointer this Expander itself resolved via its own right-side chain-walk, or
-	// nullptr. Lets a further Expander chained to this one's own left relay through it.
+	// The Host pointer this Expander itself resolved this tick - either the Host that currently
+	// has it bound (found via a live full-rack scan, see findXBoundHost() below, regardless of
+	// physical position), or, if not bound anywhere, whatever's genuinely adjacent right now (for
+	// browsing purposes only). Lets a further Expander chained to this one's own left relay
+	// through it.
 	virtual XHostInterface* getXHost() = 0;
 	// See XHostInterface::getXStyle() above.
 	virtual float getXStyle() = 0;
@@ -203,13 +206,16 @@ struct XExpanderInterface
 	virtual void requestXValueClick(int channel) = 0;
 
 	// Live "how many hosts, how many total slots" summary - shown on the name display while
-	// disconnected (see X8NameDisplay). hostCount = number of distinct hosts this Expander is
-	// CURRENTLY bound to at least one slot on; slotCount = total bound slots across all of them
-	// (always >= hostCount by construction). Recomputed fresh every call by scanning every module
-	// currently in the rack (Engine::getModuleIds()) for anything implementing XHostInterface and
-	// asking each one directly - nothing is remembered between calls, so there's no persisted/
-	// stale state at all, and a host that's deleted or has since disengaged everything just
-	// contributes 0.
+	// disconnected (see X8NameDisplay). Since an Expander id may now be bound to at most one
+	// candidate, on one Host, anywhere in the rack (see xUnbindExpanderEverywhere(), XShared.hpp),
+	// both hostCount and slotCount are always 0 or 1 by construction - kept as counts (not a
+	// plain bool) rather than reshaping this method's own signature, since callers already treat
+	// them as counts and a stale saved patch could theoretically still have more than one until
+	// its first tick re-enforces the invariant. Recomputed fresh every call by scanning every
+	// module currently in the rack (Engine::getModuleIds()) for anything implementing
+	// XHostInterface and asking each one directly - nothing is remembered between calls, so
+	// there's no persisted/stale state at all, and a host that's deleted or has since disengaged
+	// everything just contributes 0.
 	virtual void getXEngagedSummary(int &hostCount, int &slotCount) = 0;
 
 	// True exactly when this Expander's own knob(s) are known to correctly reflect the Host's
@@ -248,6 +254,66 @@ inline XHostInterface* resolveXHost(Module *neighbor)
 }
 
 /**
+	Finds the Host currently binding a given Expander id, anywhere in the rack - regardless of
+	physical adjacency. This is the robust, structurally-can't-go-stale replacement for the
+	earlier "remember the Host's own module id via adjacency, fall back to that remembered id
+	later" approach (removed 2026-07-18 after live testing showed the remembered id and the
+	Host's actual current id could genuinely diverge within a single session, with no reload
+	involved - Dieter's own diagnosis: "why is there any code handling a disattach from the
+	host's neighborhood anyway" when a Host already finds its bound Expander purely by id
+	(Morpheus.cpp's own refresh loop, APP->engine->getModule(boundExpanderId)). An Expander's own
+	id never changes for its lifetime, so once a Host has stored it as a binding, this scan can
+	always find that Host again - there's nothing to remember or refresh, since it's derived
+	fresh from the exact same authoritative state (a Host's own getXParamBoundId()) every time,
+	via the same scan shape as xUnbindExpanderEverywhere()/getXEngagedSummary() below. Returns
+	nullptr if nothing currently binds this Expander id anywhere (never bound, or the Host that
+	had it bound was deleted/reset) - the caller then falls back to plain physical adjacency
+	(resolveXHost()) for browsing purposes only.
+*/
+inline XHostInterface* findXBoundHost(int64_t expanderId)
+{
+	for (int64_t id : APP->engine->getModuleIds())
+	{
+		Module *m = APP->engine->getModule(id);
+		XHostInterface *host = m ? dynamic_cast<XHostInterface*>(m) : nullptr;
+		if (!host)
+			continue;
+		int count = host->getXParamCount();
+		for (int i = 0; i < count; i++)
+			if (host->getXParamBoundId(i) == expanderId)
+				return host;
+	}
+	return nullptr;
+}
+
+/**
+	Clears every X-family binding for a given Expander id, anywhere in the rack, on every Host
+	that currently holds it - enforces the "one candidate, one Host, at a time" invariant (an
+	Expander's own connection to a Host can now persist across non-adjacency - see
+	X8ModuleCommon.hpp's own moduleProcess() - so binding to a new candidate must first release
+	any existing one, everywhere, rather than relying on physical adjacency to arbitrate which
+	binding is "live" the way the old multi-host relay technique did). Used directly by
+	X8Common.hpp's own XUnbindAllItem menu action, and by Morpheus.cpp's own bind-granting branch
+	(called BEFORE setting the new boundExpanderId, while the target slot is still -1, so there's
+	no need for a separate "except this one" parameter - the scan simply can't find a match there
+	yet).
+*/
+inline void xUnbindExpanderEverywhere(int64_t expanderId)
+{
+	for (int64_t id : APP->engine->getModuleIds())
+	{
+		Module *m = APP->engine->getModule(id);
+		XHostInterface *host = m ? dynamic_cast<XHostInterface*>(m) : nullptr;
+		if (!host)
+			continue;
+		int count = host->getXParamCount();
+		for (int i = 0; i < count; i++)
+			if (host->getXParamBoundId(i) == expanderId)
+				host->resetXParam(i);
+	}
+}
+
+/**
 	Returns the X-family theme (STYLE_ORANGE/BRIGHT/DARK) of a given immediate neighbor, or -1
 	if that neighbor isn't part of the X family at all. Purely for the seamless panel-merge
 	strip - independent of host-resolution health, same reasoning as LANES' own
@@ -279,7 +345,8 @@ inline float getXNeighborStyle(Module *neighbor)
 // widgets share the exact same semantic color (e.g. "inactive/taken" grey).
 #define X_BUTTON_FILL_ORANGE nvgRGB(0x10, 0x06, 0x00) // X8ButtonBase's own button-body fill, per
 #define X_BUTTON_FILL_DARK   nvgRGB(0x17, 0x17, 0x17) // theme - a separate triplet from
-#define X_BUTTON_FILL_BRIGHT nvgRGB(0x15, 0x15, 0x2b) // X_STRIP_BG_* even though BRIGHT's own
+#define X_BUTTON_FILL_BRIGHT nvgRGB(0xbb, 0xbb, 0xbb) // X_STRIP_BG_* even though BRIGHT's own
+//#define X_BUTTON_FILL_BRIGHT nvgRGB(0x15, 0x15, 0x2b) // X_STRIP_BG_* even though BRIGHT's own
                                                        // value happens to coincide with
                                                        // X_STRIP_BG_ORANGE (a dark navy fill
                                                        // reads correctly against a light panel)
@@ -288,6 +355,28 @@ inline float getXNeighborStyle(Module *neighbor)
 #define X_FRAME_DARK   nvgRGB(0x60, 0x60, 0x60) // per theme (its background fill reuses
 #define X_FRAME_BRIGHT nvgRGB(0x60, 0x60, 0x80) // X_STRIP_BG_* directly, no separate constant
                                                  // needed for that half)
+
+// Per-theme accent color for X8ButtonBase/X8BindButtonBase/XOButtonBase's own frame-stroke+label
+// while active, replacing a fixed `ORANGE` that only coincidentally matched the Orange theme's
+// own value and stayed wrong (still bright orange, never themed) under Dark/Bright. Orange/Dark
+// match tools/bake_panel_theme.py's own THEME_TEXT_COLOR (#ff6600/#c4bac4) - Bright deliberately
+// does NOT (THEME_TEXT_COLOR's Bright value, #15152b, is meant for text drawn directly on the
+// panel's own light background, not for an accent against this button's own dark "display" fill,
+// X_BUTTON_FILL_BRIGHT - which is that exact same #15152b, making frame+label invisible against
+// their own background). Reuses X_FRAME_BRIGHT (THEME_FRAME_COLOR's Bright value, #606080)
+// instead - already the established, confirmed-visible accent color for this family's other
+// controls against the same kind of dark display-style surface.
+#define X_TEXT_COLOR_ORANGE nvgRGB(0xff, 0x66, 0x00)
+#define X_TEXT_COLOR_DARK   nvgRGB(0xc4, 0xba, 0xc4)
+
+// Shared by X8ButtonBase/X8BindButtonBase (X8Common.hpp) and XOButtonBase (XOCommon.hpp) - the
+// themed accent color their frame stroke and label text both use while active.
+inline NVGcolor xThemedTextColor(float style)
+{
+	return (style == STYLE_DARK) ? X_TEXT_COLOR_DARK
+	     : (style == STYLE_BRIGHT) ? X_FRAME_BRIGHT
+	     : X_TEXT_COLOR_ORANGE;
+}
 
 #define X_COLOR_INACTIVE_GREY nvgRGB(0x55, 0x55, 0x55) // disconnected/taken/unavailable - shared
                                                         // by X8ButtonBase's default accent,

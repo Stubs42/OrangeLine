@@ -151,6 +151,7 @@ inline void moduleInitJsonConfig()
 
 	setJsonLabel(STYLE_JSON, "style");
 	setJsonLabel(BROWSE_INDEX_JSON, "browseIndex");
+	setJsonLabel(CONNECTED_HOST_ID_JSON, "connectedHostId");
 	for (int c = 0; c < XR_CAPACITY; c++)
 	{
 		snprintf(channelRangeLabelBuf[c], sizeof(channelRangeLabelBuf[c]), "channelRange%d", c);
@@ -175,6 +176,7 @@ void moduleReset()
 {
 	styleChanged = true;
 	OL_state[BROWSE_INDEX_JSON] = 0.f;
+	OL_state[CONNECTED_HOST_ID_JSON] = -1.f;
 	for (int c = 0; c < XR_CAPACITY; c++)
 		OL_state[CHANNEL_RANGE_JSON + c] = 0.f; // Uni 10V default
 }
@@ -192,7 +194,9 @@ inline void moduleProcess(const ProcessArgs &args)
 		styleChanged = false;
 	}
 
-	xoHost = resolveXOHost(leftExpander.module);
+	// Adjacency-then-id-fallback ("NFC touch once, stays connected until explicitly broken") -
+	// see resolveXOHostPersistent()'s own comment (XOShared.hpp).
+	xoHost = resolveXOHostPersistent(leftExpander.module, OL_state[CONNECTED_HOST_ID_JSON]);
 	setStateLight(CONN_LIGHT, xoHost ? 255.f : 0.f);
 
 	// Browsing: same unconditional/unfiltered-by-engagement stepping as the XO family, but
@@ -269,6 +273,8 @@ inline void moduleReflectChanges() {}
 // XOExpanderInterface
 XOHostInterface* getXOHost() override { return xoHost; }
 float getXOStyle() override { return OL_state[STYLE_JSON]; }
+int64_t getXOConnectedHostId() override { return (int64_t) OL_state[CONNECTED_HOST_ID_JSON]; }
+void disconnectXOHost() override { OL_state[CONNECTED_HOST_ID_JSON] = -1.f; }
 int getXOCapacity() override { return XR_CAPACITY; }
 int getXOBrowseIndex() override { return (int) OL_state[BROWSE_INDEX_JSON]; }
 // Inert stub - XR8/XR16 have no XOGateIndicator of their own (their output is always the

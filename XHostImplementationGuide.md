@@ -56,23 +56,58 @@ count - rather than the full, fixed `POLY_CHANNELS` (16). Any loop responsible f
 them permanently stale/unmaintained regardless of what a bound Expander might need. This needs to
 be audited wherever it appears, not just in the one place found first.
 
+## Superseded by a full architecture change (2026-07-18): the raw/CV/display three-layer system is gone
+
+The "one unit convention" pitfall originally recorded here (kept below for history) turned out to
+be a symptom of a bigger structural problem: every candidate's value passed through **three**
+representations (a 0..1 raw knob position, a CV/cable value, and a human-readable display value),
+with only a partial, one-directional conversion pipeline between them. This was replaced entirely -
+see CLAUDE.md's own Pitfalls section and the commit `97e5e8b` message for the full writeup. The
+short version: the Expander's own knob now directly holds each candidate's **display value**
+(dynamically ranged per browsed candidate via `minValue`/`maxValue`/`defaultValue`/`snapEnabled`,
+mirroring `Dejavu.cpp`'s own `reconfigureForState()` pattern), and `OL_statePoly` now consistently
+holds CV/cable units everywhere it's written (both the idle-branch fallback and the active-bound
+branch apply the same `scaleXParamValue()` display->CV conversion) - the old two-hop raw<->CV<->
+display pipeline collapsed to one hop (display<->CV). This is now simply **the** convention, not a
+pitfall to keep re-checking - `XCandidate`'s `rawScale`/`rawOffset` no longer exist at all,
+replaced by `displayMin`/`displayMax`/`displayDefault`/`snap`/`unit`/`cvScale`.
+
+A nice side effect: Rule 1's own "what should an out-of-range channel's value be" question (below)
+now has a clearer frame - whatever gets chosen, it needs to be expressed in CV units and pass
+through the same `scaleXParamValue()` hop as everything else, so there's no risk of a repeat of
+this exact unit-mismatch class of bug regardless of how that question gets answered.
+
+## Non-adjacent, persistent connection (added 2026-07-18): a bound Expander is read live regardless of adjacency
+
+Every X-family and XO-family/XR Expander now persists the resolved Host's module ID
+(`CONNECTED_HOST_ID_JSON`) and re-resolves it every tick - adjacency first, then an
+`APP->engine->getModule()` fallback on the remembered ID if nothing's adjacent (mirrors STYX's own
+long-standing `CONNECTED_HOST_ID_JSON`/`resolveStyxHost()` pattern). This is automatic and
+unconditional, no per-instance toggle - only an explicit right-click "Disconnect" on the Expander
+clears it. A Host implementing `XHostInterface`/`XOHostInterface` must **not** assume a bound
+Expander is still physically adjacent before reading it live - there is no adjacency gate left to
+check at all, `isXKnobReady()` (X-family) is the only precondition.
+
+This retired the X-family's earlier "multi-host relay" technique (one Expander deliberately bound
+to different candidates on different Hosts, with only the currently-adjacent one read live,
+arbitrated by adjacency). Once every binding is read live with no adjacency signal to arbitrate
+between them, that technique became incoherent - so an Expander may now hold **at most one**
+candidate binding, globally, at any time (`Morpheus.cpp`'s bind-granting branch calls
+`xUnbindExpanderEverywhere()`, `XShared.hpp`, before granting a new one). See
+`ExpanderParamAccessSpec.md`'s own "one binding, globally" / "Non-adjacent, persistent connection"
+sections for the full user-facing model.
+
 ## Pitfalls already found and fixed (Morpheus, 2026-07-18)
 
-- **The virtual input buffer must have exactly ONE unit convention, enforced at the single read
-  point a knob-takeover uses - never read it directly from multiple call sites that each assume
-  a different unit.** Morpheus's `OL_statePoly` held raw 0..1 knob units when written by the
-  idle-branch fallback (`computeTakeoverRaw()`) but real cable units when written by the
-  active-bound branch (`scaleXParamValue()`) - same array, two conventions depending on binding
-  state. `getXParamTakeoverValue()` returned it directly either way, so it was only correct by
-  accident while idle. Rack's raw `params[i].setValue()` doesn't clamp to the configured range,
-  so a real value misread as raw doesn't just look wrong once - each further active-branch read
-  re-applies the real-units scale/offset to an already-real number, diverging by a factor of
-  `rawScale` every round trip (a bound SCL/OFS candidate's takeover value hit -210 on the very
-  first bind in one real test). Fixed by making `getXParamTakeoverValue()` always call
-  `computeTakeoverRaw()` instead of reading the buffer directly - that function is the one place
-  that already knows, per candidate, how to convert the Host's actual current value into raw
-  units, regardless of binding state. See CLAUDE.md's own Pitfalls section for the full
-  before/after walkthrough.
+- **(Historical - see the superseding section above)** The virtual input buffer must have exactly
+  ONE unit convention, enforced at the single read point a knob-takeover uses - never read it
+  directly from multiple call sites that each assume a different unit. Morpheus's `OL_statePoly`
+  held raw 0..1 knob units when written by the idle-branch fallback but real cable units when
+  written by the active-bound branch - same array, two conventions depending on binding state,
+  diverging by a factor of `rawScale` every round trip (a bound SCL/OFS candidate's takeover value
+  hit -210 on the very first bind in one real test). The fix at the time (routing
+  `getXParamTakeoverValue()` through a shared conversion function) was correct as far as it went,
+  but the deeper fix was removing the raw layer entirely - see above.
 - **`channels >= channel` is an off-by-one** when `channels` is a count and `channel` is a
   0-indexed position - must be `channels > channel`. Found identically duplicated across all ten
   of Morpheus's own `getChannelXXX()` reader functions. See CLAUDE.md's own Pitfalls section for
@@ -84,6 +119,8 @@ be audited wherever it appears, not just in the one place found first.
   tick" grace period is a race, not a fix (tried, reverted the same day). The correct mechanism
   is a plain level-based handshake: `XExpanderInterface::isXKnobReady(int index)`, which the
   Expander holds false for exactly as long as its own knob doesn't yet reflect the Host's held
-  value for the candidate it's currently displaying, and which the Host must check (alongside its
-  existing adjacency check) before ever reading `getXKnobValue()`. See CLAUDE.md's own Pitfalls
-  section and `XShared.hpp`'s own comment on `isXKnobReady()` for the full reasoning.
+  value for the candidate it's currently displaying, and which the Host must check before ever
+  reading `getXKnobValue()` - it is now the sole gate (an adjacency check is no longer part of
+  this, see "Non-adjacent, persistent connection" below - a bound Expander is read live whether or
+  not it's physically adjacent). See CLAUDE.md's own Pitfalls section and `XShared.hpp`'s own
+  comment on `isXKnobReady()` for the full reasoning.

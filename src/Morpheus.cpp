@@ -102,11 +102,13 @@ struct XCandidate
 	// -1 = unbound. Persisted (see Morpheus's own moduleExtraDataToJson/FromJson) as a
 	// best-effort id: if Rack happens to preserve module ids across a reload (the common case
 	// for a plain save+reopen of the same patch), the binding resolves live again exactly as
-	// before, including adjacency-gating; if the id doesn't resolve to anything, the existing
-	// "bound module gone" handling in the refresh loop already shows this as engaged (green) and
-	// frozen until an explicit Reset - so restoring a stale/foreign id is always safe, never
-	// silently wrong. Chosen deliberately over dropping the binding (and its green indicator) on
-	// every reload.
+	// before - read fully live regardless of the bound Expander's own physical position (no more
+	// adjacency-gating - see the refresh loop's own comment); if the id doesn't resolve to
+	// anything, the existing "bound module gone" handling in the refresh loop already shows this
+	// as engaged (green) and frozen until an explicit Reset - so restoring a stale/foreign id is
+	// always safe, never silently wrong. Chosen deliberately over dropping the binding (and its
+	// green indicator) on every reload. At most one candidate, on one Host, anywhere in the rack,
+	// may hold a given Expander id at any time - see xUnbindExpanderEverywhere() (XShared.hpp).
 	int64_t boundExpanderId = -1;
 };
 
@@ -461,6 +463,10 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, StyxHostInterface
 			isShiftRight[i] = false;
 			eventStatus[i] = EVENT_NONE;
 		}
+		// Right-click Initialize also releases every X-family candidate binding - a fresh/reset
+		// Morpheus should not silently keep controlling some Expander's knobs (Dieter's own call).
+		for (int i = 0; i < NUM_X_CANDIDATES; i++)
+			xCandidates[i].boundExpanderId = -1;
 		styleChanged = true;
 	}
 
@@ -796,19 +802,11 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, StyxHostInterface
 		// Walk the *whole* left-side chain (not just the immediate neighbor - several
 		// Expanders can be strung together) looking for a fresh engage/disengage request from
 		// any of them. Each Expander debounces its own button locally and exposes only a
-		// one-shot event - Morpheus does all the deciding here.
-		//
-		// candidateAdjacent is purely local to this one tick - marks a candidate whose
-		// bound Expander is genuinely found in the chain walk right now (not just resolvable by
-		// id). The refresh loop below only treats a binding as truly LIVE while this holds -
-		// bound-but-not-currently-adjacent freezes exactly like Track & Hold. This is what makes
-		// moving one Expander between several same-type Hosts safe (only ever one Host reads it
-		// live at a time, whichever it's actually plugged into right now) and, per Dieter, is
-		// deliberately reused as a value-relay technique: engage on Host A, move the Expander to
-		// Host B and engage there too (A freezes, its last value stays exactly as it was), read
-		// off B's takeover value, then move back to A - A resumes live reading with whatever the
-		// Expander now holds, effectively having carried B's value over to A.
-		bool candidateAdjacent[NUM_X_CANDIDATES] = {false};
+		// one-shot event - Morpheus does all the deciding here. Pressing the physical Engage
+		// button inherently requires being adjacent (that's the "NFC touch" moment itself) -
+		// but once granted, the resulting binding is read fully live regardless of the
+		// Expander's later physical position (see the refresh loop below, and
+		// X8ModuleCommon.hpp's own adjacency-then-id-fallback resolution).
 		{
 			Module *m = leftExpander.module;
 			while (m)
@@ -816,9 +814,6 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, StyxHostInterface
 				XExpanderInterface *exp = dynamic_cast<XExpanderInterface*>(m);
 				if (!exp)
 					break; // chain broken - not an X-family module, stop walking
-				for (int i = 0; i < NUM_X_CANDIDATES; i++)
-					if (xCandidates[i].boundExpanderId == m->id)
-						candidateAdjacent[i] = true;
 				if (exp->consumeEngagePress())
 				{
 					int idx = exp->getXBrowseIndex();
@@ -827,8 +822,16 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, StyxHostInterface
 						int64_t myId = m->id;
 						if (xCandidates[idx].boundExpanderId == -1)
 						{
+							// An Expander may be bound to at most one candidate, on one Host,
+							// anywhere in the rack, at any time - clear any existing binding
+							// (including a different candidate on THIS SAME Host) before
+							// granting this one. Retires the old multi-host relay technique
+							// (deliberately: an always-live connection that could still be
+							// simultaneously bound to several Hosts would have all of them
+							// trying to read it live at once, a genuine conflict the old
+							// adjacency-freeze used to arbitrate).
+							xUnbindExpanderEverywhere(myId);
 							xCandidates[idx].boundExpanderId = myId;   // bind (was available)
-							candidateAdjacent[idx] = true;
 						}
 						else if (xCandidates[idx].boundExpanderId == myId)
 							xCandidates[idx].boundExpanderId = -1;     // disengage (toggle)
@@ -883,10 +886,20 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, StyxHostInterface
 			if (exp->getXBrowseIndex() != i)
 				continue; // bound, but looking elsewhere right now - hold last tick's values
 
-			if (!candidateAdjacent[i])
-				continue; // bound, but the Expander has physically moved out of this chain right
-				          // now - freeze exactly like the "looking elsewhere" case above, don't
-				          // keep reading a knob that isn't even pointed at us anymore
+			// Disengage-by-id: the bound Expander's own engage button, consumed here so
+			// unbinding works regardless of physical position - discovering a NEW binding still
+			// needs adjacency (the chain-walk above, the actual "NFC touch" moment), but releasing
+			// an EXISTING one doesn't, since Morpheus already holds this Expander's stable id
+			// directly. Same one-shot consumeEngagePress() the chain-walk itself reads - if this
+			// Expander happens to also be adjacent right now, the chain-walk above already
+			// consumed the press and handled the toggle itself, so this simply sees false and
+			// does nothing; no double-handling either way.
+			if (exp->consumeEngagePress())
+			{
+				xCandidates[i].boundExpanderId = -1;
+				xVirtualConnected[inputId] = false;
+				continue;
+			}
 
 			if (!exp->isXKnobReady(i))
 				continue; // Expander hasn't finished resyncing its own knob for this candidate
@@ -1672,19 +1685,14 @@ struct MorpheusWidget : ModuleWidget
 
 		addChild(MorpheusDisplayWidget::create(calculateCoordinates(1.25f, 25.95f, 0.f), mm2px(Vec(48.4f, 16.3f)), module));
 
-		// X-family param-access Expander connection light (step 1 only, see
-		// ExpanderParamAccessSpec.md) - placeholder position near the top-left corner, since an
-		// Expander only ever attaches to a Host's LEFT side. Same corner-light convention as the
-		// LANES family (CLAUDE.md).
-		addChild(createLightCentered<AutoHideLight<TinyLight<GreenLight>>>(calculateCoordinates(3.5f, 4.f, 0.f), module, X_CONN_LIGHT));
-		// XO-family connection light, mirrored to the top-right corner since that family attaches
-		// to this Host's RIGHT side (same reasoning as X_CONN_LIGHT's own top-left placement).
-		addChild(createLightCentered<AutoHideLight<TinyLight<GreenLight>>>(calculateCoordinates(MORPHEUS_PANEL_WIDTH_MM - 3.5f, 4.f, 0.f), module, XO_CONN_LIGHT));
-
-		// STYX connection light - can attach on either side, so it doesn't get one of the two
-		// side-specific corners above; placeholder position near the bottom-left corner (mirrors
-		// the top-left placement style) until real panel art defines something better.
-		addChild(createLightCentered<AutoHideLight<TinyLight<GreenLight>>>(calculateCoordinates(3.5f, PANELHEIGHT - 4.f, 0.f), module, STYX_CONN_LIGHT));
+		// X-family/XO-family/STYX connection lights disabled 2026-07-18 (Dieter: more distracting
+		// than informative, breaks the header's optics - connection is already visible via the
+		// panel's own controls) - underlying setStateLight(X_CONN_LIGHT/XO_CONN_LIGHT/
+		// STYX_CONN_LIGHT, ...) tracking logic left intact in moduleProcess(), only the widgets
+		// themselves are no longer added.
+		// addChild(createLightCentered<AutoHideLight<TinyLight<GreenLight>>>(calculateCoordinates(3.5f, 4.f, 0.f), module, X_CONN_LIGHT));
+		// addChild(createLightCentered<AutoHideLight<TinyLight<GreenLight>>>(calculateCoordinates(MORPHEUS_PANEL_WIDTH_MM - 3.5f, 4.f, 0.f), module, XO_CONN_LIGHT));
+		// addChild(createLightCentered<AutoHideLight<TinyLight<GreenLight>>>(calculateCoordinates(3.5f, PANELHEIGHT - 4.f, 0.f), module, STYX_CONN_LIGHT));
 
 		// Positions extracted from res/MorpheusWorkTest.svg's Controls layer (2026-07-13) -
 		// panel reorganized to make room for the future visualization display (reserved band
@@ -1989,11 +1997,14 @@ struct MorpheusWidget : ModuleWidget
 		}
 	};
 
-	// Morpheus's own "Input Binds" tree - simpler than the X-family Expander's own "Binds" (see
-	// X8Common.hpp's addXBindsMenuItem()): Morpheus can only ever be bound BY Expanders, never
-	// bound TO another Host, so there's no hostname level here at all - just Unbind All plus
-	// whichever of Morpheus's own candidate slots are currently bound, each with a checkmark
-	// (this list only ever contains bound slots) and a click to unbind just that one.
+	// Morpheus's own "Input Binds" tree - simpler than the X-family Expander's own flat bind
+	// items (see X8Common.hpp's addXBindMenuItems()): Morpheus can still have several of its OWN
+	// candidate slots bound simultaneously, each by a different Expander (the new "one candidate,
+	// one Host, at a time" invariant limits a given EXPANDER to a single binding, not how many
+	// different Expanders a single HOST can have bound at once) - so there's no hostname level
+	// here at all, just Unbind All plus whichever of Morpheus's own candidate slots are currently
+	// bound, each with a checkmark (this list only ever contains bound slots) and a click to
+	// unbind just that one.
 	struct MorpheusInputBindsItem : MenuItem
 	{
 		Morpheus *module;

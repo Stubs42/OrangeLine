@@ -121,6 +121,7 @@ inline void moduleInitJsonConfig()
 
 	setJsonLabel(STYLE_JSON, "style");
 	setJsonLabel(BROWSE_INDEX_JSON, "browseIndex");
+	setJsonLabel(CONNECTED_HOST_ID_JSON, "connectedHostId");
 
 #pragma GCC diagnostic pop
 }
@@ -142,6 +143,7 @@ void moduleReset()
 {
 	styleChanged = true;
 	OL_state[BROWSE_INDEX_JSON] = 0.f;
+	OL_state[CONNECTED_HOST_ID_JSON] = -1.f;
 }
 
 inline void moduleProcess(const ProcessArgs &args)
@@ -159,7 +161,9 @@ inline void moduleProcess(const ProcessArgs &args)
 
 	// No restriction on which Host TYPE this resolves to, same reasoning as the X family's own
 	// resolveXHost() call - any module implementing XOHostInterface works transparently.
-	xoHost = resolveXOHost(leftExpander.module);
+	// Adjacency-then-id-fallback ("NFC touch once, stays connected until explicitly broken") -
+	// see resolveXOHostPersistent()'s own comment (XOShared.hpp).
+	xoHost = resolveXOHostPersistent(leftExpander.module, OL_state[CONNECTED_HOST_ID_JSON]);
 	setStateLight(CONN_LIGHT, xoHost ? 255.f : 0.f);
 
 	// Browsing: unconditional, unfiltered stepping through every output slot the currently-
@@ -226,6 +230,8 @@ inline void moduleReflectChanges() {}
 // XOExpanderInterface
 XOHostInterface* getXOHost() override { return xoHost; }
 float getXOStyle() override { return OL_state[STYLE_JSON]; }
+int64_t getXOConnectedHostId() override { return (int64_t) OL_state[CONNECTED_HOST_ID_JSON]; }
+void disconnectXOHost() override { OL_state[CONNECTED_HOST_ID_JSON] = -1.f; }
 int getXOCapacity() override { return XO_CAPACITY; }
 int getXOBrowseIndex() override { return (int) OL_state[BROWSE_INDEX_JSON]; }
 bool getXOBrowsedChannelGateLit(int channel) override { return xoGateFlashLit[channel]; }

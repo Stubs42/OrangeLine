@@ -143,7 +143,7 @@ struct XOButtonBase : ParamWidget
 		NVGcolor fill = (style == STYLE_DARK) ? X_BUTTON_FILL_DARK
 		              : (style == STYLE_BRIGHT) ? X_BUTTON_FILL_BRIGHT
 		              : X_BUTTON_FILL_ORANGE;
-		NVGcolor accent = isActive() ? ORANGE : X_COLOR_INACTIVE_GREY;
+		NVGcolor accent = isActive() ? xThemedTextColor(style) : X_COLOR_INACTIVE_GREY;
 
 		float r = mm2px(Vec(0.529f, 0.f)).x;
 		nvgBeginPath(args.vg);
@@ -456,3 +456,37 @@ struct XOGateIndicator : TransparentWidget
 // browsable XO-family candidate slots, but they're plain poly outputs a further Expander cannot
 // connect to at all, so the ring was misleading (same reasoning that removed it from XR8/XR16's
 // outputs). XO8/XOD8/XO16/XOD16 now use plain PJ301MPort for their real output jacks.
+
+// Clears the remembered non-adjacent connection target (getXOConnectedHostId(), XOShared.hpp)
+// only - never touches anything else, since the XO family has no engagement/binding/exclusivity
+// concept at all to unwind (unlike the X-family's own equivalent, X8Common.hpp).
+struct XODisconnectItem : MenuItem
+{
+	XOExpanderInterface *expander;
+	void onAction(const event::Action &e) override { expander->disconnectXOHost(); }
+};
+
+// Adds a single "Disconnect: <Host>" item if a non-adjacent connection is currently remembered -
+// omitted entirely otherwise (no dead/disabled menu clutter). Mirrors the X-family's own
+// equivalent (X8Common.hpp's addXBindMenuItems(), the Disconnect half of it) - call from the
+// exact same spot in each XO-family/XR widget's own appendContextMenu(), alongside the base
+// Style items.
+inline void addXODisconnectMenuItem(Menu *menu, Module *module)
+{
+	XOExpanderInterface *expander = dynamic_cast<XOExpanderInterface*>(module);
+	if (!expander)
+		return;
+	int64_t connectedId = expander->getXOConnectedHostId();
+	if (connectedId < 0)
+		return;
+	Module *m = APP->engine->getModule(connectedId);
+	if (!m)
+		return;
+	// XOHostInterface has no custom-name concept at all (unlike XHostInterface's own
+	// getXHostName(), used by the X-family's equivalent menu item) - always the plain
+	// slug+id form, matching STYX's own simpler "Disconnect" convention in spirit.
+	XODisconnectItem *item = new XODisconnectItem();
+	item->expander = expander;
+	item->text = string::f("Disconnect: %s #%lld", m->model->slug.c_str(), (long long) connectedId);
+	menu->addChild(item);
+}

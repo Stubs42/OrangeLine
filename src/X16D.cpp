@@ -169,7 +169,11 @@ struct X16DWidget : ModuleWidget
 			addChild(darkPanel);
 		}
 
-		addChild(createLightCentered<AutoHideLight<TinyLight<GreenRedLight>>>(calculateCoordinates(X16D_PANEL_WIDTH_MM - 3.5f, 4.f, 0.f), module, CONN_LIGHT));
+		// Connection light disabled 2026-07-18 (Dieter: more distracting than informative, breaks
+		// the header's optics - connection is already visible via the panel's own controls) -
+		// underlying setStateLight(CONN_LIGHT, ...) tracking logic left intact, only the widget
+		// itself is no longer added.
+		// addChild(createLightCentered<AutoHideLight<TinyLight<GreenRedLight>>>(calculateCoordinates(X16D_PANEL_WIDTH_MM - 3.5f, 4.f, 0.f), module, CONN_LIGHT));
 
 		// LEFT/RIGHT/BIND positions/sizes measured directly from res/X16DWork.svg's Controls
 		// layer (BUTTON_FRAME path bounding boxes).
@@ -350,7 +354,7 @@ struct X16DWidget : ModuleWidget
 		expandersLabel->text = "Expanders";
 		menu->addChild(expandersLabel);
 
-		addXBindsMenuItem(menu, module);
+		addXBindMenuItems(menu, module);
 
 		spacerLabel = new MenuLabel();
 		menu->addChild(spacerLabel);
