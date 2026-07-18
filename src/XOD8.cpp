@@ -190,6 +190,10 @@ struct XOD8Widget : ModuleWidget
 				displays[i]->visible = !showGate;
 				gates[i]->visible = showGate;
 			}
+			// The mask only needs to hide the panel's own printed decoration while a lit/unlit
+			// gate square occupies that space instead of a number - showing it for the
+			// continuous/value case would hide decoration that should stay visible there.
+			buttonCover->visible = showGate;
 		}
 		ModuleWidget::step();
 	}

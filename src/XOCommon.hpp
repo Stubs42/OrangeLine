@@ -261,15 +261,13 @@ struct XONameDisplay : TransparentWidget
 	}
 };
 
-// Per-theme DISPLAY background color - matches tools/bake_panel_theme.py's own
-// THEME_DISPLAYFILL_COLOR exactly (#100600/#171717/#15152b), i.e. the fill rect5/rect1 (the real
-// panel decoration this cover replaces) was always painted with - deliberately NOT the same as
-// X_STRIP_BG_* (XShared.hpp), which is the general panel/strip background used e.g. behind a
-// knob-ring cover. A display's own background is visually distinct (darker "LCD" look) from the
-// plain panel background around it.
-#define X_DISPLAY_BG_ORANGE nvgRGB(0x10, 0x06, 0x00)
-#define X_DISPLAY_BG_DARK   nvgRGB(0x17, 0x17, 0x17)
-#define X_DISPLAY_BG_BRIGHT nvgRGB(0x15, 0x15, 0x2b)
+// XOD8/XOD16/XD8/XD16's own numeric readout (XOValueDisplay below) has no separate "digital
+// display" cell baked into their panel art at all - unlike the X-family's X8D/X16D, the value text
+// is drawn directly over the plain panel background. So XOButtonCover/XOGateIndicator's own
+// background (2026-07-18, corrected from an earlier wrong assumption that copied the X-family's
+// X_DISPLAY_BG_* convention) must match that plain background - X_STRIP_BG_* (XShared.hpp), the
+// general panel/strip background used elsewhere (e.g. behind a knob-ring cover) - not a darker
+// "LCD" color nothing in this family's own art actually uses.
 
 /**
 	Covers one display column's own panel decoration - mirrors X8DButtonCover/X16DButtonCover
@@ -287,9 +285,9 @@ struct XOButtonCover : TransparentWidget
 	{
 		XOExpanderInterface *expander = module ? dynamic_cast<XOExpanderInterface*>(module) : nullptr;
 		float style = expander ? expander->getXOStyle() : STYLE_ORANGE;
-		NVGcolor fill = (style == STYLE_DARK) ? X_DISPLAY_BG_DARK
-		              : (style == STYLE_BRIGHT) ? X_DISPLAY_BG_BRIGHT
-		              : X_DISPLAY_BG_ORANGE;
+		NVGcolor fill = (style == STYLE_DARK) ? X_STRIP_BG_DARK
+		              : (style == STYLE_BRIGHT) ? X_STRIP_BG_BRIGHT
+		              : X_STRIP_BG_ORANGE;
 		nvgBeginPath(args.vg);
 		nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
 		nvgFillColor(args.vg, fill);
@@ -389,16 +387,17 @@ struct XOGateIndicator : TransparentWidget
 
 	void drawThemeFrame(const DrawArgs &args, float style)
 	{
-		// Background is the DISPLAY color (X_DISPLAY_BG_*, same as XOButtonCover/XOValueDisplay's
-		// own cell) not X_STRIP_BG_* - unlike X8ValueButton (which covers a knob-ring on the plain
-		// panel background), this indicator sits in the same display cell a numeric readout would
-		// occupy, and needs to match the always-visible cover surrounding it with no visible seam.
+		// Background is the plain panel/strip color (X_STRIP_BG_*, XShared.hpp) - same as
+		// XOButtonCover's own cell (see its comment for why: this family's panel art has no
+		// separate "digital display" cell at all, the numeric readout just draws over the plain
+		// background) - needs to match the always-visible cover surrounding it with no visible
+		// seam.
 		NVGcolor background, frame;
 		switch ((int) style)
 		{
-			case STYLE_DARK:   background = X_DISPLAY_BG_DARK;   frame = X_FRAME_DARK;   break;
-			case STYLE_BRIGHT: background = X_DISPLAY_BG_BRIGHT; frame = X_FRAME_BRIGHT; break;
-			default:           background = X_DISPLAY_BG_ORANGE; frame = X_FRAME_ORANGE; break; // STYLE_ORANGE
+			case STYLE_DARK:   background = X_STRIP_BG_DARK;   frame = X_FRAME_DARK;   break;
+			case STYLE_BRIGHT: background = X_STRIP_BG_BRIGHT; frame = X_FRAME_BRIGHT; break;
+			default:           background = X_STRIP_BG_ORANGE; frame = X_FRAME_ORANGE; break; // STYLE_ORANGE
 		}
 		// Exactly X8ValueButton's own fixed frame size/radius (X8Common.hpp) - same cap, same
 		// frame, full parity with the input modules, independent of whatever real panel cell this
