@@ -55,7 +55,7 @@ struct XOD16Widget : ModuleWidget
 	XOLogoCover *logoCover1 = nullptr;
 	XOLogoCover *logoCover2 = nullptr;
 
-	XOOutputPort *ports[XO_CAPACITY] = {};
+	PJ301MPort *ports[XO_CAPACITY] = {};
 	XOValueDisplay *displays[XO_CAPACITY] = {};
 	XOGateIndicator *gates[XO_CAPACITY] = {};
 	XOButtonCover *buttonCovers[2] = {};
@@ -143,8 +143,9 @@ struct XOD16Widget : ModuleWidget
 			{
 				int channel = col * 8 + row;
 
-				XOOutputPort *port = createOutputCentered<XOOutputPort>(calculateCoordinates(portColumnX[col], portY[row], 0.f), module, CHANNEL_OUTPUT + channel);
-				port->channel = channel;
+				// Plain jack, no accent ring - these outputs are plain poly outputs, not something
+				// a further X-family Expander can browse/color-match (same as XR8/XR16).
+				PJ301MPort *port = createOutputCentered<PJ301MPort>(calculateCoordinates(portColumnX[col], portY[row], 0.f), module, CHANNEL_OUTPUT + channel);
 				addOutput(port);
 				ports[channel] = port;
 

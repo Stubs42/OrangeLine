@@ -16,8 +16,8 @@
 	`#include "X8.hpp"` - X8D as well, rather than each declaring their own separate macro).
 */
 
-// X_PARAM_CLICK's fixed pulse duration - tunable here in one place for the whole family.
-#define X_VALUE_CLICK_SECONDS 0.06f
+// X_VALUE_CLICK_SECONDS (the fixed pulse duration for a Click-type value button) is now a global
+// constant in OrangeLine.hpp, not defined per-family here.
 
 bool widgetReady = false;
 

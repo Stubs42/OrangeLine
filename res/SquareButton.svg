@@ -5,7 +5,7 @@
    viewBox="0 0 7.6340162 7.643672"
    version="1.1"
    id="svg_root"
-   sodipodi:docname="SquareButtonNewCap.svg"
+   sodipodi:docname="SquareButton.svg"
    inkscape:version="1.4.4 (dcaf3e7, 2026-05-05)"
    xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
    xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
@@ -23,15 +23,15 @@
      inkscape:deskcolor="#d1d1d1"
      inkscape:document-units="mm"
      labelstyle="below"
-     inkscape:zoom="30.228208"
-     inkscape:cx="7.724573"
-     inkscape:cy="13.447704"
+     inkscape:zoom="16"
+     inkscape:cx="-10.21875"
+     inkscape:cy="11.34375"
      inkscape:window-width="2560"
      inkscape:window-height="1494"
      inkscape:window-x="-11"
      inkscape:window-y="-11"
      inkscape:window-maximized="1"
-     inkscape:current-layer="layer-panel-orange" />
+     inkscape:current-layer="g13" />
   <defs
      id="defs1">
     <linearGradient
@@ -98,7 +98,7 @@
          style="fill:url(#linearGradient3-5);stroke-width:0.336693"
          d="m -20.315654,6.0979966 h 5.080002 c 0.706451,0 1.278893,0.573163 1.278005,1.279613 l -0.0064,5.0851784 c -8.82e-4,0.701659 -0.569937,1.269998 -1.271596,1.269998 h -5.077701 c -0.702811,0 -1.272687,-0.569488 -1.273164,-1.272299 l -0.0035,-5.0873194 c -4.79e-4,-0.704137 0.570217,-1.275198 1.274354,-1.275171 z" />
       <path
-         style="opacity:1;fill:#ffffff;fill-opacity:1;stroke:none;stroke-width:0.3;stroke-linejoin:round;stroke-opacity:1"
+         style="opacity:0.8496732;fill:#ffffff;fill-opacity:1;stroke:none;stroke-width:0.3;stroke-linejoin:round;stroke-opacity:1"
          d="m -18.796,6.0972501 1.016,3.8100003 -3.415955,-3.4563695 c 0.244096,-0.2297816 0.537514,-0.3474124 0.880255,-0.3528923 z"
          id="path13" />
       <path
@@ -110,7 +110,7 @@
          fill="#ffffff"
          d="M -17.774274,9.9143049 -18.796,6.0972501 c -0.362467,0.1064515 -0.935308,-0.043458 -1.27,0 -0.325506,0.187929 -0.864184,0.08786 -1.129955,0.3536308 z"
          id="path7-77-1"
-         style="stroke-width:0.476155" />
+         style="stroke-width:0.476155;opacity:0.05620915" />
       <path
          id="ringC-73-9"
          opacity="0.4"

@@ -29,14 +29,14 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "OrangeLine.hpp"
 #include "XOShared.hpp"
 
-// { bipolar, voltage } per right-click range choice - index 0 (Uni 10V) is the default for a
-// fresh instance. Order: Uni10/Uni5/Uni2/Uni1/Bi10/Bi5/Bi2/Bi1. File scope (not inside the module
-// struct) so both XRModuleCommon.hpp's own moduleProcess() and the widget/menu code in XR16.cpp
-// can see it.
+// { bipolar, voltage } per right-click range choice - index 0 (0-10V) is the default for a
+// fresh instance. Labels use Rack's own standard range notation (0-Nv / +-Nv), not a Uni/Bi
+// abbreviation. File scope (not inside the module struct) so both XRModuleCommon.hpp's own
+// moduleProcess() and the widget/menu code in XR16.cpp can see it.
 struct XRRangeOption { bool bipolar; float voltage; const char *label; };
 static const XRRangeOption XR_RANGE_OPTIONS[8] = {
-	{ false, 10.f, "Uni 10V" }, { false, 5.f, "Uni 5V" }, { false, 2.f, "Uni 2V" }, { false, 1.f, "Uni 1V" },
-	{ true,  10.f, "Bi 10V"  }, { true,  5.f, "Bi 5V"  }, { true,  2.f, "Bi 2V"  }, { true,  1.f, "Bi 1V"  },
+	{ false, 10.f, "0-10V" }, { false, 5.f, "0-5V" }, { false, 2.f, "0-2V" }, { false, 1.f, "0-1V" },
+	{ true,  10.f, "±10V" }, { true, 5.f, "±5V" }, { true, 2.f, "±2V" }, { true, 1.f, "±1V" },
 };
 
 //

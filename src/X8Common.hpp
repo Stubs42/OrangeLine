@@ -84,7 +84,11 @@ inline void addXLogoCovers(ModuleWidget *w, float panelWidthMm, X8LogoCover **co
 inline void updateXLogoCovers(X8LogoCover *cover1, X8LogoCover *cover2, Module *module)
 {
 	XExpanderInterface *expander = module ? dynamic_cast<XExpanderInterface*>(module) : nullptr;
-	bool connected = expander && expander->getXHost() != nullptr;
+	XHostInterface *host = expander ? expander->getXHost() : nullptr;
+	// Only hide the logo when the connected Host's own theme actually MATCHES this module's own -
+	// mirrors the seam-strip's own "only merge when themes match" rule (see XOCommon.hpp's own
+	// updateXOLogoCovers(), fixed the same way and for the same reason).
+	bool connected = host && host->getXStyle() == expander->getXStyle();
 	cover1->visible = connected;
 	cover2->visible = connected;
 }

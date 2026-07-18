@@ -52,7 +52,7 @@ struct XO8Widget : ModuleWidget
 	XOLogoCover *logoCover1 = nullptr;
 	XOLogoCover *logoCover2 = nullptr;
 
-	XOOutputPort *ports[XO_CAPACITY] = {};
+	PJ301MPort *ports[XO_CAPACITY] = {};
 
 	XO8Widget(XO8 *module)
 	{
@@ -100,8 +100,9 @@ struct XO8Widget : ModuleWidget
 		};
 		for (int i = 0; i < XO_CAPACITY; i++)
 		{
-			XOOutputPort *port = createOutputCentered<XOOutputPort>(calculateCoordinates(7.62f, portY[i], 0.f), module, CHANNEL_OUTPUT + i);
-			port->channel = i;
+			// Plain jack, no accent ring - these outputs are plain poly outputs, not something a
+			// further X-family Expander can browse/color-match (same reasoning as XR8/XR16).
+			PJ301MPort *port = createOutputCentered<PJ301MPort>(calculateCoordinates(7.62f, portY[i], 0.f), module, CHANNEL_OUTPUT + i);
 			addOutput(port);
 			ports[i] = port;
 		}

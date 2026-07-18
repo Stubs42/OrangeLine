@@ -133,7 +133,7 @@ struct XOCandidate
 	XOFormatFn format;      // nullptr for XO_TYPE_GATE
 };
 
-struct Morpheus : Module, XHostInterface, XOHostInterface
+struct Morpheus : Module, XHostInterface, XOHostInterface, StyxHostInterface
 {
 	float oldClkInputVoltage = 0;
     int polyChannels = 1;
@@ -768,6 +768,13 @@ struct Morpheus : Module, XHostInterface, XOHostInterface
 		bool xoConnected = dynamic_cast<XOExpanderInterface*>(rightExpander.module) != nullptr;
 		setStateLight(XO_CONN_LIGHT, xoConnected ? 255.f : 0.f);
 
+		// STYX (bidirectional tape/memory editor) connection - tries both sides, same as STYX's
+		// own resolveStyxHost() calls do, since it can attach on whichever side is convenient
+		// (unlike the strictly one-sided X/XO families).
+		bool styxConnected = (dynamic_cast<StyxExpanderInterface*>(leftExpander.module) != nullptr)
+		                   || (dynamic_cast<StyxExpanderInterface*>(rightExpander.module) != nullptr);
+		setStateLight(STYX_CONN_LIGHT, styxConnected ? 255.f : 0.f);
+
 		// Walk the *whole* left-side chain (not just the immediate neighbor - several
 		// Expanders can be strung together) looking for a fresh engage/disengage request from
 		// any of them. Each Expander debounces its own button locally and exposes only a
@@ -1315,6 +1322,40 @@ struct Morpheus : Module, XHostInterface, XOHostInterface
 		return format(value);
 	}
 	float getXOStyle() override { return OL_state[STYLE_JSON]; }
+
+	// StyxHostInterface - see StyxShared.hpp's own architecture comment. Unlike XHostInterface/
+	// XOHostInterface above, this is bidirectional (STYX can write back), but still exposes only
+	// proper named methods - STYX never touches OL_state/STEPS_JSON/MEM_JSON addressing directly.
+	float getTapeStep(int channel, int step) override
+	{
+		return getStateJson(STEPS_JSON + MAX_LOOP_LEN * channel + step);
+	}
+	void setTapeStep(int channel, int step, float value) override
+	{
+		setStateJson(STEPS_JSON + MAX_LOOP_LEN * channel + step, value);
+	}
+	// Addressing mirrors MorpheusDisplayWidget's own existing read of the active Mem slot
+	// (Morpheus.cpp's draw() code, "int mem = MEM_JSON + (int) getStateJson(ACTIVE_MEM_JSON) *
+	// POLY_CHANNELS * MAX_LOOP_LEN + row * MAX_LOOP_LEN + step") - same active-slot addressing,
+	// just wrapped as a proper method instead of inline arithmetic at the call site.
+	float getMemStep(int channel, int step) override
+	{
+		int mem = MEM_JSON + (int) getStateJson(ACTIVE_MEM_JSON) * POLY_CHANNELS * MAX_LOOP_LEN
+		        + channel * MAX_LOOP_LEN + step;
+		return getStateJson(mem);
+	}
+	void setMemStep(int channel, int step, float value) override
+	{
+		int mem = MEM_JSON + (int) getStateJson(ACTIVE_MEM_JSON) * POLY_CHANNELS * MAX_LOOP_LEN
+		        + channel * MAX_LOOP_LEN + step;
+		setStateJson(mem, value);
+	}
+	// Reuses the existing getChannelLoopLength() helper (already resolves the LOOP_LEN_INPUT-
+	// poly-vs-LOOP_LEN_PARAM-knob distinction) rather than duplicating that logic here.
+	int getLoopLen(int channel) override { return (int) getChannelLoopLength(channel); }
+	int getPlayCursor(int channel) override { return (int) getStateJson(HEAD_JSON + channel); }
+	float getStyxStyle() override { return OL_state[STYLE_JSON]; }
+	std::string getStyxHostName() override { return customName; }
 };
 
 // ********************************************************************************************************************************
@@ -1607,6 +1648,11 @@ struct MorpheusWidget : ModuleWidget
 		// XO-family connection light, mirrored to the top-right corner since that family attaches
 		// to this Host's RIGHT side (same reasoning as X_CONN_LIGHT's own top-left placement).
 		addChild(createLightCentered<AutoHideLight<TinyLight<GreenLight>>>(calculateCoordinates(MORPHEUS_PANEL_WIDTH_MM - 3.5f, 4.f, 0.f), module, XO_CONN_LIGHT));
+
+		// STYX connection light - can attach on either side, so it doesn't get one of the two
+		// side-specific corners above; placeholder position near the bottom-left corner (mirrors
+		// the top-left placement style) until real panel art defines something better.
+		addChild(createLightCentered<AutoHideLight<TinyLight<GreenLight>>>(calculateCoordinates(3.5f, PANELHEIGHT - 4.f, 0.f), module, STYX_CONN_LIGHT));
 
 		// Positions extracted from res/MorpheusWorkTest.svg's Controls layer (2026-07-13) -
 		// panel reorganized to make room for the future visualization display (reserved band

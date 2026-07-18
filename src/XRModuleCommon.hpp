@@ -26,11 +26,14 @@ XOHostInterface *xoHost = nullptr;
 
 dsp::SchmittTrigger leftTrigger, rightTrigger;
 
-// Per-channel change-detection state and last-generated output - NOT persisted (see XR8/XR16's
+// Per-channel change-detection state (the seed itself) and the generated chain of up to
+// POLY_CHANNELS (16) successive random draws from that one seed - NOT persisted (see XR8/XR16's
 // own constructor for the one-time NAN initialization; output is a pure function of the Host's
-// current value, nothing here needs to survive a patch reload).
+// current value, nothing here needs to survive a patch reload). Each of the XR_CAPACITY output
+// sockets carries its own whole chain as a polyphonic signal - "aus einem value bis zu 16
+// deterministische Randomwerte generieren," confirmed explicitly - not a single mono value.
 float lastSeed[XR_CAPACITY];
-float randomValue[XR_CAPACITY];
+float randomValue[XR_CAPACITY][POLY_CHANNELS];
 
 // XRRangeOption/XR_RANGE_OPTIONS (the per-channel output-range table) live at file scope in each
 // sibling's own <Name>.hpp instead of here - this header's content is #include'd literally inside
@@ -127,6 +130,10 @@ bool moduleSkipProcess()
 
 void moduleInitStateTypes()
 {
+	// Each output socket carries its own whole chain of up to POLY_CHANNELS successive random
+	// draws as a polyphonic signal, not a single mono value.
+	for (int c = 0; c < XR_CAPACITY; c++)
+		setOutPoly(CHANNEL_OUTPUT + c, true);
 }
 
 // Persistent per-instance storage for the generated per-channel json labels below -
@@ -227,16 +234,32 @@ inline void moduleProcess(const ProcessArgs &args)
 		float value = (c < liveChannels) ? xoHost->getXOChannelValue(browseIndex, c) : 0.f;
 		if (value != lastSeed[c])
 		{
+			// Mix the channel index into the seed itself (not just relying on the Host's own
+			// per-channel value to already differ) - otherwise, whenever the Host exposes fewer
+			// live channels than XR_CAPACITY (or genuinely sends the same value on more than one
+			// channel), every channel sharing that value would derive the exact same deterministic
+			// chain and thus identical output. Each channel must always get its own distinct
+			// chain, regardless of how many of the Host's channels are actually live.
 			uint32_t bits;
 			memcpy(&bits, &value, sizeof(bits));
-			uint64_t raw = splitMix64((uint64_t) bits);
-			float normalized = splitMix64Normalized(raw); // [0,1)
+			uint64_t state = (uint64_t) bits ^ ((uint64_t) c * 0x9E3779B97F4A7C15ULL);
 			int rangeIdx = clamp((int) OL_state[CHANNEL_RANGE_JSON + c], 0, 7);
 			const XRRangeOption &opt = XR_RANGE_OPTIONS[rangeIdx];
-			randomValue[c] = opt.bipolar ? (normalized * 2.f - 1.f) * opt.voltage : normalized * opt.voltage;
+			// Advance the SAME seeded generator POLY_CHANNELS times, one draw per chain position -
+			// "aus einem value bis zu 16 deterministische Randomwerte generieren," confirmed
+			// explicitly. Each successive draw feeds the next (state = splitMix64(state)), a
+			// genuine chain, not POLY_CHANNELS independent single draws.
+			for (int k = 0; k < POLY_CHANNELS; k++)
+			{
+				state = splitMix64(state);
+				float normalized = splitMix64Normalized(state); // [0,1)
+				randomValue[c][k] = opt.bipolar ? (normalized * 2.f - 1.f) * opt.voltage : normalized * opt.voltage;
+			}
 			lastSeed[c] = value;
 		}
-		setStateOutput(CHANNEL_OUTPUT + c, randomValue[c]);
+		setOutPolyChannels(CHANNEL_OUTPUT + c, POLY_CHANNELS);
+		for (int k = 0; k < POLY_CHANNELS; k++)
+			setStateOutPoly(CHANNEL_OUTPUT + c, k, randomValue[c][k]);
 	}
 }
 
@@ -248,3 +271,6 @@ XOHostInterface* getXOHost() override { return xoHost; }
 float getXOStyle() override { return OL_state[STYLE_JSON]; }
 int getXOCapacity() override { return XR_CAPACITY; }
 int getXOBrowseIndex() override { return (int) OL_state[BROWSE_INDEX_JSON]; }
+// Inert stub - XR8/XR16 have no XOGateIndicator of their own (their output is always the
+// generated random chain, never a passthrough gate display), so nothing ever calls this.
+bool getXOBrowsedChannelGateLit(int channel) override { return false; }

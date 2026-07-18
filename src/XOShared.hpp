@@ -49,6 +49,11 @@ enum XOType
 	XO_TYPE_GATE        // gate/trigger - shown as a non-interactive lit/unlit square instead
 };
 
+// Shared by XOModuleCommon.hpp's own edge-detect (raw Host voltage -> stretched display state)
+// and XOCommon.hpp's XOGateIndicator (previously a locally-duplicated constant) - one threshold,
+// same convention as a real gate/trigger jack's usual 0V/10V swing.
+#define XO_GATE_THRESHOLD_V 5.f
+
 struct XOHostInterface
 {
 	virtual int getXOCount() = 0;
@@ -116,6 +121,16 @@ struct XOExpanderInterface
 	virtual std::string formatXOBrowsedValue(float raw) = 0; // see XOHostInterface::formatXOValue()
 	virtual int getXOBrowsedChannelCount() = 0;
 	virtual float getXOBrowsedChannelValue(int channel) = 0;
+
+	// Stretched (not raw-instantaneous) lit state for a gate/trigger-type slot's display -
+	// XOGateIndicator (XOCommon.hpp) reads this instead of comparing getXOBrowsedChannelValue()
+	// against the threshold itself. A raw live read only catches a real trigger's own brief pulse
+	// (often a hardcoded ~1ms convention, see CLAUDE.md) if the UI happens to redraw during that
+	// exact window, which in practice is "barely visible, most clicks missed" - X8ModuleCommon.hpp
+	// solves the equivalent problem on the input side with clickPulse; XOModuleCommon.hpp mirrors
+	// that same fixed-length-pulse-stretch approach here, driven by an edge-detect on the Host's
+	// real voltage instead of a user click, using the same shared X_VALUE_CLICK_SECONDS duration.
+	virtual bool getXOBrowsedChannelGateLit(int channel) = 0;
 
 	virtual ~XOExpanderInterface() {}
 };

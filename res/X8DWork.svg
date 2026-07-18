@@ -255,7 +255,7 @@
      inkscape:window-x="-11"
      inkscape:window-y="-11"
      inkscape:window-maximized="1"
-     inkscape:current-layer="svg_root">
+     inkscape:current-layer="layer-text-work">
     <inkscape:grid
        type="xygrid"
        id="grid1"
@@ -1042,26 +1042,6 @@
          x="1.9475124"
          y="114.5492"
          style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:1.41111px;font-family:'Roboto Condensed';-inkscape-font-specification:'Roboto Condensed, @wght=700';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;font-variation-settings:'wght' 700">8</tspan></text>
-  </g>
-  <g
-     inkscape:groupmode="layer"
-     id="layer1"
-     inkscape:label="LogoCover"
-     style="display:none">
-    <rect
-       style="display:inline;fill:#15152b;fill-opacity:1;stroke:none;stroke-width:0.0692708;stroke-dasharray:none;stroke-opacity:1"
-       id="rect1"
-       width="12.7"
-       height="2.9735825"
-       x="8.8900003"
-       y="121.41325" />
-    <rect
-       style="display:inline;fill:#15152b;fill-opacity:1;stroke:none;stroke-width:0.0692708;stroke-dasharray:none;stroke-opacity:1"
-       id="rect1-8"
-       width="7.6199994"
-       height="2.9777272"
-       x="11.43"
-       y="125.03953" />
   </g>
   <g
      inkscape:groupmode="layer"

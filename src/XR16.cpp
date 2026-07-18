@@ -44,7 +44,8 @@ struct XR16 : Module, XOExpanderInterface
 		for (int c = 0; c < XR_CAPACITY; c++)
 		{
 			lastSeed[c] = NAN;
-			randomValue[c] = 0.f;
+			for (int k = 0; k < POLY_CHANNELS; k++)
+				randomValue[c][k] = 0.f;
 		}
 	}
 };
@@ -62,7 +63,7 @@ struct XR16Widget : ModuleWidget
 	XOLogoCover *logoCover1 = nullptr;
 	XOLogoCover *logoCover2 = nullptr;
 
-	XOOutputPort *ports[XR_CAPACITY] = {};
+	PJ301MPort *ports[XR_CAPACITY] = {};
 
 	XR16Widget(XR16 *module)
 	{
@@ -109,8 +110,9 @@ struct XR16Widget : ModuleWidget
 			for (int row = 0; row < 8; row++)
 			{
 				int channel = col * 8 + row;
-				XOOutputPort *port = createOutputCentered<XOOutputPort>(calculateCoordinates(columnX[col], portY[row], 0.f), module, CHANNEL_OUTPUT + channel);
-				port->channel = channel;
+				// Plain jack, no XOOutputPort accent ring - see XR8Widget's own comment on why:
+				// this output is a generated, terminal signal, not a browsable XO-family slot.
+				PJ301MPort *port = createOutputCentered<PJ301MPort>(calculateCoordinates(columnX[col], portY[row], 0.f), module, CHANNEL_OUTPUT + channel);
 				addOutput(port);
 				ports[channel] = port;
 			}

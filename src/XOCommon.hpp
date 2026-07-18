@@ -71,7 +71,12 @@ inline void addXOLogoCovers(ModuleWidget *w, float panelWidthMm, XOLogoCover **c
 inline void updateXOLogoCovers(XOLogoCover *cover1, XOLogoCover *cover2, Module *module)
 {
 	XOExpanderInterface *expander = module ? dynamic_cast<XOExpanderInterface*>(module) : nullptr;
-	bool connected = expander && expander->getXOHost() != nullptr;
+	XOHostInterface *host = expander ? expander->getXOHost() : nullptr;
+	// Only hide the logo when the connected Host's own theme actually MATCHES this module's own -
+	// mirrors updateXOExtStrip()'s own "only merge the seam when themes match" rule exactly (a
+	// mismatched-theme neighbor has no visual continuity to preserve, so covering the logo there
+	// just looks like missing branding rather than a deliberate seamless join).
+	bool connected = host && host->getXOStyle() == expander->getXOStyle();
 	cover1->visible = connected;
 	cover2->visible = connected;
 }
@@ -369,7 +374,6 @@ struct XOGateIndicator : TransparentWidget
 	// scaling of any kind, per Dieter's explicit instruction that this cap must render exactly
 	// like the input modules' own cap.
 	static constexpr float LIGHT_SIZE_MM = 4.572f;
-	static constexpr float GATE_THRESHOLD = 5.f;
 
 	XOGateIndicator()
 	{
@@ -426,7 +430,9 @@ struct XOGateIndicator : TransparentWidget
 		}
 		XOExpanderInterface *expander = module ? dynamic_cast<XOExpanderInterface*>(module) : nullptr;
 		bool live = expander && expander->getXOHost() && xoChannelLive(module, channel);
-		bool lit = live && expander->getXOBrowsedChannelValue(channel) > GATE_THRESHOLD;
+		// Stretched, not raw-instantaneous - see getXOBrowsedChannelGateLit()'s own comment in
+		// XOShared.hpp for why a plain live threshold compare misses most real trigger pulses.
+		bool lit = live && expander->getXOBrowsedChannelGateLit(channel);
 		NVGcolor onColor = expander ? expander->getXOBrowsedColor() : ORANGE;
 
 		nvgSave(args.vg);
@@ -445,37 +451,8 @@ struct XOGateIndicator : TransparentWidget
 	}
 };
 
-/**
-	Tunable by eye - play with these until the ring sits right against the jack's own footprint
-	(same values as Morpheus.cpp's own MorpheusXSlotPort/MorpheusXOSlotPort).
-*/
-#define XO_SLOT_RING_RADIUS_OFFSET_MM -1.9f
-#define XO_SLOT_RING_STROKE_WIDTH_MM  0.6f
-
-/**
-	The Expander's own real mono output jack (XO8/XOD8/XO16/XOD16 only) - a plain PJ301MPort with
-	a thin ring drawn in the browsed slot's own accent color, same static-marker convention as
-	Morpheus's own MorpheusXSlotPort/MorpheusXOSlotPort (always shown, regardless of whether the
-	channel is actually live right now - the ring says "this jack carries an XO slot", not
-	"this channel currently has signal").
-*/
-struct XOOutputPort : PJ301MPort
-{
-	int channel = 0;
-
-	void drawLayer(const DrawArgs &args, int layer) override
-	{
-		PJ301MPort::drawLayer(args, layer);
-		if (layer != 1)
-			return;
-		XOExpanderInterface *expander = module ? dynamic_cast<XOExpanderInterface*>(module) : nullptr;
-		if (!expander || !expander->getXOHost())
-			return;
-		float r = box.size.x / 2.f + mm2px(XO_SLOT_RING_RADIUS_OFFSET_MM);
-		nvgBeginPath(args.vg);
-		nvgCircle(args.vg, box.size.x / 2.f, box.size.y / 2.f, r);
-		nvgStrokeWidth(args.vg, mm2px(XO_SLOT_RING_STROKE_WIDTH_MM));
-		nvgStrokeColor(args.vg, expander->getXOBrowsedColor());
-		nvgStroke(args.vg);
-	}
-};
+// XOOutputPort (a PJ301MPort with an accent ring in the browsed slot's own color) previously
+// lived here - removed 2026-07-18. The ring implied these real output jacks were themselves
+// browsable XO-family candidate slots, but they're plain poly outputs a further Expander cannot
+// connect to at all, so the ring was misleading (same reasoning that removed it from XR8/XR16's
+// outputs). XO8/XOD8/XO16/XOD16 now use plain PJ301MPort for their real output jacks.

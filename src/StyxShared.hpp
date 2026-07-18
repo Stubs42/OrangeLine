@@ -1,0 +1,92 @@
+/*
+	StyxShared.hpp
+
+	Author: Dieter Stubler
+
+Copyright (C) 2019 Dieter Stubler
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
+*/
+#ifndef STYX_SHARED_HPP
+#define STYX_SHARED_HPP
+
+#include "OrangeLine.hpp"
+
+/*
+	STYX is a bidirectional Expander - unlike the read-only XO family (XOShared.hpp) or the
+	param-binding X family (XShared.hpp), it gets both read AND write access to a Host's internal
+	tape/memory state. Kept genuinely generic (not Morpheus-specific in name) since Dieter
+	anticipates other sequencer-type Hosts getting their own STYX-compatible support later - a
+	name like "MorpheusTapeHostInterface" would have needed renaming the moment a second Host
+	implemented it, "StyxHostInterface" doesn't.
+
+	No StyxExpanderInterface/chain-walk of its own is needed for resolving a Host - STYX resolves
+	directly via a plain dynamic_cast on its own immediate left/right neighbor (the non-adjacent/
+	detached-connection idea was explicitly considered and withdrawn), unlike the X/XO families
+	which need a chain-walk since any number of their own Expanders can sit between an Expander
+	and its Host. STYX itself still needs to relay the *other* families' own chain-walks though -
+	see Styx.cpp's own XExpanderInterface/XOExpanderInterface implementation for that (a real,
+	physically sensible rack layout like `Morpheus | STYX | XO8` must keep working).
+*/
+struct StyxHostInterface
+{
+	virtual ~StyxHostInterface() {}
+
+	// Read - "step" is 0..127 (MAX_LOOP_LEN), "channel" is 0..15 (POLY_CHANNELS). A step is a
+	// single raw float, full stop - no separate gate/microtiming/volume/pitchbend sub-values;
+	// STYX's own per-row cell-type widgets are purely different display/edit interpretations of
+	// this one same value, confirmed explicitly during spec discussion.
+	virtual float getTapeStep(int channel, int step) = 0;
+	// Whichever of the Host's stored memory slots is currently active/selected - implicit, not a
+	// freely choosable slot from STYX's side (STYX's own per-row toggle only ever picks TAPE vs.
+	// MEM, never a specific one of several memory slots).
+	virtual float getMemStep(int channel, int step) = 0;
+	// How many of the up-to-128 steps are actually active/looping right now for this channel -
+	// used to decide whether STYX's own per-row paging UI needs to appear at all.
+	virtual int getLoopLen(int channel) = 0;
+	// Current play-cursor position (0..loopLen-1) for this channel - used to auto-page a row
+	// when its own FOLLOW toggle is on.
+	virtual int getPlayCursor(int channel) = 0;
+
+	// Write - same addressing as the read side above. No engagement/exclusivity concept at all;
+	// concurrent writers (a real cable, a second Expander, etc.) resolve via plain last-write-
+	// wins, confirmed explicitly during spec discussion as sufficient (not security/safety
+	// critical, this is a musical instrument).
+	virtual void setTapeStep(int channel, int step, float value) = 0;
+	virtual void setMemStep(int channel, int step, float value) = 0;
+
+	// This Host's own STYLE_JSON value - purely cosmetic (seam-bridging strip), unrelated to
+	// resolution health. Named distinctly per-interface so a Host implementing several of these
+	// families' interfaces at once (Morpheus already does, for X/XO) has no ambiguity.
+	virtual float getStyxStyle() = 0;
+
+	// Optional user-editable display label (mirrors XHostInterface::getXHostName()) - lets
+	// STYX's own Connect menu tell apart several same-type Hosts by name instead of just
+	// listing the module type over and over. May be empty (falls back to slug + Rack id).
+	virtual std::string getStyxHostName() = 0;
+};
+
+inline StyxHostInterface* resolveStyxHost(Module *neighbor)
+{
+	return neighbor ? dynamic_cast<StyxHostInterface*>(neighbor) : nullptr;
+}
+
+// Pure marker, no methods beyond identification via dynamic_cast - lets a Host's own connection
+// light detect "the thing attached to me is specifically a STYX," without conflating it with an
+// unrelated X/XO-family member that also happens to implement XExpanderInterface/
+// XOExpanderInterface purely for chain-relay purposes (see Styx.cpp's own comment on why STYX
+// implements those two interfaces at all).
+struct StyxExpanderInterface { virtual ~StyxExpanderInterface() {} };
+
+#endif

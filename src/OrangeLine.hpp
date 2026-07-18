@@ -42,6 +42,12 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #define POLY_CHANNELS	  16
 
+// Global fixed flash duration for any "Click" style momentary indicator (X8ValueButton's Click
+// mode, and any future control that wants the same fixed-length flash regardless of hold time) -
+// one shared value so every module's click flash reads consistently, not a per-module tuning
+// knob. Raised from an original 0.06s (too short to reliably notice) to 0.25s, 2026-07-18.
+#define X_VALUE_CLICK_SECONDS 0.05f
+
 #define LIGHT_TYPE_SINGLE  0
 #define LIGHT_TYPE_RGB     1
 

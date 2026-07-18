@@ -26,6 +26,15 @@ XOHostInterface *xoHost = nullptr;
 
 dsp::SchmittTrigger leftTrigger, rightTrigger;
 
+// Gate/trigger display stretch - see XOExpanderInterface::getXOBrowsedChannelGateLit()'s own
+// comment for why a raw instantaneous read isn't enough. Sized to XO_CAPACITY (this module's own
+// fixed display-cell count), indexed the same way the widget's own `channel` is - i.e. against
+// the CURRENTLY BROWSED slot's channels, not against some fixed absolute channel identity, so
+// switching slots naturally starts every cell's own edge-memory fresh (no stale carry-over).
+dsp::PulseGenerator xoGateFlashPulse[XO_CAPACITY];
+bool xoGateFlashAbove[XO_CAPACITY] = {false};
+bool xoGateFlashLit[XO_CAPACITY] = {false};
+
 // The type governing all channels right now - one type applies to the whole browsed slot, never
 // per-channel. Defaults to continuous whenever nothing meaningful is resolved, so callers never
 // need their own separate "no Host" fallback - same reasoning as X8ModuleCommon.hpp's own
@@ -182,6 +191,28 @@ inline void moduleProcess(const ProcessArgs &args)
 	bool overflow = xoHost && count > 0 && xoHost->getXOChannelCount(browseIndex) > XO_CAPACITY;
 	setStateLight(OVERFLOW_LIGHT, overflow ? 255.f : 0.f);
 
+	// Gate/trigger display stretch (see getXOBrowsedChannelGateLit()'s own comment in
+	// XOShared.hpp) - runs unconditionally (not just under XO_HAS_JACKS) since XD8/XD16 have no
+	// real jacks at all but still show a gate indicator. A rising edge on the raw Host voltage
+	// starts a fixed X_VALUE_CLICK_SECONDS pulse; the display stays lit for as long as either the
+	// pulse hasn't finished OR the real signal is still genuinely above threshold (a sustained
+	// gate longer than the flash duration must not be cut short).
+	{
+		int liveChannelsForFlash = (xoHost && count > 0) ? xoHost->getXOChannelCount(browseIndex) : 0;
+		for (int c = 0; c < XO_CAPACITY; c++)
+		{
+			float raw = (c < liveChannelsForFlash) ? xoHost->getXOChannelValue(browseIndex, c) : 0.f;
+			bool above = raw > XO_GATE_THRESHOLD_V;
+			if (above && !xoGateFlashAbove[c])
+				xoGateFlashPulse[c].trigger(X_VALUE_CLICK_SECONDS);
+			xoGateFlashAbove[c] = above;
+			// See CLAUDE.md's "dsp::Timer inside moduleProcess() must scale by (samplesSkipped+1)"
+			// pitfall - moduleProcess() only runs on ~1 in idleSkip samples.
+			bool pulseActive = xoGateFlashPulse[c].process(args.sampleTime * (samplesSkipped + 1));
+			xoGateFlashLit[c] = above || pulseActive;
+		}
+	}
+
 #ifdef XO_HAS_JACKS
 	int liveChannels = (xoHost && count > 0) ? xoHost->getXOChannelCount(browseIndex) : 0;
 	for (int c = 0; c < XO_CAPACITY; c++)
@@ -197,3 +228,4 @@ XOHostInterface* getXOHost() override { return xoHost; }
 float getXOStyle() override { return OL_state[STYLE_JSON]; }
 int getXOCapacity() override { return XO_CAPACITY; }
 int getXOBrowseIndex() override { return (int) OL_state[BROWSE_INDEX_JSON]; }
+bool getXOBrowsedChannelGateLit(int channel) override { return xoGateFlashLit[channel]; }

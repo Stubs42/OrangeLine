@@ -21,6 +21,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "OrangeLine.hpp"
 #include "XShared.hpp"
 #include "XOShared.hpp"
+#include "StyxShared.hpp"
 
 // Real panel width (confirmed directly from res/MorpheusOrange.svg's own width="50.799999mm") -
 // needed for the new XO-family seam-bridging strip on Morpheus's own right edge (see
@@ -175,6 +176,7 @@ enum LightIds {
 	X_CONN_LIGHT,
 	XO_CONN_LIGHT, // mirrors X_CONN_LIGHT's own single-color convention, but for the new
 	               // XO-family attaching to this Host's RIGHT side instead
+	STYX_CONN_LIGHT, // lit whenever a STYX tape/memory editor is attached on either side
 
 	NUM_LIGHTS
 };

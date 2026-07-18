@@ -44,7 +44,8 @@ struct XR8 : Module, XOExpanderInterface
 		for (int c = 0; c < XR_CAPACITY; c++)
 		{
 			lastSeed[c] = NAN;
-			randomValue[c] = 0.f;
+			for (int k = 0; k < POLY_CHANNELS; k++)
+				randomValue[c][k] = 0.f;
 		}
 	}
 };
@@ -63,7 +64,7 @@ struct XR8Widget : ModuleWidget
 	XOLogoCover *logoCover1 = nullptr;
 	XOLogoCover *logoCover2 = nullptr;
 
-	XOOutputPort *ports[XR_CAPACITY] = {};
+	PJ301MPort *ports[XR_CAPACITY] = {};
 
 	XR8Widget(XR8 *module)
 	{
@@ -106,8 +107,11 @@ struct XR8Widget : ModuleWidget
 		};
 		for (int i = 0; i < XR_CAPACITY; i++)
 		{
-			XOOutputPort *port = createOutputCentered<XOOutputPort>(calculateCoordinates(7.62f, portY[i], 0.f), module, CHANNEL_OUTPUT + i);
-			port->channel = i;
+			// Plain jack, no XOOutputPort accent ring - that ring signals "this port mirrors a
+			// browsable XO-family candidate slot," which doesn't apply here: XR8's own output is
+			// a generated, terminal signal, not something a further Expander browses/matches by
+			// color (confirmed explicitly - a ring here would be misleading).
+			PJ301MPort *port = createOutputCentered<PJ301MPort>(calculateCoordinates(7.62f, portY[i], 0.f), module, CHANNEL_OUTPUT + i);
 			addOutput(port);
 			ports[i] = port;
 		}

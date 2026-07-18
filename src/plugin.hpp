@@ -44,6 +44,7 @@ extern Model *modelXD16;
 extern Model *modelXOD16;
 extern Model *modelXR8;
 extern Model *modelXR16;
+extern Model *modelStyx;
 // extern Model *modelTemplate;
 // extern Model *modelWidgetTest;
 
