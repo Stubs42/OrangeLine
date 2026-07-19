@@ -77,26 +77,9 @@ enum OutputIds {
 };
 
 //
-// Ligh Ids
+// Ligh Ids - the connection lights are gone (superseded by the seam/logo-cover mechanism, which
+// now derives directly from the bridge host id - see ExpanderBridge.hpp)
 //
-/*
-	Tiny bi-color (GreenRedLight, 2 consecutive slots: green then red) corner lights, one per
-	side - see LanesShared.hpp's classifyLanesNeighborForHub(). Unlike an Expander's
-	chain-health light, the Hub never shows yellow (it's complete by itself, it doesn't need
-	to "find" anything) - only:
-		off   - nothing (or nothing recognized) connected on this side
-		green - a normal Expander (LanesCV, LanesMidi, ...) unambiguously serving this Hub
-		red   - another Hub directly adjacent, or an Expander that's ambiguous or actually
-		        serving a *different* Hub reachable through its far side (e.g. this Hub sits
-		        on one side of an Expander that's also connected to another Hub on its other
-		        side - both Hubs show red on the Expander-facing side, not just the Expander)
-	Since there's only one Hub per chain, expanders may sit on either side of it.
-*/
 enum LightIds {
-	LEFT_CONN_LIGHT,
-	LEFT_CONN_LIGHT_LAST = LEFT_CONN_LIGHT + 1,
-	RIGHT_CONN_LIGHT,
-	RIGHT_CONN_LIGHT_LAST = RIGHT_CONN_LIGHT + 1,
-
 	NUM_LIGHTS
 };

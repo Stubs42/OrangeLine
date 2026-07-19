@@ -69,7 +69,7 @@ struct LaneMidiGenerator : dsp::MidiGenerator<POLY_CHANNELS>
 	LanesCV's OVERFLOW_LIGHT, just relayed via display color instead of a light - not a
 	channel conflict (which can't happen, see above).
 */
-struct LanesMidi : Module, LanesExpanderInterface
+struct LanesMidi : Module, LanesExpanderInterface, ExpanderBridgeInterface
 {
 
 #include "OrangeLineCommon.hpp"
@@ -79,11 +79,13 @@ struct LanesMidi : Module, LanesExpanderInterface
 	bool widgetReady = false;
 
 	LanesHubInterface *lanesHub = nullptr;
-	// Set when a Hub is reachable through BOTH sides at once - see LanesShared.hpp's
-	// classifyLanesNeighborForHub(), which a neighboring Hub uses this to detect being
-	// caught between two Hubs even though we're not directly adjacent to the other one.
-	bool lanesHubAmbiguous = false;
 	LanesVoiceAllocator<POLY_CHANNELS> allocator;
+
+	// Persisted "NFC touch once, stays connected" target Hub id - a real int64_t, not an
+	// OL_state float slot, see LanesShared.hpp's resolveLanesHubBridge() for why that
+	// distinction matters (observed Rack module ids run into the quadrillions - a float
+	// corrupts them). Persisted via this module's own moduleExtraDataToJson/FromJson below.
+	int64_t lanesConnectedHostId = -1;
 
 	midi::Output midiOutput;
 	LaneMidiGenerator gen[NUM_LANES];
@@ -111,19 +113,28 @@ struct LanesMidi : Module, LanesExpanderInterface
 		moduleExtraDataToJson = [this](json_t *rootJ)
 		{
 			json_object_set_new(rootJ, "midi", midiOutput.toJson());
+			json_object_set_new(rootJ, "connectedHostId", json_integer(lanesConnectedHostId));
 		};
 		moduleExtraDataFromJson = [this](json_t *rootJ)
 		{
 			json_t *midiJ = json_object_get(rootJ, "midi");
 			if (midiJ)
 				midiOutput.fromJson(midiJ);
+			json_t *idJ = json_object_get(rootJ, "connectedHostId");
+			if (idJ && json_is_integer(idJ))
+				lanesConnectedHostId = json_integer_value(idJ);
 		};
 
 		initializeInstance();
 	}
 
 	LanesHubInterface* getLanesHub() override { return lanesHub; }
-	bool getLanesHubAmbiguous() override { return lanesHubAmbiguous; }
+
+	// ExpanderBridgeInterface (ExpanderBridge.hpp) - the persisted connection IS this
+	// Expander's own bridge id (no exclusivity concept in this family at all).
+	int64_t getBridgeHostId() override { return lanesConnectedHostId; }
+	std::vector<ExpanderFamily> getBridgeFamilies() override { return getModuleFamilies(model->slug); }
+	std::string getBridgeHostName() override { return ""; }
 	float getLanesStyle() override { return OL_state[STYLE_JSON]; }
 
 	bool moduleSkipProcess()
@@ -183,11 +194,12 @@ struct LanesMidi : Module, LanesExpanderInterface
 	{
 		midiOutput.reset();
 		styleChanged = true;
+		lanesConnectedHostId = -1;
 	}
 
 	/**
-		Chain-walk to find the Hub (checked on both sides, see LanesShared.hpp's
-		resolveLanesHub()), run our own voice allocator, then for each MIDI channel relay
+		Touch-once-then-persist Hub discovery (both sides - see resolveLanesHubBridge(),
+		LanesShared.hpp), run our own voice allocator, then for each MIDI channel relay
 		whichever lane it's currently tuned to into its own LaneMidiGenerator.
 	*/
 	inline void moduleProcess(const ProcessArgs &args)
@@ -208,28 +220,7 @@ struct LanesMidi : Module, LanesExpanderInterface
 		// anything else that might have touched it (stray preset, UI, ...).
 		midiOutput.channel = -1;
 
-		LanesHubInterface *hubLeft  = resolveLanesHub(leftExpander.module);
-		LanesHubInterface *hubRight = resolveLanesHub(rightExpander.module);
-		lanesHub = hubLeft ? hubLeft : hubRight;
-		// Only a real conflict if left and right resolve to two DIFFERENT Hubs - in a plain
-		// chain (Hub | LanesCV | LanesMidi), the middle expander reaches the same Hub both
-		// directly (left) and indirectly through its other neighbor (right), which is
-		// perfectly healthy, not ambiguous.
-		bool hubConflict = hubLeft && hubRight && hubLeft != hubRight;
-		lanesHubAmbiguous = hubConflict;
-
-		// Chain-health color, shared by both corner lights (see LanesMidi.hpp) - only
-		// whether each light is lit at all depends on that specific side's own connection.
-		float healthGreen, healthRed;
-		if (hubConflict)               { healthGreen = 0.f;   healthRed = 255.f; }	// red: two different Hubs reachable
-		else if (hubLeft || hubRight)  { healthGreen = 255.f; healthRed = 0.f;   }	// green: healthy, one Hub (either or both sides)
-		else                           { healthGreen = 0.f;   healthRed = 0.f;   }	// off: connected, but no Hub anywhere (dropped yellow - cosmetic call, Dieter 2026-07-15)
-		bool leftConnected  = leftExpander.module  != nullptr;
-		bool rightConnected = rightExpander.module != nullptr;
-		setStateLight(LEFT_CONN_LIGHT,      leftConnected  ? healthGreen : 0.f);
-		setStateLight(LEFT_CONN_LIGHT + 1,  leftConnected  ? healthRed   : 0.f);
-		setStateLight(RIGHT_CONN_LIGHT,     rightConnected ? healthGreen : 0.f);
-		setStateLight(RIGHT_CONN_LIGHT + 1, rightConnected ? healthRed   : 0.f);
+		lanesHub = resolveLanesHubBridge(this, lanesConnectedHostId);
 
 		if (lanesHub)
 			allocator.process(lanesHub);
@@ -414,11 +405,8 @@ struct LanesMidiWidget : ModuleWidget
 			}
 		}
 
-		// Tiny bi-color corner lights - off/green/yellow/red chain-health signal (see
-		// moduleProcess()'s resolveLanesHub() calls and LanesMidi.hpp). Placeholder position
-		// (panel is 50.8mm wide) until Dieter places guide art for them.
-		addOrangeLineConnectionLight<AutoHideLight<TinyLight<GreenRedLight>>> (this, calculateCoordinates (3.5f, 4.f, 0.f), module, LEFT_CONN_LIGHT);
-		addOrangeLineConnectionLight<AutoHideLight<TinyLight<GreenRedLight>>> (this, calculateCoordinates (47.3f, 4.f, 0.f), module, RIGHT_CONN_LIGHT);
+		// Connection lights are gone (superseded by the seam/logo-cover mechanism - see
+		// ExpanderBridge.hpp's own file comment).
 
 		addLanesExtStrips(this, 50.8f, &extStrips);
 
@@ -449,6 +437,15 @@ struct LanesMidiWidget : ModuleWidget
 		}
 	};
 
+	// Clears the remembered non-adjacent connection (lanesConnectedHostId) only - LANES has no
+	// engagement/binding/exclusivity concept at all to unwind, same reasoning as XO-family's own
+	// XODisconnectItem (XOCommon.hpp).
+	struct LanesMidiDisconnectItem : MenuItem
+	{
+		LanesMidi *module;
+		void onAction(const event::Action &e) override { module->lanesConnectedHostId = -1; }
+	};
+
 	void appendContextMenu(Menu *menu) override
 	{
 		MenuLabel *spacerLabel = new MenuLabel();
@@ -456,6 +453,27 @@ struct LanesMidiWidget : ModuleWidget
 
 		LanesMidi *module = dynamic_cast<LanesMidi *>(this->module);
 		assert(module);
+
+		// Single "Disconnect: <name>" item if currently connected - omitted entirely otherwise
+		// (no dead/disabled menu clutter), mirrors X-family's/XO-family's own equivalent.
+		if (module->lanesConnectedHostId >= 0)
+		{
+			Module *m = APP->engine->getModule(module->lanesConnectedHostId);
+			if (m)
+			{
+				ExpanderBridgeInterface *bridge = dynamic_cast<ExpanderBridgeInterface*>(m);
+				std::string hostName = bridge ? bridge->getBridgeHostName() : "";
+				LanesMidiDisconnectItem *item = new LanesMidiDisconnectItem();
+				item->module = module;
+				item->text = hostName.empty()
+					? string::f("Disconnect: %s #%lld", m->model->slug.c_str(), (long long) m->id)
+					: string::f("Disconnect: %s", hostName.c_str());
+				menu->addChild(item);
+
+				spacerLabel = new MenuLabel();
+				menu->addChild(spacerLabel);
+			}
+		}
 
 		MenuLabel *styleLabel = new MenuLabel();
 		styleLabel->text = "Style";

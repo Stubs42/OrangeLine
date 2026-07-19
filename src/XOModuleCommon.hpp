@@ -19,10 +19,16 @@
 
 bool widgetReady = false;
 
-// Resolved every moduleProcess() tick by looking only at leftExpander.module (mirrored
-// direction from the X family's own xHost - this family attaches to a Host's RIGHT side and
-// chains further rightward among itself, so a Host is always reachable through the LEFT).
+// Resolved every moduleProcess() tick via resolveXOHostBridge() (ExpanderBridge.hpp's generic
+// touch-once-then-persist mechanism, both sides now, no more left-only restriction).
 XOHostInterface *xoHost = nullptr;
+
+// Persisted "NFC touch once, stays connected" target Host id - a real int64_t, not an OL_state
+// float slot, see resolveXOHostBridge()'s own comment (XOShared.hpp) for why that distinction
+// actually matters (observed Rack module ids run into the quadrillions - a float corrupts them).
+// Persisted via this module's own moduleExtraDataToJson/FromJson (json_integer()), same pattern
+// Morpheus's own boundExpanderId array already uses.
+int64_t xoConnectedHostId = -1;
 
 dsp::SchmittTrigger leftTrigger, rightTrigger;
 
@@ -121,7 +127,8 @@ inline void moduleInitJsonConfig()
 
 	setJsonLabel(STYLE_JSON, "style");
 	setJsonLabel(BROWSE_INDEX_JSON, "browseIndex");
-	setJsonLabel(CONNECTED_HOST_ID_JSON, "connectedHostId");
+	// CONNECTED_HOST_ID_JSON is gone - xoConnectedHostId is a real int64_t now, persisted via
+	// this module's own moduleExtraDataToJson/FromJson instead (see its own member comment).
 
 #pragma GCC diagnostic pop
 }
@@ -143,7 +150,7 @@ void moduleReset()
 {
 	styleChanged = true;
 	OL_state[BROWSE_INDEX_JSON] = 0.f;
-	OL_state[CONNECTED_HOST_ID_JSON] = -1.f;
+	xoConnectedHostId = -1;
 }
 
 inline void moduleProcess(const ProcessArgs &args)
@@ -159,12 +166,10 @@ inline void moduleProcess(const ProcessArgs &args)
 		styleChanged = false;
 	}
 
-	// No restriction on which Host TYPE this resolves to, same reasoning as the X family's own
-	// resolveXHost() call - any module implementing XOHostInterface works transparently.
-	// Adjacency-then-id-fallback ("NFC touch once, stays connected until explicitly broken") -
-	// see resolveXOHostPersistent()'s own comment (XOShared.hpp).
-	xoHost = resolveXOHostPersistent(leftExpander.module, OL_state[CONNECTED_HOST_ID_JSON]);
-	setStateLight(CONN_LIGHT, xoHost ? 255.f : 0.f);
+	// No restriction on which Host TYPE this resolves to - any module implementing
+	// XOHostInterface works transparently. Touch-once-then-persist (both sides now, no more
+	// left-only restriction) - see resolveXOHostBridge()'s own comment (XOShared.hpp).
+	xoHost = resolveXOHostBridge(this, xoConnectedHostId);
 
 	// Browsing: unconditional, unfiltered stepping through every output slot the currently-
 	// resolved Host reports - no engagement to gate it, watching is never exclusive. If no Host
@@ -230,8 +235,14 @@ inline void moduleReflectChanges() {}
 // XOExpanderInterface
 XOHostInterface* getXOHost() override { return xoHost; }
 float getXOStyle() override { return OL_state[STYLE_JSON]; }
-int64_t getXOConnectedHostId() override { return (int64_t) OL_state[CONNECTED_HOST_ID_JSON]; }
-void disconnectXOHost() override { OL_state[CONNECTED_HOST_ID_JSON] = -1.f; }
+int64_t getXOConnectedHostId() override { return xoConnectedHostId; }
+void disconnectXOHost() override { xoConnectedHostId = -1; }
 int getXOCapacity() override { return XO_CAPACITY; }
 int getXOBrowseIndex() override { return (int) OL_state[BROWSE_INDEX_JSON]; }
 bool getXOBrowsedChannelGateLit(int channel) override { return xoGateFlashLit[channel]; }
+
+// ExpanderBridgeInterface (ExpanderBridge.hpp) - the persisted connection IS this Expander's
+// own bridge id (no separate exclusive bind to prioritize, unlike X-family).
+int64_t getBridgeHostId() override { return xoConnectedHostId; }
+std::vector<ExpanderFamily> getBridgeFamilies() override { return getModuleFamilies(model->slug); }
+std::string getBridgeHostName() override { return ""; } // Expander, not a Host - nothing to name

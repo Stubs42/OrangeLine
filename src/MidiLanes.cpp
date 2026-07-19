@@ -42,7 +42,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 	LanesMidi, ...) still runs its own independent LanesVoiceAllocator against it, exactly as
 	it would against CVLanes - MidiLanes is a drop-in alternative Hub, not a special case.
 */
-struct MidiLanes : Module, LanesHubInterface
+struct MidiLanes : Module, LanesHubInterface, ExpanderBridgeInterface
 {
 
 #include "OrangeLineCommon.hpp"
@@ -54,6 +54,10 @@ struct MidiLanes : Module, LanesHubInterface
 	midi::InputQueue midiInput;
 	dsp::MidiParser<POLY_CHANNELS> parser[NUM_SOURCES];	// one per incoming MIDI channel
 
+	// User-editable label, set via the right-click menu's text field (see MidiLanesNameField) -
+	// mirrors Morpheus's own customName exactly. Empty by default.
+	std::string customName;
+
 	MidiLanes()
 	{
 		for (int i = 0; i < NUM_SOURCES; i++)
@@ -62,12 +66,16 @@ struct MidiLanes : Module, LanesHubInterface
 		moduleExtraDataToJson = [this](json_t *rootJ)
 		{
 			json_object_set_new(rootJ, "midi", midiInput.toJson());
+			json_object_set_new(rootJ, "customName", json_string(customName.c_str()));
 		};
 		moduleExtraDataFromJson = [this](json_t *rootJ)
 		{
 			json_t *midiJ = json_object_get(rootJ, "midi");
 			if (midiJ)
 				midiInput.fromJson(midiJ);
+			json_t *nameJ = json_object_get(rootJ, "customName");
+			if (nameJ && json_is_string(nameJ))
+				customName = json_string_value(nameJ);
 		};
 
 		initializeInstance();
@@ -107,6 +115,11 @@ struct MidiLanes : Module, LanesHubInterface
 		return lane == 0 ? 0 : lane - 1;
 	}
 	float getLanesStyle() override { return OL_state[STYLE_JSON]; }
+
+	// ExpanderBridgeInterface (ExpanderBridge.hpp) - a Hub trivially reports its own id.
+	int64_t getBridgeHostId() override { return (int64_t) this->id; }
+	std::vector<ExpanderFamily> getBridgeFamilies() override { return getModuleFamilies(model->slug); }
+	std::string getBridgeHostName() override { return customName; }
 
 	bool moduleSkipProcess()
 	{
@@ -181,12 +194,6 @@ struct MidiLanes : Module, LanesHubInterface
 			styleChanged = false;
 		}
 
-		LanesNeighborKind leftKind  = classifyLanesNeighborForHub(leftExpander.module,  this);
-		LanesNeighborKind rightKind = classifyLanesNeighborForHub(rightExpander.module, this);
-		setStateLight(LEFT_CONN_LIGHT,      leftKind  == LANES_NEIGHBOR_OK       ? 255.f : 0.f);
-		setStateLight(LEFT_CONN_LIGHT + 1,  leftKind  == LANES_NEIGHBOR_CONFLICT ? 255.f : 0.f);
-		setStateLight(RIGHT_CONN_LIGHT,     rightKind == LANES_NEIGHBOR_OK       ? 255.f : 0.f);
-		setStateLight(RIGHT_CONN_LIGHT + 1, rightKind == LANES_NEIGHBOR_CONFLICT ? 255.f : 0.f);
 
 		midi::Message msg;
 		while (midiInput.tryPop(&msg, args.frame))
@@ -313,11 +320,8 @@ struct MidiLanesWidget : ModuleWidget
 			}
 		}
 
-		// Tiny bi-color corner lights - off/green/red neighbor signal (see moduleProcess()'s
-		// classifyLanesNeighborForHub() calls and MidiLanes.hpp). Placeholder position (panel is
-		// 50.8mm wide) until Dieter places guide art for them.
-		addOrangeLineConnectionLight<AutoHideLight<TinyLight<GreenRedLight>>> (this, calculateCoordinates (3.5f, 4.f, 0.f), module, LEFT_CONN_LIGHT);
-		addOrangeLineConnectionLight<AutoHideLight<TinyLight<GreenRedLight>>> (this, calculateCoordinates (47.3f, 4.f, 0.f), module, RIGHT_CONN_LIGHT);
+		// Connection lights are gone (superseded by the seam/logo-cover mechanism - see
+		// ExpanderBridge.hpp's own file comment).
 
 		addLanesExtStrips(this, 50.8f, &extStrips);
 
@@ -348,6 +352,18 @@ struct MidiLanesWidget : ModuleWidget
 		}
 	};
 
+	// Plain right-click-menu text field for customName (see its own member comment) - verbatim
+	// copy of Morpheus's own MorpheusNameField pattern.
+	struct MidiLanesNameField : ui::TextField
+	{
+		MidiLanes *module;
+		void onChange(const ChangeEvent &e) override
+		{
+			if (module)
+				module->customName = text;
+		}
+	};
+
 	void appendContextMenu(Menu *menu) override
 	{
 		MenuLabel *spacerLabel = new MenuLabel();
@@ -355,6 +371,19 @@ struct MidiLanesWidget : ModuleWidget
 
 		MidiLanes *module = dynamic_cast<MidiLanes *>(this->module);
 		assert(module);
+
+		MenuLabel *nameLabel = new MenuLabel();
+		nameLabel->text = "Name";
+		menu->addChild(nameLabel);
+
+		MidiLanesNameField *nameField = new MidiLanesNameField();
+		nameField->module = module;
+		nameField->text = module->customName;
+		nameField->box.size = Vec(140.f, 20.f);
+		menu->addChild(nameField);
+
+		spacerLabel = new MenuLabel();
+		menu->addChild(spacerLabel);
 
 		MenuLabel *styleLabel = new MenuLabel();
 		styleLabel->text = "Style";

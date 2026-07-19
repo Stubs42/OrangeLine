@@ -24,7 +24,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "CVLanes.hpp"
 
-struct CVLanes : Module, LanesHubInterface
+struct CVLanes : Module, LanesHubInterface, ExpanderBridgeInterface
 {
 
 #include "OrangeLineCommon.hpp"
@@ -49,6 +49,11 @@ struct CVLanes : Module, LanesHubInterface
 	float sourceVelocity[NUM_SOURCES][POLY_CHANNELS];
 	int   sourceLane    [NUM_SOURCES][POLY_CHANNELS];
 
+	// User-editable label, set via the right-click menu's text field (see CVLanesNameField) -
+	// mirrors Morpheus's own customName exactly, same reasoning: once a patch has more than one
+	// Hub, an Expander's own Disconnect-style menu item needs to say *which* one a connection
+	// belongs to. Empty by default.
+	std::string customName;
 
 	// ********************************************************************************************************************************
 	/*
@@ -62,6 +67,19 @@ struct CVLanes : Module, LanesHubInterface
 	CVLanes()
 	{
 		initializeInstance();
+
+		// customName is a plain string, not a float OL_state slot - same reasoning/pattern as
+		// Morpheus's own moduleExtraDataToJson/FromJson use for its own customName.
+		moduleExtraDataToJson = [this](json_t *rootJ)
+		{
+			json_object_set_new(rootJ, "customName", json_string(customName.c_str()));
+		};
+		moduleExtraDataFromJson = [this](json_t *rootJ)
+		{
+			json_t *nameJ = json_object_get(rootJ, "customName");
+			if (nameJ && json_is_string(nameJ))
+				customName = json_string_value(nameJ);
+		};
 	}
 	/*
 		Method to decide whether this call of process() should be skipped
@@ -163,6 +181,11 @@ struct CVLanes : Module, LanesHubInterface
 	int   getSourceLane(int source, int channel) override { return sourceLane[source][channel]; }
 	float getLanesStyle() override { return OL_state[STYLE_JSON]; }
 
+	// ExpanderBridgeInterface (ExpanderBridge.hpp) - a Hub trivially reports its own id.
+	int64_t getBridgeHostId() override { return (int64_t) this->id; }
+	std::vector<ExpanderFamily> getBridgeFamilies() override { return getModuleFamilies(model->slug); }
+	std::string getBridgeHostName() override { return customName; }
+
 	// ********************************************************************************************************************************
 	/*
 		Methods called directly or indirectly called from process () in OrangeLineCommon.hpp
@@ -191,13 +214,6 @@ struct CVLanes : Module, LanesHubInterface
 			}
 			styleChanged = false;
 		}
-
-		LanesNeighborKind leftKind  = classifyLanesNeighborForHub(leftExpander.module,  this);
-		LanesNeighborKind rightKind = classifyLanesNeighborForHub(rightExpander.module, this);
-		setStateLight(LEFT_CONN_LIGHT,      leftKind  == LANES_NEIGHBOR_OK       ? 255.f : 0.f);
-		setStateLight(LEFT_CONN_LIGHT + 1,  leftKind  == LANES_NEIGHBOR_CONFLICT ? 255.f : 0.f);
-		setStateLight(RIGHT_CONN_LIGHT,     rightKind == LANES_NEIGHBOR_OK       ? 255.f : 0.f);
-		setStateLight(RIGHT_CONN_LIGHT + 1, rightKind == LANES_NEIGHBOR_CONFLICT ? 255.f : 0.f);
 
 		/*
 			Just quantize/default the raw sources and store them - no merging, no voice
@@ -315,11 +331,8 @@ struct CVLanesWidget : ModuleWidget
 			}
 		}
 
-		// Tiny bi-color corner lights - off/green/red neighbor signal (see moduleProcess()'s
-		// classifyLanesNeighborForHub() calls and CVLanes.hpp). Placeholder position (panel is
-		// 86.36mm wide) until Dieter places guide art for them.
-		addOrangeLineConnectionLight<AutoHideLight<TinyLight<GreenRedLight>>> (this, calculateCoordinates (3.5f, 4.f, 0.f), module, LEFT_CONN_LIGHT);
-		addOrangeLineConnectionLight<AutoHideLight<TinyLight<GreenRedLight>>> (this, calculateCoordinates (82.86f, 4.f, 0.f), module, RIGHT_CONN_LIGHT);
+		// Connection lights are gone (superseded by the seam/logo-cover mechanism - see
+		// ExpanderBridge.hpp's own file comment).
 
 		addOrangeLineTouchPorts (this, module, NUM_INPUTS, NUM_OUTPUTS,
 			module ? &module->OL_touchInPort : nullptr, module ? &module->OL_touchOutPort : nullptr, module ? &module->OL_touchVisible : nullptr);
@@ -353,6 +366,20 @@ struct CVLanesWidget : ModuleWidget
 		}
 	};
 
+	// Plain right-click-menu text field for customName (see its own member comment) - standard
+	// Rack pattern: ui::TextField fires onChange() on every edit, so just mirror `text` into the
+	// module straight away rather than needing a separate "confirm" step. Verbatim copy of
+	// Morpheus's own MorpheusNameField pattern.
+	struct CVLanesNameField : ui::TextField
+	{
+		CVLanes *module;
+		void onChange(const ChangeEvent &e) override
+		{
+			if (module)
+				module->customName = text;
+		}
+	};
+
 	void appendContextMenu(Menu *menu) override
 	{
 		MenuLabel *spacerLabel = new MenuLabel();
@@ -360,6 +387,19 @@ struct CVLanesWidget : ModuleWidget
 
 		CVLanes *module = dynamic_cast<CVLanes *>(this->module);
 		assert(module);
+
+		MenuLabel *nameLabel = new MenuLabel();
+		nameLabel->text = "Name";
+		menu->addChild(nameLabel);
+
+		CVLanesNameField *nameField = new CVLanesNameField();
+		nameField->module = module;
+		nameField->text = module->customName;
+		nameField->box.size = Vec(140.f, 20.f);
+		menu->addChild(nameField);
+
+		spacerLabel = new MenuLabel();
+		menu->addChild(spacerLabel);
 
 		addOrangeLineTouchMenuItem(menu, module->OL_touchInPort, module->OL_touchOutPort, &module->OL_touchVisible);
 

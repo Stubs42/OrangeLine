@@ -24,6 +24,12 @@ bool widgetReady = false;
 // family it reuses XOHostInterface/XOExpanderInterface from).
 XOHostInterface *xoHost = nullptr;
 
+// Persisted "NFC touch once, stays connected" target Host id - a real int64_t, not an OL_state
+// float slot, see XOShared.hpp's resolveXOHostBridge() for why (observed Rack module ids run into
+// the quadrillions - a float corrupts them). Persisted via this module's own
+// moduleExtraDataToJson/FromJson (json_integer()).
+int64_t xoConnectedHostId = -1;
+
 dsp::SchmittTrigger leftTrigger, rightTrigger;
 
 // Per-channel change-detection state (the seed itself) and the generated chain of up to
@@ -151,7 +157,8 @@ inline void moduleInitJsonConfig()
 
 	setJsonLabel(STYLE_JSON, "style");
 	setJsonLabel(BROWSE_INDEX_JSON, "browseIndex");
-	setJsonLabel(CONNECTED_HOST_ID_JSON, "connectedHostId");
+	// CONNECTED_HOST_ID_JSON is gone - xoConnectedHostId is a real int64_t now, persisted via
+	// this module's own moduleExtraDataToJson/FromJson instead (see its own member comment).
 	for (int c = 0; c < XR_CAPACITY; c++)
 	{
 		snprintf(channelRangeLabelBuf[c], sizeof(channelRangeLabelBuf[c]), "channelRange%d", c);
@@ -176,7 +183,7 @@ void moduleReset()
 {
 	styleChanged = true;
 	OL_state[BROWSE_INDEX_JSON] = 0.f;
-	OL_state[CONNECTED_HOST_ID_JSON] = -1.f;
+	xoConnectedHostId = -1;
 	for (int c = 0; c < XR_CAPACITY; c++)
 		OL_state[CHANNEL_RANGE_JSON + c] = 0.f; // Uni 10V default
 }
@@ -194,10 +201,9 @@ inline void moduleProcess(const ProcessArgs &args)
 		styleChanged = false;
 	}
 
-	// Adjacency-then-id-fallback ("NFC touch once, stays connected until explicitly broken") -
-	// see resolveXOHostPersistent()'s own comment (XOShared.hpp).
-	xoHost = resolveXOHostPersistent(leftExpander.module, OL_state[CONNECTED_HOST_ID_JSON]);
-	setStateLight(CONN_LIGHT, xoHost ? 255.f : 0.f);
+	// Touch-once-then-persist (both sides now, no more left-only restriction) - see
+	// resolveXOHostBridge()'s own comment (XOShared.hpp).
+	xoHost = resolveXOHostBridge(this, xoConnectedHostId);
 
 	// Browsing: same unconditional/unfiltered-by-engagement stepping as the XO family, but
 	// additionally skips gate-type candidates entirely - only continuous (value-carrying) outputs
@@ -273,10 +279,15 @@ inline void moduleReflectChanges() {}
 // XOExpanderInterface
 XOHostInterface* getXOHost() override { return xoHost; }
 float getXOStyle() override { return OL_state[STYLE_JSON]; }
-int64_t getXOConnectedHostId() override { return (int64_t) OL_state[CONNECTED_HOST_ID_JSON]; }
-void disconnectXOHost() override { OL_state[CONNECTED_HOST_ID_JSON] = -1.f; }
+int64_t getXOConnectedHostId() override { return xoConnectedHostId; }
+void disconnectXOHost() override { xoConnectedHostId = -1; }
 int getXOCapacity() override { return XR_CAPACITY; }
 int getXOBrowseIndex() override { return (int) OL_state[BROWSE_INDEX_JSON]; }
 // Inert stub - XR8/XR16 have no XOGateIndicator of their own (their output is always the
 // generated random chain, never a passthrough gate display), so nothing ever calls this.
 bool getXOBrowsedChannelGateLit(int channel) override { return false; }
+
+// ExpanderBridgeInterface (ExpanderBridge.hpp) - see XOModuleCommon.hpp's own identical comment.
+int64_t getBridgeHostId() override { return xoConnectedHostId; }
+std::vector<ExpanderFamily> getBridgeFamilies() override { return getModuleFamilies(model->slug); }
+std::string getBridgeHostName() override { return ""; }

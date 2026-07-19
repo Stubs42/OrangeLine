@@ -27,7 +27,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #define X16_PANEL_WIDTH_MM 30.48f
 
-struct X16 : Module, XExpanderInterface
+struct X16 : Module, XExpanderInterface, ExpanderBridgeInterface
 {
 
 #include "OrangeLineCommon.hpp"
@@ -91,8 +91,6 @@ struct X16Widget : ModuleWidget
 			module->darkPanel = darkPanel;
 			addChild(darkPanel);
 		}
-
-		addOrangeLineConnectionLight<AutoHideLight<TinyLight<GreenRedLight>>>(this, calculateCoordinates(X16_PANEL_WIDTH_MM - 3.5f, 4.f, 0.f), module, CONN_LIGHT);
 
 		// LEFT/RIGHT/ENGAGE positions/sizes measured directly from res/X16Work.svg's Controls
 		// layer (BUTTON_FRAME path bounding boxes) - identical to X8D's own.

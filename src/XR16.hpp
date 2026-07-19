@@ -46,10 +46,10 @@ enum jsonIds {
 	STYLE_JSON,
 	BROWSE_INDEX_JSON,   // persists the last browsed output slot - see XRModuleCommon.hpp's own
 	                      // moduleProcess()
-	// Persistent target Host module id for the non-adjacent stay-connected mechanism - mirrors
-	// Styx.hpp's own CONNECTED_HOST_ID_JSON. -1 means "none, resolve via left-side physical
-	// adjacency only". Unconditional/automatic, not a menu-driven Connect action like STYX's.
-	CONNECTED_HOST_ID_JSON,
+	// The non-adjacent stay-connected target host id used to live here as a float - moved to a
+	// real int64_t member (xoConnectedHostId, XRModuleCommon.hpp), persisted via this module's
+	// own moduleExtraDataToJson/FromJson instead (observed Rack module ids run into the
+	// quadrillions - a float silently corrupts them, see XOShared.hpp's resolveXOHostBridge()).
 	CHANNEL_RANGE_JSON,   // per-channel output range choice (index into XR_RANGE_OPTIONS)
 	CHANNEL_RANGE_JSON_LAST = CHANNEL_RANGE_JSON + XR_CAPACITY - 1,
 
@@ -87,10 +87,8 @@ enum OutputIds {
 // Light Ids
 //
 enum LightIds {
-	CONN_LIGHT,
-	CONN_LIGHT_LAST = CONN_LIGHT + 1, // GreenRedLight needs 2 consecutive ids (green, red)
-	OVERFLOW_LIGHT,                   // lit whenever the browsed output has more real channels
-	                                  // than this module's own fixed capacity
+	OVERFLOW_LIGHT, // lit whenever the browsed output has more real channels than this module's
+	                // own fixed capacity
 
 	NUM_LIGHTS
 };

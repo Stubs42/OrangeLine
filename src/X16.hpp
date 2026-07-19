@@ -69,12 +69,9 @@ enum OutputIds {
 };
 
 //
-// Light Ids
+// Light Ids - the connection light is gone (superseded by the seam/logo-cover mechanism, which
+// now derives directly from the bridge host id - see ExpanderBridge.hpp)
 //
 enum LightIds {
-	CONN_LIGHT,
-	CONN_LIGHT_LAST = CONN_LIGHT + 1, // GreenRedLight needs 2 consecutive ids (green, red) - see
-	                                  // the host type-lock feature in X16.cpp
-
 	NUM_LIGHTS
 };

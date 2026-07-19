@@ -22,6 +22,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define STYX_SHARED_HPP
 
 #include "OrangeLine.hpp"
+#include "ExpanderBridge.hpp"
 
 /*
 	STYX is a bidirectional Expander - unlike the read-only XO family (XOShared.hpp) or the
@@ -31,13 +32,13 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 	name like "MorpheusTapeHostInterface" would have needed renaming the moment a second Host
 	implemented it, "StyxHostInterface" doesn't.
 
-	No StyxExpanderInterface/chain-walk of its own is needed for resolving a Host - STYX resolves
-	directly via a plain dynamic_cast on its own immediate left/right neighbor (the non-adjacent/
-	detached-connection idea was explicitly considered and withdrawn), unlike the X/XO families
-	which need a chain-walk since any number of their own Expanders can sit between an Expander
-	and its Host. STYX itself still needs to relay the *other* families' own chain-walks though -
-	see Styx.cpp's own XExpanderInterface/XOExpanderInterface implementation for that (a real,
-	physically sensible rack layout like `Morpheus | STYX | XO8` must keep working).
+	As of 2026-07-19, discovery goes through the generic ExpanderBridge.hpp mechanism (both sides,
+	touch-once-then-persist - see Styx.cpp's own moduleProcess()), replacing STYX's earlier
+	bespoke inline resolve-then-remember block. resolveStyxHost() below is kept as the final,
+	family-specific dynamic_cast step once a host id has been resolved - STYX itself still needs
+	to relay the *other* families' own discovery though - see Styx.cpp's own
+	XExpanderInterface/XOExpanderInterface implementation for that (a real, physically sensible
+	rack layout like `Morpheus | STYX | XO8` must keep working).
 */
 struct StyxHostInterface
 {
@@ -71,10 +72,9 @@ struct StyxHostInterface
 	// families' interfaces at once (Morpheus already does, for X/XO) has no ambiguity.
 	virtual float getStyxStyle() = 0;
 
-	// Optional user-editable display label (mirrors XHostInterface::getXHostName()) - lets
-	// STYX's own Connect menu tell apart several same-type Hosts by name instead of just
-	// listing the module type over and over. May be empty (falls back to slug + Rack id).
-	virtual std::string getStyxHostName() = 0;
+	// Editable Host display name now lives on ExpanderBridgeInterface::getBridgeHostName() -
+	// every Host implements that interface too (see its own comment for why this was
+	// generalized out of being an X-family/STYX-only concept).
 };
 
 inline StyxHostInterface* resolveStyxHost(Module *neighbor)

@@ -33,13 +33,12 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define STYX_ROW_HEIGHT_MM     6.5f
 #define STYX_FIRST_ROW_Y_MM    12.f
 
-struct Styx : Module, XExpanderInterface, XOExpanderInterface, StyxExpanderInterface
+struct Styx : Module, XExpanderInterface, XOExpanderInterface, StyxExpanderInterface, ExpanderBridgeInterface
 {
 #include "OrangeLineCommon.hpp"
 
-	// Resolved every tick by trying both sides (unlike the strictly one-sided X/XO families) -
-	// the non-adjacent/detached-connection idea was explicitly withdrawn, so this is a plain
-	// immediate-neighbor dynamic_cast, not a chain-walk.
+	// Resolved every tick via the generic touch-once-then-persist mechanism (both sides -
+	// ExpanderBridge.hpp), same as XO-family/LANES now use.
 	StyxHostInterface *styxHost = nullptr;
 	// The raw neighbor Module* that satisfied styxHost above - kept separately so the
 	// XExpanderInterface/XOExpanderInterface relay methods below can re-cast the SAME instance to
@@ -62,9 +61,27 @@ struct Styx : Module, XExpanderInterface, XOExpanderInterface, StyxExpanderInter
 	char rowPageLabelBuf[STYX_NUM_ROWS][20];
 	char rowCellTypeLabelBuf[STYX_NUM_ROWS][20];
 
+	// Persisted "NFC touch once, stays connected" target Host id - a real int64_t, not an
+	// OL_state float slot, see ExpanderBridge.hpp's resolveBridgeHostId() and
+	// XOShared.hpp's resolveXOHostBridge() for why that distinction matters (observed Rack
+	// module ids run into the quadrillions - a float silently corrupts them). Persisted via
+	// this module's own moduleExtraDataToJson/FromJson below.
+	int64_t styxConnectedHostId = -1;
+
 	Styx()
 	{
 		initializeInstance();
+
+		moduleExtraDataToJson = [this](json_t *rootJ)
+		{
+			json_object_set_new(rootJ, "connectedHostId", json_integer(styxConnectedHostId));
+		};
+		moduleExtraDataFromJson = [this](json_t *rootJ)
+		{
+			json_t *idJ = json_object_get(rootJ, "connectedHostId");
+			if (idJ && json_is_integer(idJ))
+				styxConnectedHostId = json_integer_value(idJ);
+		};
 	}
 
 	// How many step-columns currently fit, given the panel's own current width - "however many
@@ -86,7 +103,8 @@ struct Styx : Module, XExpanderInterface, XOExpanderInterface, StyxExpanderInter
 
 		setJsonLabel(STYLE_JSON, "style");
 		setJsonLabel(PANEL_WIDTH_HP_JSON, "panelWidthHp");
-		setJsonLabel(CONNECTED_HOST_ID_JSON, "connectedHostId");
+		// CONNECTED_HOST_ID_JSON is gone - styxConnectedHostId is a real int64_t now, persisted
+		// via this module's own moduleExtraDataToJson/FromJson instead (see its own comment).
 		for (int r = 0; r < STYX_NUM_ROWS; r++)
 		{
 			snprintf(rowChannelLabelBuf[r], sizeof(rowChannelLabelBuf[r]), "rowChannel%d", r);
@@ -127,7 +145,7 @@ struct Styx : Module, XExpanderInterface, XOExpanderInterface, StyxExpanderInter
 	{
 		styleChanged = true;
 		OL_state[PANEL_WIDTH_HP_JSON] = (float) STYX_DEFAULT_WIDTH_HP;
-		OL_state[CONNECTED_HOST_ID_JSON] = -1.f;
+		styxConnectedHostId = -1;
 		for (int r = 0; r < STYX_NUM_ROWS; r++)
 		{
 			OL_state[ROW_CHANNEL_JSON + r] = (float) r; // row r shows channel r by default
@@ -147,45 +165,27 @@ struct Styx : Module, XExpanderInterface, XOExpanderInterface, StyxExpanderInter
 		// SVG panel can't stretch to match this module's resizable width. styleChanged is left
 		// alone (never consumed) - harmless, nothing depends on it being cleared.
 
-		// Auto-remembered non-adjacent connection: whenever ordinary physical adjacency resolves
-		// a Host, its module id is saved automatically - no manual "Connect" selection needed.
-		// That remembered id then takes over once STYX is no longer physically adjacent (moved
-		// elsewhere in the rack), letting it keep watching the same Morpheus. "Disconnect"
-		// (right-click) clears the remembered id back to -1, forcing pure adjacency again.
-		Module *neighbor = leftExpander.module;
-		styxHost = resolveStyxHost(neighbor);
-		if (!styxHost)
+		// Touch-once-then-persist connection (both sides now) - see resolveBridgeHostId()'s own
+		// comment (ExpanderBridge.hpp). Only ever attempts a fresh touch while not yet connected;
+		// once connected, stays put regardless of later physical movement until an explicit
+		// "Disconnect".
+		if (styxConnectedHostId == -1)
 		{
-			neighbor = rightExpander.module;
-			styxHost = resolveStyxHost(neighbor);
+			int64_t newId = resolveBridgeHostId({ FAMILY_STYX }, leftExpander.module, rightExpander.module);
+			if (newId != -1)
+				styxConnectedHostId = newId;
 		}
-		if (styxHost)
+		styxHost = nullptr;
+		styxHostModule = nullptr;
+		if (styxConnectedHostId != -1)
 		{
-			// Remember this connection for later, unless the user explicitly disconnected.
-			int64_t neighborId = neighbor->id;
-			if ((int64_t) OL_state[CONNECTED_HOST_ID_JSON] != neighborId)
-				OL_state[CONNECTED_HOST_ID_JSON] = (float) neighborId;
+			Module *m = APP->engine->getModule(styxConnectedHostId);
+			styxHost = m ? resolveStyxHost(m) : nullptr;
+			if (styxHost)
+				styxHostModule = m;
+			else
+				styxConnectedHostId = -1; // target vanished - clear the stale id
 		}
-		else
-		{
-			// Not physically adjacent to anything right now - fall back to whatever was
-			// remembered, if it's still a valid StyxHostInterface implementer.
-			int64_t connectedId = (int64_t) OL_state[CONNECTED_HOST_ID_JSON];
-			if (connectedId >= 0)
-			{
-				Module *m = APP->engine->getModule(connectedId);
-				StyxHostInterface *host = m ? dynamic_cast<StyxHostInterface*>(m) : nullptr;
-				if (host)
-				{
-					styxHost = host;
-					neighbor = m;
-				}
-				else
-					OL_state[CONNECTED_HOST_ID_JSON] = -1.f; // target vanished - clear the stale id
-			}
-		}
-		styxHostModule = styxHost ? neighbor : nullptr;
-		setStateLight(CONN_LIGHT, styxHost ? 255.f : 0.f);
 
 		int visibleCols = getVisibleColumns();
 
@@ -230,16 +230,17 @@ struct Styx : Module, XExpanderInterface, XOExpanderInterface, StyxExpanderInter
 	// an X-family Expander chained further along the rack (e.g. "X8 | STYX | Morpheus") keeps
 	// resolving its own Host straight through STYX exactly as it would through any other
 	// X-family member. Every method below except getXHost()/getXStyle() is genuinely dead code
-	// from STYX's own perspective (resolveXHost() never calls them on an intermediate relay -
-	// only a concrete X8/X16's own widget calls them, on its own module) but must still compile.
+	// from STYX's own perspective but must still compile.
 	XHostInterface* getXHost() override { return styxHostModule ? dynamic_cast<XHostInterface*>(styxHostModule) : nullptr; }
 	void setXBoundHostId(int64_t hostId) override {}
 	int64_t getXBoundHostId() override { return -1; }
+	int64_t getXSelfId() override { return -1; } // never a clone-recovery target - see the pure-
+	                                              // relay comment above; -1 also correctly never
+	                                              // satisfies xIsFreshClone() for any real id
 	float getXStyle() override { return OL_state[STYLE_JSON]; }
 	int getXKnobCount() override { return 0; }
 	float getXKnobValue(int channel) override { return 0.f; }
 	int getXBrowseIndex() override { return 0; }
-	bool consumeEngagePress() override { return false; }
 	XParamType getXBrowsedParamType() override { return X_PARAM_CONTINUOUS; }
 	NVGcolor getXBrowsedParamColor() override { return ORANGE; }
 	XAlign getXBrowsedParamAlign() override { return X_ALIGN_LEFT; }
@@ -267,6 +268,12 @@ struct Styx : Module, XExpanderInterface, XOExpanderInterface, StyxExpanderInter
 	int getXOBrowsedChannelCount() override { return 0; }
 	float getXOBrowsedChannelValue(int channel) override { return 0.f; }
 	bool getXOBrowsedChannelGateLit(int channel) override { return false; }
+
+	// ExpanderBridgeInterface (ExpanderBridge.hpp) - the persisted connection IS this Expander's
+	// own bridge id (STYX has no exclusivity concept, same as XO-family/LANES).
+	int64_t getBridgeHostId() override { return styxConnectedHostId; }
+	std::vector<ExpanderFamily> getBridgeFamilies() override { return getModuleFamilies(model->slug); }
+	std::string getBridgeHostName() override { return ""; } // Expander, not a Host
 };
 
 /**
@@ -555,8 +562,6 @@ struct StyxWidget : ModuleWidget
 		panelWidget->module = module;
 		panelWidget->box.size = box.size;
 		addChild(panelWidget);
-
-		addOrangeLineConnectionLight<AutoHideLight<TinyLight<GreenRedLight>>>(this, calculateCoordinates(3.5f, 4.f, 0.f), module, CONN_LIGHT);
 
 		for (int r = 0; r < STYX_NUM_ROWS; r++)
 		{
@@ -849,7 +854,7 @@ struct StyxWidget : ModuleWidget
 		Styx *module;
 		void onAction(const event::Action &e) override
 		{
-			module->OL_setOutState(CONNECTED_HOST_ID_JSON, -1.f);
+			module->styxConnectedHostId = -1;
 		}
 	};
 
@@ -898,7 +903,7 @@ struct StyxWidget : ModuleWidget
 		channelsItem->rightText = RIGHT_ARROW;
 		menu->addChild(channelsItem);
 
-		if ((int64_t) module->OL_state[CONNECTED_HOST_ID_JSON] >= 0)
+		if (module->styxConnectedHostId >= 0)
 		{
 			spacerLabel = new MenuLabel();
 			menu->addChild(spacerLabel);

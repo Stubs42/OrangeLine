@@ -32,7 +32,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 	16x(V/Oct+Gate+Velocity+Overflow) CV jacks that used to live directly on LANES before
 	the Hub/Expander split. Zero CV inputs/params of its own - it's a pure "pull" reader.
 */
-struct LanesCV : Module, LanesExpanderInterface
+struct LanesCV : Module, LanesExpanderInterface, ExpanderBridgeInterface
 {
 
 #include "OrangeLineCommon.hpp"
@@ -42,20 +42,38 @@ struct LanesCV : Module, LanesExpanderInterface
 	bool widgetReady = false;
 
 	LanesHubInterface *lanesHub = nullptr;
-	// Set when a Hub is reachable through BOTH sides at once - see LanesShared.hpp's
-	// classifyLanesNeighborForHub(), which a neighboring Hub uses this to detect being
-	// caught between two Hubs even though we're not directly adjacent to the other one.
-	bool lanesHubAmbiguous = false;
 	LanesVoiceAllocator<POLY_CHANNELS> allocator;
+
+	// Persisted "NFC touch once, stays connected" target Hub id - a real int64_t, not an
+	// OL_state float slot, see LanesShared.hpp's resolveLanesHubBridge() for why that
+	// distinction matters (observed Rack module ids run into the quadrillions - a float
+	// corrupts them). Persisted via this module's own moduleExtraDataToJson/FromJson.
+	int64_t lanesConnectedHostId = -1;
 
 	LanesCV()
 	{
 		initializeInstance();
+
+		moduleExtraDataToJson = [this](json_t *rootJ)
+		{
+			json_object_set_new(rootJ, "connectedHostId", json_integer(lanesConnectedHostId));
+		};
+		moduleExtraDataFromJson = [this](json_t *rootJ)
+		{
+			json_t *idJ = json_object_get(rootJ, "connectedHostId");
+			if (idJ && json_is_integer(idJ))
+				lanesConnectedHostId = json_integer_value(idJ);
+		};
 	}
 
 	LanesHubInterface* getLanesHub() override { return lanesHub; }
-	bool getLanesHubAmbiguous() override { return lanesHubAmbiguous; }
 	float getLanesStyle() override { return OL_state[STYLE_JSON]; }
+
+	// ExpanderBridgeInterface (ExpanderBridge.hpp) - the persisted connection IS this
+	// Expander's own bridge id (no exclusivity concept in this family at all).
+	int64_t getBridgeHostId() override { return lanesConnectedHostId; }
+	std::vector<ExpanderFamily> getBridgeFamilies() override { return getModuleFamilies(model->slug); }
+	std::string getBridgeHostName() override { return ""; }
 
 	bool moduleSkipProcess()
 	{
@@ -115,13 +133,13 @@ struct LanesCV : Module, LanesExpanderInterface
 	void moduleReset()
 	{
 		styleChanged = true;
+		lanesConnectedHostId = -1;
 	}
 
 	/**
-		Chain-walk to find the Hub (checked on both sides - there's only one Hub, but an
-		expander may sit to its left or its right, see LanesShared.hpp's resolveLanesHub()),
-		run our own voice allocator against its raw per-source state, then relay the result
-		to our own CV ports.
+		Touch-once-then-persist Hub discovery (both sides - see resolveLanesHubBridge(),
+		LanesShared.hpp), run our own voice allocator against its raw per-source state, then
+		relay the result to our own CV ports.
 	*/
 	inline void moduleProcess(const ProcessArgs &args)
 	{
@@ -136,28 +154,7 @@ struct LanesCV : Module, LanesExpanderInterface
 			styleChanged = false;
 		}
 
-		LanesHubInterface *hubLeft  = resolveLanesHub(leftExpander.module);
-		LanesHubInterface *hubRight = resolveLanesHub(rightExpander.module);
-		lanesHub = hubLeft ? hubLeft : hubRight;
-		// Only a real conflict if left and right resolve to two DIFFERENT Hubs - in a plain
-		// chain (Hub | LanesCV | LanesMidi), the middle expander reaches the same Hub both
-		// directly (left) and indirectly through its other neighbor (right), which is
-		// perfectly healthy, not ambiguous.
-		bool hubConflict = hubLeft && hubRight && hubLeft != hubRight;
-		lanesHubAmbiguous = hubConflict;
-
-		// Chain-health color, shared by both corner lights (see LanesCV.hpp) - only whether
-		// each light is lit at all depends on that specific side's own connection.
-		float healthGreen, healthRed;
-		if (hubConflict)               { healthGreen = 0.f;   healthRed = 255.f; }	// red: two different Hubs reachable
-		else if (hubLeft || hubRight)  { healthGreen = 255.f; healthRed = 0.f;   }	// green: healthy, one Hub (either or both sides)
-		else                           { healthGreen = 0.f;   healthRed = 0.f;   }	// off: connected, but no Hub anywhere (dropped yellow - cosmetic call, Dieter 2026-07-15)
-		bool leftConnected  = leftExpander.module  != nullptr;
-		bool rightConnected = rightExpander.module != nullptr;
-		setStateLight(LEFT_CONN_LIGHT,      leftConnected  ? healthGreen : 0.f);
-		setStateLight(LEFT_CONN_LIGHT + 1,  leftConnected  ? healthRed   : 0.f);
-		setStateLight(RIGHT_CONN_LIGHT,     rightConnected ? healthGreen : 0.f);
-		setStateLight(RIGHT_CONN_LIGHT + 1, rightConnected ? healthRed   : 0.f);
+		lanesHub = resolveLanesHubBridge(this, lanesConnectedHostId);
 
 		if (lanesHub)
 			allocator.process(lanesHub);
@@ -255,11 +252,8 @@ struct LanesCVWidget : ModuleWidget
 			}
 		}
 
-		// Tiny bi-color corner lights - off/green/yellow/red chain-health signal (see
-		// moduleProcess()'s resolveLanesHub() calls and LanesCV.hpp). Placeholder position
-		// (panel is 86.36mm wide) until Dieter places guide art for them.
-		addOrangeLineConnectionLight<AutoHideLight<TinyLight<GreenRedLight>>> (this, calculateCoordinates (3.5f, 4.f, 0.f), module, LEFT_CONN_LIGHT);
-		addOrangeLineConnectionLight<AutoHideLight<TinyLight<GreenRedLight>>> (this, calculateCoordinates (82.86f, 4.f, 0.f), module, RIGHT_CONN_LIGHT);
+		// Connection lights are gone (superseded by the seam/logo-cover mechanism - see
+		// ExpanderBridge.hpp's own file comment).
 
 		addOrangeLineTouchPorts (this, module, NUM_INPUTS, NUM_OUTPUTS,
 			module ? &module->OL_touchInPort : nullptr, module ? &module->OL_touchOutPort : nullptr, module ? &module->OL_touchVisible : nullptr);
@@ -293,6 +287,15 @@ struct LanesCVWidget : ModuleWidget
 		}
 	};
 
+	// Clears the remembered non-adjacent connection (lanesConnectedHostId) only - LANES has no
+	// engagement/binding/exclusivity concept at all to unwind, same reasoning as XO-family's own
+	// XODisconnectItem (XOCommon.hpp).
+	struct LanesCVDisconnectItem : MenuItem
+	{
+		LanesCV *module;
+		void onAction(const event::Action &e) override { module->lanesConnectedHostId = -1; }
+	};
+
 	void appendContextMenu(Menu *menu) override
 	{
 		MenuLabel *spacerLabel = new MenuLabel();
@@ -300,6 +303,27 @@ struct LanesCVWidget : ModuleWidget
 
 		LanesCV *module = dynamic_cast<LanesCV *>(this->module);
 		assert(module);
+
+		// Single "Disconnect: <name>" item if currently connected - omitted entirely otherwise
+		// (no dead/disabled menu clutter), mirrors X-family's/XO-family's own equivalent.
+		if (module->lanesConnectedHostId >= 0)
+		{
+			Module *m = APP->engine->getModule(module->lanesConnectedHostId);
+			if (m)
+			{
+				ExpanderBridgeInterface *bridge = dynamic_cast<ExpanderBridgeInterface*>(m);
+				std::string hostName = bridge ? bridge->getBridgeHostName() : "";
+				LanesCVDisconnectItem *item = new LanesCVDisconnectItem();
+				item->module = module;
+				item->text = hostName.empty()
+					? string::f("Disconnect: %s #%lld", m->model->slug.c_str(), (long long) m->id)
+					: string::f("Disconnect: %s", hostName.c_str());
+				menu->addChild(item);
+
+				spacerLabel = new MenuLabel();
+				menu->addChild(spacerLabel);
+			}
+		}
 
 		addOrangeLineTouchMenuItem(menu, module->OL_touchInPort, module->OL_touchOutPort, &module->OL_touchVisible);
 

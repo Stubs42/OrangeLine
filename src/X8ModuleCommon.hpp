@@ -33,21 +33,18 @@ bool widgetReady = false;
 // that only changes a few times per session.
 int64_t xBoundHostId = -1;
 
-// Cached result of the LAST onExpanderChange() event on the right side (XShared.hpp's own
-// left-only-attachment note: an Expander only ever looks right for its Host) - updated only when
-// Rack actually tells us adjacency changed, not re-polled every tick. Used purely as the
-// browsing-only fallback when not bound anywhere (xBoundHostId == -1) - a bound Expander never
-// needs this at all, regardless of physical position.
-XHostInterface *xAdjacentHost = nullptr;
-// Guards against relying on xAdjacentHost before any onExpanderChange() event has ever fired for
-// this instance - e.g. a module that loads a patch already sitting adjacent to a Host: Rack does
-// fire the event for a freshly-added module with existing neighbors, but this flag makes the one
-// case where that assumption is wrong (if it ever is) self-correcting on the very first tick
-// rather than silently leaving browsing broken until the user nudges the module.
-bool xAdjacencyChecked = false;
+// Live, NON-persisted "connection" for browsing only when not bound anywhere - recomputed fresh
+// every moduleProcess() tick via ExpanderBridge.hpp's resolveBridgeHostId() (both sides, crossing
+// any number of already-connected intermediate Expanders since each one's own getBridgeHostId()
+// already reflects wherever it ended up). Deliberately NOT gated/cached via onExpanderChange like
+// the exclusive bind is - an X-family Expander that was never bound simply loses this the instant
+// physical adjacency is (Dieter's own call, unlike XO-family/STYX/LANES, which persist their own
+// mere connection once touched). See ExpanderBridge.hpp's own file comment for the full
+// per-family persistence-policy reasoning.
+int64_t xConnectedId = -1;
 
 // Resolved every moduleProcess() tick: the Host resolved from xBoundHostId if bound anywhere
-// (regardless of physical position), else xAdjacentHost (browsing only). See moduleProcess()'s
+// (regardless of physical position), else from xConnectedId (browsing only). See moduleProcess()'s
 // own resolution block for the full reasoning, including the one place a full-rack scan
 // (findXBoundHostId()) still runs - once, to re-establish xBoundHostId right after a patch load,
 // where no push event ever fired this session.
@@ -60,7 +57,6 @@ XHostInterface *xHost = nullptr;
 // same as CHANNEL_LIMIT_JSON - a separate cached member would go stale the moment
 // dataFromJson() restores OL_state without also updating it.
 dsp::SchmittTrigger engageTrigger, leftTrigger, rightTrigger;
-bool pendingEngagePress = false;
 
 // Edge-detects "the param I'm currently standing on just became bound to me, or I just
 // arrived on it" so knobs can be resynced. Keyed to the index itself: browsing away and back
@@ -282,17 +278,23 @@ inline void moduleProcess(const ProcessArgs &args)
 	// time, tracked via that Host's own boundExpanderId (see CLAUDE.md's Expander-modules
 	// section) - nothing here needs to know or care what kind of Host it's currently looking at.
 	//
-	// Bound-first (pushed id, not polled/scanned), adjacency-fallback: if some Host currently
-	// binds this Expander, xBoundHostId already holds its module id directly - pushed by that
-	// Host itself the moment the binding was granted, no per-tick scan needed. Resolved to an
-	// actual pointer FRESH every tick (never cached across ticks) so a deleted Host can never
-	// leave a dangling reference here. The ONE exception needing a scan at all: right after a
-	// fresh patch load (dataFromJsonCalled, OrangeLineCommon.hpp), a binding can already be
-	// restored as bound without any push event ever having fired this session - so on that one
-	// tick only, fall back to a full-rack scan (findXBoundHostId(), XShared.hpp) to re-establish
-	// xBoundHostId, exactly as if the Host had just pushed it. Only when NOT bound anywhere does
-	// physical adjacency (xAdjacentHost, updated only via onExpanderChange() below) matter at all,
-	// purely so there's something to browse before ever engaging.
+	// Bound-first (pushed id, not polled/scanned): if some Host currently binds this Expander,
+	// xBoundHostId already holds its module id directly - pushed by that Host itself the moment
+	// the binding was granted, no per-tick scan needed. Resolved to an actual pointer FRESH every
+	// tick (never cached across ticks) so a deleted Host can never leave a dangling reference
+	// here. The ONE exception needing a scan at all: right after a fresh patch load
+	// (dataFromJsonCalled, OrangeLineCommon.hpp), a binding can already be restored as bound
+	// without any push event ever having fired this session - so on that one tick only, fall back
+	// to a full-rack scan (findXBoundHostId(), XShared.hpp) to re-establish xBoundHostId, exactly
+	// as if the Host had just pushed it.
+	// Clone/selection-load recovery: at most once, right after a fresh load, while this
+	// Expander is both unbound and itself a fresh clone (OL_selfId, OrangeLineCommon.hpp,
+	// mismatches this module's own real id) - see XShared.hpp's own architecture comment on
+	// tryRecoverXBinding() for the full reasoning. Deliberately checked BEFORE the ordinary
+	// findXBoundHostId() fallback right below: if this succeeds, xBoundHostId is already set
+	// and that fallback's own `xBoundHostId == -1` guard correctly skips.
+	if (dataFromJsonCalled && xBoundHostId == -1 && xIsFreshClone(OL_selfId, (int64_t) this->id))
+		tryRecoverXBinding(this, (int64_t) this->id, OL_selfId);
 	if (dataFromJsonCalled && xBoundHostId == -1)
 		xBoundHostId = findXBoundHostId((int64_t) this->id);
 	XHostInterface *boundHost = nullptr;
@@ -305,18 +307,26 @@ inline void moduleProcess(const ProcessArgs &args)
 			                   // happen - the Host's own onRemove() should already have cleared
 			                   // this - defensive only, never relied on in normal operation
 	}
-	// One-shot lazy seed for xAdjacentHost, in case this instance somehow never got an
-	// onExpanderChange() event despite already having a neighbor when constructed (e.g. loading a
-	// patch already sitting adjacent to a Host) - self-corrects on the very first tick instead of
-	// silently leaving browsing broken until the user nudges the module. Every subsequent update
-	// comes from the event itself, not from re-polling here.
-	if (!xAdjacencyChecked)
+	// Not bound anywhere: re-derive a live, non-persisted browsing connection fresh every tick,
+	// from BOTH sides now (ExpanderBridge.hpp's resolveBridgeHostId() - no more left/right
+	// restriction, no more continuously-relayed chain, see XShared.hpp's own file comment). Lost
+	// the instant physical adjacency is, since it was never bound - this Expander's own choice,
+	// not shared by XO-family/STYX/LANES (see ExpanderBridge.hpp's own persistence-policy note).
+	XHostInterface *connectedHost = nullptr;
+	if (boundHost)
+		xConnectedId = -1; // bound takes over entirely - no need to track a separate connection
+	else
 	{
-		xAdjacentHost = resolveXHost(rightExpander.module);
-		xAdjacencyChecked = true;
+		xConnectedId = resolveBridgeHostId({ FAMILY_X }, leftExpander.module, rightExpander.module);
+		if (xConnectedId != -1)
+		{
+			Module *m = APP->engine->getModule(xConnectedId);
+			connectedHost = m ? dynamic_cast<XHostInterface*>(m) : nullptr;
+			if (!connectedHost)
+				xConnectedId = -1;
+		}
 	}
-	xHost = boundHost ? boundHost : xAdjacentHost;
-	setStateLight(CONN_LIGHT, xHost ? 255.f : 0.f);
+	xHost = boundHost ? boundHost : connectedHost;
 
 	// Browsing: unconditional, unfiltered stepping through every candidate param the
 	// currently-resolved Host reports - see "Browsing is never locked or filtered" in
@@ -430,11 +440,14 @@ inline void moduleProcess(const ProcessArgs &args)
 		xLastRangeHost = nullptr;
 	}
 
-	// Engage button: local debounce only - this Expander has no idea whether a click will
-	// actually bind, unbind, or do nothing at all. The Host decides that, during its own
-	// process(), the next time it reads consumeEngagePress().
-	if (engageTrigger.process(params[ENGAGE_PARAM].getValue()))
-		pendingEngagePress = true;
+	// Engage button: calls straight into whatever Host we already resolved (xHost, above) the
+	// instant the press edge is detected - no separate debounce-and-wait-for-the-Host-to-poll-us
+	// step anymore (see XHostInterface::requestXBind()'s own comment, XShared.hpp, for why this
+	// replaces the old physical-only chain-walk entirely). Works identically whether xHost came
+	// from physical adjacency or a persistently-connected-but-detached neighbor further down the
+	// chain - both are the exact same resolution browsing already trusted.
+	if (engageTrigger.process(params[ENGAGE_PARAM].getValue()) && xHost)
+		xHost->requestXBind((int) OL_state[BROWSE_INDEX_JSON], (int64_t) this->id, this);
 
 	// X_PARAM_CLICK's fixed-length pulse, independent of hold duration - see
 	// pendingValueClick's own comment above. Only touches the params while the browsed type
@@ -460,29 +473,26 @@ inline void moduleProcess(const ProcessArgs &args)
 inline void moduleProcessState() {}
 inline void moduleReflectChanges() {}
 
-// Rack's own module-lifecycle event, not part of this framework's OL_state/moduleXxx() hook set -
-// fires right after adjacency actually changes on either side, so xAdjacentHost only needs
-// updating here, never re-polled every tick. Only the right side matters for host resolution
-// (XShared.hpp's own left-only-attachment note), but both sides can affect the seam-strip/logo-
-// cover widgets, which already do their own per-frame neighbor check independently (UI-thread,
-// cosmetic) - this event is purely about the audio-thread xAdjacentHost cache.
-void onExpanderChange(const ExpanderChangeEvent &e) override
-{
-	if (e.side == 1) // 1 = right (0 = left) - see Rack's own ExpanderChangeEvent::side comment
-		xAdjacentHost = resolveXHost(rightExpander.module);
-}
-
 // Proactively clears this Expander's own binding on whichever Host holds it - using ONLY the
 // stable id already known (xBoundHostId), a single targeted lookup, never a rack-wide scan -
 // right before this Expander is actually destroyed, so the Host is never left holding a
 // boundExpanderId that points at a module which no longer exists. Symmetric with Morpheus's own
 // onRemove() (Morpheus.cpp), which does the same in the other direction when a Host is deleted -
 // between the two, neither side can ever be left with a stale/dangling reference to the other.
+//
+// Rack's own removeModule() holds an exclusive lock for the ENTIRE duration of this callback, so
+// EVERY engine lookup anywhere in this call chain must use the *_NoLock variant - both the direct
+// getModule() call right here AND the Host's own clearing method (resetXParamDuringRemoval(), not
+// the ordinary resetXParam(), which internally uses the regular locking getModule() and would
+// deadlock if reached from here). See XHostInterface::resetXParamDuringRemoval()'s own interface
+// comment (XShared.hpp) and CLAUDE.md's Pitfalls entry for the full reasoning - a share-locking
+// call from within an already-exclusively-locked callback is a guaranteed self-deadlock,
+// regardless of how many function calls deep it happens.
 void onRemove(const RemoveEvent &e) override
 {
 	if (xBoundHostId != -1)
 	{
-		Module *m = APP->engine->getModule(xBoundHostId);
+		Module *m = APP->engine->getModule_NoLock(xBoundHostId);
 		XHostInterface *host = m ? dynamic_cast<XHostInterface*>(m) : nullptr;
 		if (host)
 		{
@@ -490,10 +500,7 @@ void onRemove(const RemoveEvent &e) override
 			for (int i = 0; i < count; i++)
 				if (host->getXParamBoundId(i) == (int64_t) this->id)
 				{
-					host->resetXParam(i); // also pushes setXBoundHostId(-1) back to us, harmless
-					                      // (we're being destroyed anyway) but keeps the Host's
-					                      // own resetXParam() the single place that ever clears
-					                      // a binding, no special-cased duplicate logic here
+					host->resetXParamDuringRemoval(i); // NOT resetXParam() - see comment above
 					break; // single-binding invariant - never more than one match
 				}
 		}
@@ -503,19 +510,33 @@ void onRemove(const RemoveEvent &e) override
 
 // XExpanderInterface
 XHostInterface* getXHost() override { return xHost; }
-void setXBoundHostId(int64_t hostId) override { xBoundHostId = hostId; }
+// A real (non -1) hostId means an actual grant just happened - whether a normal manual Engage
+// or the clone-recovery mechanism's own reclaim (XShared.hpp's tryRecoverXBinding()) - either
+// way this Expander's own clone-recovery relevance is now resolved (it has a live, legitimate
+// binding again), so OL_selfId is brought back in sync with reality right here, the single
+// choke point every bind grant already goes through. Left untouched on an unbind (hostId == -1)
+// - nothing to resolve there.
+void setXBoundHostId(int64_t hostId) override
+{
+	xBoundHostId = hostId;
+	if (hostId != -1)
+		OL_selfId = (int64_t) this->id;
+}
 int64_t getXBoundHostId() override { return xBoundHostId; }
+int64_t getXSelfId() override { return OL_selfId; }
 float getXStyle() override { return OL_state[STYLE_JSON]; }
+
+// ExpanderBridgeInterface (ExpanderBridge.hpp) - bound takes priority (a real, exclusive grant),
+// falling back to the live, non-persisted browsing connection - this is exactly what makes a
+// merely-connected (not bound) X-family Expander still relay onward to a further neighbor
+// touching it, same as a bound one already did.
+int64_t getBridgeHostId() override { return xBoundHostId != -1 ? xBoundHostId : xConnectedId; }
+std::vector<ExpanderFamily> getBridgeFamilies() override { return getModuleFamilies(model->slug); }
+std::string getBridgeHostName() override { return ""; } // Expander, not a Host - nothing to name
 int getXKnobCount() override { return (int) OL_state[CHANNEL_LIMIT_JSON]; }
 float getXKnobValue(int channel) override { return getStateParam(KNOB_PARAM + channel); }
 int getXBrowseIndex() override { return (int) OL_state[BROWSE_INDEX_JSON]; }
 bool isXKnobReady(int index) override { return xKnobReady && index == (int) OL_state[BROWSE_INDEX_JSON]; }
-bool consumeEngagePress() override
-{
-	bool fired = pendingEngagePress;
-	pendingEngagePress = false;
-	return fired;
-}
 void requestXValueClick(int channel) override { pendingValueClick[channel] = true; }
 
 // See XExpanderInterface::getXEngagedSummary()'s own comment - live, no persisted memory at

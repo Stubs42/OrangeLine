@@ -27,7 +27,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #define XO16_PANEL_WIDTH_MM 30.48f
 
-struct XO16 : Module, XOExpanderInterface
+struct XO16 : Module, XOExpanderInterface, ExpanderBridgeInterface
 {
 
 #include "OrangeLineCommon.hpp"
@@ -36,6 +36,19 @@ struct XO16 : Module, XOExpanderInterface
 	XO16()
 	{
 		initializeInstance();
+
+		// xoConnectedHostId is int64_t, not a float OL_state slot - see its own member comment
+		// (XOModuleCommon.hpp) for why.
+		moduleExtraDataToJson = [this](json_t *rootJ)
+		{
+			json_object_set_new(rootJ, "connectedHostId", json_integer(xoConnectedHostId));
+		};
+		moduleExtraDataFromJson = [this](json_t *rootJ)
+		{
+			json_t *idJ = json_object_get(rootJ, "connectedHostId");
+			if (idJ && json_is_integer(idJ))
+				xoConnectedHostId = json_integer_value(idJ);
+		};
 	}
 };
 
@@ -73,7 +86,6 @@ struct XO16Widget : ModuleWidget
 			addChild(darkPanel);
 		}
 
-		addOrangeLineConnectionLight<AutoHideLight<TinyLight<GreenRedLight>>>(this, calculateCoordinates(3.5f, 4.f, 0.f), module, CONN_LIGHT);
 		addChild(createLightCentered<AutoHideLight<TinyLight<RedLight>>>(calculateCoordinates(XO16_PANEL_WIDTH_MM - 3.5f, 4.f, 0.f), module, OVERFLOW_LIGHT));
 
 		XOStepButton *leftButton = createParamCentered<XOStepButton>(calculateCoordinates(8.382f, 18.035f, 0.f), module, LEFT_PARAM);

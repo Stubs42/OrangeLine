@@ -149,18 +149,13 @@ struct XOCandidate
 	XOFormatFn format;      // nullptr for XO_TYPE_GATE
 };
 
-struct Morpheus : Module, XHostInterface, XOHostInterface, StyxHostInterface
+struct Morpheus : Module, XHostInterface, XOHostInterface, StyxHostInterface, ExpanderBridgeInterface
 {
 	float oldClkInputVoltage = 0;
     int polyChannels = 1;
 	bool hadReset = true;
 	bool isShiftLeft[POLY_CHANNELS];
 	bool isShiftRight[POLY_CHANNELS];
-
-	// X-family param-access Expander connection. An Expander only ever attaches to a Host's
-	// LEFT side. xConnected drives the cosmetic connection light only; the real mechanism is
-	// xCandidates[]/xVirtualChannels[] below, walked/refreshed every moduleProcess() tick.
-	bool xConnected = false;
 
 	// User-editable label, set via the right-click menu's text field (see MorpheusNameField) -
 	// purely a human-facing identifier, mainly useful once a patch has more than one Morpheus
@@ -472,19 +467,21 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, StyxHostInterface
 		styleChanged = true;
 	}
 
-	// Rack's own module-lifecycle event - fires right before this Morpheus is actually destroyed.
-	// Proactively clears every candidate binding this instance still holds, using ONLY the stable
-	// ids already known (xCandidates[]'s own boundExpanderId) - a handful of single targeted
-	// lookups (routed through resetXParam(), which pushes setXBoundHostId(-1) to each bound
-	// Expander), never a rack-wide scan. Symmetric with each Expander's own onRemove()
-	// (X8ModuleCommon.hpp), which does the same in the other direction when an Expander is
-	// deleted - between the two, neither side can ever be left holding a dangling/stale reference
-	// to the other, regardless of which one gets deleted first or in what order.
+	// Rack's own module-lifecycle event - fires right before this Morpheus is actually destroyed,
+	// WHILE Rack's own removeModule() still holds an exclusive lock for the entire callback (see
+	// resetXParamDuringRemoval()'s own interface comment, XShared.hpp) - must use that method
+	// here, NEVER the ordinary resetXParam() (its own getModule() call would deadlock). Proactively
+	// clears every candidate binding this instance still holds, using ONLY the stable ids already
+	// known (xCandidates[]'s own boundExpanderId) - a handful of single targeted lookups, never a
+	// rack-wide scan. Symmetric with each Expander's own onRemove() (X8ModuleCommon.hpp), which
+	// does the same in the other direction when an Expander is deleted - between the two, neither
+	// side can ever be left holding a dangling/stale reference to the other, regardless of which
+	// one gets deleted first or in what order.
 	void onRemove(const RemoveEvent &e) override
 	{
 		for (int i = 0; i < NUM_X_CANDIDATES; i++)
 			if (xCandidates[i].boundExpanderId != -1)
-				resetXParam(i);
+				resetXParamDuringRemoval(i);
 		Module::onRemove(e);
 	}
 
@@ -819,74 +816,27 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, StyxHostInterface
 			styleChanged = false;
 		}
 
-		// X-family param-access Expander connection - only ever check leftExpander, never
-		// rightExpander (see ExpanderParamAccessSpec.md's left-only-attachment architecture).
-		xConnected = dynamic_cast<XExpanderInterface*>(leftExpander.module) != nullptr;
-		setStateLight(X_CONN_LIGHT, xConnected ? 255.f : 0.f);
-
-		// XO-family output-side Expander connection - mirror image of the above: only ever check
-		// rightExpander, since this family attaches to a Host's RIGHT side (see XOShared.hpp).
-		// Purely cosmetic (the light itself) - XO-family Expanders read outputs[]/xOutputCandidates
-		// directly through XOHostInterface, nothing here needs to track who's currently watching.
-		bool xoConnected = dynamic_cast<XOExpanderInterface*>(rightExpander.module) != nullptr;
-		setStateLight(XO_CONN_LIGHT, xoConnected ? 255.f : 0.f);
-
-		// STYX (bidirectional tape/memory editor) connection - tries both sides, same as STYX's
-		// own resolveStyxHost() calls do, since it can attach on whichever side is convenient
-		// (unlike the strictly one-sided X/XO families).
-		bool styxConnected = (dynamic_cast<StyxExpanderInterface*>(leftExpander.module) != nullptr)
-		                   || (dynamic_cast<StyxExpanderInterface*>(rightExpander.module) != nullptr);
-		setStateLight(STYX_CONN_LIGHT, styxConnected ? 255.f : 0.f);
-
-		// Walk the *whole* left-side chain (not just the immediate neighbor - several
-		// Expanders can be strung together) looking for a fresh engage/disengage request from
-		// any of them. Each Expander debounces its own button locally and exposes only a
-		// one-shot event - Morpheus does all the deciding here. Pressing the physical Engage
-		// button inherently requires being adjacent (that's the "NFC touch" moment itself) -
-		// but once granted, the resulting binding is read fully live regardless of the
-		// Expander's later physical position (see the refresh loop below, and
-		// X8ModuleCommon.hpp's own adjacency-then-id-fallback resolution).
+		// Clone/selection-load recovery: at most once, right after a fresh load, and only while
+		// this Morpheus is itself a fresh clone (OL_selfId, OrangeLineCommon.hpp, mismatches its
+		// own real id) - see XShared.hpp's own architecture comment on tryRecoverXParamSlot() for
+		// the full reasoning, including why an unaffected, long-standing Morpheus must never run
+		// this at all (it could otherwise reassign a slot away from an Expander that's still
+		// perfectly legitimately bound to it). Resolves OL_selfId back to this module's own real
+		// id right after, regardless of whether any slot actually found a match - this Morpheus's
+		// own clone-recovery relevance is settled either way once this one-time pass has run.
+		if (dataFromJsonCalled && xIsFreshClone(OL_selfId, (int64_t) this->id))
 		{
-			Module *m = leftExpander.module;
-			while (m)
-			{
-				XExpanderInterface *exp = dynamic_cast<XExpanderInterface*>(m);
-				if (!exp)
-					break; // chain broken - not an X-family module, stop walking
-				if (exp->consumeEngagePress())
-				{
-					int idx = exp->getXBrowseIndex();
-					if (idx >= 0 && idx < NUM_X_CANDIDATES)
-					{
-						int64_t myId = m->id;
-						if (xCandidates[idx].boundExpanderId == -1)
-						{
-							// An Expander may be bound to at most one candidate, on one Host,
-							// anywhere in the rack, at any time - clear any existing binding
-							// (including a different candidate on THIS SAME Host) before
-							// granting this one. Retires the old multi-host relay technique
-							// (deliberately: an always-live connection that could still be
-							// simultaneously bound to several Hosts would have all of them
-							// trying to read it live at once, a genuine conflict the old
-							// adjacency-freeze used to arbitrate).
-							xUnbindExpanderEverywhere(myId);
-							xCandidates[idx].boundExpanderId = myId;   // bind (was available)
-							exp->setXBoundHostId(this->id);            // push the new binding
-							                                            // directly - id exchanged
-							                                            // right here at "attach"
-							                                            // time, we already have
-							                                            // exp resolved, no extra
-							                                            // lookup needed
-						}
-						else if (xCandidates[idx].boundExpanderId == myId)
-							resetXParam(idx);                          // disengage (toggle) - also
-							                                            // pushes setXBoundHostId(-1)
-						// else: taken by someone else, or cable-connected - no-op
-					}
-				}
-				m = m->leftExpander.module;
-			}
+			for (int i = 0; i < NUM_X_CANDIDATES; i++)
+				tryRecoverXParamSlot(this, i, (int64_t) this->id);
+			OL_selfId = (int64_t) this->id;
 		}
+
+		// Binding itself is no longer decided here at all - see requestXBind() below. Every
+		// Expander already resolves its own Host (getXHost(), crossing both physical adjacency
+		// and a persistently-connected-but-detached neighbor) and calls straight into it the
+		// instant its own Engage button is pressed, so this Host stays fully passive: it never
+		// walks anything, it only ever responds to whoever calls requestXBind(). See
+		// XHostImplementationGuide.md for why the earlier physical-only chain-walk was retired.
 
 		// Once per tick, per candidate param: let a real cable win outright (and actively
 		// clear any stale binding rather than leaving it dormant), or pull live values from
@@ -931,21 +881,6 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, StyxHostInterface
 			xVirtualConnected[inputId] = true; // bound (even if not the live one right now) = Green
 			if (exp->getXBrowseIndex() != i)
 				continue; // bound, but looking elsewhere right now - hold last tick's values
-
-			// Disengage-by-id: the bound Expander's own engage button, consumed here so
-			// unbinding works regardless of physical position - discovering a NEW binding still
-			// needs adjacency (the chain-walk above, the actual "NFC touch" moment), but releasing
-			// an EXISTING one doesn't, since Morpheus already holds this Expander's stable id
-			// directly. Same one-shot consumeEngagePress() the chain-walk itself reads - if this
-			// Expander happens to also be adjacent right now, the chain-walk above already
-			// consumed the press and handled the toggle itself, so this simply sees false and
-			// does nothing; no double-handling either way.
-			if (exp->consumeEngagePress())
-			{
-				resetXParam(i); // also pushes setXBoundHostId(-1) back to exp
-				xVirtualConnected[inputId] = false;
-				continue;
-			}
 
 			if (!exp->isXKnobReady(i))
 				continue; // Expander hasn't finished resyncing its own knob for this candidate
@@ -1352,25 +1287,70 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, StyxHostInterface
 	bool isXParamEngaged(int index) override { return xCandidates[index].boundExpanderId != -1; }
 	int64_t getXParamBoundId(int index) override { return xCandidates[index].boundExpanderId; }
 	bool isXParamCableConnected(int index) override { return inputs[xCandidates[index].inputId].isConnected(); }
-	// The ONLY place that clears a candidate binding - every other clearing call site (right-click
-	// Reset, xUnbindExpanderEverywhere(), real-cable override, disengage-by-id, moduleReset()'s
-	// own Initialize handling) routes through here specifically so the push-notify below can never
-	// be missed by a future edit that adds yet another clearing path. Resolves the (soon-to-be-
-	// former) bound Expander by id - a single lookup, not a scan, and only on this rare,
-	// user/event-triggered action - and pushes it a "you're not bound anymore" notification
-	// directly, so it doesn't need to poll to find out.
-	void resetXParam(int index) override
+	// See XHostInterface::requestXBind()'s own interface comment (XShared.hpp) - replaces the
+	// former physical-only left-side chain-walk entirely. Called directly by whichever Expander's
+	// own moduleProcess() just detected its Engage button being pressed, using whatever Host it
+	// already resolved via getXHost() - works identically whether that resolution came from
+	// physical adjacency or a persistently-connected-but-detached neighbor further down the
+	// chain, since both are already the same trusted path browsing/reading already uses. Exactly
+	// the same three-way decision the old chain-walk's grant branch made.
+	void requestXBind(int index, int64_t expanderId, XExpanderInterface *expander) override
+	{
+		if (index < 0 || index >= NUM_X_CANDIDATES)
+			return;
+		if (xCandidates[index].boundExpanderId == -1)
+		{
+			// An Expander may be bound to at most one candidate, on one Host, anywhere in the
+			// rack, at any time - clear any existing binding (including a different candidate on
+			// THIS SAME Host) before granting this one. See xUnbindExpanderEverywhere()'s own
+			// comment (XShared.hpp) for why (retires the old multi-host relay technique).
+			xUnbindExpanderEverywhere(expanderId);
+			xCandidates[index].boundExpanderId = expanderId; // bind (was available)
+			expander->setXBoundHostId(this->id);             // push the new binding directly -
+			                                                  // we already have the Expander's own
+			                                                  // pointer, no extra lookup needed
+		}
+		else if (xCandidates[index].boundExpanderId == expanderId)
+			resetXParam(index); // disengage (toggle) - also pushes setXBoundHostId(-1)
+		// else: taken by someone else, or cable-connected - no-op
+	}
+	// Shared by resetXParam() and resetXParamDuringRemoval() below - the ONLY place that clears a
+	// candidate binding, so the push-notify can never be missed by a future edit that adds yet
+	// another clearing path. noLock selects APP->engine->getModule_NoLock() instead of the
+	// regular, share-locking getModule() - required when called as part of an onRemove() chain
+	// (see resetXParamDuringRemoval()'s own interface comment, XShared.hpp, for why), harmless
+	// overhead-wise either way for the normal (non-removal) case since it's still just one single
+	// targeted lookup, not a scan.
+	inline void clearXParamBinding(int index, bool noLock)
 	{
 		int64_t expanderId = xCandidates[index].boundExpanderId;
 		if (expanderId != -1)
 		{
-			Module *m = APP->engine->getModule(expanderId);
+			Module *m = noLock ? APP->engine->getModule_NoLock(expanderId) : APP->engine->getModule(expanderId);
 			XExpanderInterface *exp = m ? dynamic_cast<XExpanderInterface*>(m) : nullptr;
 			if (exp)
 				exp->setXBoundHostId(-1);
 		}
 		xCandidates[index].boundExpanderId = -1;
 	}
+	void resetXParam(int index) override { clearXParamBinding(index, false); }
+	// See XHostInterface::resetXParamDuringRemoval()'s own comment (XShared.hpp) for why this
+	// exists as a separate method at all, rather than just always using resetXParam().
+	void resetXParamDuringRemoval(int index) override { clearXParamBinding(index, true); }
+	// See XHostInterface::recoverXParamBinding()'s own interface comment (XShared.hpp) - a raw
+	// overwrite with no push to anyone, safe to call even before this Morpheus has ever ticked
+	// process() (touches only the candidate array, already valid straight out of the
+	// constructor/dataFromJson()).
+	void recoverXParamBinding(int index, int64_t expanderId) override { xCandidates[index].boundExpanderId = expanderId; }
+	int64_t getXSelfId() override { return OL_selfId; }
+
+	// ExpanderBridgeInterface (ExpanderBridge.hpp) - a Host trivially reports its own id; belongs
+	// to all three families it implements at once (X/XO/STYX), so a touching neighbor of any of
+	// them recognizes it as compatible; customName is the same editable label every family's own
+	// Free/Disconnect-style menu item can now show uniformly.
+	int64_t getBridgeHostId() override { return (int64_t) this->id; }
+	std::vector<ExpanderFamily> getBridgeFamilies() override { return getModuleFamilies(model->slug); }
+	std::string getBridgeHostName() override { return customName; }
 	// Not a direct OL_statePoly read - that array holds CV/cable units, not display units (see
 	// computeTakeoverDisplay()'s own comment and CLAUDE.md's Pitfalls entry on the divergent
 	// feedback loop the old raw/CV mismatch caused for SCL/OFS specifically).
@@ -1405,7 +1385,6 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, StyxHostInterface
 	bool getXParamSnap(int index) override            { return xCandidates[index].snap; }
 	const char* getXParamUnit(int index) override     { return xCandidates[index].unit; }
 	float getXStyle() override { return OL_state[STYLE_JSON]; }
-	std::string getXHostName() override { return customName; }
 
 	// XOHostInterface - see XOShared.hpp's own architecture comment. No engagement-related
 	// methods at all here (unlike XHostInterface above) - reading an output is never exclusive.
@@ -1464,7 +1443,6 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, StyxHostInterface
 	int getLoopLen(int channel) override { return (int) getChannelLoopLength(channel); }
 	int getPlayCursor(int channel) override { return (int) getStateJson(HEAD_JSON + channel); }
 	float getStyxStyle() override { return OL_state[STYLE_JSON]; }
-	std::string getStyxHostName() override { return customName; }
 };
 
 // ********************************************************************************************************************************
@@ -1749,9 +1727,8 @@ struct MorpheusWidget : ModuleWidget
 
 		addChild(MorpheusDisplayWidget::create(calculateCoordinates(1.25f, 25.95f, 0.f), mm2px(Vec(48.4f, 16.3f)), module));
 
-		addOrangeLineConnectionLight<AutoHideLight<TinyLight<GreenLight>>>(this, calculateCoordinates(3.5f, 4.f, 0.f), module, X_CONN_LIGHT);
-		addOrangeLineConnectionLight<AutoHideLight<TinyLight<GreenLight>>>(this, calculateCoordinates(MORPHEUS_PANEL_WIDTH_MM - 3.5f, 4.f, 0.f), module, XO_CONN_LIGHT);
-		addOrangeLineConnectionLight<AutoHideLight<TinyLight<GreenLight>>>(this, calculateCoordinates(3.5f, PANELHEIGHT - 4.f, 0.f), module, STYX_CONN_LIGHT);
+		// Connection lights are gone (superseded by the seam/logo-cover mechanism - see
+		// ExpanderBridge.hpp's own file comment).
 
 		// Positions extracted from res/MorpheusWorkTest.svg's Controls layer (2026-07-13) -
 		// panel reorganized to make room for the future visualization display (reserved band
@@ -2081,7 +2058,7 @@ struct MorpheusWidget : ModuleWidget
 
 			MorpheusUnbindAllItem *unbindAllItem = new MorpheusUnbindAllItem();
 			unbindAllItem->module = module;
-			unbindAllItem->text = "Unbind All";
+			unbindAllItem->text = "Free All";
 			unbindAllItem->setSize(Vec(160, 20));
 			menu->addChild(unbindAllItem);
 

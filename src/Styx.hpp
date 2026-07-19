@@ -43,11 +43,11 @@ enum jsonIds {
 	STYLE_JSON,
 	PANEL_WIDTH_HP_JSON, // current panel width in HP - persisted, applied to box.size.x on load
 
-	// Persistent target Host module id, for the non-adjacent Connect/Disconnect mechanism -
-	// -1 means "none, resolve via ordinary left/right physical adjacency" (v1's own behavior).
-	// Rack module ids are small sequential integers in practice, well within a float's exact-
-	// integer range, so no separate non-OL_state storage is needed for this.
-	CONNECTED_HOST_ID_JSON,
+	// The non-adjacent stay-connected target host id used to live here as a float
+	// (CONNECTED_HOST_ID_JSON) - that assumption ("Rack module ids are small sequential
+	// integers") turned out to be wrong in practice (observed ids run into the quadrillions,
+	// which silently corrupts when stored in a float) - moved to a real int64_t member
+	// (styxConnectedHostId, Styx.cpp), persisted via moduleExtraDataToJson/FromJson instead.
 
 	// Which of the 16 real Morpheus channels each row currently displays - "each row has exactly
 	// one selector," not the other way around, so two rows can (harmlessly) show the same
@@ -111,11 +111,9 @@ enum OutputIds {
 };
 
 //
-// Light Ids
+// Light Ids - the connection light is gone (superseded by the seam/logo-cover mechanism, which
+// now derives directly from the bridge host id - see ExpanderBridge.hpp)
 //
 enum LightIds {
-	CONN_LIGHT,
-	CONN_LIGHT_LAST = CONN_LIGHT + 1, // GreenRedLight needs 2 consecutive ids (green, red)
-
 	NUM_LIGHTS
 };

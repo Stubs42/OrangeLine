@@ -107,6 +107,24 @@ std::function<void(json_t*)> moduleExtraDataToJson = nullptr;
 std::function<void(json_t*)> moduleExtraDataFromJson = nullptr;
 
 /*
+	Cross-cutting "birth id" used to detect that this exact Module instance is a fresh copy
+	(Ctrl+D duplicate, copy/paste, or an imported selection) rather than the same instance a
+	normal patch reload restores - Rack assigns every module a brand new `id` on load, but only
+	a genuine clone/paste ever produces one that DIFFERS from what was saved, since a plain
+	reload of the same patch preserves ids. Written fresh on every dataToJson() call (always the
+	CURRENT id, not whatever OL_selfId last held - see dataToJson() below) and restored on
+	dataFromJson() - a module compares the two once it's loaded (`OL_selfId >= 0 && OL_selfId !=
+	this->id`) to recognize "I am a clone of whatever last saved this id". -1 (the constructor
+	default) deliberately means "never yet saved" - a brand new, never-before-persisted module
+	(freshly dragged from the browser) must NOT be treated as mismatched just because it has no
+	saved id yet. Currently consumed only by the X-family's clone-recovery mechanism
+	(XShared.hpp's xIsFreshClone()/findFreshXExpanderClone()/tryRecoverXParamSlot()/
+	tryRecoverXBinding(), X8ModuleCommon.hpp, Morpheus.cpp) but kept here (like touchVisible
+	below) since it's generically useful infrastructure, not X-family-specific by nature.
+*/
+int64_t OL_selfId = -1;
+
+/*
 	Opt-in: if set to a jsonIds value in the module's own constructor, the generic per-jsonId
 	loop below stops at that index instead of NUM_JSONS, leaving everything from there on for
 	moduleExtraDataToJson/FromJson to handle itself (e.g. a large poly-range of STORE_JSON-style
@@ -858,6 +876,11 @@ json_t *dataToJson () override {
 #ifndef OL_TOUCH_DISABLED
 	json_object_set_new (rootJ, "touchVisible", json_boolean (OL_touchVisible));
 #endif
+	// Always the CURRENT id, never the stored OL_selfId member - see its own comment above.
+	// This is what makes a plain save (even one never explicitly triggered by the user - an
+	// autosave, or being the source module of a Ctrl+D clone, which reads this same JSON) the
+	// single point where "my last known id" gets (re)synced to reality.
+	json_object_set_new (rootJ, "selfId", json_integer ((json_int_t) this->id));
 	return rootJ;
 }
 
@@ -882,6 +905,12 @@ void dataFromJson (json_t *rootJ) override {
 	if (touchVisibleJ && json_is_boolean (touchVisibleJ))
 		OL_touchVisible = json_is_true (touchVisibleJ);
 #endif
+	// Guarded the same way (a patch saved before this field existed has no key at all) - see
+	// OL_selfId's own comment above. Left at its constructor default (-1) when absent, same
+	// "never saved before" meaning as a genuinely brand new module.
+	json_t *selfIdJ = json_object_get (rootJ, "selfId");
+	if (selfIdJ && json_is_integer (selfIdJ))
+		OL_selfId = (int64_t) json_integer_value (selfIdJ);
 	OL_initialized = false;		// indiacte that we have to reinitialize
 	dataFromJsonCalled = true;	// indicate that we reloaded a patch or a preset
 }

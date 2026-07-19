@@ -27,7 +27,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #define X8_PANEL_WIDTH_MM 15.24f
 
-struct X8 : Module, XExpanderInterface
+struct X8 : Module, XExpanderInterface, ExpanderBridgeInterface
 {
 
 #include "OrangeLineCommon.hpp"
@@ -88,8 +88,6 @@ struct X8Widget : ModuleWidget
 			module->darkPanel = darkPanel;
 			addChild(darkPanel);
 		}
-
-		addOrangeLineConnectionLight<AutoHideLight<TinyLight<GreenRedLight>>>(this, calculateCoordinates(X8_PANEL_WIDTH_MM - 3.5f, 4.f, 0.f), module, CONN_LIGHT);
 
 		X8StepButton *leftButton = createParamCentered<X8StepButton>(calculateCoordinates(4.550f, 18.034f, 0.f), module, LEFT_PARAM);
 		leftButton->label = "<";

@@ -35,6 +35,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 //
 enum jsonIds {
     STYLE_JSON,
+	// The touch-once-then-persist target Hub id used to live here as a float - moved to a real
+	// int64_t member (lanesConnectedHostId, this module's own .cpp), persisted via
+	// moduleExtraDataToJson/FromJson instead (observed Rack module ids run into the quadrillions -
+	// a float silently corrupts them, see LanesShared.hpp's resolveLanesHubBridge()).
 
 	NUM_JSONS
 };
@@ -72,28 +76,11 @@ enum OutputIds {
 };
 
 //
-// Ligh Ids
+// Ligh Ids - the connection lights are gone (superseded by the seam/logo-cover mechanism, which
+// now derives directly from the bridge host id - see ExpanderBridge.hpp). Each channel's own
+// lane-number display still doubles as the overflow indicator (color-coded, see LanesMidi.cpp's
+// LaneDisplayWidget).
 //
-// Each channel's own lane-number display doubles as the overflow indicator (color-coded,
-// see LanesMidi.cpp's LaneDisplayWidget) instead of a separate light - but two tiny bi-color
-// corner lights are still needed to signal Hub connection health (see LanesShared.hpp's
-// resolveLanesHub(), run for both sides every tick in moduleProcess()).
-/*
-	Tiny bi-color (GreenRedLight, 2 consecutive slots: green then red) corner lights, one per
-	side. Per-side meaning (see LanesMidi.cpp's moduleProcess()):
-		off    - nothing connected on this side at all
-		green  - connected, and exactly one Hub is reachable (this side or the other)
-		yellow - connected, but no Hub is reachable through either side
-		red    - connected, and a Hub is reachable through BOTH sides (ambiguous)
-	The green/yellow/red judgement is the same for both lights (it reflects the whole
-	module's chain health, not just this one side) - only the off/lit distinction is
-	actually per-side.
-*/
 enum LightIds {
-	LEFT_CONN_LIGHT,
-	LEFT_CONN_LIGHT_LAST = LEFT_CONN_LIGHT + 1,
-	RIGHT_CONN_LIGHT,
-	RIGHT_CONN_LIGHT_LAST = RIGHT_CONN_LIGHT + 1,
-
 	NUM_LIGHTS
 };

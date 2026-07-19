@@ -89,20 +89,48 @@ showed one ID while the right-click menu's own independent lookup showed a compl
 one, moments apart, same session). The remembered-id approach is inherently fragile because it's a
 **snapshot** - nothing forces it to refresh if it silently becomes wrong.
 
-**The actual fix - resolve by live scan, not by memory** (Dieter's own diagnosis: "why is there
-any code handling a disattach from the host's neighborhood anyway" - a Host already finds its
-bound Expander purely by a stable id, `APP->engine->getModule(boundExpanderId)` in Morpheus.cpp's
-refresh loop, so the Expander side should resolve its Host the same structurally-robust way, not
-by remembering a Host id that can drift out of sync with reality). `XShared.hpp`'s
-`findXBoundHost(expanderId)` scans every module in the rack for whichever `XHostInterface` reports
-`getXParamBoundId(i) == expanderId` for some candidate `i`, and returns that Host - the exact same
-scan shape `getXEngagedSummary()`/`xUnbindExpanderEverywhere()` already used. Each X-family
-Expander's own `moduleProcess()` now resolves `xHost` as: the Host found by this scan if bound
-anywhere, else plain physical adjacency (`resolveXHost()`) purely so there's something to browse
-before ever engaging. This can never go stale, because nothing is remembered - it's derived fresh
-from the same authoritative state (a Host's own `boundExpanderId`) every single tick.
-`CONNECTED_HOST_ID_JSON`, `WAS_ENGAGED_JSON`, and the auto-reengage-after-reload mechanism (now
-pointless - reconnection is automatic via the scan, nothing to re-press) are all gone.
+**Second attempt (also since retired) - resolve by live scan, not by memory** (Dieter's own
+diagnosis: "why is there any code handling a disattach from the host's neighborhood anyway" - a
+Host already finds its bound Expander purely by a stable id,
+`APP->engine->getModule(boundExpanderId)` in Morpheus.cpp's refresh loop, so the Expander side
+should resolve its Host the same structurally-robust way, not by remembering a Host id that can
+drift out of sync with reality). `XShared.hpp`'s `findXBoundHostId(expanderId)` scanned every
+module in the rack, every tick, for whichever `XHostInterface` reports `getXParamBoundId(i) ==
+expanderId` - structurally could never go stale (derived fresh from authoritative state every
+time), but Dieter rejected the "search the whole patch" shape itself the moment it was proposed
+again for a different problem: "wir müssen immer schauen ob es eine bessere Lösung gibt" (we must
+always check whether there's a better solution). Kept only as a last-resort fallback (see below).
+
+**Final design - push a stable id at the moment the relationship actually changes ("attach"),
+never scan for it.** Binding changes are rare and Host-initiated (a user's Engage click, not
+continuous) - the Host already has the Expander's own resolved pointer in hand at that exact
+moment, so it just tells the Expander its own module id directly
+(`XExpanderInterface::setXBoundHostId()`). The Expander resolves the actual Host pointer fresh
+from that id only when actually needed (every tick, but a single targeted `getModule()` lookup,
+never a scan) - never cached across ticks, so a deleted Host can never leave a dangling reference.
+Each X-family Expander's own `moduleProcess()` resolves `xHost` as: the Host resolved from
+`xBoundHostId` if bound anywhere, else a cached `xAdjacentHost` (updated only via
+`Module::onExpanderChange()`, not re-polled every tick either) for browsing purposes only.
+`findXBoundHostId()` survives as a one-time-per-module-lifetime fallback, used only on the single
+tick right after a patch load (`dataFromJsonCalled`), where a binding can already be restored as
+bound without any push ever having fired this session. `CONNECTED_HOST_ID_JSON`, `WAS_ENGAGED_JSON`,
+and the auto-reengage-after-reload mechanism are all still gone (superseded, not needed by either
+scan-based or push-based resolution).
+
+**A pushed id needs both sides to clean up on deletion, or it just relocates the dangling-pointer
+risk instead of fixing it.** `Module::onRemove()` (fires before either side is actually destroyed)
+lets each side proactively clear its own reference to the other using only the id it already has -
+Morpheus's own `onRemove()` walks its own small `xCandidates[]` releasing every binding it holds;
+each Expander's own `onRemove()` resolves its one known Host directly and clears its binding there.
+**Critical, easy to get wrong**: `onRemove()` fires *while* Rack's own `removeModule()` still holds
+an exclusive lock, so every engine lookup anywhere in that call chain (however many function calls
+deep) must use `APP->engine->getModule_NoLock()`, never the ordinary share-locking `getModule()` -
+using the wrong one caused a real, reproducible Rack hang on deleting a multi-module selection.
+This is why a *second*, separate interior method exists (`resetXParamDuringRemoval()`, alongside
+the ordinary `resetXParam()`) - an interface method reachable from `onRemove()` can't silently
+reuse whatever "safe" implementation it already had for the ordinary (non-removal) case if that
+implementation itself calls the locking `getModule()`. See CLAUDE.md's own Pitfalls section for
+the fuller writeup of both this design's history and the lock pitfall specifically.
 
 **Disengage is id-based too now.** The physical ENGAGE button toggle used to only reach Morpheus
 via its adjacency chain-walk (`leftExpander.module`), so releasing a binding stopped working the
@@ -126,6 +154,62 @@ Add an explicit clear loop to `moduleReset()`.
 watching an XO-family Host's output is never exclusive (no `boundExpanderId`-style state exists to
 scan for). The remembered-id fragility risk is real there too in principle, but no live-tested
 failure has been found yet - if one shows up, look here first.
+
+## Duplicate/selection-load recovery (2026-07-19): reconnecting a cloned strip without any Rack "clone" hook
+
+Dieter's own motivating case: duplicating a whole strip (Morpheus + several bound Expanders)
+left the duplicated Expanders unconnected to the duplicated Morpheus - each side just carried
+its own copy of the OLD relationship's ids, which no longer matched anything real.
+
+**First finding: there is no `Module`-level clone hook to catch this with at all.**
+`ModuleWidget::cloneAction()` exists but isn't `virtual` in the SDK header (confirmed directly),
+so a plugin subclass overriding it is silently never called by Rack's own generic
+duplicate/Ctrl+D code, which necessarily holds a plain `ModuleWidget*`. "Import Selection" is a
+wholly separate `RackWidget::loadSelection()` code path from `RackWidget::cloneSelectionAction()`
+- it goes through the same ordinary JSON-load mechanism as opening a patch, and `RackWidget`
+itself is a single Rack-owned instance a plugin can never subclass regardless. Conclusion: a
+clone and an ordinary patch reload are **completely indistinguishable** from a `Module`'s own
+point of view - the only usable signal is comparing "what id did I have when I was last saved"
+against "what id do I actually have now" (see `OL_selfId`, `OrangeLineCommon.hpp`).
+
+**Design alternatives considered and rejected before landing on the final mechanism** (each
+surfaced a real problem, not just a style preference):
+- An `origId` "birth certificate" (permanent, set once at genuine construction, shared across
+  every clone generation) - ambiguous the moment the same original gets duplicated more than
+  once, since every generation shares the identical origId with no way to tell them apart.
+- A full rack scan gated on physical adjacency (hoping Rack places a duplicated selection as a
+  contiguous block) - works for the common case but isn't provably guaranteed, and doesn't cover
+  "only the Expander was duplicated" (lands nowhere near its old Host at all).
+- Comparing timestamps to detect "created in the same operation" - explicitly rejected by Dieter
+  as not watertight (clock resolution, two genuine operations close together).
+- A "whoever's `process()` happens to run first does the active work, the other one waits"
+  design, using the OWN `OL_selfId` mismatch state as the signal for "has the other side already
+  resolved". This one is subtly broken: if a Host resolves its own mismatch in the very same
+  cycle it detects it (which is exactly what "resolve promptly" means), it can go "settled" before
+  an Expander that ticks later ever gets a chance to notice it was still fresh - the signal
+  needed for discovery evaporates in the same tick it's supposed to enable discovery.
+
+**Final design** - both directions gate on the CANDIDATE being a fresh clone, never on "who
+ticked first": see `XShared.hpp`'s own architecture comment (right above `xIsFreshClone()`) for
+the complete reasoning, and `X8ModuleCommon.hpp`/`Morpheus.cpp` for where each side's own
+one-time, `dataFromJsonCalled`-gated call site lives. In short - a Host only ever repairs its own
+slots while it is ITSELF a fresh clone (so a settled, unaffected Host can never reassign a slot
+away from an Expander still legitimately bound to it - the "only the Expander was duplicated"
+case); an Expander's reverse search only ever considers a Host that is ITSELF a fresh clone as a
+valid target, for the identical reason mirrored. Every check uses only data valid the instant
+`dataFromJson()` returns (`OL_selfId`, `Module::id`) - never anything that depends on whether the
+other side has ticked `process()` yet, so there is no ordering assumption anywhere to get wrong.
+Deliberately additive-only: if no matching fresh clone exists, nothing is cleared - genuine
+orphan cleanup is already `onRemove()`'s job, not this mechanism's.
+
+**Known, deliberately accepted gap**: duplicating a Host alone (not its Expanders) leaves that
+clone's inherited-but-stale candidate slots untouched (there's nothing to repair them with), and
+the refresh loop doesn't currently re-verify a still-resolvable occupant actually agrees it's
+bound *here* before treating a slot as engaged - harmless in practice (the stale occupant is off
+serving its own real Host) unless it coincidentally browses to the exact same candidate index.
+Flagged in `XShared.hpp`'s own comment too - a future fix would add a live agreement check to the
+refresh loop itself, deliberately not bundled into this pass since it touches already-working,
+delicate live-reading code for a narrower case than what was actually being fixed.
 
 ## Pitfalls already found and fixed (Morpheus, 2026-07-18)
 

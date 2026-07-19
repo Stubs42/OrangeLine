@@ -170,13 +170,11 @@ enum OutputIds {
 //
 // Ligh Ids
 //
+// The X/XO/STYX connection lights are gone (superseded by the seam/logo-cover mechanism, which
+// now derives directly from the bridge host id - see ExpanderBridge.hpp).
 enum LightIds {
 	HLD_ON_LIGHT,
 	EXT_ON_LIGHT,
-	X_CONN_LIGHT,
-	XO_CONN_LIGHT, // mirrors X_CONN_LIGHT's own single-color convention, but for the new
-	               // XO-family attaching to this Host's RIGHT side instead
-	STYX_CONN_LIGHT, // lit whenever a STYX tape/memory editor is attached on either side
 
 	NUM_LIGHTS
 };

@@ -29,7 +29,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #define XR8_PANEL_WIDTH_MM 15.24f
 
-struct XR8 : Module, XOExpanderInterface
+struct XR8 : Module, XOExpanderInterface, ExpanderBridgeInterface
 {
 
 #include "OrangeLineCommon.hpp"
@@ -47,6 +47,19 @@ struct XR8 : Module, XOExpanderInterface
 			for (int k = 0; k < POLY_CHANNELS; k++)
 				randomValue[c][k] = 0.f;
 		}
+
+		// xoConnectedHostId is int64_t, not a float OL_state slot - see its own member comment
+		// (XRModuleCommon.hpp) for why.
+		moduleExtraDataToJson = [this](json_t *rootJ)
+		{
+			json_object_set_new(rootJ, "connectedHostId", json_integer(xoConnectedHostId));
+		};
+		moduleExtraDataFromJson = [this](json_t *rootJ)
+		{
+			json_t *idJ = json_object_get(rootJ, "connectedHostId");
+			if (idJ && json_is_integer(idJ))
+				xoConnectedHostId = json_integer_value(idJ);
+		};
 	}
 };
 
@@ -85,7 +98,6 @@ struct XR8Widget : ModuleWidget
 			addChild(darkPanel);
 		}
 
-		addOrangeLineConnectionLight<AutoHideLight<TinyLight<GreenRedLight>>>(this, calculateCoordinates(3.5f, 4.f, 0.f), module, CONN_LIGHT);
 		addChild(createLightCentered<AutoHideLight<TinyLight<RedLight>>>(calculateCoordinates(XR8_PANEL_WIDTH_MM - 3.5f, 4.f, 0.f), module, OVERFLOW_LIGHT));
 
 		XOStepButton *leftButton = createParamCentered<XOStepButton>(calculateCoordinates(4.550f, 18.034f, 0.f), module, LEFT_PARAM);

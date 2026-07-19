@@ -80,21 +80,16 @@ inline void addXLogoCovers(ModuleWidget *w, float panelWidthMm, X8LogoCover **co
 // Called every widget step() (UI frame rate, cosmetic only) - the logo must be hidden exactly
 // when, and only when, EITHER seam-closing ext-strip (extStrip/extStripLeft - an Expander can
 // chain further left of another Expander, not just right toward the Host) is currently showing
-// on that same edge (Dieter: the logo should not be visible if the seam is visible) - NOT tied to
-// "logically connected" (getXHost() can now resolve live via a full-rack scan regardless of
-// physical position, see XHostImplementationGuide.md's "Non-adjacent, persistent connection" - the
-// logo must reappear the instant this Expander is physically detached, even while it stays bound/
-// controlling something elsewhere). Uses the exact same per-side condition
-// updateXExtStrip()/updateXExtStripLeft() themselves use - getXNeighborStyle() against each
-// immediate neighbor - rather than resolveXHost() or getXHost(), so the two can never disagree.
+// on that same edge (Dieter: the logo should not be visible if the seam is visible). Uses the
+// exact same condition updateXExtStrip()/updateXExtStripLeft() themselves use -
+// bridgeConnected() (ExpanderBridge.hpp: same resolved bridge host id on both sides, neither -1)
+// - so the two can never disagree, and the logo correctly reappears the instant this Expander no
+// longer shares a connection with that neighbor (physically detached while unbound, or explicitly
+// Freed/Disconnected).
 inline void updateXLogoCovers(X8LogoCover *cover1, X8LogoCover *cover2, Module *module)
 {
-	float myStyle = module ? getXNeighborStyle(module) : -1.f;
-	float rightStyle = module ? getXNeighborStyle(module->rightExpander.module) : -1.f;
-	float leftStyle = module ? getXNeighborStyle(module->leftExpander.module) : -1.f;
-	bool rightSeam = myStyle >= 0.f && rightStyle >= 0.f && rightStyle == myStyle;
-	bool leftSeam = myStyle >= 0.f && leftStyle >= 0.f && leftStyle == myStyle;
-	bool seamVisible = rightSeam || leftSeam;
+	bool seamVisible = module && (bridgeConnected(module, module->rightExpander.module)
+	                           || bridgeConnected(module, module->leftExpander.module));
 	cover1->visible = seamVisible;
 	cover2->visible = seamVisible;
 }
@@ -304,13 +299,13 @@ struct X8BindButtonBase : X8ButtonBase
 		return xThemedTextColor(expander ? expander->getXStyle() : STYLE_ORANGE); // available
 	}
 
-	// "UNBIND" while bound here (clicking would release it), else the base "BIND" label
+	// "FREE" while bound here (clicking would release it), else the base "BIND" label
 	// (unchanged whether available, taken, or disconnected - color already distinguishes those).
 	std::string getLabel() override
 	{
 		engine::ParamQuantity *pq = getParamQuantity();
 		if (x8BrowsedParamMine(pq ? pq->module : nullptr))
-			return "UNBIND";
+			return "FREE";
 		return label;
 	}
 };
@@ -824,10 +819,11 @@ struct XUnbindAllItem : MenuItem
 	}
 };
 
-// Adds whichever of "Unbind: <Host> - <candidate>" / "Disconnect: <Host>" actually apply right
-// now (omitted entirely when nothing is bound/remembered - no dead/disabled menu clutter), plus
-// the always-available "Unbind All". Replaces the old addXBindsMenuItem() - call from the exact
-// same spot in each widget's own appendContextMenu().
+// Adds whichever of "Free: <Host> - <candidate>" actually applies right now (omitted entirely
+// when nothing is bound - no dead/disabled menu clutter), plus the always-available "Free All".
+// Replaces the old addXBindsMenuItem() - call from the exact same spot in each widget's own
+// appendContextMenu(). "Free" wording (was "Unbind") - Dieter's own call, display strings only,
+// the underlying interface methods/struct names keep their existing names.
 inline void addXBindMenuItems(Menu *menu, Module *module)
 {
 	XExpanderInterface *expander = dynamic_cast<XExpanderInterface*>(module);
@@ -849,10 +845,11 @@ inline void addXBindMenuItems(Menu *menu, Module *module)
 		{
 			if (host->getXParamBoundId(i) != myId)
 				continue;
-			std::string hostName = host->getXHostName();
+			ExpanderBridgeInterface *bridge = dynamic_cast<ExpanderBridgeInterface*>(m);
+			std::string hostName = bridge ? bridge->getBridgeHostName() : "";
 			std::string label = hostName.empty()
-				? string::f("Unbind: %s #%lld - %s", m->model->slug.c_str(), (long long) id, host->getXParamName(i))
-				: string::f("Unbind: %s - %s", hostName.c_str(), host->getXParamName(i));
+				? string::f("Free: %s #%lld - %s", m->model->slug.c_str(), (long long) id, host->getXParamName(i))
+				: string::f("Free: %s - %s", hostName.c_str(), host->getXParamName(i));
 			XUnbindCandidateItem *item = new XUnbindCandidateItem();
 			item->host = host;
 			item->index = i;
@@ -867,6 +864,6 @@ inline void addXBindMenuItems(Menu *menu, Module *module)
 
 	XUnbindAllItem *allItem = new XUnbindAllItem();
 	allItem->module = module;
-	allItem->text = "Unbind All";
+	allItem->text = "Free All";
 	menu->addChild(allItem);
 }

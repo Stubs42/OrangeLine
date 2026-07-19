@@ -69,20 +69,15 @@ inline void addXOLogoCovers(ModuleWidget *w, float panelWidthMm, XOLogoCover **c
 }
 
 // Hidden exactly when, and only when, EITHER seam-closing ext-strip (extStrip/extStripLeft) is
-// currently showing on that same edge - NOT tied to "logically connected" (getXOHost() can now
-// resolve live via resolveXOHostPersistent()'s remembered-id fallback regardless of physical
-// position - the logo must reappear the instant this Expander is physically detached). Uses the
-// exact same per-side condition updateXOExtStrip()/updateXOExtStripLeft() themselves use -
-// getXONeighborStyle() against each immediate neighbor - so the two can never disagree. See
-// X8Common.hpp's own updateXLogoCovers() for the X-family twin of this fix.
+// currently showing on that same edge. Uses the exact same condition
+// updateXOExtStrip()/updateXOExtStripLeft() themselves use - bridgeConnected()
+// (ExpanderBridge.hpp: same resolved bridge host id on both sides, neither -1) - so the two can
+// never disagree, and the logo correctly reappears the instant this Expander no longer shares a
+// connection with that neighbor. See X8Common.hpp's own updateXLogoCovers() for the X-family twin.
 inline void updateXOLogoCovers(XOLogoCover *cover1, XOLogoCover *cover2, Module *module)
 {
-	float myStyle = module ? getXONeighborStyle(module) : -1.f;
-	float rightStyle = module ? getXONeighborStyle(module->rightExpander.module) : -1.f;
-	float leftStyle = module ? getXONeighborStyle(module->leftExpander.module) : -1.f;
-	bool rightSeam = myStyle >= 0.f && rightStyle >= 0.f && rightStyle == myStyle;
-	bool leftSeam = myStyle >= 0.f && leftStyle >= 0.f && leftStyle == myStyle;
-	bool seamVisible = rightSeam || leftSeam;
+	bool seamVisible = module && (bridgeConnected(module, module->rightExpander.module)
+	                           || bridgeConnected(module, module->leftExpander.module));
 	cover1->visible = seamVisible;
 	cover2->visible = seamVisible;
 }
@@ -487,11 +482,15 @@ inline void addXODisconnectMenuItem(Menu *menu, Module *module)
 	Module *m = APP->engine->getModule(connectedId);
 	if (!m)
 		return;
-	// XOHostInterface has no custom-name concept at all (unlike XHostInterface's own
-	// getXHostName(), used by the X-family's equivalent menu item) - always the plain
-	// slug+id form, matching STYX's own simpler "Disconnect" convention in spirit.
+	// Editable Host name now generic (ExpanderBridgeInterface::getBridgeHostName(),
+	// ExpanderBridge.hpp) - every Host implements it, so this is no longer XO-family-specific
+	// always-slug+id text; falls back to slug+id only when no custom name is actually set.
+	ExpanderBridgeInterface *bridge = dynamic_cast<ExpanderBridgeInterface*>(m);
+	std::string hostName = bridge ? bridge->getBridgeHostName() : "";
 	XODisconnectItem *item = new XODisconnectItem();
 	item->expander = expander;
-	item->text = string::f("Disconnect: %s #%lld", m->model->slug.c_str(), (long long) connectedId);
+	item->text = hostName.empty()
+		? string::f("Disconnect: %s #%lld", m->model->slug.c_str(), (long long) connectedId)
+		: string::f("Disconnect: %s", hostName.c_str());
 	menu->addChild(item);
 }

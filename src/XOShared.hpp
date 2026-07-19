@@ -26,10 +26,13 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 /*
 	The XO family (XO8/XD8/XOD8/XO16/XD16/XOD16) is the read-only, output-side mirror of the
-	X family (X8/X8D/X16/X16D, see XShared.hpp) - an Expander attaches to a Host's RIGHT side
-	(the X family attaches to a Host's LEFT) and mirrors one of the Host's declared polyphonic
+	X family (X8/X8D/X16/X16D, see XShared.hpp) and mirrors one of the Host's declared polyphonic
 	OUTPUTS, either as real channel-split mono jacks (XO*), a colored/formatted per-channel value
-	display (XD*), or both (XOD*).
+	display (XD*), or both (XOD*). As of 2026-07-19, an Expander can dock on either side (no more
+	left-only restriction) - discovery works via the generic ExpanderBridge.hpp mechanism (see its
+	own file comment): physical adjacency is only ever a one-time touch, and (unlike X-family) the
+	resulting connection persists regardless of later physical movement, since there's no
+	exclusive bind to protect here at all.
 
 	There is NO engagement/binding mechanism at all here, unlike the X family - reading a Host's
 	output is never exclusive, so any number of these Expanders (and further Expanders chained
@@ -97,15 +100,15 @@ struct XOHostInterface
 
 struct XOExpanderInterface
 {
-	// The Host pointer this Expander itself resolved via its own left-side chain-walk (mirrored
-	// direction from the X family - this family chains rightward off the Host), or, if nothing's
-	// currently adjacent, its own remembered connection (see getXOConnectedHostId() below) -
-	// or nullptr.
+	// Resolved directly from this Expander's own persisted connection (getXOConnectedHostId()
+	// below) every tick - no more live relay through a chain of neighbors' own getXOHost() calls,
+	// since the real Host's id was already captured once, at touch time (ExpanderBridge.hpp), and
+	// stays valid regardless of later physical position.
 	virtual XOHostInterface* getXOHost() = 0;
 	virtual float getXOStyle() = 0;
 
 	// The remembered target Host's own module id (the "NFC touch once, stays connected" memory -
-	// see resolveXOHostPersistent() below), or -1 if none. XO-family has no
+	// see resolveXOHostBridge() below), or -1 if none. XO-family has no
 	// engagement/binding/exclusivity concept at all (reading a Host's output is never exclusive),
 	// so unlike the X-family's own equivalent, there's nothing else this memory could conflict
 	// with - purely a convenience so a detached XO-family Expander keeps reading its Host live.
@@ -150,58 +153,37 @@ struct XOExpanderInterface
 };
 
 /**
-	Resolves the Host reachable through a given immediate neighbor (always leftExpander.module
-	for an XO-family module - the mirror image of resolveXHost()'s own rightExpander.module,
-	since this family attaches to a Host's RIGHT side and chains further rightward among itself),
-	or nullptr if that neighbor isn't part of the XO family at all or doesn't (yet) reach a Host.
-*/
-inline XOHostInterface* resolveXOHost(Module *neighbor)
-{
-	if (!neighbor)
-		return nullptr;
-	XOHostInterface *host = dynamic_cast<XOHostInterface*>(neighbor);
-	if (host)
-		return host;
-	XOExpanderInterface *link = dynamic_cast<XOExpanderInterface*>(neighbor);
-	if (link)
-		return link->getXOHost();
-	return nullptr;
-}
+	Resolves this XO-family Expander's Host every tick, using the generic touch-once-then-persist
+	policy (ExpanderBridge.hpp's own file comment) - only ever attempts a fresh touch
+	(resolveBridgeHostId(), checking BOTH sides now) while `connectedHostIdState` (the caller's own
+	persisted int64_t member, passed by reference) is still -1; once connected, never re-touched by
+	further physical movement, only ever re-resolved from the SAME persisted id (clearing it if the
+	target has since vanished). Shared here since both XOModuleCommon.hpp and XRModuleCommon.hpp
+	need this identical logic at their own separate call sites.
 
-/**
-	Resolves via adjacency first (resolveXOHost() above); on failure, falls back to a persisted
-	Host module id ("NFC touch once, stays connected until explicitly broken" - mirrors the
-	X-family's own CONNECTED_HOST_ID_JSON handling in X8ModuleCommon.hpp exactly, promoted to a
-	shared helper here since both XOModuleCommon.hpp and XRModuleCommon.hpp need this identical
-	logic at their own separate call sites, unlike the X-family which has only one call site and
-	keeps the logic inline). `connectedHostIdState` is the caller's own
-	OL_state[CONNECTED_HOST_ID_JSON] slot, passed by reference so this can both read the current
-	value and update/clear it in place.
+	`connectedHostIdState` is a real int64_t, NOT an OL_state float slot - Rack module ids observed
+	in practice (2026-07-19 live testing) run into the quadrillions, nowhere near "small sequential
+	integers" - a float's ~7-significant-digit precision corrupts an id that large instantly, so
+	storing it there produces exactly "resolve succeeds, gets corrupted on write, immediately fails
+	to read back, resets to -1" every single tick forever. Each concrete module persists this member
+	itself via its own moduleExtraDataToJson/FromJson (json_integer()), same pattern Morpheus's own
+	boundExpanderId array already uses for the identical reason.
 */
-inline XOHostInterface* resolveXOHostPersistent(Module *neighbor, float &connectedHostIdState)
+inline XOHostInterface* resolveXOHostBridge(Module *self, int64_t &connectedHostIdState)
 {
-	XOHostInterface *host = resolveXOHost(neighbor);
-	if (host)
+	if (connectedHostIdState == -1)
 	{
-		// Persist the RESOLVED HOST's own module id, not just the immediate neighbor's - a
-		// longer Expander chain may relay through intermediate XO-family members to reach the
-		// real Host. XOHostInterface is a sibling base class of Module, not Module itself -
-		// dynamic_cast across to the underlying Module is a valid C++ cross-cast here.
-		Module *hostModule = dynamic_cast<Module*>(host);
-		if (hostModule && (int64_t) connectedHostIdState != hostModule->id)
-			connectedHostIdState = (float) hostModule->id;
-		return host;
+		int64_t newId = resolveBridgeHostId({ FAMILY_XO }, self->leftExpander.module, self->rightExpander.module);
+		if (newId != -1)
+			connectedHostIdState = newId;
 	}
-	int64_t connectedId = (int64_t) connectedHostIdState;
-	if (connectedId >= 0)
-	{
-		Module *m = APP->engine->getModule(connectedId);
-		XOHostInterface *fallback = m ? dynamic_cast<XOHostInterface*>(m) : nullptr;
-		if (fallback)
-			return fallback;
-		connectedHostIdState = -1.f; // target vanished - clear stale id
-	}
-	return nullptr;
+	if (connectedHostIdState == -1)
+		return nullptr;
+	Module *m = APP->engine->getModule(connectedHostIdState);
+	XOHostInterface *host = m ? dynamic_cast<XOHostInterface*>(m) : nullptr;
+	if (!host)
+		connectedHostIdState = -1; // target vanished - clear stale id
+	return host;
 }
 
 /**
@@ -237,9 +219,8 @@ inline void updateXOExtStrip(XExtStripWidget *strip, Module *self, Module *right
 	float myStyle = getXONeighborStyle(self);
 	if (myStyle < 0.f)
 		return;
-	float rightStyle = getXONeighborStyle(rightNeighbor);
 	strip->style = (int) myStyle;
-	strip->visible = (rightStyle >= 0.f) && (rightStyle == myStyle);
+	strip->visible = bridgeConnected(self, rightNeighbor);
 }
 
 // See updateXOExtStrip() above - identical logic, just checking the LEFT neighbor instead (an
@@ -249,9 +230,8 @@ inline void updateXOExtStripLeft(XExtStripWidget *strip, Module *self, Module *l
 	float myStyle = getXONeighborStyle(self);
 	if (myStyle < 0.f)
 		return;
-	float leftStyle = getXONeighborStyle(leftNeighbor);
 	strip->style = (int) myStyle;
-	strip->visible = (leftStyle >= 0.f) && (leftStyle == myStyle);
+	strip->visible = bridgeConnected(self, leftNeighbor);
 }
 
 #endif
