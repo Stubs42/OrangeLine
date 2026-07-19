@@ -130,10 +130,47 @@ struct LanesCV : Module, LanesExpanderInterface, ExpanderBridgeInterface
 		allocator.reset();
 	}
 
+	// Unregisters from the Hub's listener registry before dropping the cached pointer/id - see
+	// XOModuleCommon.hpp's identical disconnectXOHost() for the full reasoning. Used by
+	// moduleReset(), the right-click Disconnect item, and invalidateBridgeCache() below.
+	void disconnectLanesHub()
+	{
+		if (lanesHub)
+		{
+			ExpanderBridgeInterface *hubBridge = dynamic_cast<ExpanderBridgeInterface*>(lanesHub);
+			if (hubBridge)
+				hubBridge->unregisterBridgeListener(this);
+		}
+		lanesHub = nullptr;
+		lanesConnectedHostId = -1;
+	}
+
 	void moduleReset()
 	{
 		styleChanged = true;
+		disconnectLanesHub();
+	}
+
+	// Called BY the cached Hub itself, right before it's destroyed (see
+	// ExpanderBridgeInterface's own comment, ExpanderBridge.hpp) - just drop the connection
+	// directly (no unregister needed, the Hub is already tearing down its own registry).
+	void invalidateBridgeCache() override
+	{
+		lanesHub = nullptr;
 		lanesConnectedHostId = -1;
+	}
+	// Symmetric with the Hub's own onRemove() (CVLanes.cpp/MidiLanes.cpp) - proactively tells the
+	// cached Hub to forget this Expander before it's actually destroyed, using only the pointer
+	// already held (no engine lookup of any kind).
+	void onRemove(const RemoveEvent &e) override
+	{
+		if (lanesHub)
+		{
+			ExpanderBridgeInterface *hubBridge = dynamic_cast<ExpanderBridgeInterface*>(lanesHub);
+			if (hubBridge)
+				hubBridge->unregisterBridgeListener(this);
+		}
+		Module::onRemove(e);
 	}
 
 	/**
@@ -154,7 +191,10 @@ struct LanesCV : Module, LanesExpanderInterface, ExpanderBridgeInterface
 			styleChanged = false;
 		}
 
-		lanesHub = resolveLanesHubBridge(this, lanesConnectedHostId);
+		// Caches the resolved pointer directly in lanesHub itself - resolveLanesHubBridge() only
+		// calls APP->engine->getModule() once, at the actual connect event, never on any other
+		// tick (see its own comment, LanesShared.hpp).
+		resolveLanesHubBridge(this, this, lanesConnectedHostId, lanesHub);
 
 		if (lanesHub)
 			allocator.process(lanesHub);
@@ -293,7 +333,7 @@ struct LanesCVWidget : ModuleWidget
 	struct LanesCVDisconnectItem : MenuItem
 	{
 		LanesCV *module;
-		void onAction(const event::Action &e) override { module->lanesConnectedHostId = -1; }
+		void onAction(const event::Action &e) override { module->disconnectLanesHub(); }
 	};
 
 	void appendContextMenu(Menu *menu) override

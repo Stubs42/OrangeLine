@@ -190,11 +190,43 @@ struct LanesMidi : Module, LanesExpanderInterface, ExpanderBridgeInterface
 		allocator.reset();
 	}
 
+	// Unregisters from the Hub's listener registry before dropping the cached pointer/id - see
+	// XOModuleCommon.hpp's identical disconnectXOHost() for the full reasoning. Used by
+	// moduleReset(), the right-click Disconnect item, and invalidateBridgeCache() below.
+	void disconnectLanesHub()
+	{
+		if (lanesHub)
+		{
+			ExpanderBridgeInterface *hubBridge = dynamic_cast<ExpanderBridgeInterface*>(lanesHub);
+			if (hubBridge)
+				hubBridge->unregisterBridgeListener(this);
+		}
+		lanesHub = nullptr;
+		lanesConnectedHostId = -1;
+	}
+
 	void moduleReset()
 	{
 		midiOutput.reset();
 		styleChanged = true;
+		disconnectLanesHub();
+	}
+
+	// See LanesCV.cpp's own identical invalidateBridgeCache()/onRemove() for the full mechanism.
+	void invalidateBridgeCache() override
+	{
+		lanesHub = nullptr;
 		lanesConnectedHostId = -1;
+	}
+	void onRemove(const RemoveEvent &e) override
+	{
+		if (lanesHub)
+		{
+			ExpanderBridgeInterface *hubBridge = dynamic_cast<ExpanderBridgeInterface*>(lanesHub);
+			if (hubBridge)
+				hubBridge->unregisterBridgeListener(this);
+		}
+		Module::onRemove(e);
 	}
 
 	/**
@@ -220,7 +252,10 @@ struct LanesMidi : Module, LanesExpanderInterface, ExpanderBridgeInterface
 		// anything else that might have touched it (stray preset, UI, ...).
 		midiOutput.channel = -1;
 
-		lanesHub = resolveLanesHubBridge(this, lanesConnectedHostId);
+		// Caches the resolved pointer directly in lanesHub itself - resolveLanesHubBridge() only
+		// calls APP->engine->getModule() once, at the actual connect event, never on any other
+		// tick (see its own comment, LanesShared.hpp).
+		resolveLanesHubBridge(this, this, lanesConnectedHostId, lanesHub);
 
 		if (lanesHub)
 			allocator.process(lanesHub);
@@ -443,7 +478,7 @@ struct LanesMidiWidget : ModuleWidget
 	struct LanesMidiDisconnectItem : MenuItem
 	{
 		LanesMidi *module;
-		void onAction(const event::Action &e) override { module->lanesConnectedHostId = -1; }
+		void onAction(const event::Action &e) override { module->disconnectLanesHub(); }
 	};
 
 	void appendContextMenu(Menu *menu) override

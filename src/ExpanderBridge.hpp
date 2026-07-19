@@ -29,10 +29,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 /*
 	Generic, family-agnostic "how does an Expander find its Host" mechanism - shared by every
-	Expander/Host family in this plugin (X, XO, LANES, STYX), replacing what used to be four
+	Expander/Host family in this plugin (X, XO, LANES, NEO), replacing what used to be four
 	separate, bespoke resolution mechanisms (a right-only live relay chain for X, a left-only
 	persisted-id fallback for XO, a both-sides live conflict-detecting recompute for LANES, an
-	inline both-sides persisted-id block for STYX).
+	inline both-sides persisted-id block for NEO).
 
 	Core idea (Dieter, 2026-07-19): every Expander already needs to resolve "which Host am I
 	talking to" somehow - rather than each family reinventing that, there's exactly ONE mechanism:
@@ -53,8 +53,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
 // One slug can belong to more than one family at once (Morpheus: FAMILY_X, FAMILY_XO,
-// FAMILY_STYX simultaneously, since it implements XHostInterface/XOHostInterface/
-// StyxHostInterface all on the same instance) - callers always check membership via
+// FAMILY_NEO simultaneously, since it implements XHostInterface/XOHostInterface/
+// NeoHostInterface all on the same instance) - callers always check membership via
 // getModuleFamilies(), never a single-value comparison. FAMILY_LANES is shared by both the
 // CV-input and MIDI-input variants (CVLanes/MidiLanes Hubs, LanesCV/LanesMidi Expanders) -
 // they already implement the exact same LanesHubInterface/LanesExpanderInterface and were
@@ -64,7 +64,7 @@ enum ExpanderFamily
 	FAMILY_X,
 	FAMILY_XO,
 	FAMILY_LANES,
-	FAMILY_STYX
+	FAMILY_NEO
 };
 
 /*
@@ -79,7 +79,7 @@ enum ExpanderFamily
 inline const std::vector<ExpanderFamily>& getModuleFamilies(const std::string &slug)
 {
 	static const std::map<std::string, std::vector<ExpanderFamily>> registry = {
-		{ "Morpheus", { FAMILY_X, FAMILY_XO, FAMILY_STYX } },
+		{ "Morpheus", { FAMILY_X, FAMILY_XO, FAMILY_NEO } },
 		{ "X8",       { FAMILY_X } },
 		{ "X8D",      { FAMILY_X } },
 		{ "X16",      { FAMILY_X } },
@@ -96,7 +96,7 @@ inline const std::vector<ExpanderFamily>& getModuleFamilies(const std::string &s
 		{ "MidiLanes",{ FAMILY_LANES } },
 		{ "LanesCV",  { FAMILY_LANES } },
 		{ "LanesMidi",{ FAMILY_LANES } },
-		{ "Styx",     { FAMILY_STYX } },
+		{ "Neo",      { FAMILY_NEO } },
 	};
 	static const std::vector<ExpanderFamily> none;
 	auto it = registry.find(slug);
@@ -144,7 +144,69 @@ struct ExpanderBridgeInterface
 	// name set) - see each family's own Free/Disconnect-style menu item, which is where this
 	// gets shown; no separate display widget needed anywhere.
 	virtual std::string getBridgeHostName() = 0;
+
+	// Lifecycle-safety hooks for a module that caches a raw pointer to another bridge module
+	// across ticks (XO/XR/LANES/NEO all do this - see XOShared.hpp's resolveXOHostBridge(),
+	// LanesShared.hpp's resolveLanesHubBridge(), Neo.cpp's own inline equivalent; X-family
+	// doesn't use any of this, it already has its own older, bespoke equivalent - the
+	// xCandidates[] array + XHostInterface::resetXParamDuringRemoval(), Morpheus.cpp). The whole
+	// point: NEVER call APP->engine->getModule() from inside moduleProcess() to keep a cached
+	// pointer valid - that was confirmed (gdb, live freeze, 2026-07-19) to occasionally race a
+	// queued exclusive lock request (module add/remove) and deadlock the engine. Instead, a
+	// module that just cached a live pointer to `host` calls host->registerBridgeListener(this)
+	// once, at that exact caching moment; `host`'s own onRemove() then calls
+	// invalidateBridgeCache() on every still-registered listener before it's destroyed, and each
+	// listener's own onRemove() calls host->unregisterBridgeListener(this) using its OWN cached
+	// host pointer. None of this ever touches the engine (no getModule() anywhere in the whole
+	// chain) - every call is a plain virtual dispatch on a pointer already known to be valid
+	// (Rack never destroys a module concurrently with another module's onRemove() callback, and
+	// onRemove() itself always runs before the module it belongs to is actually destructed), so
+	// none of it is affected by whatever lock Rack's own removeModule() currently holds.
+	// Default no-ops: a module that's never used as anyone's cached "host" (or that doesn't
+	// participate in this mechanism at all) needs no extra code whatsoever.
+	virtual void registerBridgeListener(ExpanderBridgeInterface *listener) {}
+	virtual void unregisterBridgeListener(ExpanderBridgeInterface *listener) {}
+	// Called ON a listener, BY whichever bridge module it registered with, right before that
+	// module is destroyed - the listener must drop its own cached pointer/id to it immediately,
+	// exactly mirroring how X-family's own setXBoundHostId(-1) already works.
+	virtual void invalidateBridgeCache() {}
+
 	virtual ~ExpanderBridgeInterface() {}
+};
+
+/**
+	Reusable listener-registry helper - any module that wants to let other modules safely cache a
+	raw pointer to IT (i.e. any Host/Hub: Morpheus for XO/NEO, CVLanes/MidiLanes for LANES) just
+	holds one of these as a plain member (composition, not inheritance - a module can't multiply-
+	inherit two copies of the same base, and Morpheus needs exactly one registry shared by both its
+	XO and NEO listeners, not two), forwards its own registerBridgeListener()/
+	unregisterBridgeListener() overrides straight to it, and calls notifyAndClear() as part of its
+	own onRemove(). See ExpanderBridgeInterface's own comment above for the full mechanism this
+	supports.
+*/
+struct BridgeListenerRegistry
+{
+	std::vector<ExpanderBridgeInterface*> listeners;
+
+	void add(ExpanderBridgeInterface *listener)
+	{
+		if (std::find(listeners.begin(), listeners.end(), listener) == listeners.end())
+			listeners.push_back(listener);
+	}
+	void remove(ExpanderBridgeInterface *listener)
+	{
+		listeners.erase(std::remove(listeners.begin(), listeners.end(), listener), listeners.end());
+	}
+	// Called from the owning module's own onRemove(), right before it's destroyed - tells every
+	// listener still registered to drop its cached pointer immediately. Cleared afterward so a
+	// listener's own subsequent onRemove() (order between the two is never guaranteed) finds
+	// nothing left to unregister.
+	void notifyAndClear()
+	{
+		for (ExpanderBridgeInterface *listener : listeners)
+			listener->invalidateBridgeCache();
+		listeners.clear();
+	}
 };
 
 /*
@@ -157,7 +219,7 @@ struct ExpanderBridgeInterface
 	left entirely to the caller (see ExpanderBridge.hpp's own file comment): X-family calls this
 	fresh every tick for its own non-exclusive "connection" (lost again the instant adjacency is,
 	since it was never bound - Dieter's own call), so the same physical detach that took the
-	connection away naturally makes this return -1 again next time. XO-family/STYX/LANES instead
+	connection away naturally makes this return -1 again next time. XO-family/NEO/LANES instead
 	only ever call this while their OWN persisted host id is still -1, and write whatever it
 	returns into that persisted field once - never calling this again afterward, so a later
 	physical move can't un-connect them.

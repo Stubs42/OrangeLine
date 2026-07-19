@@ -23,22 +23,29 @@ bool widgetReady = false;
 
 // Pushed directly by whichever Host currently binds this Expander (Morpheus.cpp's own
 // resetXParam()/bind-granting code, via setXBoundHostId() - XShared.hpp) - -1 when not bound
-// anywhere. A stable module id, deliberately never cached as a raw pointer: resolving it fresh
-// each tick via APP->engine->getModule() is always safe (returns nullptr for a stale id rather
-// than risking a dangling reference), and both sides proactively clear this to -1 via their own
-// onRemove() the instant either one is deleted (see this file's own onRemove() below and
-// Morpheus.cpp's own onRemove()/resetXParam()) - so a stale id should never even be observed in
-// normal operation. Replaces a per-tick full-rack scan entirely: binding changes are rare and
-// Host-initiated, so there's no need to ask the whole rack every tick just to answer a question
-// that only changes a few times per session.
+// anywhere. Both sides proactively clear this to -1 via their own onRemove() the instant either
+// one is deleted (see this file's own onRemove() below and Morpheus.cpp's own onRemove()/
+// resetXParam()) - so a stale id should never even be observed in normal operation. Replaces a
+// per-tick full-rack scan entirely: binding changes are rare and Host-initiated, so there's no
+// need to ask the whole rack every tick just to answer a question that only changes a few times
+// per session.
 int64_t xBoundHostId = -1;
+// Cached Host pointer for xBoundHostId above - pushed directly by setXBoundHostId() below at the
+// exact moment a bind is granted or restored, NEVER re-resolved via APP->engine->getModule() on
+// any other tick (see setXBoundHostId()'s own comment, XShared.hpp, for why: that used to be a
+// per-tick resolve and turned out to be a confirmed, live engine deadlock - a share-locking
+// getModule() call from inside moduleProcess() racing a queued exclusive lock request during a
+// module add/remove). Safe to cache permanently because both sides' onRemove() already clear
+// xBoundHostId (and, via the same setXBoundHostId(-1) call, this pointer too) the instant either
+// side is deleted - nothing can ever dangle.
+XHostInterface *boundHost = nullptr;
 
 // Live, NON-persisted "connection" for browsing only when not bound anywhere - recomputed fresh
 // every moduleProcess() tick via ExpanderBridge.hpp's resolveBridgeHostId() (both sides, crossing
 // any number of already-connected intermediate Expanders since each one's own getBridgeHostId()
 // already reflects wherever it ended up). Deliberately NOT gated/cached via onExpanderChange like
 // the exclusive bind is - an X-family Expander that was never bound simply loses this the instant
-// physical adjacency is (Dieter's own call, unlike XO-family/STYX/LANES, which persist their own
+// physical adjacency is (Dieter's own call, unlike XO-family/NEO/LANES, which persist their own
 // mere connection once touched). See ExpanderBridge.hpp's own file comment for the full
 // per-family persistence-policy reasoning.
 int64_t xConnectedId = -1;
@@ -278,40 +285,39 @@ inline void moduleProcess(const ProcessArgs &args)
 	// time, tracked via that Host's own boundExpanderId (see CLAUDE.md's Expander-modules
 	// section) - nothing here needs to know or care what kind of Host it's currently looking at.
 	//
-	// Bound-first (pushed id, not polled/scanned): if some Host currently binds this Expander,
-	// xBoundHostId already holds its module id directly - pushed by that Host itself the moment
-	// the binding was granted, no per-tick scan needed. Resolved to an actual pointer FRESH every
-	// tick (never cached across ticks) so a deleted Host can never leave a dangling reference
-	// here. The ONE exception needing a scan at all: right after a fresh patch load
+	// Bound-first (pushed id AND pointer, never polled/scanned): if some Host currently binds
+	// this Expander, xBoundHostId/boundHost already hold its module id and pointer directly -
+	// pushed by that Host itself the moment the binding was granted (setXBoundHostId(), which
+	// also caches the pointer - see its own comment) - no per-tick resolution of any kind here
+	// anymore. This used to re-resolve boundHost fresh via APP->engine->getModule() every tick,
+	// which turned out to be a confirmed, live engine deadlock (gdb-verified, same class as the
+	// ExpanderBridge/XOD8 one found earlier this session) - per Dieter's own call, there is no
+	// reason for this to ever resolve anything outside the exact moment a connection is actually
+	// made or restored. The ONE exception needing a scan at all: right after a fresh patch load
 	// (dataFromJsonCalled, OrangeLineCommon.hpp), a binding can already be restored as bound
 	// without any push event ever having fired this session - so on that one tick only, fall back
-	// to a full-rack scan (findXBoundHostId(), XShared.hpp) to re-establish xBoundHostId, exactly
-	// as if the Host had just pushed it.
+	// to a full-rack scan (findXBoundHostId(), XShared.hpp) which resolves AND pushes both
+	// xBoundHostId and boundHost together, exactly as if the Host had just pushed it live.
 	// Clone/selection-load recovery: at most once, right after a fresh load, while this
 	// Expander is both unbound and itself a fresh clone (OL_selfId, OrangeLineCommon.hpp,
 	// mismatches this module's own real id) - see XShared.hpp's own architecture comment on
 	// tryRecoverXBinding() for the full reasoning. Deliberately checked BEFORE the ordinary
-	// findXBoundHostId() fallback right below: if this succeeds, xBoundHostId is already set
-	// and that fallback's own `xBoundHostId == -1` guard correctly skips.
+	// findXBoundHostId() fallback right below: if this succeeds, xBoundHostId/boundHost are
+	// already pushed and that fallback's own `xBoundHostId == -1` guard correctly skips.
 	if (dataFromJsonCalled && xBoundHostId == -1 && xIsFreshClone(OL_selfId, (int64_t) this->id))
 		tryRecoverXBinding(this, (int64_t) this->id, OL_selfId);
 	if (dataFromJsonCalled && xBoundHostId == -1)
-		xBoundHostId = findXBoundHostId((int64_t) this->id);
-	XHostInterface *boundHost = nullptr;
-	if (xBoundHostId != -1)
-	{
-		Module *m = APP->engine->getModule(xBoundHostId);
-		boundHost = m ? dynamic_cast<XHostInterface*>(m) : nullptr;
-		if (!boundHost)
-			xBoundHostId = -1; // target vanished without telling us first (shouldn't normally
-			                   // happen - the Host's own onRemove() should already have cleared
-			                   // this - defensive only, never relied on in normal operation
-	}
+		findXBoundHostId((int64_t) this->id, this); // pushes xBoundHostId + boundHost itself if
+		                                             // found; a no-op (still -1) otherwise
+	// No defensive "did the target vanish without telling us" re-check here anymore - that would
+	// need its own getModule() call, exactly what this whole rework removes. Both sides' onRemove()
+	// already proactively push setXBoundHostId(-1) the instant either one is deleted, so boundHost
+	// is trusted as-is between those events.
 	// Not bound anywhere: re-derive a live, non-persisted browsing connection fresh every tick,
 	// from BOTH sides now (ExpanderBridge.hpp's resolveBridgeHostId() - no more left/right
 	// restriction, no more continuously-relayed chain, see XShared.hpp's own file comment). Lost
 	// the instant physical adjacency is, since it was never bound - this Expander's own choice,
-	// not shared by XO-family/STYX/LANES (see ExpanderBridge.hpp's own persistence-policy note).
+	// not shared by XO-family/NEO/LANES (see ExpanderBridge.hpp's own persistence-policy note).
 	XHostInterface *connectedHost = nullptr;
 	if (boundHost)
 		xConnectedId = -1; // bound takes over entirely - no need to track a separate connection
@@ -516,9 +522,10 @@ XHostInterface* getXHost() override { return xHost; }
 // binding again), so OL_selfId is brought back in sync with reality right here, the single
 // choke point every bind grant already goes through. Left untouched on an unbind (hostId == -1)
 // - nothing to resolve there.
-void setXBoundHostId(int64_t hostId) override
+void setXBoundHostId(int64_t hostId, XHostInterface *hostPtr = nullptr) override
 {
 	xBoundHostId = hostId;
+	boundHost = hostPtr; // cached directly - the only place this is ever set
 	if (hostId != -1)
 		OL_selfId = (int64_t) this->id;
 }

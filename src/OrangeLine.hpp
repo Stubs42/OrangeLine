@@ -281,7 +281,7 @@ struct AutoHideLight : TBase
 };
 
 // Single on/off switch for every connection-status light across the whole plugin (X-family,
-// XO-family, XR-family, LANES-family, STYX, Morpheus) - flip this one value to re-enable them
+// XO-family, XR-family, LANES-family, NEO, Morpheus) - flip this one value to re-enable them
 // everywhere at once, instead of touching dozens of individual widget-construction call sites.
 // Disabled 2026-07-18 (Dieter: more distracting than informative, breaks each panel header's own
 // optics - connection state is already conveyed for free by the panel's own controls/displays

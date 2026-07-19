@@ -364,8 +364,8 @@
       ]
     },
     {
-      "slug": "Styx",
-      "name": "STYX",
+      "slug": "Neo",
+      "name": "NEO",
       "description": "Resizable bidirectional tape/memory viewer and editor for a compatible sequencer host (Morpheus) - attach on either side",
       "tags": [
         "Utility",

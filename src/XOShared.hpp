@@ -153,8 +153,8 @@ struct XOExpanderInterface
 };
 
 /**
-	Resolves this XO-family Expander's Host every tick, using the generic touch-once-then-persist
-	policy (ExpanderBridge.hpp's own file comment) - only ever attempts a fresh touch
+	Resolves this XO-family Expander's Host, using the generic touch-once-then-persist policy
+	(ExpanderBridge.hpp's own file comment) - only ever attempts a fresh touch
 	(resolveBridgeHostId(), checking BOTH sides now) while `connectedHostIdState` (the caller's own
 	persisted int64_t member, passed by reference) is still -1; once connected, never re-touched by
 	further physical movement, only ever re-resolved from the SAME persisted id (clearing it if the
@@ -168,22 +168,49 @@ struct XOExpanderInterface
 	to read back, resets to -1" every single tick forever. Each concrete module persists this member
 	itself via its own moduleExtraDataToJson/FromJson (json_integer()), same pattern Morpheus's own
 	boundExpanderId array already uses for the identical reason.
+
+	`cachedHost` (also the caller's own persisted-across-ticks member, by reference) is resolved via
+	APP->engine->getModule() at most ONCE per actual connection - right when connectedHostIdState
+	first becomes valid (a fresh touch, or a saved id restored from a patch load) - and then just
+	returned as-is on every subsequent call, exactly like X-family's own boundHost/boundExpander
+	caching (X8ModuleCommon.hpp/Morpheus.cpp). This used to re-resolve fresh via getModule() every
+	single tick - confirmed (gdb, live freeze, 2026-07-19) to be exactly the same class of engine
+	deadlock as the one found and fixed in the X-family/ExpanderBridge compatibility check earlier
+	the same session (a share-locking getModule() call from inside moduleProcess(), racing a queued
+	exclusive lock request during a module add/remove) - just not yet observed to trip it live at
+	the time that fix went in. The cached pointer stays safe to hold indefinitely because the
+	Host's own onRemove() proactively calls invalidateBridgeCache() on every module registered via
+	registerBridgeListener() (done here, the moment the pointer is first cached) before it's
+	destroyed - see ExpanderBridgeInterface's own comment for the full mechanism.
 */
-inline XOHostInterface* resolveXOHostBridge(Module *self, int64_t &connectedHostIdState)
+inline XOHostInterface* resolveXOHostBridge(Module *self, ExpanderBridgeInterface *selfBridge,
+                                             int64_t &connectedHostIdState, XOHostInterface *&cachedHost)
 {
 	if (connectedHostIdState == -1)
 	{
+		cachedHost = nullptr;
 		int64_t newId = resolveBridgeHostId({ FAMILY_XO }, self->leftExpander.module, self->rightExpander.module);
-		if (newId != -1)
-			connectedHostIdState = newId;
+		if (newId == -1)
+			return nullptr;
+		connectedHostIdState = newId;
 	}
-	if (connectedHostIdState == -1)
-		return nullptr;
+	if (cachedHost)
+		return cachedHost; // already resolved and registered with the Host - no lookup needed
+	// Reached only once per actual connection: right after the fresh touch above, or on the
+	// first tick after a patch load where connectedHostIdState is already restored from JSON but
+	// cachedHost is still null on this freshly-constructed instance - never on any other tick.
 	Module *m = APP->engine->getModule(connectedHostIdState);
 	XOHostInterface *host = m ? dynamic_cast<XOHostInterface*>(m) : nullptr;
 	if (!host)
-		connectedHostIdState = -1; // target vanished - clear stale id
-	return host;
+	{
+		connectedHostIdState = -1; // target vanished/never existed - clear stale id
+		return nullptr;
+	}
+	ExpanderBridgeInterface *hostBridge = dynamic_cast<ExpanderBridgeInterface*>(m);
+	if (hostBridge)
+		hostBridge->registerBridgeListener(selfBridge);
+	cachedHost = host;
+	return cachedHost;
 }
 
 /**

@@ -185,6 +185,24 @@ struct CVLanes : Module, LanesHubInterface, ExpanderBridgeInterface
 	int64_t getBridgeHostId() override { return (int64_t) this->id; }
 	std::vector<ExpanderFamily> getBridgeFamilies() override { return getModuleFamilies(model->slug); }
 	std::string getBridgeHostName() override { return customName; }
+	// Listener registry backing registerBridgeListener()/unregisterBridgeListener() below - lets
+	// any LanesCV/LanesMidi Expander that cached a raw pointer to this Hub find out immediately
+	// if it's removed, instead of ever re-resolving that pointer via APP->engine->getModule() from
+	// inside moduleProcess() (confirmed, 2026-07-19, to be a live engine deadlock risk under a
+	// concurrent module add/remove - see ExpanderBridgeInterface's own comment, ExpanderBridge.hpp,
+	// for the full mechanism this backs).
+	BridgeListenerRegistry bridgeListeners;
+	void registerBridgeListener(ExpanderBridgeInterface *listener) override { bridgeListeners.add(listener); }
+	void unregisterBridgeListener(ExpanderBridgeInterface *listener) override { bridgeListeners.remove(listener); }
+	// Fires right before this Hub is actually destroyed - proactively tells every still-connected
+	// Expander to drop its cached pointer, using only pointers already held (no engine lookup of
+	// any kind), so none of this is affected by whatever lock Rack's own removeModule() currently
+	// holds for the duration of this callback.
+	void onRemove(const RemoveEvent &e) override
+	{
+		bridgeListeners.notifyAndClear();
+		Module::onRemove(e);
+	}
 
 	// ********************************************************************************************************************************
 	/*

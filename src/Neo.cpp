@@ -1,7 +1,7 @@
 /*
-	Styx.cpp
+	Neo.cpp
 
-	Code for the OrangeLine module STYX
+	Code for the OrangeLine module NEO
 
 Copyright (C) 2019 Dieter Stubler
 
@@ -25,62 +25,62 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <cstring>
 #include <algorithm>
 
-#include "Styx.hpp"
+#include "Neo.hpp"
 
-#define STYX_DEFAULT_WIDTH_HP 24
-#define STYX_CONTROLS_WIDTH_MM 40.f  // reserved left-hand width for name/toggle/page controls
-#define STYX_COLUMN_WIDTH_MM   4.f   // width of one step-column cell
-#define STYX_ROW_HEIGHT_MM     6.5f
-#define STYX_FIRST_ROW_Y_MM    12.f
+#define NEO_DEFAULT_WIDTH_HP 24
+#define NEO_CONTROLS_WIDTH_MM 40.f  // reserved left-hand width for name/toggle/page controls
+#define NEO_COLUMN_WIDTH_MM   4.f   // width of one step-column cell
+#define NEO_ROW_HEIGHT_MM     6.5f
+#define NEO_FIRST_ROW_Y_MM    12.f
 
-struct Styx : Module, XExpanderInterface, XOExpanderInterface, StyxExpanderInterface, ExpanderBridgeInterface
+struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterface, ExpanderBridgeInterface
 {
 #include "OrangeLineCommon.hpp"
 
 	// Resolved every tick via the generic touch-once-then-persist mechanism (both sides -
 	// ExpanderBridge.hpp), same as XO-family/LANES now use.
-	StyxHostInterface *styxHost = nullptr;
-	// The raw neighbor Module* that satisfied styxHost above - kept separately so the
+	NeoHostInterface *neoHost = nullptr;
+	// The raw neighbor Module* that satisfied neoHost above - kept separately so the
 	// XExpanderInterface/XOExpanderInterface relay methods below can re-cast the SAME instance to
 	// whichever other interface a chained X-/XO-family Expander is looking for (Morpheus already
 	// implements all three interfaces on one instance).
-	Module *styxHostModule = nullptr;
+	Module *neoHostModule = nullptr;
 
-	dsp::SchmittTrigger memTapeTrigger[STYX_NUM_ROWS];
-	dsp::SchmittTrigger followTrigger[STYX_NUM_ROWS];
-	dsp::SchmittTrigger leftTrigger[STYX_NUM_ROWS];
-	dsp::SchmittTrigger rightTrigger[STYX_NUM_ROWS];
+	dsp::SchmittTrigger memTapeTrigger[NEO_NUM_ROWS];
+	dsp::SchmittTrigger followTrigger[NEO_NUM_ROWS];
+	dsp::SchmittTrigger leftTrigger[NEO_NUM_ROWS];
+	dsp::SchmittTrigger rightTrigger[NEO_NUM_ROWS];
 
 	// Persistent per-instance label buffers - setJsonLabel() stores the raw char* handed to it
 	// rather than copying the string, so a temporary std::string's c_str() would dangle the
 	// instant the temporary is destroyed (see CLAUDE.md-adjacent lesson from XR8/XR16 today).
-	char rowChannelLabelBuf[STYX_NUM_ROWS][20];
+	char rowChannelLabelBuf[NEO_NUM_ROWS][20];
 	char channelColorLabelBuf[POLY_CHANNELS][20];
-	char rowMemTapeLabelBuf[STYX_NUM_ROWS][20];
-	char rowFollowLabelBuf[STYX_NUM_ROWS][20];
-	char rowPageLabelBuf[STYX_NUM_ROWS][20];
-	char rowCellTypeLabelBuf[STYX_NUM_ROWS][20];
+	char rowMemTapeLabelBuf[NEO_NUM_ROWS][20];
+	char rowFollowLabelBuf[NEO_NUM_ROWS][20];
+	char rowPageLabelBuf[NEO_NUM_ROWS][20];
+	char rowCellTypeLabelBuf[NEO_NUM_ROWS][20];
 
 	// Persisted "NFC touch once, stays connected" target Host id - a real int64_t, not an
 	// OL_state float slot, see ExpanderBridge.hpp's resolveBridgeHostId() and
 	// XOShared.hpp's resolveXOHostBridge() for why that distinction matters (observed Rack
 	// module ids run into the quadrillions - a float silently corrupts them). Persisted via
 	// this module's own moduleExtraDataToJson/FromJson below.
-	int64_t styxConnectedHostId = -1;
+	int64_t neoConnectedHostId = -1;
 
-	Styx()
+	Neo()
 	{
 		initializeInstance();
 
 		moduleExtraDataToJson = [this](json_t *rootJ)
 		{
-			json_object_set_new(rootJ, "connectedHostId", json_integer(styxConnectedHostId));
+			json_object_set_new(rootJ, "connectedHostId", json_integer(neoConnectedHostId));
 		};
 		moduleExtraDataFromJson = [this](json_t *rootJ)
 		{
 			json_t *idJ = json_object_get(rootJ, "connectedHostId");
 			if (idJ && json_is_integer(idJ))
-				styxConnectedHostId = json_integer_value(idJ);
+				neoConnectedHostId = json_integer_value(idJ);
 		};
 	}
 
@@ -89,7 +89,7 @@ struct Styx : Module, XExpanderInterface, XOExpanderInterface, StyxExpanderInter
 	int getVisibleColumns()
 	{
 		float widthMm = OL_state[PANEL_WIDTH_HP_JSON] * 5.08f;
-		int cols = (int) ((widthMm - STYX_CONTROLS_WIDTH_MM) / STYX_COLUMN_WIDTH_MM);
+		int cols = (int) ((widthMm - NEO_CONTROLS_WIDTH_MM) / NEO_COLUMN_WIDTH_MM);
 		return std::max(1, cols);
 	}
 
@@ -103,9 +103,9 @@ struct Styx : Module, XExpanderInterface, XOExpanderInterface, StyxExpanderInter
 
 		setJsonLabel(STYLE_JSON, "style");
 		setJsonLabel(PANEL_WIDTH_HP_JSON, "panelWidthHp");
-		// CONNECTED_HOST_ID_JSON is gone - styxConnectedHostId is a real int64_t now, persisted
+		// CONNECTED_HOST_ID_JSON is gone - neoConnectedHostId is a real int64_t now, persisted
 		// via this module's own moduleExtraDataToJson/FromJson instead (see its own comment).
-		for (int r = 0; r < STYX_NUM_ROWS; r++)
+		for (int r = 0; r < NEO_NUM_ROWS; r++)
 		{
 			snprintf(rowChannelLabelBuf[r], sizeof(rowChannelLabelBuf[r]), "rowChannel%d", r);
 			setJsonLabel(ROW_CHANNEL_JSON + r, rowChannelLabelBuf[r]);
@@ -129,7 +129,7 @@ struct Styx : Module, XExpanderInterface, XOExpanderInterface, StyxExpanderInter
 
 	inline void moduleParamConfig()
 	{
-		for (int r = 0; r < STYX_NUM_ROWS; r++)
+		for (int r = 0; r < NEO_NUM_ROWS; r++)
 		{
 			configParam(ROW_MEMTAPE_PARAM + r, 0.f, 1.f, 0.f, string::f("Row %d Mem/Tape", r + 1));
 			configParam(ROW_FOLLOW_PARAM + r, 0.f, 1.f, 0.f, string::f("Row %d Follow", r + 1));
@@ -141,12 +141,50 @@ struct Styx : Module, XExpanderInterface, XOExpanderInterface, StyxExpanderInter
 	inline void moduleCustomInitialize() {}
 	inline void moduleInitialize() {}
 
+	// Unregisters from the Host's listener registry before dropping the cached pointer(s)/id -
+	// see XOModuleCommon.hpp's identical disconnectXOHost() for the full reasoning. Used by
+	// moduleReset(), the right-click Disconnect item, and invalidateBridgeCache() below.
+	void disconnectNeoHost()
+	{
+		if (neoHostModule)
+		{
+			ExpanderBridgeInterface *hostBridge = dynamic_cast<ExpanderBridgeInterface*>(neoHostModule);
+			if (hostBridge)
+				hostBridge->unregisterBridgeListener(this);
+		}
+		neoHost = nullptr;
+		neoHostModule = nullptr;
+		neoConnectedHostId = -1;
+	}
+	// Called BY the cached Host itself, right before it's destroyed (see
+	// ExpanderBridgeInterface's own comment, ExpanderBridge.hpp) - just drop the connection
+	// directly (no unregister needed, the Host is already tearing down its own registry).
+	void invalidateBridgeCache() override
+	{
+		neoHost = nullptr;
+		neoHostModule = nullptr;
+		neoConnectedHostId = -1;
+	}
+	// Symmetric with the Host's own onRemove() (Morpheus.cpp) - proactively tells the cached
+	// Host to forget this Neo instance before it's actually destroyed, using only the pointer
+	// already held (no engine lookup of any kind).
+	void onRemove(const RemoveEvent &e) override
+	{
+		if (neoHostModule)
+		{
+			ExpanderBridgeInterface *hostBridge = dynamic_cast<ExpanderBridgeInterface*>(neoHostModule);
+			if (hostBridge)
+				hostBridge->unregisterBridgeListener(this);
+		}
+		Module::onRemove(e);
+	}
+
 	void moduleReset()
 	{
 		styleChanged = true;
-		OL_state[PANEL_WIDTH_HP_JSON] = (float) STYX_DEFAULT_WIDTH_HP;
-		styxConnectedHostId = -1;
-		for (int r = 0; r < STYX_NUM_ROWS; r++)
+		OL_state[PANEL_WIDTH_HP_JSON] = (float) NEO_DEFAULT_WIDTH_HP;
+		disconnectNeoHost();
+		for (int r = 0; r < NEO_NUM_ROWS; r++)
 		{
 			OL_state[ROW_CHANNEL_JSON + r] = (float) r; // row r shows channel r by default
 			OL_state[ROW_MEMTAPE_JSON + r] = 0.f;       // TAPE
@@ -160,7 +198,7 @@ struct Styx : Module, XExpanderInterface, XOExpanderInterface, StyxExpanderInter
 
 	inline void moduleProcess(const ProcessArgs &args)
 	{
-		// No brightPanel/darkPanel SvgPanel swap here (unlike every other module) - StyxPanelWidget
+		// No brightPanel/darkPanel SvgPanel swap here (unlike every other module) - NeoPanelWidget
 		// draws its own theme-aware flat background directly every frame instead, since a baked
 		// SVG panel can't stretch to match this module's resizable width. styleChanged is left
 		// alone (never consumed) - harmless, nothing depends on it being cleared.
@@ -169,27 +207,44 @@ struct Styx : Module, XExpanderInterface, XOExpanderInterface, StyxExpanderInter
 		// comment (ExpanderBridge.hpp). Only ever attempts a fresh touch while not yet connected;
 		// once connected, stays put regardless of later physical movement until an explicit
 		// "Disconnect".
-		if (styxConnectedHostId == -1)
+		if (neoConnectedHostId == -1)
 		{
-			int64_t newId = resolveBridgeHostId({ FAMILY_STYX }, leftExpander.module, rightExpander.module);
+			neoHost = nullptr;
+			neoHostModule = nullptr;
+			int64_t newId = resolveBridgeHostId({ FAMILY_NEO }, leftExpander.module, rightExpander.module);
 			if (newId != -1)
-				styxConnectedHostId = newId;
+				neoConnectedHostId = newId;
 		}
-		styxHost = nullptr;
-		styxHostModule = nullptr;
-		if (styxConnectedHostId != -1)
+		// Resolved via APP->engine->getModule() at most ONCE per actual connection - right after
+		// the fresh touch above, or on the first tick after a patch load where
+		// neoConnectedHostId is already restored from JSON but neoHost is still null on this
+		// freshly-constructed instance - never on any other tick. An unconditional per-tick
+		// getModule() call here used to run every single tick regardless of connection state -
+		// confirmed (gdb, live freeze, 2026-07-19) to be the same class of engine deadlock found
+		// and fixed elsewhere the same session (a share-locking getModule() call from inside
+		// moduleProcess(), racing a queued exclusive lock request during a module add/remove).
+		// Registers with the Host's listener registry the moment the pointer is first cached, so
+		// the Host's own onRemove() can proactively invalidate it before being destroyed - see
+		// ExpanderBridgeInterface's own comment (ExpanderBridge.hpp) for the full mechanism.
+		if (neoConnectedHostId != -1 && !neoHost)
 		{
-			Module *m = APP->engine->getModule(styxConnectedHostId);
-			styxHost = m ? resolveStyxHost(m) : nullptr;
-			if (styxHost)
-				styxHostModule = m;
+			Module *m = APP->engine->getModule(neoConnectedHostId);
+			NeoHostInterface *host = m ? resolveNeoHost(m) : nullptr;
+			if (!host)
+				neoConnectedHostId = -1; // target vanished/never existed - clear stale id
 			else
-				styxConnectedHostId = -1; // target vanished - clear the stale id
+			{
+				neoHost = host;
+				neoHostModule = m;
+				ExpanderBridgeInterface *hostBridge = dynamic_cast<ExpanderBridgeInterface*>(m);
+				if (hostBridge)
+					hostBridge->registerBridgeListener(this);
+			}
 		}
 
 		int visibleCols = getVisibleColumns();
 
-		for (int r = 0; r < STYX_NUM_ROWS; r++)
+		for (int r = 0; r < NEO_NUM_ROWS; r++)
 		{
 			if (memTapeTrigger[r].process(params[ROW_MEMTAPE_PARAM + r].getValue()))
 				OL_state[ROW_MEMTAPE_JSON + r] = (OL_state[ROW_MEMTAPE_JSON + r] > 0.5f) ? 0.f : 1.f;
@@ -197,17 +252,17 @@ struct Styx : Module, XExpanderInterface, XOExpanderInterface, StyxExpanderInter
 				OL_state[ROW_FOLLOW_JSON + r] = (OL_state[ROW_FOLLOW_JSON + r] > 0.5f) ? 0.f : 1.f;
 
 			bool follow = OL_state[ROW_FOLLOW_JSON + r] > 0.5f;
-			if (styxHost)
+			if (neoHost)
 			{
 				int channel = clamp((int) OL_state[ROW_CHANNEL_JSON + r], 0, POLY_CHANNELS - 1);
 				if (follow)
 				{
-					int cursor = styxHost->getPlayCursor(channel);
+					int cursor = neoHost->getPlayCursor(channel);
 					OL_state[ROW_PAGE_JSON + r] = (float) (cursor / visibleCols);
 				}
 				else
 				{
-					int loopLen = std::max(1, styxHost->getLoopLen(channel));
+					int loopLen = std::max(1, neoHost->getLoopLen(channel));
 					int maxPage = (loopLen - 1) / visibleCols;
 					if (leftTrigger[r].process(params[ROW_LEFT_PARAM + r].getValue()))
 						OL_state[ROW_PAGE_JSON + r] = std::max(0.f, OL_state[ROW_PAGE_JSON + r] - 1.f);
@@ -226,13 +281,13 @@ struct Styx : Module, XExpanderInterface, XOExpanderInterface, StyxExpanderInter
 	inline void moduleProcessState() {}
 	inline void moduleReflectChanges() {}
 
-	// XExpanderInterface - pure relay, STYX never uses any of these itself; only implemented so
-	// an X-family Expander chained further along the rack (e.g. "X8 | STYX | Morpheus") keeps
-	// resolving its own Host straight through STYX exactly as it would through any other
+	// XExpanderInterface - pure relay, NEO never uses any of these itself; only implemented so
+	// an X-family Expander chained further along the rack (e.g. "X8 | NEO | Morpheus") keeps
+	// resolving its own Host straight through NEO exactly as it would through any other
 	// X-family member. Every method below except getXHost()/getXStyle() is genuinely dead code
-	// from STYX's own perspective but must still compile.
-	XHostInterface* getXHost() override { return styxHostModule ? dynamic_cast<XHostInterface*>(styxHostModule) : nullptr; }
-	void setXBoundHostId(int64_t hostId) override {}
+	// from NEO's own perspective but must still compile.
+	XHostInterface* getXHost() override { return neoHostModule ? dynamic_cast<XHostInterface*>(neoHostModule) : nullptr; }
+	void setXBoundHostId(int64_t hostId, XHostInterface *hostPtr = nullptr) override {}
 	int64_t getXBoundHostId() override { return -1; }
 	int64_t getXSelfId() override { return -1; } // never a clone-recovery target - see the pure-
 	                                              // relay comment above; -1 also correctly never
@@ -254,8 +309,8 @@ struct Styx : Module, XExpanderInterface, XOExpanderInterface, StyxExpanderInter
 	bool getXBrowsedParamSnap() override { return false; }
 	const char* getXBrowsedParamUnit() override { return ""; }
 
-	// XOExpanderInterface - same pure-relay reasoning as above, for "STYX | XO8"-shaped chains.
-	XOHostInterface* getXOHost() override { return styxHostModule ? dynamic_cast<XOHostInterface*>(styxHostModule) : nullptr; }
+	// XOExpanderInterface - same pure-relay reasoning as above, for "NEO | XO8"-shaped chains.
+	XOHostInterface* getXOHost() override { return neoHostModule ? dynamic_cast<XOHostInterface*>(neoHostModule) : nullptr; }
 	int64_t getXOConnectedHostId() override { return -1; }
 	void disconnectXOHost() override {}
 	float getXOStyle() override { return OL_state[STYLE_JSON]; }
@@ -270,8 +325,8 @@ struct Styx : Module, XExpanderInterface, XOExpanderInterface, StyxExpanderInter
 	bool getXOBrowsedChannelGateLit(int channel) override { return false; }
 
 	// ExpanderBridgeInterface (ExpanderBridge.hpp) - the persisted connection IS this Expander's
-	// own bridge id (STYX has no exclusivity concept, same as XO-family/LANES).
-	int64_t getBridgeHostId() override { return styxConnectedHostId; }
+	// own bridge id (NEO has no exclusivity concept, same as XO-family/LANES).
+	int64_t getBridgeHostId() override { return neoConnectedHostId; }
 	std::vector<ExpanderFamily> getBridgeFamilies() override { return getModuleFamilies(model->slug); }
 	std::string getBridgeHostName() override { return ""; } // Expander, not a Host
 };
@@ -283,13 +338,13 @@ struct Styx : Module, XExpanderInterface, XOExpanderInterface, StyxExpanderInter
 	pattern reused, not copied verbatim). Right-edge only for v1 (simpler case both references
 	support identically).
 */
-struct StyxResizeHandle : OpaqueWidget
+struct NeoResizeHandle : OpaqueWidget
 {
-	Styx *module = nullptr;
+	Neo *module = nullptr;
 	Vec dragPos;
 	Rect originalBox;
 
-	StyxResizeHandle()
+	NeoResizeHandle()
 	{
 		box.size = Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT);
 	}
@@ -314,7 +369,7 @@ struct StyxResizeHandle : OpaqueWidget
 
 		Rect newBox = originalBox;
 		Rect oldBox = mw->box;
-		float minWidth = STYX_MIN_WIDTH_HP * RACK_GRID_WIDTH;
+		float minWidth = NEO_MIN_WIDTH_HP * RACK_GRID_WIDTH;
 		newBox.size.x += deltaX;
 		newBox.size.x = std::fmax(newBox.size.x, minWidth);
 		newBox.size.x = std::round(newBox.size.x / RACK_GRID_WIDTH) * RACK_GRID_WIDTH;
@@ -353,14 +408,14 @@ struct StyxResizeHandle : OpaqueWidget
 	Dieter's own "function first, polish later" instruction - fancier rendering (line-vs-rect
 	styles, gradients) is explicitly deferred, see the plan.
 */
-struct StyxRowCellsWidget : TransparentWidget
+struct NeoRowCellsWidget : TransparentWidget
 {
 	Module *module = nullptr;
 	int row = 0;
 	int dragStep = -1;
 	float dragStartValue = 0.f;
 
-	Styx* styx() { return module ? dynamic_cast<Styx*>(module) : nullptr; }
+	Neo* neo() { return module ? dynamic_cast<Neo*>(module) : nullptr; }
 
 	int stepAtLocalX(float x, int visibleCols)
 	{
@@ -370,13 +425,13 @@ struct StyxRowCellsWidget : TransparentWidget
 
 	void draw(const DrawArgs &args) override
 	{
-		Styx *m = styx();
+		Neo *m = neo();
 		nvgBeginPath(args.vg);
 		nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
 		nvgFillColor(args.vg, nvgRGB(0x10, 0x10, 0x10));
 		nvgFill(args.vg);
 
-		if (!m || !m->styxHost)
+		if (!m || !m->neoHost)
 			return;
 
 		int channel = clamp((int) m->OL_state[ROW_CHANNEL_JSON + row], 0, POLY_CHANNELS - 1);
@@ -384,7 +439,7 @@ struct StyxRowCellsWidget : TransparentWidget
 		bool gate = m->OL_state[ROW_CELLTYPE_JSON + row] < 0.5f;
 		int visibleCols = m->getVisibleColumns();
 		int page = (int) m->OL_state[ROW_PAGE_JSON + row];
-		int loopLen = m->styxHost->getLoopLen(channel);
+		int loopLen = m->neoHost->getLoopLen(channel);
 		float cellWidth = box.size.x / (float) visibleCols;
 		int colorPacked = (int) m->OL_state[CHANNEL_COLOR_JSON + channel];
 		NVGcolor color = nvgRGB((colorPacked >> 16) & 0xff, (colorPacked >> 8) & 0xff, colorPacked & 0xff);
@@ -394,7 +449,7 @@ struct StyxRowCellsWidget : TransparentWidget
 			int step = page * visibleCols + i;
 			if (step >= loopLen)
 				break;
-			float value = mem ? m->styxHost->getMemStep(channel, step) : m->styxHost->getTapeStep(channel, step);
+			float value = mem ? m->neoHost->getMemStep(channel, step) : m->neoHost->getTapeStep(channel, step);
 			float x = i * cellWidth;
 
 			if (gate)
@@ -424,8 +479,8 @@ struct StyxRowCellsWidget : TransparentWidget
 	{
 		if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_PRESS)
 		{
-			Styx *m = styx();
-			if (m && m->styxHost)
+			Neo *m = neo();
+			if (m && m->neoHost)
 			{
 				int visibleCols = m->getVisibleColumns();
 				dragStep = stepAtLocalX(e.pos.x, visibleCols);
@@ -433,7 +488,7 @@ struct StyxRowCellsWidget : TransparentWidget
 				bool mem = m->OL_state[ROW_MEMTAPE_JSON + row] > 0.5f;
 				int page = (int) m->OL_state[ROW_PAGE_JSON + row];
 				int step = page * visibleCols + dragStep;
-				dragStartValue = mem ? m->styxHost->getMemStep(channel, step) : m->styxHost->getTapeStep(channel, step);
+				dragStartValue = mem ? m->neoHost->getMemStep(channel, step) : m->neoHost->getTapeStep(channel, step);
 			}
 			e.consume(this);
 		}
@@ -446,8 +501,8 @@ struct StyxRowCellsWidget : TransparentWidget
 	// drag (up = higher value) matches the bar's own vertical orientation.
 	void onDragMove(const DragMoveEvent &e) override
 	{
-		Styx *m = styx();
-		if (!m || !m->styxHost || dragStep < 0)
+		Neo *m = neo();
+		if (!m || !m->neoHost || dragStep < 0)
 			return;
 		int visibleCols = m->getVisibleColumns();
 		int channel = clamp((int) m->OL_state[ROW_CHANNEL_JSON + row], 0, POLY_CHANNELS - 1);
@@ -462,9 +517,9 @@ struct StyxRowCellsWidget : TransparentWidget
 		dragStartValue = newValue;
 
 		if (mem)
-			m->styxHost->setMemStep(channel, step, newValue);
+			m->neoHost->setMemStep(channel, step, newValue);
 		else
-			m->styxHost->setTapeStep(channel, step, newValue);
+			m->neoHost->setTapeStep(channel, step, newValue);
 	}
 
 	void onDragEnd(const DragEndEvent &e) override
@@ -476,12 +531,12 @@ struct StyxRowCellsWidget : TransparentWidget
 
 /**
 	Plain row-number label (v1) - full channel renaming via right-click is deferred (see
-	StyxChannelNameField's own comment below), so this just shows which channel the row currently
+	NeoChannelNameField's own comment below), so this just shows which channel the row currently
 	displays. Simple direct nvgText() draw, mirroring the rest of the codebase's own small label
 	widgets rather than OrangeLine.hpp's own TextWidget (a much more specialized scrolling-display
 	widget tied to module-specific animation state, not a fit for a plain static/row-number label).
 */
-struct StyxRowNameWidget : TransparentWidget
+struct NeoRowNameWidget : TransparentWidget
 {
 	Module *module = nullptr;
 	int row = 0;
@@ -493,7 +548,7 @@ struct StyxRowNameWidget : TransparentWidget
 			Widget::drawLayer(args, layer);
 			return;
 		}
-		Styx *m = module ? dynamic_cast<Styx*>(module) : nullptr;
+		Neo *m = module ? dynamic_cast<Neo*>(module) : nullptr;
 		int channel = m ? clamp((int) m->OL_state[ROW_CHANNEL_JSON + row], 0, POLY_CHANNELS - 1) : row;
 
 		float fontSizePx = mm2px(Vec(3.5f, 0.f)).x;
@@ -512,18 +567,18 @@ struct StyxRowNameWidget : TransparentWidget
 /**
 	Flat, code-drawn panel background - an SVG panel (the usual `setPanel()`/`SvgPanel` convention
 	every other OrangeLine module uses) has a fixed baked width and can't stretch to match a
-	resizable module, so STYX draws its own background directly instead, sized to `box.size`
+	resizable module, so NEO draws its own background directly instead, sized to `box.size`
 	every frame (mirrors VCV core's own `BlankPanel`, `Blank.cpp`). Deliberately simple graphics
 	per Dieter's own "function first, polish later" instruction - a themed flat fill + border, no
 	hand-authored art at all yet.
 */
-struct StyxPanelWidget : Widget
+struct NeoPanelWidget : Widget
 {
 	Module *module = nullptr;
 
 	void draw(const DrawArgs &args) override
 	{
-		Styx *m = module ? dynamic_cast<Styx*>(module) : nullptr;
+		Neo *m = module ? dynamic_cast<Neo*>(module) : nullptr;
 		float style = m ? m->OL_state[STYLE_JSON] : STYLE_ORANGE;
 		NVGcolor bg = (style == STYLE_DARK) ? X_STRIP_BG_DARK : (style == STYLE_BRIGHT) ? X_STRIP_BG_BRIGHT : X_STRIP_BG_ORANGE;
 		NVGcolor frame = (style == STYLE_DARK) ? X_FRAME_DARK : (style == STYLE_BRIGHT) ? X_FRAME_BRIGHT : X_FRAME_ORANGE;
@@ -542,40 +597,40 @@ struct StyxPanelWidget : Widget
 	Main Module Widget - resizable panel, 16 fixed rows (8/16-row mode toggle deferred). Function
 	first, styling later per Dieter's own instruction - simple graphics throughout.
 */
-struct StyxWidget : ModuleWidget
+struct NeoWidget : ModuleWidget
 {
-	StyxResizeHandle *resizeHandle = nullptr;
-	StyxPanelWidget *panelWidget = nullptr;
-	StyxRowCellsWidget *rowCells[STYX_NUM_ROWS] = {};
-	StyxRowNameWidget *rowNames[STYX_NUM_ROWS] = {};
+	NeoResizeHandle *resizeHandle = nullptr;
+	NeoPanelWidget *panelWidget = nullptr;
+	NeoRowCellsWidget *rowCells[NEO_NUM_ROWS] = {};
+	NeoRowNameWidget *rowNames[NEO_NUM_ROWS] = {};
 
-	StyxWidget(Styx *module)
+	NeoWidget(Neo *module)
 	{
 		setModule(module);
 
-		float widthHp = module ? module->OL_state[PANEL_WIDTH_HP_JSON] : STYX_DEFAULT_WIDTH_HP;
-		if (widthHp < STYX_MIN_WIDTH_HP)
-			widthHp = STYX_DEFAULT_WIDTH_HP;
+		float widthHp = module ? module->OL_state[PANEL_WIDTH_HP_JSON] : NEO_DEFAULT_WIDTH_HP;
+		if (widthHp < NEO_MIN_WIDTH_HP)
+			widthHp = NEO_DEFAULT_WIDTH_HP;
 		box.size = Vec(widthHp * RACK_GRID_WIDTH, RACK_GRID_HEIGHT);
 
-		panelWidget = new StyxPanelWidget();
+		panelWidget = new NeoPanelWidget();
 		panelWidget->module = module;
 		panelWidget->box.size = box.size;
 		addChild(panelWidget);
 
-		for (int r = 0; r < STYX_NUM_ROWS; r++)
+		for (int r = 0; r < NEO_NUM_ROWS; r++)
 		{
-			float y = STYX_FIRST_ROW_Y_MM + r * STYX_ROW_HEIGHT_MM;
+			float y = NEO_FIRST_ROW_Y_MM + r * NEO_ROW_HEIGHT_MM;
 
-			StyxRowNameWidget *name = new StyxRowNameWidget();
+			NeoRowNameWidget *name = new NeoRowNameWidget();
 			name->module = module;
 			name->row = r;
 			name->box.pos = calculateCoordinates(1.f, y, 0.f);
-			name->box.size = mm2px(Vec(16.f, STYX_ROW_HEIGHT_MM - 0.5f));
+			name->box.size = mm2px(Vec(16.f, NEO_ROW_HEIGHT_MM - 0.5f));
 			addChild(name);
 			rowNames[r] = name;
 
-			struct StyxRowButton : ParamWidget
+			struct NeoRowButton : ParamWidget
 			{
 				NVGcolor onColor = ORANGE;
 				void draw(const DrawArgs &args) override
@@ -599,47 +654,47 @@ struct StyxWidget : ModuleWidget
 				}
 			};
 
-			StyxRowButton *memTapeBtn = createParamCentered<StyxRowButton>(calculateCoordinates(19.f, y + STYX_ROW_HEIGHT_MM / 2.f - 0.5f, 0.f), module, ROW_MEMTAPE_PARAM + r);
+			NeoRowButton *memTapeBtn = createParamCentered<NeoRowButton>(calculateCoordinates(19.f, y + NEO_ROW_HEIGHT_MM / 2.f - 0.5f, 0.f), module, ROW_MEMTAPE_PARAM + r);
 			memTapeBtn->box.size = mm2px(Vec(6.f, 4.f));
 			memTapeBtn->onColor = nvgRGB(0x00, 0x99, 0xff);
 			addParam(memTapeBtn);
 
-			StyxRowButton *followBtn = createParamCentered<StyxRowButton>(calculateCoordinates(26.f, y + STYX_ROW_HEIGHT_MM / 2.f - 0.5f, 0.f), module, ROW_FOLLOW_PARAM + r);
+			NeoRowButton *followBtn = createParamCentered<NeoRowButton>(calculateCoordinates(26.f, y + NEO_ROW_HEIGHT_MM / 2.f - 0.5f, 0.f), module, ROW_FOLLOW_PARAM + r);
 			followBtn->box.size = mm2px(Vec(6.f, 4.f));
 			followBtn->onColor = nvgRGB(0x00, 0xdd, 0x44);
 			addParam(followBtn);
 
-			StyxRowButton *leftBtn = createParamCentered<StyxRowButton>(calculateCoordinates(33.f, y + STYX_ROW_HEIGHT_MM / 2.f - 0.5f, 0.f), module, ROW_LEFT_PARAM + r);
+			NeoRowButton *leftBtn = createParamCentered<NeoRowButton>(calculateCoordinates(33.f, y + NEO_ROW_HEIGHT_MM / 2.f - 0.5f, 0.f), module, ROW_LEFT_PARAM + r);
 			leftBtn->box.size = mm2px(Vec(4.f, 4.f));
 			addParam(leftBtn);
 
-			StyxRowButton *rightBtn = createParamCentered<StyxRowButton>(calculateCoordinates(38.f, y + STYX_ROW_HEIGHT_MM / 2.f - 0.5f, 0.f), module, ROW_RIGHT_PARAM + r);
+			NeoRowButton *rightBtn = createParamCentered<NeoRowButton>(calculateCoordinates(38.f, y + NEO_ROW_HEIGHT_MM / 2.f - 0.5f, 0.f), module, ROW_RIGHT_PARAM + r);
 			rightBtn->box.size = mm2px(Vec(4.f, 4.f));
 			addParam(rightBtn);
 
-			StyxRowCellsWidget *cells = new StyxRowCellsWidget();
+			NeoRowCellsWidget *cells = new NeoRowCellsWidget();
 			cells->module = module;
 			cells->row = r;
-			cells->box.pos = calculateCoordinates(STYX_CONTROLS_WIDTH_MM, y, 0.f);
-			cells->box.size = mm2px(Vec(1.f, STYX_ROW_HEIGHT_MM - 0.5f)); // width fixed up in step()
+			cells->box.pos = calculateCoordinates(NEO_CONTROLS_WIDTH_MM, y, 0.f);
+			cells->box.size = mm2px(Vec(1.f, NEO_ROW_HEIGHT_MM - 0.5f)); // width fixed up in step()
 			addChild(cells);
 			rowCells[r] = cells;
 		}
 
-		resizeHandle = new StyxResizeHandle();
+		resizeHandle = new NeoResizeHandle();
 		resizeHandle->module = module;
 		addChild(resizeHandle);
 	}
 
 	void step() override
 	{
-		Styx *styxModule = dynamic_cast<Styx *>(module);
-		if (styxModule)
+		Neo *neoModule = dynamic_cast<Neo *>(module);
+		if (neoModule)
 		{
-			float widthMm = styxModule->OL_state[PANEL_WIDTH_HP_JSON] * 5.08f;
+			float widthMm = neoModule->OL_state[PANEL_WIDTH_HP_JSON] * 5.08f;
 			box.size.x = mm2px(widthMm);
-			float cellsWidthMm = std::max(1.f, widthMm - STYX_CONTROLS_WIDTH_MM);
-			for (int r = 0; r < STYX_NUM_ROWS; r++)
+			float cellsWidthMm = std::max(1.f, widthMm - NEO_CONTROLS_WIDTH_MM);
+			for (int r = 0; r < NEO_NUM_ROWS; r++)
 				rowCells[r]->box.size.x = mm2px(cellsWidthMm);
 		}
 		if (panelWidget)
@@ -651,7 +706,7 @@ struct StyxWidget : ModuleWidget
 
 	struct XOStyleItem : MenuItem
 	{
-		Styx *module;
+		Neo *module;
 		int style;
 		void onAction(const event::Action &e) override
 		{
@@ -667,18 +722,18 @@ struct StyxWidget : ModuleWidget
 
 	// Per-row "which channel" submenu - two-level, "Rows" -> "Row N" -> the 16 channel choices,
 	// same setSize()-required pattern as CLAUDE.md's documented "Channels" submenu convention.
-	struct StyxRowsItem : MenuItem
+	struct NeoRowsItem : MenuItem
 	{
-		Styx *module;
+		Neo *module;
 
-		struct StyxRowItem : MenuItem
+		struct NeoRowItem : MenuItem
 		{
-			Styx *module;
+			Neo *module;
 			int row;
 
-			struct StyxRowChannelItem : MenuItem
+			struct NeoRowChannelItem : MenuItem
 			{
-				Styx *module;
+				Neo *module;
 				int row;
 				int channel;
 				void onAction(const event::Action &e) override
@@ -692,9 +747,9 @@ struct StyxWidget : ModuleWidget
 				}
 			};
 
-			struct StyxRowCellTypeItem : MenuItem
+			struct NeoRowCellTypeItem : MenuItem
 			{
-				Styx *module;
+				Neo *module;
 				int row;
 				int cellType;
 				void onAction(const event::Action &e) override
@@ -717,7 +772,7 @@ struct StyxWidget : ModuleWidget
 				menu->addChild(channelLabel);
 				for (int c = 0; c < POLY_CHANNELS; c++)
 				{
-					StyxRowChannelItem *item = new StyxRowChannelItem();
+					NeoRowChannelItem *item = new NeoRowChannelItem();
 					item->module = module;
 					item->row = row;
 					item->channel = c;
@@ -732,7 +787,7 @@ struct StyxWidget : ModuleWidget
 				const char *typeNames[2] = { "Gate", "Value" };
 				for (int t = 0; t < 2; t++)
 				{
-					StyxRowCellTypeItem *item = new StyxRowCellTypeItem();
+					NeoRowCellTypeItem *item = new NeoRowCellTypeItem();
 					item->module = module;
 					item->row = row;
 					item->cellType = t;
@@ -747,9 +802,9 @@ struct StyxWidget : ModuleWidget
 		Menu *createChildMenu() override
 		{
 			Menu *menu = new Menu;
-			for (int r = 0; r < STYX_NUM_ROWS; r++)
+			for (int r = 0; r < NEO_NUM_ROWS; r++)
 			{
-				StyxRowItem *item = new StyxRowItem();
+				NeoRowItem *item = new NeoRowItem();
 				item->module = module;
 				item->row = r;
 				item->text = string::f("Row %d", r + 1);
@@ -763,13 +818,13 @@ struct StyxWidget : ModuleWidget
 
 	// Per-channel name/color submenu - name and color belong to the CHANNEL, not the row
 	// (confirmed explicitly, they travel with the channel wherever it's reassigned).
-	struct StyxChannelsItem : MenuItem
+	struct NeoChannelsItem : MenuItem
 	{
-		Styx *module;
+		Neo *module;
 
-		struct StyxChannelNameField : ui::TextField
+		struct NeoChannelNameField : ui::TextField
 		{
-			Styx *module;
+			Neo *module;
 			int channel;
 			void onChange(const ChangeEvent &e) override
 			{
@@ -781,9 +836,9 @@ struct StyxWidget : ModuleWidget
 			}
 		};
 
-		struct StyxChannelColorItem : MenuItem
+		struct NeoChannelColorItem : MenuItem
 		{
-			Styx *module;
+			Neo *module;
 			int channel;
 			int color;
 			void onAction(const event::Action &e) override
@@ -797,9 +852,9 @@ struct StyxWidget : ModuleWidget
 			}
 		};
 
-		struct StyxChannelItem : MenuItem
+		struct NeoChannelItem : MenuItem
 		{
-			Styx *module;
+			Neo *module;
 			int channel;
 
 			Menu *createChildMenu() override
@@ -816,7 +871,7 @@ struct StyxWidget : ModuleWidget
 				};
 				for (int i = 0; i < 8; i++)
 				{
-					StyxChannelColorItem *item = new StyxChannelColorItem();
+					NeoChannelColorItem *item = new NeoChannelColorItem();
 					item->module = module;
 					item->channel = channel;
 					item->color = swatches[i];
@@ -833,7 +888,7 @@ struct StyxWidget : ModuleWidget
 			Menu *menu = new Menu;
 			for (int c = 0; c < POLY_CHANNELS; c++)
 			{
-				StyxChannelItem *item = new StyxChannelItem();
+				NeoChannelItem *item = new NeoChannelItem();
 				item->module = module;
 				item->channel = c;
 				item->text = string::f("Channel %d Color", c + 1);
@@ -849,12 +904,12 @@ struct StyxWidget : ModuleWidget
 	// Non-adjacent connection is auto-remembered (see moduleProcess()'s own comment) - no manual
 	// "Connect" selection needed, just a way to explicitly forget the remembered target and fall
 	// back to pure physical adjacency again.
-	struct StyxDisconnectItem : MenuItem
+	struct NeoDisconnectItem : MenuItem
 	{
-		Styx *module;
+		Neo *module;
 		void onAction(const event::Action &e) override
 		{
-			module->styxConnectedHostId = -1;
+			module->disconnectNeoHost();
 		}
 	};
 
@@ -863,7 +918,7 @@ struct StyxWidget : ModuleWidget
 		MenuLabel *spacerLabel = new MenuLabel();
 		menu->addChild(spacerLabel);
 
-		Styx *module = dynamic_cast<Styx *>(this->module);
+		Neo *module = dynamic_cast<Neo *>(this->module);
 		assert(module);
 
 		MenuLabel *styleLabel = new MenuLabel();
@@ -891,24 +946,24 @@ struct StyxWidget : ModuleWidget
 		spacerLabel = new MenuLabel();
 		menu->addChild(spacerLabel);
 
-		StyxRowsItem *rowsItem = new StyxRowsItem();
+		NeoRowsItem *rowsItem = new NeoRowsItem();
 		rowsItem->module = module;
 		rowsItem->text = "Rows";
 		rowsItem->rightText = RIGHT_ARROW;
 		menu->addChild(rowsItem);
 
-		StyxChannelsItem *channelsItem = new StyxChannelsItem();
+		NeoChannelsItem *channelsItem = new NeoChannelsItem();
 		channelsItem->module = module;
 		channelsItem->text = "Channels";
 		channelsItem->rightText = RIGHT_ARROW;
 		menu->addChild(channelsItem);
 
-		if (module->styxConnectedHostId >= 0)
+		if (module->neoConnectedHostId >= 0)
 		{
 			spacerLabel = new MenuLabel();
 			menu->addChild(spacerLabel);
 
-			StyxDisconnectItem *disconnectItem = new StyxDisconnectItem();
+			NeoDisconnectItem *disconnectItem = new NeoDisconnectItem();
 			disconnectItem->module = module;
 			disconnectItem->text = "Disconnect";
 			menu->addChild(disconnectItem);
@@ -916,4 +971,4 @@ struct StyxWidget : ModuleWidget
 	}
 };
 
-Model *modelStyx = createModel<Styx, StyxWidget>("Styx");
+Model *modelNeo = createModel<Neo, NeoWidget>("Neo");

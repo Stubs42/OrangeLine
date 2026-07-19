@@ -120,6 +120,17 @@ struct MidiLanes : Module, LanesHubInterface, ExpanderBridgeInterface
 	int64_t getBridgeHostId() override { return (int64_t) this->id; }
 	std::vector<ExpanderFamily> getBridgeFamilies() override { return getModuleFamilies(model->slug); }
 	std::string getBridgeHostName() override { return customName; }
+	// See CVLanes.cpp's own identical comment - listener registry + onRemove() notification so
+	// any connected LanesCV/LanesMidi Expander never needs to re-resolve a cached pointer to this
+	// Hub via APP->engine->getModule() from inside moduleProcess().
+	BridgeListenerRegistry bridgeListeners;
+	void registerBridgeListener(ExpanderBridgeInterface *listener) override { bridgeListeners.add(listener); }
+	void unregisterBridgeListener(ExpanderBridgeInterface *listener) override { bridgeListeners.remove(listener); }
+	void onRemove(const RemoveEvent &e) override
+	{
+		bridgeListeners.notifyAndClear();
+		Module::onRemove(e);
+	}
 
 	bool moduleSkipProcess()
 	{

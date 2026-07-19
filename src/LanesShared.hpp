@@ -94,8 +94,8 @@ inline float getLanesNeighborStyle(Module *neighbor)
 }
 
 /**
-	Resolves this LANES Expander's Hub every tick, using the generic touch-once-then-persist
-	policy (ExpanderBridge.hpp's own file comment) - only ever attempts a fresh touch
+	Resolves this LANES Expander's Hub, using the generic touch-once-then-persist policy
+	(ExpanderBridge.hpp's own file comment) - only ever attempts a fresh touch
 	(resolveBridgeHostId(), both sides) while `connectedHubIdState` (the caller's own persisted
 	int64_t member, passed by reference) is still -1; once connected, never re-touched by further
 	physical movement, only ever re-resolved from the SAME persisted id (clearing it if the target
@@ -106,22 +106,41 @@ inline float getLanesNeighborStyle(Module *neighbor)
 	digit precision corrupts an id that large instantly (see XOShared.hpp's resolveXOHostBridge()
 	for the fuller writeup of this exact bug, found and fixed there first). Each concrete Expander
 	persists this member itself via its own moduleExtraDataToJson/FromJson (json_integer()).
+
+	`cachedHub` (also the caller's own persisted-across-ticks member, by reference) is resolved via
+	APP->engine->getModule() at most ONCE per actual connection - right when connectedHubIdState
+	first becomes valid - then just returned as-is on every later call, mirroring XOShared.hpp's own
+	resolveXOHostBridge() (see its comment for the full reasoning: an unconditional per-tick
+	getModule() call here was the exact same class of confirmed engine deadlock found elsewhere in
+	the session). Registers with the Hub's listener registry the moment the pointer is first
+	cached, so the Hub's own onRemove() can proactively invalidate it before being destroyed - see
+	ExpanderBridgeInterface's own comment (ExpanderBridge.hpp) for the full mechanism.
 */
-inline LanesHubInterface* resolveLanesHubBridge(Module *self, int64_t &connectedHubIdState)
+inline LanesHubInterface* resolveLanesHubBridge(Module *self, ExpanderBridgeInterface *selfBridge,
+                                                 int64_t &connectedHubIdState, LanesHubInterface *&cachedHub)
 {
 	if (connectedHubIdState == -1)
 	{
+		cachedHub = nullptr;
 		int64_t newId = resolveBridgeHostId({ FAMILY_LANES }, self->leftExpander.module, self->rightExpander.module);
-		if (newId != -1)
-			connectedHubIdState = newId;
+		if (newId == -1)
+			return nullptr;
+		connectedHubIdState = newId;
 	}
-	if (connectedHubIdState == -1)
-		return nullptr;
+	if (cachedHub)
+		return cachedHub; // already resolved and registered with the Hub - no lookup needed
 	Module *m = APP->engine->getModule(connectedHubIdState);
 	LanesHubInterface *hub = m ? dynamic_cast<LanesHubInterface*>(m) : nullptr;
 	if (!hub)
-		connectedHubIdState = -1; // target vanished - clear stale id
-	return hub;
+	{
+		connectedHubIdState = -1; // target vanished/never existed - clear stale id
+		return nullptr;
+	}
+	ExpanderBridgeInterface *hubBridge = dynamic_cast<ExpanderBridgeInterface*>(m);
+	if (hubBridge)
+		hubBridge->registerBridgeListener(selfBridge);
+	cachedHub = hub;
+	return cachedHub;
 }
 
 // Panel background per theme (Dieter's Colors.txt) - the "Orange" theme's own background is

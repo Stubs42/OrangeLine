@@ -115,7 +115,19 @@ struct XHostInterface
 	// itself right afterward, since it already has the Expander pointer in hand. Safe to call on
 	// a Host that has never ticked process() yet (see getXSelfId()'s own comment) - touches only
 	// the raw, constructor/dataFromJson-populated candidate array, nothing derived.
-	virtual void recoverXParamBinding(int index, int64_t expanderId) = 0;
+	// `expander`, when the caller already has it in hand (every real caller does - see
+	// findXBoundHostId()/tryRecoverXParamSlot() below), lets the Host cache the actual pointer
+	// for this slot directly, at this exact one-time reconnect/recovery event, instead of ever
+	// having to resolve it itself later via APP->engine->getModule(). This replaced an earlier
+	// design where the Host's own per-tick refresh loop re-resolved a bound candidate's Expander
+	// pointer fresh every tick - confirmed (gdb, live freeze) to occasionally race a queued
+	// exclusive lock request (module add/remove) and deadlock the engine, exactly like the
+	// ExpanderBridge/XOD8 deadlock found earlier the same session (same root cause - a
+	// share-locking getModule() call from inside moduleProcess() - different call site). Per
+	// Dieter's own call: a Host must never have any reason to resolve anything outside the exact
+	// moment an Expander itself is doing the connecting - every other call site pushes its
+	// already-known pointer directly instead.
+	virtual void recoverXParamBinding(int index, int64_t expanderId, XExpanderInterface *expander = nullptr) = 0;
 	// This Host's own OL_selfId (OrangeLineCommon.hpp) - see that member's comment for the full
 	// "birth id" mechanism. Exposed here so another module's clone-recovery scan can tell a
 	// genuinely fresh clone of this exact Host (mismatched: getXSelfId() != this module's own
@@ -184,18 +196,23 @@ struct XHostInterface
 
 	// Editable Host display name now lives on ExpanderBridgeInterface::getBridgeHostName()
 	// (every Host implements that interface too) - see its own comment for why this was
-	// generalized out of being an X-family/STYX-only concept.
+	// generalized out of being an X-family/NEO-only concept.
 
 	virtual ~XHostInterface() {}
 };
 
 struct XExpanderInterface
 {
-	// The Host pointer this Expander itself resolved THIS TICK, fresh, from a stable id
-	// (getXBoundHostId() below) - never cached as a raw pointer across ticks, so there is nothing
-	// that can ever dangle even if the Host is deleted without warning. Falls back to whatever's
-	// genuinely adjacent right now if not bound anywhere (browsing purposes only). Lets a further
-	// Expander chained to this one's own left relay through it.
+	// The Host pointer for whichever Host currently binds this Expander (if any) - a cached
+	// pointer, pushed directly by setXBoundHostId() below at the exact moment a bind is granted
+	// or restored, never re-resolved via APP->engine->getModule() on any other tick (see that
+	// method's own comment for why - this used to re-resolve fresh every tick and turned out to
+	// be a confirmed, live deadlock). Safe to cache because both sides proactively clear it via
+	// their own onRemove() the instant either the Host or this Expander is deleted - a stale
+	// pointer can never outlive the id that would have caught it anyway. Falls back to whatever's
+	// genuinely adjacent right now if not bound anywhere (browsing purposes only, still resolved
+	// fresh each tick via ExpanderBridge.hpp - a deliberately different, genuinely-live case, not
+	// a persisted connection - see that file's own persistence-policy note).
 	virtual XHostInterface* getXHost() = 0;
 	// Pushed directly by whichever Host currently binds this Expander, at the exact moment the
 	// binding is granted or revoked (-1 = revoked/not bound) - a stable module id, never a raw
@@ -212,7 +229,17 @@ struct XExpanderInterface
 	// deliberately chosen first (structurally can't go stale) before being replaced here (push is
 	// only as correct as its own discipline - every boundExpanderId mutation on the Host side
 	// must route through a call that also pushes, see Morpheus.cpp's own resetXParam()).
-	virtual void setXBoundHostId(int64_t hostId) = 0;
+	//
+	// `hostPtr`, when the caller already has it in hand (every real caller does: requestXBind()
+	// passes its own `this`, findXBoundHostId()/tryRecoverXBinding() pass whatever they just
+	// resolved during their own one-time scan), lets this Expander cache the actual Host pointer
+	// directly at this exact bind/reconnect event - getXHost() below then just returns this
+	// cached pointer, never re-resolving it via APP->engine->getModule() on any other tick. This
+	// replaced an unconditional per-tick resolve that turned out to be exactly the same class of
+	// confirmed deadlock as the Host-side one described in recoverXParamBinding()'s own comment
+	// above (a share-locking getModule() call from inside moduleProcess(), racing a queued
+	// exclusive lock request) - just never yet observed to trip it live, not actually safer.
+	virtual void setXBoundHostId(int64_t hostId, XHostInterface *hostPtr = nullptr) = 0;
 	virtual int64_t getXBoundHostId() = 0;
 	// This Expander's own OL_selfId (OrangeLineCommon.hpp) - see XHostInterface::getXSelfId()'s
 	// own comment above, same mechanism, mirrored for the other family role. A Host's own
@@ -311,8 +338,17 @@ struct XExpanderInterface
 	currently binds this Expander id anywhere (never bound, or the Host that had it bound was
 	deleted/reset without the id having been persisted either) - the caller then falls back to
 	plain physical adjacency for browsing purposes only.
+
+	`self` is this Expander's own pointer - already resolved once, right here, during this exact
+	scan (`host`, matched below) - so both sides' cached pointers get pushed directly at THIS one
+	reconnect event (self->setXBoundHostId(id, host), host->recoverXParamBinding(i, expanderId,
+	self)) rather than either one ever having to resolve the other again later. This is the ONLY
+	place a fresh, no-push-yet binding restored from JSON ever gets its pointers filled in -
+	after this, neither side's own moduleProcess() calls APP->engine->getModule() for the bound
+	case again, ever, matching every other family's own "resolve only at the actual connect
+	event" rule.
 */
-inline int64_t findXBoundHostId(int64_t expanderId)
+inline int64_t findXBoundHostId(int64_t expanderId, XExpanderInterface *self)
 {
 	for (int64_t id : APP->engine->getModuleIds())
 	{
@@ -323,7 +359,11 @@ inline int64_t findXBoundHostId(int64_t expanderId)
 		int count = host->getXParamCount();
 		for (int i = 0; i < count; i++)
 			if (host->getXParamBoundId(i) == expanderId)
+			{
+				host->recoverXParamBinding(i, expanderId, self);
+				self->setXBoundHostId(id, host);
 				return id;
+			}
 	}
 	return -1;
 }
@@ -458,12 +498,14 @@ inline void tryRecoverXParamSlot(XHostInterface *host, int index, int64_t hostId
 	int64_t freshId = findFreshXExpanderClone(staleExpanderId);
 	if (freshId == -1)
 		return;
-	host->recoverXParamBinding(index, freshId);
 	Module *m = APP->engine->getModule(freshId);
 	XExpanderInterface *exp = m ? dynamic_cast<XExpanderInterface*>(m) : nullptr;
+	host->recoverXParamBinding(index, freshId, exp); // cache the pointer directly, resolved once
+	                                                  // right here - never resolved again later
 	if (exp)
-		exp->setXBoundHostId(hostId); // also resolves the Expander's own OL_selfId mismatch -
-		                               // see its concrete implementation's own comment
+		exp->setXBoundHostId(hostId, host); // also resolves the Expander's own OL_selfId
+		                                     // mismatch - see its concrete implementation's own
+		                                     // comment; caches the Host pointer directly too
 }
 
 /**
@@ -488,8 +530,10 @@ inline void tryRecoverXBinding(XExpanderInterface *self, int64_t selfId, int64_t
 		{
 			if (host->getXParamBoundId(i) != staleSelfId)
 				continue;
-			host->recoverXParamBinding(i, selfId);
-			self->setXBoundHostId(id); // also resolves this Expander's own OL_selfId mismatch
+			host->recoverXParamBinding(i, selfId, self); // cache the pointer directly - already
+			                                              // resolved as `self`, no lookup needed
+			self->setXBoundHostId(id, host); // also resolves this Expander's own OL_selfId
+			                                  // mismatch; caches the Host pointer directly too
 			return; // single-binding invariant - never more than one match anywhere
 		}
 	}

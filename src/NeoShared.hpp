@@ -1,5 +1,5 @@
 /*
-	StyxShared.hpp
+	NeoShared.hpp
 
 	Author: Dieter Stubler
 
@@ -18,43 +18,43 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
-#ifndef STYX_SHARED_HPP
-#define STYX_SHARED_HPP
+#ifndef NEO_SHARED_HPP
+#define NEO_SHARED_HPP
 
 #include "OrangeLine.hpp"
 #include "ExpanderBridge.hpp"
 
 /*
-	STYX is a bidirectional Expander - unlike the read-only XO family (XOShared.hpp) or the
+	NEO is a bidirectional Expander - unlike the read-only XO family (XOShared.hpp) or the
 	param-binding X family (XShared.hpp), it gets both read AND write access to a Host's internal
 	tape/memory state. Kept genuinely generic (not Morpheus-specific in name) since Dieter
-	anticipates other sequencer-type Hosts getting their own STYX-compatible support later - a
+	anticipates other sequencer-type Hosts getting their own NEO-compatible support later - a
 	name like "MorpheusTapeHostInterface" would have needed renaming the moment a second Host
-	implemented it, "StyxHostInterface" doesn't.
+	implemented it, "NeoHostInterface" doesn't.
 
 	As of 2026-07-19, discovery goes through the generic ExpanderBridge.hpp mechanism (both sides,
-	touch-once-then-persist - see Styx.cpp's own moduleProcess()), replacing STYX's earlier
-	bespoke inline resolve-then-remember block. resolveStyxHost() below is kept as the final,
-	family-specific dynamic_cast step once a host id has been resolved - STYX itself still needs
-	to relay the *other* families' own discovery though - see Styx.cpp's own
+	touch-once-then-persist - see Neo.cpp's own moduleProcess()), replacing NEO's earlier
+	bespoke inline resolve-then-remember block. resolveNeoHost() below is kept as the final,
+	family-specific dynamic_cast step once a host id has been resolved - NEO itself still needs
+	to relay the *other* families' own discovery though - see Neo.cpp's own
 	XExpanderInterface/XOExpanderInterface implementation for that (a real, physically sensible
-	rack layout like `Morpheus | STYX | XO8` must keep working).
+	rack layout like `Morpheus | NEO | XO8` must keep working).
 */
-struct StyxHostInterface
+struct NeoHostInterface
 {
-	virtual ~StyxHostInterface() {}
+	virtual ~NeoHostInterface() {}
 
 	// Read - "step" is 0..127 (MAX_LOOP_LEN), "channel" is 0..15 (POLY_CHANNELS). A step is a
 	// single raw float, full stop - no separate gate/microtiming/volume/pitchbend sub-values;
-	// STYX's own per-row cell-type widgets are purely different display/edit interpretations of
+	// NEO's own per-row cell-type widgets are purely different display/edit interpretations of
 	// this one same value, confirmed explicitly during spec discussion.
 	virtual float getTapeStep(int channel, int step) = 0;
 	// Whichever of the Host's stored memory slots is currently active/selected - implicit, not a
-	// freely choosable slot from STYX's side (STYX's own per-row toggle only ever picks TAPE vs.
+	// freely choosable slot from NEO's side (NEO's own per-row toggle only ever picks TAPE vs.
 	// MEM, never a specific one of several memory slots).
 	virtual float getMemStep(int channel, int step) = 0;
 	// How many of the up-to-128 steps are actually active/looping right now for this channel -
-	// used to decide whether STYX's own per-row paging UI needs to appear at all.
+	// used to decide whether NEO's own per-row paging UI needs to appear at all.
 	virtual int getLoopLen(int channel) = 0;
 	// Current play-cursor position (0..loopLen-1) for this channel - used to auto-page a row
 	// when its own FOLLOW toggle is on.
@@ -70,23 +70,23 @@ struct StyxHostInterface
 	// This Host's own STYLE_JSON value - purely cosmetic (seam-bridging strip), unrelated to
 	// resolution health. Named distinctly per-interface so a Host implementing several of these
 	// families' interfaces at once (Morpheus already does, for X/XO) has no ambiguity.
-	virtual float getStyxStyle() = 0;
+	virtual float getNeoStyle() = 0;
 
 	// Editable Host display name now lives on ExpanderBridgeInterface::getBridgeHostName() -
 	// every Host implements that interface too (see its own comment for why this was
-	// generalized out of being an X-family/STYX-only concept).
+	// generalized out of being an X-family/NEO-only concept).
 };
 
-inline StyxHostInterface* resolveStyxHost(Module *neighbor)
+inline NeoHostInterface* resolveNeoHost(Module *neighbor)
 {
-	return neighbor ? dynamic_cast<StyxHostInterface*>(neighbor) : nullptr;
+	return neighbor ? dynamic_cast<NeoHostInterface*>(neighbor) : nullptr;
 }
 
 // Pure marker, no methods beyond identification via dynamic_cast - lets a Host's own connection
-// light detect "the thing attached to me is specifically a STYX," without conflating it with an
+// light detect "the thing attached to me is specifically a NEO," without conflating it with an
 // unrelated X/XO-family member that also happens to implement XExpanderInterface/
-// XOExpanderInterface purely for chain-relay purposes (see Styx.cpp's own comment on why STYX
+// XOExpanderInterface purely for chain-relay purposes (see Neo.cpp's own comment on why NEO
 // implements those two interfaces at all).
-struct StyxExpanderInterface { virtual ~StyxExpanderInterface() {} };
+struct NeoExpanderInterface { virtual ~NeoExpanderInterface() {} };
 
 #endif

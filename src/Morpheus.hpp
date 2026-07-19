@@ -21,7 +21,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "OrangeLine.hpp"
 #include "XShared.hpp"
 #include "XOShared.hpp"
-#include "StyxShared.hpp"
+#include "NeoShared.hpp"
 
 // Real panel width (confirmed directly from res/MorpheusOrange.svg's own width="50.799999mm") -
 // needed for the new XO-family seam-bridging strip on Morpheus's own right edge (see
@@ -170,7 +170,7 @@ enum OutputIds {
 //
 // Ligh Ids
 //
-// The X/XO/STYX connection lights are gone (superseded by the seam/logo-cover mechanism, which
+// The X/XO/NEO connection lights are gone (superseded by the seam/logo-cover mechanism, which
 // now derives directly from the bridge host id - see ExpanderBridge.hpp).
 enum LightIds {
 	HLD_ON_LIGHT,

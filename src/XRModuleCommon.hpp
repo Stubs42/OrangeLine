@@ -183,7 +183,8 @@ void moduleReset()
 {
 	styleChanged = true;
 	OL_state[BROWSE_INDEX_JSON] = 0.f;
-	xoConnectedHostId = -1;
+	disconnectXOHost(); // also unregisters from the cached Host's listener registry, not just
+	                     // clearing the id - see its own comment
 	for (int c = 0; c < XR_CAPACITY; c++)
 		OL_state[CHANNEL_RANGE_JSON + c] = 0.f; // Uni 10V default
 }
@@ -202,8 +203,10 @@ inline void moduleProcess(const ProcessArgs &args)
 	}
 
 	// Touch-once-then-persist (both sides now, no more left-only restriction) - see
-	// resolveXOHostBridge()'s own comment (XOShared.hpp).
-	xoHost = resolveXOHostBridge(this, xoConnectedHostId);
+	// resolveXOHostBridge()'s own comment (XOShared.hpp). Caches the resolved pointer directly
+	// in xoHost itself - only ever calls APP->engine->getModule() once, at the actual connect
+	// event, never on any other tick.
+	resolveXOHostBridge(this, this, xoConnectedHostId, xoHost);
 
 	// Browsing: same unconditional/unfiltered-by-engagement stepping as the XO family, but
 	// additionally skips gate-type candidates entirely - only continuous (value-carrying) outputs
@@ -280,7 +283,19 @@ inline void moduleReflectChanges() {}
 XOHostInterface* getXOHost() override { return xoHost; }
 float getXOStyle() override { return OL_state[STYLE_JSON]; }
 int64_t getXOConnectedHostId() override { return xoConnectedHostId; }
-void disconnectXOHost() override { xoConnectedHostId = -1; }
+// See XOModuleCommon.hpp's own identical disconnectXOHost() for why the unregister happens
+// before dropping the cached pointer.
+void disconnectXOHost() override
+{
+	if (xoHost)
+	{
+		ExpanderBridgeInterface *hostBridge = dynamic_cast<ExpanderBridgeInterface*>(xoHost);
+		if (hostBridge)
+			hostBridge->unregisterBridgeListener(this);
+	}
+	xoHost = nullptr;
+	xoConnectedHostId = -1;
+}
 int getXOCapacity() override { return XR_CAPACITY; }
 int getXOBrowseIndex() override { return (int) OL_state[BROWSE_INDEX_JSON]; }
 // Inert stub - XR8/XR16 have no XOGateIndicator of their own (their output is always the
@@ -291,3 +306,21 @@ bool getXOBrowsedChannelGateLit(int channel) override { return false; }
 int64_t getBridgeHostId() override { return xoConnectedHostId; }
 std::vector<ExpanderFamily> getBridgeFamilies() override { return getModuleFamilies(model->slug); }
 std::string getBridgeHostName() override { return ""; }
+// See XOModuleCommon.hpp's own identical invalidateBridgeCache()/onRemove() for the full
+// mechanism - called by the cached Host right before its own destruction, and (symmetrically)
+// calling into the cached Host right before this Expander's own destruction.
+void invalidateBridgeCache() override
+{
+	xoHost = nullptr;
+	xoConnectedHostId = -1;
+}
+void onRemove(const RemoveEvent &e) override
+{
+	if (xoHost)
+	{
+		ExpanderBridgeInterface *hostBridge = dynamic_cast<ExpanderBridgeInterface*>(xoHost);
+		if (hostBridge)
+			hostBridge->unregisterBridgeListener(this);
+	}
+	Module::onRemove(e);
+}

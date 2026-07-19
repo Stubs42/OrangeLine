@@ -150,7 +150,8 @@ void moduleReset()
 {
 	styleChanged = true;
 	OL_state[BROWSE_INDEX_JSON] = 0.f;
-	xoConnectedHostId = -1;
+	disconnectXOHost(); // also unregisters from the cached Host's listener registry, not just
+	                     // clearing the id - see its own comment
 }
 
 inline void moduleProcess(const ProcessArgs &args)
@@ -168,8 +169,10 @@ inline void moduleProcess(const ProcessArgs &args)
 
 	// No restriction on which Host TYPE this resolves to - any module implementing
 	// XOHostInterface works transparently. Touch-once-then-persist (both sides now, no more
-	// left-only restriction) - see resolveXOHostBridge()'s own comment (XOShared.hpp).
-	xoHost = resolveXOHostBridge(this, xoConnectedHostId);
+	// left-only restriction) - see resolveXOHostBridge()'s own comment (XOShared.hpp). Caches
+	// the resolved pointer directly in xoHost itself - resolveXOHostBridge() only calls
+	// APP->engine->getModule() once, at the actual connect event, never on any other tick.
+	resolveXOHostBridge(this, this, xoConnectedHostId, xoHost);
 
 	// Browsing: unconditional, unfiltered stepping through every output slot the currently-
 	// resolved Host reports - no engagement to gate it, watching is never exclusive. If no Host
@@ -236,7 +239,22 @@ inline void moduleReflectChanges() {}
 XOHostInterface* getXOHost() override { return xoHost; }
 float getXOStyle() override { return OL_state[STYLE_JSON]; }
 int64_t getXOConnectedHostId() override { return xoConnectedHostId; }
-void disconnectXOHost() override { xoConnectedHostId = -1; }
+// Unregister from the Host's listener registry BEFORE dropping the cached pointer - otherwise
+// the Host would be left with a stale listener entry pointing at a module that no longer
+// considers itself connected (harmless until the Host is itself removed, at which point it'd
+// call invalidateBridgeCache() on us for a connection we already thought was long gone - still
+// not unsafe, since the pointer itself remains valid either way, but needlessly sloppy).
+void disconnectXOHost() override
+{
+	if (xoHost)
+	{
+		ExpanderBridgeInterface *hostBridge = dynamic_cast<ExpanderBridgeInterface*>(xoHost);
+		if (hostBridge)
+			hostBridge->unregisterBridgeListener(this);
+	}
+	xoHost = nullptr;
+	xoConnectedHostId = -1;
+}
 int getXOCapacity() override { return XO_CAPACITY; }
 int getXOBrowseIndex() override { return (int) OL_state[BROWSE_INDEX_JSON]; }
 bool getXOBrowsedChannelGateLit(int channel) override { return xoGateFlashLit[channel]; }
@@ -246,3 +264,26 @@ bool getXOBrowsedChannelGateLit(int channel) override { return xoGateFlashLit[ch
 int64_t getBridgeHostId() override { return xoConnectedHostId; }
 std::vector<ExpanderFamily> getBridgeFamilies() override { return getModuleFamilies(model->slug); }
 std::string getBridgeHostName() override { return ""; } // Expander, not a Host - nothing to name
+// Called BY the cached Host itself, right before it's destroyed (see
+// ExpanderBridgeInterface's own comment, ExpanderBridge.hpp) - drop the connection entirely,
+// same as an explicit user Disconnect, so this Expander cleanly re-touches on its own next
+// physical adjacency rather than holding a now-meaningless persisted id forever.
+void invalidateBridgeCache() override
+{
+	xoHost = nullptr;
+	xoConnectedHostId = -1;
+}
+// Symmetric with the Host's own onRemove() (Morpheus.cpp) - proactively tells the cached Host
+// to forget this Expander before it's actually destroyed, using ONLY the pointer already held
+// (no engine lookup of any kind), so the Host's own listener registry can never end up holding
+// a dangling reference regardless of which side gets deleted first.
+void onRemove(const RemoveEvent &e) override
+{
+	if (xoHost)
+	{
+		ExpanderBridgeInterface *hostBridge = dynamic_cast<ExpanderBridgeInterface*>(xoHost);
+		if (hostBridge)
+			hostBridge->unregisterBridgeListener(this);
+	}
+	Module::onRemove(e);
+}

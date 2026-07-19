@@ -110,6 +110,22 @@ struct XCandidate
 	// green indicator) on every reload. At most one candidate, on one Host, anywhere in the rack,
 	// may hold a given Expander id at any time - see xUnbindExpanderEverywhere() (XShared.hpp).
 	int64_t boundExpanderId = -1;
+	// Cached pointer for boundExpanderId above - PUSHED directly at the exact moment a bind is
+	// granted or restored (requestXBind() already has the Expander's own pointer in hand;
+	// XShared.hpp's findXBoundHostId()/tryRecoverXParamSlot() resolve it once, during their own
+	// one-time reconnect/recovery scan, and push it straight through recoverXParamBinding()'s
+	// `expander` parameter) - NEVER re-resolved via APP->engine->getModule() from inside
+	// moduleProcess() on any other tick. That per-tick resolve is what this replaced: a
+	// share-locking getModule() call from inside moduleProcess(), once per bound candidate per
+	// tick, occasionally raced a queued exclusive lock request (module add/remove) and hung the
+	// engine (gdb-confirmed) - same root cause as the ExpanderBridge/XOD8 deadlock found and
+	// fixed earlier the same session, different call site, not covered by that fix. Safe to cache
+	// permanently because every path that changes boundExpanderId also sets this in the same
+	// place, and both sides' onRemove() already proactively clear boundExpanderId (and, via the
+	// same clearXParamBinding()/setXBoundHostId(-1) path, this pointer too) the instant either
+	// this Host or the bound Expander is deleted - a stale cached pointer can never outlive the
+	// id that would have caught it anyway.
+	XExpanderInterface *boundExpander = nullptr;
 };
 
 // Per-candidate format functions for the xCandidates[] table below - see XFormatFn's own comment.
@@ -149,7 +165,7 @@ struct XOCandidate
 	XOFormatFn format;      // nullptr for XO_TYPE_GATE
 };
 
-struct Morpheus : Module, XHostInterface, XOHostInterface, StyxHostInterface, ExpanderBridgeInterface
+struct Morpheus : Module, XHostInterface, XOHostInterface, NeoHostInterface, ExpanderBridgeInterface
 {
 	float oldClkInputVoltage = 0;
     int polyChannels = 1;
@@ -290,7 +306,10 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, StyxHostInterface, Ex
 				{
 					json_t *idJ = json_array_get(boundJ, i);
 					if (idJ && json_is_integer(idJ))
+					{
 						xCandidates[i].boundExpanderId = json_integer_value(idJ);
+						xCandidates[i].boundExpander = nullptr; // re-resolved lazily on first use
+					}
 				}
 			}
 			json_t *nameJ = json_object_get(rootJ, "customName");
@@ -482,6 +501,13 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, StyxHostInterface, Ex
 		for (int i = 0; i < NUM_X_CANDIDATES; i++)
 			if (xCandidates[i].boundExpanderId != -1)
 				resetXParamDuringRemoval(i);
+		// Separate, newer mechanism (ExpanderBridge.hpp) covering XO-family Expanders and any
+		// NEO instance that cached a raw pointer to this Morpheus as their Host - unlike the
+		// X-family candidates above, these were never tracked via a fixed-size array with its own
+		// exclusivity, just a plain listener list. No engine lookups involved (every listener
+		// pointer is already held directly), so this is unaffected by the exclusive lock this
+		// callback runs under either way.
+		bridgeListeners.notifyAndClear();
 		Module::onRemove(e);
 	}
 
@@ -873,10 +899,22 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, StyxHostInterface, Ex
 				continue;
 			}
 
-			Module *bm = APP->engine->getModule(xCandidates[i].boundExpanderId);
-			XExpanderInterface *exp = bm ? dynamic_cast<XExpanderInterface*>(bm) : nullptr;
+			// Pure cache read - no APP->engine->getModule() call here at all, on any tick. Every
+			// path that can set boundExpanderId also pushes the matching pointer in the same
+			// place (requestXBind() has the Expander's own pointer directly; the clone-recovery
+			// and post-load-reconnect scans in XShared.hpp resolve it once, during that exact
+			// one-time event, and push it through recoverXParamBinding()'s own `expander`
+			// parameter) - so there is never a tick where boundExpanderId is set but boundExpander
+			// isn't, except transiently on the very first tick after a fresh patch load, before
+			// the bound Expander's own moduleProcess() has had a chance to run its one-time
+			// findXBoundHostId() push (order between an Expander's and a Host's own process()
+			// calls is never guaranteed - see XExpanderInterface::isXKnobReady()'s own comment).
+			// That transient gap self-resolves within a tick or two and is handled the same way
+			// as a genuinely gone module: hold/skip until the pointer shows up.
+			XExpanderInterface *exp = xCandidates[i].boundExpander;
 			if (!exp)
-				continue; // bound module gone - stays stale (per spec) until an explicit Reset
+				continue; // not pushed yet (transient post-load gap) or bound module genuinely
+				          // gone - stays stale (per spec) until an explicit Reset
 
 			xVirtualConnected[inputId] = true; // bound (even if not the live one right now) = Green
 			if (exp->getXBrowseIndex() != i)
@@ -1306,9 +1344,14 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, StyxHostInterface, Ex
 			// comment (XShared.hpp) for why (retires the old multi-host relay technique).
 			xUnbindExpanderEverywhere(expanderId);
 			xCandidates[index].boundExpanderId = expanderId; // bind (was available)
-			expander->setXBoundHostId(this->id);             // push the new binding directly -
-			                                                  // we already have the Expander's own
-			                                                  // pointer, no extra lookup needed
+			xCandidates[index].boundExpander = expander;     // cache directly - we already have
+			                                                  // the Expander's own pointer here,
+			                                                  // no lookup needed at all
+			expander->setXBoundHostId(this->id, this);       // push the new binding directly,
+			                                                  // pointer included both ways - we
+			                                                  // already have the Expander's own
+			                                                  // pointer, and it already has ours
+			                                                  // (`this`), no lookup needed at all
 		}
 		else if (xCandidates[index].boundExpanderId == expanderId)
 			resetXParam(index); // disengage (toggle) - also pushes setXBoundHostId(-1)
@@ -1332,6 +1375,7 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, StyxHostInterface, Ex
 				exp->setXBoundHostId(-1);
 		}
 		xCandidates[index].boundExpanderId = -1;
+		xCandidates[index].boundExpander = nullptr;
 	}
 	void resetXParam(int index) override { clearXParamBinding(index, false); }
 	// See XHostInterface::resetXParamDuringRemoval()'s own comment (XShared.hpp) for why this
@@ -1341,16 +1385,30 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, StyxHostInterface, Ex
 	// overwrite with no push to anyone, safe to call even before this Morpheus has ever ticked
 	// process() (touches only the candidate array, already valid straight out of the
 	// constructor/dataFromJson()).
-	void recoverXParamBinding(int index, int64_t expanderId) override { xCandidates[index].boundExpanderId = expanderId; }
+	void recoverXParamBinding(int index, int64_t expanderId, XExpanderInterface *expander = nullptr) override
+	{
+		xCandidates[index].boundExpanderId = expanderId;
+		xCandidates[index].boundExpander = expander; // cached directly if the caller already has
+		                                              // it (every real caller does - see
+		                                              // XShared.hpp's findXBoundHostId()/
+		                                              // tryRecoverXParamSlot())
+	}
 	int64_t getXSelfId() override { return OL_selfId; }
 
 	// ExpanderBridgeInterface (ExpanderBridge.hpp) - a Host trivially reports its own id; belongs
-	// to all three families it implements at once (X/XO/STYX), so a touching neighbor of any of
+	// to all three families it implements at once (X/XO/NEO), so a touching neighbor of any of
 	// them recognizes it as compatible; customName is the same editable label every family's own
 	// Free/Disconnect-style menu item can now show uniformly.
 	int64_t getBridgeHostId() override { return (int64_t) this->id; }
 	std::vector<ExpanderFamily> getBridgeFamilies() override { return getModuleFamilies(model->slug); }
 	std::string getBridgeHostName() override { return customName; }
+	// Listener registry backing registerBridgeListener()/unregisterBridgeListener() below - see
+	// BridgeListenerRegistry's own comment (ExpanderBridge.hpp). One shared registry covers both
+	// XO-family Expanders and any NEO instance caching a pointer to this Morpheus, since neither
+	// needs to be told apart at notification time (invalidateBridgeCache() is generic).
+	BridgeListenerRegistry bridgeListeners;
+	void registerBridgeListener(ExpanderBridgeInterface *listener) override { bridgeListeners.add(listener); }
+	void unregisterBridgeListener(ExpanderBridgeInterface *listener) override { bridgeListeners.remove(listener); }
 	// Not a direct OL_statePoly read - that array holds CV/cable units, not display units (see
 	// computeTakeoverDisplay()'s own comment and CLAUDE.md's Pitfalls entry on the divergent
 	// feedback loop the old raw/CV mismatch caused for SCL/OFS specifically).
@@ -1411,9 +1469,9 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, StyxHostInterface, Ex
 	}
 	float getXOStyle() override { return OL_state[STYLE_JSON]; }
 
-	// StyxHostInterface - see StyxShared.hpp's own architecture comment. Unlike XHostInterface/
-	// XOHostInterface above, this is bidirectional (STYX can write back), but still exposes only
-	// proper named methods - STYX never touches OL_state/STEPS_JSON/MEM_JSON addressing directly.
+	// NeoHostInterface - see NeoShared.hpp's own architecture comment. Unlike XHostInterface/
+	// XOHostInterface above, this is bidirectional (NEO can write back), but still exposes only
+	// proper named methods - NEO never touches OL_state/STEPS_JSON/MEM_JSON addressing directly.
 	float getTapeStep(int channel, int step) override
 	{
 		return getStateJson(STEPS_JSON + MAX_LOOP_LEN * channel + step);
@@ -1442,7 +1500,7 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, StyxHostInterface, Ex
 	// poly-vs-LOOP_LEN_PARAM-knob distinction) rather than duplicating that logic here.
 	int getLoopLen(int channel) override { return (int) getChannelLoopLength(channel); }
 	int getPlayCursor(int channel) override { return (int) getStateJson(HEAD_JSON + channel); }
-	float getStyxStyle() override { return OL_state[STYLE_JSON]; }
+	float getNeoStyle() override { return OL_state[STYLE_JSON]; }
 };
 
 // ********************************************************************************************************************************
