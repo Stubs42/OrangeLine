@@ -795,8 +795,9 @@ struct X8NameDisplay : TransparentWidget
 // multi-level "Binds -> per-Host -> per-slot" tree is gone - there's never more than one candidate
 // to navigate to, so it collapses to a flat, single item shown directly (not inside a submenu).
 // No separate "Disconnect" concept exists any more - an Expander no longer remembers a Host id at
-// all, it resolves its Host live every tick via a full-rack scan for whoever currently binds it
-// (findXBoundHost(), XShared.hpp), so there's nothing to disconnect except the binding itself.
+// all in any way the user could manually clear; it resolves its Host from a stable id pushed
+// directly by whichever Host currently binds it (setXBoundHostId(), XShared.hpp), so there's
+// nothing to disconnect except the binding itself.
 // Everything below operates on a plain Module* (dynamic_cast to XExpanderInterface internally),
 // so X8/X8D/X16/X16D all share this verbatim via one call in each of their own
 // appendContextMenu(). "Bind"/"Unbind" wording (Dieter: too nerdy otherwise) - only the display

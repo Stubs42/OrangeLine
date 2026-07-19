@@ -149,12 +149,29 @@ struct XHostInterface
 
 struct XExpanderInterface
 {
-	// The Host pointer this Expander itself resolved this tick - either the Host that currently
-	// has it bound (found via a live full-rack scan, see findXBoundHost() below, regardless of
-	// physical position), or, if not bound anywhere, whatever's genuinely adjacent right now (for
-	// browsing purposes only). Lets a further Expander chained to this one's own left relay
-	// through it.
+	// The Host pointer this Expander itself resolved THIS TICK, fresh, from a stable id
+	// (getXBoundHostId() below) - never cached as a raw pointer across ticks, so there is nothing
+	// that can ever dangle even if the Host is deleted without warning. Falls back to whatever's
+	// genuinely adjacent right now if not bound anywhere (browsing purposes only). Lets a further
+	// Expander chained to this one's own left relay through it.
 	virtual XHostInterface* getXHost() = 0;
+	// Pushed directly by whichever Host currently binds this Expander, at the exact moment the
+	// binding is granted or revoked (-1 = revoked/not bound) - a stable module id, never a raw
+	// pointer, so it's always safe to hold onto: resolving it via APP->engine->getModule() just
+	// returns nullptr if the target is gone, rather than risking a dangling reference. Both sides
+	// also proactively clear this via their own onRemove() the instant either one is deleted (see
+	// Morpheus.cpp's own onRemove()/resetXParam() and this interface's own concrete
+	// implementation's onRemove()) - so a stale id should never even be observed in practice; this
+	// is what makes it safe to trust without re-verifying against the whole rack every tick.
+	// Binding changes are rare and Host-initiated (a user click, not continuous), so push is both
+	// cheaper and avoids querying the whole rack ~1000x/second per Expander instance purely to
+	// answer a question that only changes a few times per session. See CLAUDE.md's own Pitfalls
+	// entry on this for the fuller reasoning, including why the earlier scan-based approach was
+	// deliberately chosen first (structurally can't go stale) before being replaced here (push is
+	// only as correct as its own discipline - every boundExpanderId mutation on the Host side
+	// must route through a call that also pushes, see Morpheus.cpp's own resetXParam()).
+	virtual void setXBoundHostId(int64_t hostId) = 0;
+	virtual int64_t getXBoundHostId() = 0;
 	// See XHostInterface::getXStyle() above.
 	virtual float getXStyle() = 0;
 
@@ -254,23 +271,23 @@ inline XHostInterface* resolveXHost(Module *neighbor)
 }
 
 /**
-	Finds the Host currently binding a given Expander id, anywhere in the rack - regardless of
-	physical adjacency. This is the robust, structurally-can't-go-stale replacement for the
-	earlier "remember the Host's own module id via adjacency, fall back to that remembered id
-	later" approach (removed 2026-07-18 after live testing showed the remembered id and the
-	Host's actual current id could genuinely diverge within a single session, with no reload
-	involved - Dieter's own diagnosis: "why is there any code handling a disattach from the
-	host's neighborhood anyway" when a Host already finds its bound Expander purely by id
-	(Morpheus.cpp's own refresh loop, APP->engine->getModule(boundExpanderId)). An Expander's own
-	id never changes for its lifetime, so once a Host has stored it as a binding, this scan can
-	always find that Host again - there's nothing to remember or refresh, since it's derived
-	fresh from the exact same authoritative state (a Host's own getXParamBoundId()) every time,
-	via the same scan shape as xUnbindExpanderEverywhere()/getXEngagedSummary() below. Returns
-	nullptr if nothing currently binds this Expander id anywhere (never bound, or the Host that
-	had it bound was deleted/reset) - the caller then falls back to plain physical adjacency
-	(resolveXHost()) for browsing purposes only.
+	Finds the module id of whichever Host currently binds a given Expander id, anywhere in the
+	rack - a LAST-RESORT fallback, meant to run at most ONCE per module lifetime (right after a
+	fresh patch load, when a binding can already be restored as bound without any attach/push
+	event ever having fired this session - see X8ModuleCommon.hpp's own moduleProcess()). Normal,
+	live operation never calls this at all: bindings are pushed directly by the Host the instant
+	they're granted/revoked (XExpanderInterface::setXBoundHostId()), and both sides proactively
+	clear their own reference via onRemove() the instant either one is deleted - so there is
+	nothing to rediscover outside the one-time post-load case. Kept as a full-rack scan (not
+	something cheaper) specifically because it's now rare enough that the cost doesn't matter -
+	see CLAUDE.md's own Pitfalls entry on "resolve via push/id, not a per-tick scan" for the
+	fuller history of why this was originally the ONLY mechanism, and why that turned out to be
+	needlessly expensive for how rarely a binding actually changes. Returns -1 if nothing
+	currently binds this Expander id anywhere (never bound, or the Host that had it bound was
+	deleted/reset without the id having been persisted either) - the caller then falls back to
+	plain physical adjacency for browsing purposes only.
 */
-inline XHostInterface* findXBoundHost(int64_t expanderId)
+inline int64_t findXBoundHostId(int64_t expanderId)
 {
 	for (int64_t id : APP->engine->getModuleIds())
 	{
@@ -281,9 +298,9 @@ inline XHostInterface* findXBoundHost(int64_t expanderId)
 		int count = host->getXParamCount();
 		for (int i = 0; i < count; i++)
 			if (host->getXParamBoundId(i) == expanderId)
-				return host;
+				return id;
 	}
-	return nullptr;
+	return -1;
 }
 
 /**

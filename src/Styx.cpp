@@ -233,6 +233,8 @@ struct Styx : Module, XExpanderInterface, XOExpanderInterface, StyxExpanderInter
 	// from STYX's own perspective (resolveXHost() never calls them on an intermediate relay -
 	// only a concrete X8/X16's own widget calls them, on its own module) but must still compile.
 	XHostInterface* getXHost() override { return styxHostModule ? dynamic_cast<XHostInterface*>(styxHostModule) : nullptr; }
+	void setXBoundHostId(int64_t hostId) override {}
+	int64_t getXBoundHostId() override { return -1; }
 	float getXStyle() override { return OL_state[STYLE_JSON]; }
 	int getXKnobCount() override { return 0; }
 	float getXKnobValue(int channel) override { return 0.f; }

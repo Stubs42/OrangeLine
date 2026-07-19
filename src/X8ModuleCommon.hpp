@@ -21,11 +21,36 @@
 
 bool widgetReady = false;
 
-// Resolved every moduleProcess() tick: the Host currently binding this Expander (found via a
-// live full-rack scan, findXBoundHost() - XShared.hpp - regardless of physical position), or, if
-// not bound anywhere, whatever's genuinely adjacent right now via rightExpander.module (browsing
-// only - never leftExpander.module, see XShared.hpp's left-only-attachment note). See
-// moduleProcess()'s own resolution block for the full reasoning.
+// Pushed directly by whichever Host currently binds this Expander (Morpheus.cpp's own
+// resetXParam()/bind-granting code, via setXBoundHostId() - XShared.hpp) - -1 when not bound
+// anywhere. A stable module id, deliberately never cached as a raw pointer: resolving it fresh
+// each tick via APP->engine->getModule() is always safe (returns nullptr for a stale id rather
+// than risking a dangling reference), and both sides proactively clear this to -1 via their own
+// onRemove() the instant either one is deleted (see this file's own onRemove() below and
+// Morpheus.cpp's own onRemove()/resetXParam()) - so a stale id should never even be observed in
+// normal operation. Replaces a per-tick full-rack scan entirely: binding changes are rare and
+// Host-initiated, so there's no need to ask the whole rack every tick just to answer a question
+// that only changes a few times per session.
+int64_t xBoundHostId = -1;
+
+// Cached result of the LAST onExpanderChange() event on the right side (XShared.hpp's own
+// left-only-attachment note: an Expander only ever looks right for its Host) - updated only when
+// Rack actually tells us adjacency changed, not re-polled every tick. Used purely as the
+// browsing-only fallback when not bound anywhere (xBoundHostId == -1) - a bound Expander never
+// needs this at all, regardless of physical position.
+XHostInterface *xAdjacentHost = nullptr;
+// Guards against relying on xAdjacentHost before any onExpanderChange() event has ever fired for
+// this instance - e.g. a module that loads a patch already sitting adjacent to a Host: Rack does
+// fire the event for a freshly-added module with existing neighbors, but this flag makes the one
+// case where that assumption is wrong (if it ever is) self-correcting on the very first tick
+// rather than silently leaving browsing broken until the user nudges the module.
+bool xAdjacencyChecked = false;
+
+// Resolved every moduleProcess() tick: the Host resolved from xBoundHostId if bound anywhere
+// (regardless of physical position), else xAdjacentHost (browsing only). See moduleProcess()'s
+// own resolution block for the full reasoning, including the one place a full-rack scan
+// (findXBoundHostId()) still runs - once, to re-establish xBoundHostId right after a patch load,
+// where no push event ever fired this session.
 XHostInterface *xHost = nullptr;
 
 // Fully self-managed local state (see ExpanderParamAccessSpec.md's "Expander manages
@@ -257,16 +282,40 @@ inline void moduleProcess(const ProcessArgs &args)
 	// time, tracked via that Host's own boundExpanderId (see CLAUDE.md's Expander-modules
 	// section) - nothing here needs to know or care what kind of Host it's currently looking at.
 	//
-	// Bound-first, adjacency-fallback: if some Host currently binds this Expander's id (found via
-	// a live full-rack scan, findXBoundHost() - XShared.hpp - regardless of physical position),
-	// that Host wins outright and is read fully live no matter where this Expander physically
-	// sits (Dieter: "why is there any code handling a disattach from the host's neighborhood
-	// anyway" - Morpheus already finds its bound Expander purely by id, so the Expander side
-	// should resolve its Host the same structurally-robust way, not by remembering a Host id that
-	// can drift out of sync with reality). Only when NOT bound anywhere does physical adjacency
-	// matter at all, purely so there's something to browse before ever engaging.
-	XHostInterface *boundHost = findXBoundHost((int64_t) this->id);
-	xHost = boundHost ? boundHost : resolveXHost(rightExpander.module);
+	// Bound-first (pushed id, not polled/scanned), adjacency-fallback: if some Host currently
+	// binds this Expander, xBoundHostId already holds its module id directly - pushed by that
+	// Host itself the moment the binding was granted, no per-tick scan needed. Resolved to an
+	// actual pointer FRESH every tick (never cached across ticks) so a deleted Host can never
+	// leave a dangling reference here. The ONE exception needing a scan at all: right after a
+	// fresh patch load (dataFromJsonCalled, OrangeLineCommon.hpp), a binding can already be
+	// restored as bound without any push event ever having fired this session - so on that one
+	// tick only, fall back to a full-rack scan (findXBoundHostId(), XShared.hpp) to re-establish
+	// xBoundHostId, exactly as if the Host had just pushed it. Only when NOT bound anywhere does
+	// physical adjacency (xAdjacentHost, updated only via onExpanderChange() below) matter at all,
+	// purely so there's something to browse before ever engaging.
+	if (dataFromJsonCalled && xBoundHostId == -1)
+		xBoundHostId = findXBoundHostId((int64_t) this->id);
+	XHostInterface *boundHost = nullptr;
+	if (xBoundHostId != -1)
+	{
+		Module *m = APP->engine->getModule(xBoundHostId);
+		boundHost = m ? dynamic_cast<XHostInterface*>(m) : nullptr;
+		if (!boundHost)
+			xBoundHostId = -1; // target vanished without telling us first (shouldn't normally
+			                   // happen - the Host's own onRemove() should already have cleared
+			                   // this - defensive only, never relied on in normal operation
+	}
+	// One-shot lazy seed for xAdjacentHost, in case this instance somehow never got an
+	// onExpanderChange() event despite already having a neighbor when constructed (e.g. loading a
+	// patch already sitting adjacent to a Host) - self-corrects on the very first tick instead of
+	// silently leaving browsing broken until the user nudges the module. Every subsequent update
+	// comes from the event itself, not from re-polling here.
+	if (!xAdjacencyChecked)
+	{
+		xAdjacentHost = resolveXHost(rightExpander.module);
+		xAdjacencyChecked = true;
+	}
+	xHost = boundHost ? boundHost : xAdjacentHost;
 	setStateLight(CONN_LIGHT, xHost ? 255.f : 0.f);
 
 	// Browsing: unconditional, unfiltered stepping through every candidate param the
@@ -411,8 +460,51 @@ inline void moduleProcess(const ProcessArgs &args)
 inline void moduleProcessState() {}
 inline void moduleReflectChanges() {}
 
+// Rack's own module-lifecycle event, not part of this framework's OL_state/moduleXxx() hook set -
+// fires right after adjacency actually changes on either side, so xAdjacentHost only needs
+// updating here, never re-polled every tick. Only the right side matters for host resolution
+// (XShared.hpp's own left-only-attachment note), but both sides can affect the seam-strip/logo-
+// cover widgets, which already do their own per-frame neighbor check independently (UI-thread,
+// cosmetic) - this event is purely about the audio-thread xAdjacentHost cache.
+void onExpanderChange(const ExpanderChangeEvent &e) override
+{
+	if (e.side == 1) // 1 = right (0 = left) - see Rack's own ExpanderChangeEvent::side comment
+		xAdjacentHost = resolveXHost(rightExpander.module);
+}
+
+// Proactively clears this Expander's own binding on whichever Host holds it - using ONLY the
+// stable id already known (xBoundHostId), a single targeted lookup, never a rack-wide scan -
+// right before this Expander is actually destroyed, so the Host is never left holding a
+// boundExpanderId that points at a module which no longer exists. Symmetric with Morpheus's own
+// onRemove() (Morpheus.cpp), which does the same in the other direction when a Host is deleted -
+// between the two, neither side can ever be left with a stale/dangling reference to the other.
+void onRemove(const RemoveEvent &e) override
+{
+	if (xBoundHostId != -1)
+	{
+		Module *m = APP->engine->getModule(xBoundHostId);
+		XHostInterface *host = m ? dynamic_cast<XHostInterface*>(m) : nullptr;
+		if (host)
+		{
+			int count = host->getXParamCount();
+			for (int i = 0; i < count; i++)
+				if (host->getXParamBoundId(i) == (int64_t) this->id)
+				{
+					host->resetXParam(i); // also pushes setXBoundHostId(-1) back to us, harmless
+					                      // (we're being destroyed anyway) but keeps the Host's
+					                      // own resetXParam() the single place that ever clears
+					                      // a binding, no special-cased duplicate logic here
+					break; // single-binding invariant - never more than one match
+				}
+		}
+	}
+	Module::onRemove(e);
+}
+
 // XExpanderInterface
 XHostInterface* getXHost() override { return xHost; }
+void setXBoundHostId(int64_t hostId) override { xBoundHostId = hostId; }
+int64_t getXBoundHostId() override { return xBoundHostId; }
 float getXStyle() override { return OL_state[STYLE_JSON]; }
 int getXKnobCount() override { return (int) OL_state[CHANNEL_LIMIT_JSON]; }
 float getXKnobValue(int channel) override { return getStateParam(KNOB_PARAM + channel); }

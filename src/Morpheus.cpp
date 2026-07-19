@@ -465,9 +465,27 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, StyxHostInterface
 		}
 		// Right-click Initialize also releases every X-family candidate binding - a fresh/reset
 		// Morpheus should not silently keep controlling some Expander's knobs (Dieter's own call).
+		// Routed through resetXParam() (not a direct clear) so the bound Expander also gets
+		// pushed a "you're not bound anymore" notification - never leaves it holding a stale id.
 		for (int i = 0; i < NUM_X_CANDIDATES; i++)
-			xCandidates[i].boundExpanderId = -1;
+			resetXParam(i);
 		styleChanged = true;
+	}
+
+	// Rack's own module-lifecycle event - fires right before this Morpheus is actually destroyed.
+	// Proactively clears every candidate binding this instance still holds, using ONLY the stable
+	// ids already known (xCandidates[]'s own boundExpanderId) - a handful of single targeted
+	// lookups (routed through resetXParam(), which pushes setXBoundHostId(-1) to each bound
+	// Expander), never a rack-wide scan. Symmetric with each Expander's own onRemove()
+	// (X8ModuleCommon.hpp), which does the same in the other direction when an Expander is
+	// deleted - between the two, neither side can ever be left holding a dangling/stale reference
+	// to the other, regardless of which one gets deleted first or in what order.
+	void onRemove(const RemoveEvent &e) override
+	{
+		for (int i = 0; i < NUM_X_CANDIDATES; i++)
+			if (xCandidates[i].boundExpanderId != -1)
+				resetXParam(i);
+		Module::onRemove(e);
 	}
 
 	// ********************************************************************************************************************************
@@ -853,9 +871,16 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, StyxHostInterface
 							// adjacency-freeze used to arbitrate).
 							xUnbindExpanderEverywhere(myId);
 							xCandidates[idx].boundExpanderId = myId;   // bind (was available)
+							exp->setXBoundHostId(this->id);            // push the new binding
+							                                            // directly - id exchanged
+							                                            // right here at "attach"
+							                                            // time, we already have
+							                                            // exp resolved, no extra
+							                                            // lookup needed
 						}
 						else if (xCandidates[idx].boundExpanderId == myId)
-							xCandidates[idx].boundExpanderId = -1;     // disengage (toggle)
+							resetXParam(idx);                          // disengage (toggle) - also
+							                                            // pushes setXBoundHostId(-1)
 						// else: taken by someone else, or cable-connected - no-op
 					}
 				}
@@ -875,7 +900,7 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, StyxHostInterface
 			if (inputs[inputId].isConnected())
 			{
 				if (xCandidates[i].boundExpanderId != -1)
-					xCandidates[i].boundExpanderId = -1;
+					resetXParam(i); // also pushes setXBoundHostId(-1) to the displaced Expander
 				xVirtualChannels[inputId] = 0;
 				xVirtualConnected[inputId] = false;
 				continue;
@@ -917,7 +942,7 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, StyxHostInterface
 			// does nothing; no double-handling either way.
 			if (exp->consumeEngagePress())
 			{
-				xCandidates[i].boundExpanderId = -1;
+				resetXParam(i); // also pushes setXBoundHostId(-1) back to exp
 				xVirtualConnected[inputId] = false;
 				continue;
 			}
@@ -1327,7 +1352,25 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, StyxHostInterface
 	bool isXParamEngaged(int index) override { return xCandidates[index].boundExpanderId != -1; }
 	int64_t getXParamBoundId(int index) override { return xCandidates[index].boundExpanderId; }
 	bool isXParamCableConnected(int index) override { return inputs[xCandidates[index].inputId].isConnected(); }
-	void resetXParam(int index) override { xCandidates[index].boundExpanderId = -1; }
+	// The ONLY place that clears a candidate binding - every other clearing call site (right-click
+	// Reset, xUnbindExpanderEverywhere(), real-cable override, disengage-by-id, moduleReset()'s
+	// own Initialize handling) routes through here specifically so the push-notify below can never
+	// be missed by a future edit that adds yet another clearing path. Resolves the (soon-to-be-
+	// former) bound Expander by id - a single lookup, not a scan, and only on this rare,
+	// user/event-triggered action - and pushes it a "you're not bound anymore" notification
+	// directly, so it doesn't need to poll to find out.
+	void resetXParam(int index) override
+	{
+		int64_t expanderId = xCandidates[index].boundExpanderId;
+		if (expanderId != -1)
+		{
+			Module *m = APP->engine->getModule(expanderId);
+			XExpanderInterface *exp = m ? dynamic_cast<XExpanderInterface*>(m) : nullptr;
+			if (exp)
+				exp->setXBoundHostId(-1);
+		}
+		xCandidates[index].boundExpanderId = -1;
+	}
 	// Not a direct OL_statePoly read - that array holds CV/cable units, not display units (see
 	// computeTakeoverDisplay()'s own comment and CLAUDE.md's Pitfalls entry on the divergent
 	// feedback loop the old raw/CV mismatch caused for SCL/OFS specifically).
