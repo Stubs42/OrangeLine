@@ -204,10 +204,34 @@ struct X16DWidget : ModuleWidget
 		// transforms/coordinates (each exactly +30.48mm past its column-one counterpart).
 		static const float knobColumnX[2] = { 7.62f, 38.1f };
 		static const float displayColumnX[2] = { 15.12887f, 45.608871f };
-		static const float buttonCoverX[2] = { 12.342694f, 42.822694f };
+		// Button (Toggle/Click/Push mode) centered per column, matching X8D's own identical fix
+		// (X8D.cpp) - Dieter's own directly measured centers (2026-07-19, corrected after an
+		// initial computed estimate off the knob x + a fixed offset wasn't accurate enough).
+		static const float buttonColumnX[2] = { 16.f, 45.1f };
+		// Same original geometry as X8D's own single "ButtonCover" rect had BEFORE its own fix
+		// (x=12.342694, width=16.867304 -> right edge 29.209998) - one per column, each offset by
+		// the same +30.48mm as the knob/display columns above. Widened left edge to x=2.5, y=32,
+		// height=87.5 (Dieter's own measured X8D values, reused verbatim here since the geometry
+		// is otherwise identical) so it also covers the knob-ring remnants left exposed now that
+		// the button no longer sits at the knob's own x - see X8D.cpp's own comment for the full
+		// reasoning (the button's own opaque frame used to mask the ring by sitting on top of it).
+		static const float buttonCoverX[2] = { 2.5f, 2.5f + 30.48f };
+		static const float buttonCoverWidth = 29.209998f - 2.5f;
 
 		for (int col = 0; col < 2; col++)
 		{
+			// Added BEFORE this column's own knobs/buttons/displays below (not after, like
+			// before) so it draws behind them - previously harmless only because the button never
+			// overlapped this cover's own (narrower, unwidened) box; now that it does, correct
+			// z-order actually matters, same fix as X8D.cpp's own identical reordering.
+			X16DButtonCover *cover = new X16DButtonCover();
+			cover->module = module;
+			cover->box.pos = calculateCoordinates(buttonCoverX[col], 32.f, 0.f);
+			cover->box.size = mm2px(Vec(buttonCoverWidth, 87.5f));
+			cover->visible = false;
+			addChild(cover);
+			buttonCovers[col] = cover;
+
 			for (int row = 0; row < 8; row++)
 			{
 				int channel = col * 8 + row;
@@ -216,7 +240,7 @@ struct X16DWidget : ModuleWidget
 				addParam(knob);
 				knobs[channel] = knob;
 
-				X8ValueButton *button = createParamCentered<X8ValueButton>(calculateCoordinates(knobColumnX[col], knobY[row], 0.f), module, KNOB_PARAM + channel);
+				X8ValueButton *button = createParamCentered<X8ValueButton>(calculateCoordinates(buttonColumnX[col], knobY[row], 0.f), module, KNOB_PARAM + channel);
 				button->channel = channel;
 				button->visible = false; // default: knob shown (continuous) until step() knows better
 				addParam(button);
@@ -230,16 +254,6 @@ struct X16DWidget : ModuleWidget
 				addChild(display);
 				displays[channel] = display;
 			}
-
-			// Same shape as X8D's own single "ButtonCover" rect (see X16DButtonCover's own
-			// comment), one per column.
-			X16DButtonCover *cover = new X16DButtonCover();
-			cover->module = module;
-			cover->box.pos = calculateCoordinates(buttonCoverX[col], 32.76725f, 0.f);
-			cover->box.size = mm2px(Vec(16.867304f, 85.090004f));
-			cover->visible = false;
-			addChild(cover);
-			buttonCovers[col] = cover;
 		}
 
 		extStrip = addXExtStrip(this, X16D_PANEL_WIDTH_MM);
