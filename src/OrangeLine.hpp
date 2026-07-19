@@ -280,6 +280,30 @@ struct AutoHideLight : TBase
 	}
 };
 
+// Single on/off switch for every connection-status light across the whole plugin (X-family,
+// XO-family, XR-family, LANES-family, STYX, Morpheus) - flip this one value to re-enable them
+// everywhere at once, instead of touching dozens of individual widget-construction call sites.
+// Disabled 2026-07-18 (Dieter: more distracting than informative, breaks each panel header's own
+// optics - connection state is already conveyed for free by the panel's own controls/displays
+// going grey/dashed when nothing's resolved). The underlying per-module setStateLight()/
+// setStateJson() tracking logic that feeds these lights' brightness is NOT touched by this flag -
+// only whether the widget itself ever gets added to the panel.
+#define OL_CONNECTION_LIGHTS_ENABLED false
+
+// Call from a ModuleWidget's own constructor exactly where a connection light would otherwise be
+// added, e.g.:
+//   addOrangeLineConnectionLight<AutoHideLight<TinyLight<GreenRedLight>>>(this,
+//       calculateCoordinates(3.5f, 4.f, 0.f), module, CONN_LIGHT);
+// A no-op entirely when OL_CONNECTION_LIGHTS_ENABLED is false - no widget is constructed at all,
+// not just hidden, so this costs nothing when disabled.
+template <typename TLight>
+inline void addOrangeLineConnectionLight(widget::Widget *parent, Vec pos, engine::Module *module, int firstLightId)
+{
+	if (!OL_CONNECTION_LIGHTS_ENABLED)
+		return;
+	parent->addChild(createLightCentered<TLight>(pos, module, firstLightId));
+}
+
 /**
 	Widget to display cvOct values as floats or notes
 */
