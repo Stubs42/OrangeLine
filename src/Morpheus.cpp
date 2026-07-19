@@ -1685,14 +1685,9 @@ struct MorpheusWidget : ModuleWidget
 
 		addChild(MorpheusDisplayWidget::create(calculateCoordinates(1.25f, 25.95f, 0.f), mm2px(Vec(48.4f, 16.3f)), module));
 
-		// X-family/XO-family/STYX connection lights disabled 2026-07-18 (Dieter: more distracting
-		// than informative, breaks the header's optics - connection is already visible via the
-		// panel's own controls) - underlying setStateLight(X_CONN_LIGHT/XO_CONN_LIGHT/
-		// STYX_CONN_LIGHT, ...) tracking logic left intact in moduleProcess(), only the widgets
-		// themselves are no longer added.
-		// addChild(createLightCentered<AutoHideLight<TinyLight<GreenLight>>>(calculateCoordinates(3.5f, 4.f, 0.f), module, X_CONN_LIGHT));
-		// addChild(createLightCentered<AutoHideLight<TinyLight<GreenLight>>>(calculateCoordinates(MORPHEUS_PANEL_WIDTH_MM - 3.5f, 4.f, 0.f), module, XO_CONN_LIGHT));
-		// addChild(createLightCentered<AutoHideLight<TinyLight<GreenLight>>>(calculateCoordinates(3.5f, PANELHEIGHT - 4.f, 0.f), module, STYX_CONN_LIGHT));
+		addOrangeLineConnectionLight<AutoHideLight<TinyLight<GreenLight>>>(this, calculateCoordinates(3.5f, 4.f, 0.f), module, X_CONN_LIGHT);
+		addOrangeLineConnectionLight<AutoHideLight<TinyLight<GreenLight>>>(this, calculateCoordinates(MORPHEUS_PANEL_WIDTH_MM - 3.5f, 4.f, 0.f), module, XO_CONN_LIGHT);
+		addOrangeLineConnectionLight<AutoHideLight<TinyLight<GreenLight>>>(this, calculateCoordinates(3.5f, PANELHEIGHT - 4.f, 0.f), module, STYX_CONN_LIGHT);
 
 		// Positions extracted from res/MorpheusWorkTest.svg's Controls layer (2026-07-13) -
 		// panel reorganized to make room for the future visualization display (reserved band

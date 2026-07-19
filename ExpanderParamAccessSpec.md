@@ -51,18 +51,24 @@ already-resolved Host pointer (so several Expanders can still chain further left
 The Host itself only ever needs to check `leftExpander.module` to know whether at least one
 Expander is currently present at all.
 
-**Non-adjacent, persistent connection** (added 2026-07-18, generalizing a pattern STYX already
-used for its own single Host link): physical adjacency is only how a connection is *first*
-established, not a requirement for it to keep working - Dieter's own framing is an NFC handshake,
-touching two phones once exchanges a contact that then persists regardless of physical position.
-Each Expander persists the resolved Host's own module ID (`CONNECTED_HOST_ID_JSON`, -1 = none) and
-re-resolves it every tick: adjacency first (as above), and if nothing is adjacent, fall back to
-`APP->engine->getModule()` on the remembered ID, clearing it if that module no longer exists. A
-detached-but-connected Expander is read **fully live**, exactly as if it were still adjacent -
-this is what forced the single-binding-per-Expander rule above, since there is no longer an
-adjacency signal available to arbitrate between several simultaneously-live stale bindings. The
-connection can be broken explicitly, from the Expander's own right-click menu ("Disconnect"),
-independent of any param binding.
+**Non-adjacent, persistent connection** (added 2026-07-18, corrected the same day): physical
+adjacency is only how a connection is *first* established, not a requirement for it to keep
+working - Dieter's own framing is an NFC handshake, touching two phones once exchanges a contact
+that then persists regardless of physical position. The first implementation tried to make this
+literal - remembering the Host's own module ID and falling back to it when nothing was adjacent -
+but live testing found that remembered ID genuinely goes stale within a single session (no reload
+involved at all), since nothing ever forced it to refresh. Retired the same day in favor of
+something structurally robust: a bound Expander is found via a **live full-rack scan** for
+whichever Host currently reports it as bound (`findXBoundHost()`, `XShared.hpp`) - the same
+authoritative state a Host already maintains for its own purposes, so there is nothing to remember
+and nothing that can go stale. Only while *not yet bound anywhere* does an Expander fall back to
+plain physical adjacency, purely so there's something to browse before ever engaging - once
+engaged, the scan takes over and physical position stops mattering entirely. A bound Expander is
+read **fully live** regardless of where it physically sits - this is what forced the
+single-binding-per-Expander rule below, since there is no longer an adjacency signal available to
+arbitrate between several simultaneously-live bindings. Releasing a binding is also fully
+position-independent now (see "four ways to disconnect" below) - no separate "Disconnect" action
+exists, since there's nothing remembered to disconnect from; unbinding IS the disconnect.
 
 Consequence for the connection-status indicator: **no dedicated light needed at all** (unlike
 LANES' two bi-color corner lights). Normally a header light would show connection state, but
@@ -138,7 +144,11 @@ mechanism, not just for the channel-limit feature.
   1. **Host side**: the right-click "Reset" action (see below) - explicit and immediate.
   2. **Expander side**: clicking ENGAGE again while browsing the *one* param this instance
      already holds - also explicit and immediate (the engage button ends up being a real toggle,
-     but only ever for a param this same instance currently holds - see Red/Green below).
+     but only ever for a param this same instance currently holds - see Red/Green below). Works
+     regardless of physical adjacency (2026-07-18) - the Host consumes this via the same id-based
+     lookup it already uses to read the value, not only via its adjacency chain-walk. Discovering
+     a *brand new* binding still genuinely requires adjacency (see "virtual poly cable" above) -
+     only *releasing an existing one* doesn't.
   3. **The bound module is actually deleted from the patch**: `getModule(id)` starts returning
      `nullptr`. The binding is **not** implicitly cleared by this - it stays "virtually plugged
      in" (an Expander somewhere might still believe it holds this plug forever, if it was deleted
@@ -411,6 +421,10 @@ Expanders
 - **Reset**: `resetXParam(index)` - clears the binding (`boundExpanderId = -1`), so the host goes
   back to driving all channels from its own knob (Red) and the param becomes available again for
   any Expander to browse to and engage.
+- **A Host's own right-click "Initialize" (Rack's built-in module reset) should also release every
+  candidate binding it holds** (added 2026-07-18) - easy to overlook since bindings live outside
+  the usual `OL_state`/JSON reset path, but a freshly-initialized Host silently still controlling
+  some Expander's knobs would be a confusing surprise, not a feature.
 
 **"Initialize" dropped (open question, flagging rather than deciding silently)**: an earlier
 draft of this spec had a separate "Initialize" action ("reset the buffer's own values back to

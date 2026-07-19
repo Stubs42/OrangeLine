@@ -77,20 +77,26 @@ inline void addXLogoCovers(ModuleWidget *w, float panelWidthMm, X8LogoCover **co
 	*cover2Out = cover2;
 }
 
-// Called every widget step() (UI frame rate, cosmetic only) - both covers show together, exactly
-// while a Host is resolved (regardless of whether this Expander is actually bound/engaged to any
-// specific param - "connected to a host" per Dieter's own wording, not "actively controlling
-// something").
+// Called every widget step() (UI frame rate, cosmetic only) - the logo must be hidden exactly
+// when, and only when, EITHER seam-closing ext-strip (extStrip/extStripLeft - an Expander can
+// chain further left of another Expander, not just right toward the Host) is currently showing
+// on that same edge (Dieter: the logo should not be visible if the seam is visible) - NOT tied to
+// "logically connected" (getXHost() can now resolve live via a full-rack scan regardless of
+// physical position, see XHostImplementationGuide.md's "Non-adjacent, persistent connection" - the
+// logo must reappear the instant this Expander is physically detached, even while it stays bound/
+// controlling something elsewhere). Uses the exact same per-side condition
+// updateXExtStrip()/updateXExtStripLeft() themselves use - getXNeighborStyle() against each
+// immediate neighbor - rather than resolveXHost() or getXHost(), so the two can never disagree.
 inline void updateXLogoCovers(X8LogoCover *cover1, X8LogoCover *cover2, Module *module)
 {
-	XExpanderInterface *expander = module ? dynamic_cast<XExpanderInterface*>(module) : nullptr;
-	XHostInterface *host = expander ? expander->getXHost() : nullptr;
-	// Only hide the logo when the connected Host's own theme actually MATCHES this module's own -
-	// mirrors the seam-strip's own "only merge when themes match" rule (see XOCommon.hpp's own
-	// updateXOLogoCovers(), fixed the same way and for the same reason).
-	bool connected = host && host->getXStyle() == expander->getXStyle();
-	cover1->visible = connected;
-	cover2->visible = connected;
+	float myStyle = module ? getXNeighborStyle(module) : -1.f;
+	float rightStyle = module ? getXNeighborStyle(module->rightExpander.module) : -1.f;
+	float leftStyle = module ? getXNeighborStyle(module->leftExpander.module) : -1.f;
+	bool rightSeam = myStyle >= 0.f && rightStyle >= 0.f && rightStyle == myStyle;
+	bool leftSeam = myStyle >= 0.f && leftStyle >= 0.f && leftStyle == myStyle;
+	bool seamVisible = rightSeam || leftSeam;
+	cover1->visible = seamVisible;
+	cover2->visible = seamVisible;
 }
 
 // Shared by every LCD-style display in this file - per Dieter's own "simple and stupid"

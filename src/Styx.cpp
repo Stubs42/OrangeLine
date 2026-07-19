@@ -554,11 +554,7 @@ struct StyxWidget : ModuleWidget
 		panelWidget->box.size = box.size;
 		addChild(panelWidget);
 
-		// Connection light disabled 2026-07-18 (Dieter: more distracting than informative, breaks
-		// the header's optics - connection is already visible via the panel's own controls) -
-		// underlying setStateLight(CONN_LIGHT, ...) tracking logic left intact, only the widget
-		// itself is no longer added.
-		// addChild(createLightCentered<AutoHideLight<TinyLight<GreenRedLight>>>(calculateCoordinates(3.5f, 4.f, 0.f), module, CONN_LIGHT));
+		addOrangeLineConnectionLight<AutoHideLight<TinyLight<GreenRedLight>>>(this, calculateCoordinates(3.5f, 4.f, 0.f), module, CONN_LIGHT);
 
 		for (int r = 0; r < STYX_NUM_ROWS; r++)
 		{

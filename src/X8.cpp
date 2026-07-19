@@ -89,11 +89,7 @@ struct X8Widget : ModuleWidget
 			addChild(darkPanel);
 		}
 
-		// Connection light disabled 2026-07-18 (Dieter: more distracting than informative, breaks
-		// the header's optics - connection is already visible via the panel's own controls) -
-		// underlying setStateLight(CONN_LIGHT, ...) tracking logic left intact, only the widget
-		// itself is no longer added.
-		// addChild(createLightCentered<AutoHideLight<TinyLight<GreenRedLight>>>(calculateCoordinates(X8_PANEL_WIDTH_MM - 3.5f, 4.f, 0.f), module, CONN_LIGHT));
+		addOrangeLineConnectionLight<AutoHideLight<TinyLight<GreenRedLight>>>(this, calculateCoordinates(X8_PANEL_WIDTH_MM - 3.5f, 4.f, 0.f), module, CONN_LIGHT);
 
 		X8StepButton *leftButton = createParamCentered<X8StepButton>(calculateCoordinates(4.550f, 18.034f, 0.f), module, LEFT_PARAM);
 		leftButton->label = "<";

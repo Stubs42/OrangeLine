@@ -68,17 +68,23 @@ inline void addXOLogoCovers(ModuleWidget *w, float panelWidthMm, XOLogoCover **c
 	*cover2Out = cover2;
 }
 
+// Hidden exactly when, and only when, EITHER seam-closing ext-strip (extStrip/extStripLeft) is
+// currently showing on that same edge - NOT tied to "logically connected" (getXOHost() can now
+// resolve live via resolveXOHostPersistent()'s remembered-id fallback regardless of physical
+// position - the logo must reappear the instant this Expander is physically detached). Uses the
+// exact same per-side condition updateXOExtStrip()/updateXOExtStripLeft() themselves use -
+// getXONeighborStyle() against each immediate neighbor - so the two can never disagree. See
+// X8Common.hpp's own updateXLogoCovers() for the X-family twin of this fix.
 inline void updateXOLogoCovers(XOLogoCover *cover1, XOLogoCover *cover2, Module *module)
 {
-	XOExpanderInterface *expander = module ? dynamic_cast<XOExpanderInterface*>(module) : nullptr;
-	XOHostInterface *host = expander ? expander->getXOHost() : nullptr;
-	// Only hide the logo when the connected Host's own theme actually MATCHES this module's own -
-	// mirrors updateXOExtStrip()'s own "only merge the seam when themes match" rule exactly (a
-	// mismatched-theme neighbor has no visual continuity to preserve, so covering the logo there
-	// just looks like missing branding rather than a deliberate seamless join).
-	bool connected = host && host->getXOStyle() == expander->getXOStyle();
-	cover1->visible = connected;
-	cover2->visible = connected;
+	float myStyle = module ? getXONeighborStyle(module) : -1.f;
+	float rightStyle = module ? getXONeighborStyle(module->rightExpander.module) : -1.f;
+	float leftStyle = module ? getXONeighborStyle(module->leftExpander.module) : -1.f;
+	bool rightSeam = myStyle >= 0.f && rightStyle >= 0.f && rightStyle == myStyle;
+	bool leftSeam = myStyle >= 0.f && leftStyle >= 0.f && leftStyle == myStyle;
+	bool seamVisible = rightSeam || leftSeam;
+	cover1->visible = seamVisible;
+	cover2->visible = seamVisible;
 }
 
 // Same hand-tuned centering-offset table as X8Common.hpp's own X8_CENTER_OFFSET_MM (identical

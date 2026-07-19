@@ -77,25 +77,55 @@ now has a clearer frame - whatever gets chosen, it needs to be expressed in CV u
 through the same `scaleXParamValue()` hop as everything else, so there's no risk of a repeat of
 this exact unit-mismatch class of bug regardless of how that question gets answered.
 
-## Non-adjacent, persistent connection (added 2026-07-18): a bound Expander is read live regardless of adjacency
+## Non-adjacent, persistent connection (2026-07-18, corrected same day): a bound Expander is read live regardless of adjacency
 
-Every X-family and XO-family/XR Expander now persists the resolved Host's module ID
-(`CONNECTED_HOST_ID_JSON`) and re-resolves it every tick - adjacency first, then an
-`APP->engine->getModule()` fallback on the remembered ID if nothing's adjacent (mirrors STYX's own
-long-standing `CONNECTED_HOST_ID_JSON`/`resolveStyxHost()` pattern). This is automatic and
-unconditional, no per-instance toggle - only an explicit right-click "Disconnect" on the Expander
-clears it. A Host implementing `XHostInterface`/`XOHostInterface` must **not** assume a bound
-Expander is still physically adjacent before reading it live - there is no adjacency gate left to
-check at all, `isXKnobReady()` (X-family) is the only precondition.
+**First attempt (retired the same day it shipped)**: every X-family Expander persisted the
+resolved Host's module ID (`CONNECTED_HOST_ID_JSON`) and re-resolved it every tick - adjacency
+first, then an `APP->engine->getModule()` fallback on the remembered ID if nothing was adjacent.
+Live testing found this genuinely goes stale **within a single session, with no reload involved
+at all**: engage a fresh X8 to a fresh Morpheus, detach it, and the remembered ID and the Host's
+real current ID could already disagree (confirmed directly - a debug readout on X8's own panel
+showed one ID while the right-click menu's own independent lookup showed a completely different
+one, moments apart, same session). The remembered-id approach is inherently fragile because it's a
+**snapshot** - nothing forces it to refresh if it silently becomes wrong.
 
-This retired the X-family's earlier "multi-host relay" technique (one Expander deliberately bound
-to different candidates on different Hosts, with only the currently-adjacent one read live,
-arbitrated by adjacency). Once every binding is read live with no adjacency signal to arbitrate
-between them, that technique became incoherent - so an Expander may now hold **at most one**
-candidate binding, globally, at any time (`Morpheus.cpp`'s bind-granting branch calls
-`xUnbindExpanderEverywhere()`, `XShared.hpp`, before granting a new one). See
-`ExpanderParamAccessSpec.md`'s own "one binding, globally" / "Non-adjacent, persistent connection"
-sections for the full user-facing model.
+**The actual fix - resolve by live scan, not by memory** (Dieter's own diagnosis: "why is there
+any code handling a disattach from the host's neighborhood anyway" - a Host already finds its
+bound Expander purely by a stable id, `APP->engine->getModule(boundExpanderId)` in Morpheus.cpp's
+refresh loop, so the Expander side should resolve its Host the same structurally-robust way, not
+by remembering a Host id that can drift out of sync with reality). `XShared.hpp`'s
+`findXBoundHost(expanderId)` scans every module in the rack for whichever `XHostInterface` reports
+`getXParamBoundId(i) == expanderId` for some candidate `i`, and returns that Host - the exact same
+scan shape `getXEngagedSummary()`/`xUnbindExpanderEverywhere()` already used. Each X-family
+Expander's own `moduleProcess()` now resolves `xHost` as: the Host found by this scan if bound
+anywhere, else plain physical adjacency (`resolveXHost()`) purely so there's something to browse
+before ever engaging. This can never go stale, because nothing is remembered - it's derived fresh
+from the same authoritative state (a Host's own `boundExpanderId`) every single tick.
+`CONNECTED_HOST_ID_JSON`, `WAS_ENGAGED_JSON`, and the auto-reengage-after-reload mechanism (now
+pointless - reconnection is automatic via the scan, nothing to re-press) are all gone.
+
+**Disengage is id-based too now.** The physical ENGAGE button toggle used to only reach Morpheus
+via its adjacency chain-walk (`leftExpander.module`), so releasing a binding stopped working the
+moment the Expander was detached (the chain-walk simply never found it). Discovering a *brand
+new* binding genuinely still needs adjacency (that's the actual "touch" moment - Morpheus has no
+other way to learn which Expander/candidate is being requested) - but *releasing an existing one*
+doesn't, since Morpheus already holds that Expander's stable id directly. Morpheus's refresh loop
+(the same id-based lookup that reads the value) now also consumes `consumeEngagePress()` for the
+bound Expander and clears the binding if it fires while that Expander is browsing the exact
+candidate it holds - works regardless of physical position. If the Expander happens to also be
+adjacent, the chain-walk may consume the same one-shot press first; either path produces the
+correct end result, so there's no double-handling risk.
+
+**A Host's own right-click Initialize should release its own X-family bindings too** - easy to
+forget since bindings aren't part of the usual `OL_state`/JSON reset path (Morpheus's own
+`boundExpanderId` array lives outside `OL_state`, see Rule area above / `moduleExtraDataToJson`).
+Add an explicit clear loop to `moduleReset()`.
+
+**XO-family/XR8/XR16 keep the remembered-id approach** (`resolveXOHostPersistent()`,
+`XOShared.hpp`) unchanged - there's no equivalent "who's bound to me" scan possible there, since
+watching an XO-family Host's output is never exclusive (no `boundExpanderId`-style state exists to
+scan for). The remembered-id fragility risk is real there too in principle, but no live-tested
+failure has been found yet - if one shows up, look here first.
 
 ## Pitfalls already found and fixed (Morpheus, 2026-07-18)
 

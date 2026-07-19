@@ -258,8 +258,8 @@ struct LanesCVWidget : ModuleWidget
 		// Tiny bi-color corner lights - off/green/yellow/red chain-health signal (see
 		// moduleProcess()'s resolveLanesHub() calls and LanesCV.hpp). Placeholder position
 		// (panel is 86.36mm wide) until Dieter places guide art for them.
-		addChild (createLightCentered<AutoHideLight<TinyLight<GreenRedLight>>> (calculateCoordinates (3.5f, 4.f, 0.f), module, LEFT_CONN_LIGHT));
-		addChild (createLightCentered<AutoHideLight<TinyLight<GreenRedLight>>> (calculateCoordinates (82.86f, 4.f, 0.f), module, RIGHT_CONN_LIGHT));
+		addOrangeLineConnectionLight<AutoHideLight<TinyLight<GreenRedLight>>> (this, calculateCoordinates (3.5f, 4.f, 0.f), module, LEFT_CONN_LIGHT);
+		addOrangeLineConnectionLight<AutoHideLight<TinyLight<GreenRedLight>>> (this, calculateCoordinates (82.86f, 4.f, 0.f), module, RIGHT_CONN_LIGHT);
 
 		addOrangeLineTouchPorts (this, module, NUM_INPUTS, NUM_OUTPUTS,
 			module ? &module->OL_touchInPort : nullptr, module ? &module->OL_touchOutPort : nullptr, module ? &module->OL_touchVisible : nullptr);

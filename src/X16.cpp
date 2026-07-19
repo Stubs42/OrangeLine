@@ -92,11 +92,7 @@ struct X16Widget : ModuleWidget
 			addChild(darkPanel);
 		}
 
-		// Connection light disabled 2026-07-18 (Dieter: more distracting than informative, breaks
-		// the header's optics - connection is already visible via the panel's own controls) -
-		// underlying setStateLight(CONN_LIGHT, ...) tracking logic left intact, only the widget
-		// itself is no longer added.
-		// addChild(createLightCentered<AutoHideLight<TinyLight<GreenRedLight>>>(calculateCoordinates(X16_PANEL_WIDTH_MM - 3.5f, 4.f, 0.f), module, CONN_LIGHT));
+		addOrangeLineConnectionLight<AutoHideLight<TinyLight<GreenRedLight>>>(this, calculateCoordinates(X16_PANEL_WIDTH_MM - 3.5f, 4.f, 0.f), module, CONN_LIGHT);
 
 		// LEFT/RIGHT/ENGAGE positions/sizes measured directly from res/X16Work.svg's Controls
 		// layer (BUTTON_FRAME path bounding boxes) - identical to X8D's own.
