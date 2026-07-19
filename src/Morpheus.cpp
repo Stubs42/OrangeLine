@@ -637,10 +637,25 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, StyxHostInterface
 		return 0.f;
 	}
 
-	inline float getChannelGtp(int channel)
+	// realCableOnly=true is for computeTakeoverDisplay() specifically (see its own comment on
+	// XC_GTP/XC_SCL/XC_OFS): getXAwareConnected() is true the instant a candidate is BOUND, even
+	// before OL_statePoly has ever actually been populated from a genuinely live Expander read -
+	// on a fresh patch load a candidate can already be restored as bound from the very first tick,
+	// so that population (which itself only happens via a live Expander read) never got a chance
+	// to run, leaving OL_statePoly at its zeroed construction-time default. Reading it back for
+	// the TAKEOVER value in that state creates a circular "takeover value comes from a buffer only
+	// the takeover itself would populate" dependency. realCableOnly=true sidesteps this by only
+	// trusting OL_statePoly when a REAL cable is connected (never subject to this timing issue -
+	// a real cable's own state is written directly from the jack, not from a bound Expander's
+	// knob), falling straight to the panel param otherwise - exactly what "nothing bound at all"
+	// would already compute, which is the only sane answer when nothing live has flowed yet.
+	// Every other caller (real-time audio processing) keeps the original getXAwareConnected()
+	// behavior unchanged (realCableOnly defaults to false).
+	inline float getChannelGtp(int channel, bool realCableOnly = false)
 	{
-		if (getXAwareConnected(GTP_INPUT)) {
-			int channels = getXAwareChannels(GTP_INPUT);
+		bool connected = realCableOnly ? inputs[GTP_INPUT].isConnected() : getXAwareConnected(GTP_INPUT);
+		if (connected) {
+			int channels = realCableOnly ? inputs[GTP_INPUT].getChannels() : getXAwareChannels(GTP_INPUT);
             if (channels == 1) {
 				return OL_statePoly[GTP_INPUT * POLY_CHANNELS] * 10.f; // input is scaled so 5V is Probability 50%
             }
@@ -651,10 +666,11 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, StyxHostInterface
 		return getStateParam(GTP_PARAM);
 	}
 
-	inline float getChannelScl(int channel)
+	inline float getChannelScl(int channel, bool realCableOnly = false)
 	{
-		if (getXAwareConnected(SCL_INPUT)) {
-			int channels = getXAwareChannels(SCL_INPUT);
+		bool connected = realCableOnly ? inputs[SCL_INPUT].isConnected() : getXAwareConnected(SCL_INPUT);
+		if (connected) {
+			int channels = realCableOnly ? inputs[SCL_INPUT].getChannels() : getXAwareChannels(SCL_INPUT);
             if (channels == 1) {
 				return OL_statePoly[SCL_INPUT * POLY_CHANNELS];
             }
@@ -665,10 +681,11 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, StyxHostInterface
 		return getStateParam(SCL_PARAM);
 	}
 
-	inline float getChannelOfs(int channel)
+	inline float getChannelOfs(int channel, bool realCableOnly = false)
 	{
-		if (getXAwareConnected(OFS_INPUT)) {
-			int channels = getXAwareChannels(OFS_INPUT);
+		bool connected = realCableOnly ? inputs[OFS_INPUT].isConnected() : getXAwareConnected(OFS_INPUT);
+		if (connected) {
+			int channels = realCableOnly ? inputs[OFS_INPUT].getChannels() : getXAwareChannels(OFS_INPUT);
             if (channels == 1) {
 				return OL_statePoly[OFS_INPUT * POLY_CHANNELS];
             }
@@ -694,9 +711,13 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, StyxHostInterface
 		switch (index)
 		{
 			case XC_LOOP_LEN: return clamp((float) getChannelLoopLength(channel), xCandidates[XC_LOOP_LEN].displayMin, xCandidates[XC_LOOP_LEN].displayMax);
-			case XC_GTP:      return clamp(getChannelGtp(channel), xCandidates[XC_GTP].displayMin, xCandidates[XC_GTP].displayMax);
-			case XC_SCL:      return clamp(getChannelScl(channel), xCandidates[XC_SCL].displayMin, xCandidates[XC_SCL].displayMax);
-			case XC_OFS:      return clamp(getChannelOfs(channel), xCandidates[XC_OFS].displayMin, xCandidates[XC_OFS].displayMax);
+			// realCableOnly=true - see getChannelGtp()/Scl()/Ofs()'s own comment: avoids reading
+			// OL_statePoly back for a channel that's bound but hasn't had a live Expander value
+			// populated into it yet (a fresh patch load restoring an already-bound candidate from
+			// the very first tick, before that population could ever run).
+			case XC_GTP:      return clamp(getChannelGtp(channel, true), xCandidates[XC_GTP].displayMin, xCandidates[XC_GTP].displayMax);
+			case XC_SCL:      return clamp(getChannelScl(channel, true), xCandidates[XC_SCL].displayMin, xCandidates[XC_SCL].displayMax);
+			case XC_OFS:      return clamp(getChannelOfs(channel, true), xCandidates[XC_OFS].displayMin, xCandidates[XC_OFS].displayMax);
 			// LOCK/BALANCE are additive (panel knob + a bipolar -100..+100% contribution, see the
 			// xCandidates table's own comment) - the neutral display value is simply 0 ("no
 			// contribution"), matching displayDefault exactly, no raw-space special case needed

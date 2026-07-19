@@ -208,7 +208,20 @@ inline void moduleInitJsonConfig()
 inline void moduleParamConfig()
 {
 	for (int i = 0; i < NUM_X8_KNOBS; i++)
-		configParam<X8KnobQuantity>(KNOB_PARAM + i, 0.f, 1.f, 0.5f, "Value");
+		// Deliberately a generous placeholder range (-1000..1000), not the candidate-specific
+		// range this knob actually gets reconfigured to every tick (moduleProcess()'s own range-
+		// reconfiguration block) - Rack's own patch-load restoration writes the saved value into
+		// this param BEFORE any of our code ever runs, and clamps it to whatever range is
+		// configured AT THAT EXACT MOMENT. A tight placeholder (e.g. the old 0..1) silently
+		// clamped a real saved value (e.g. GTP's own 0..100 range, a value like 48) down to the
+		// placeholder's own max the instant a patch loaded, before moduleProcess() ever got a
+		// chance to widen the range back out - by then the damage was already done, since
+		// widening minValue/maxValue afterward does not un-clamp an already-corrupted value. No
+		// real candidate's own display range gets anywhere near +-1000 (LOOP_LEN's 1..128 and
+		// LOCK/BALANCE's -100..100 are the widest today), so this placeholder can never clamp a
+		// genuine saved value, regardless of which candidate this knob turns out to be reconfigured
+		// for once the Host resolves.
+		configParam<X8KnobQuantity>(KNOB_PARAM + i, -1000.f, 1000.f, 0.5f, "Value");
 	configParam(LEFT_PARAM, 0.f, 1.f, 0.f, "Previous parameter");
 	configParam(RIGHT_PARAM, 0.f, 1.f, 0.f, "Next parameter");
 	configParam(ENGAGE_PARAM, 0.f, 1.f, 0.f, "Bind");
@@ -325,9 +338,24 @@ inline void moduleProcess(const ProcessArgs &args)
 				xKnobReady = false; // not observable outside this same tick (resnap below
 				                    // completes synchronously), but keeps the state machine
 				                    // explicit - see isXKnobReady()'s own comment
-				int channels = getXKnobCount();
-				for (int c = 0; c < channels; c++)
-					params[KNOB_PARAM + c].setValue(xHost->getXParamTakeoverValue(browseIndex, c));
+				// On the very first tick after a fresh patch load/reload (dataFromJsonCalled,
+				// OrangeLineCommon.hpp - stays true for this entire tick, reset after), if this
+				// exact binding already survived the reload (boundHere true without ever having
+				// pressed Engage this session), do NOT resync FROM the Host - the knob is a real
+				// Rack param Rack already restored directly from the saved patch, the ONLY
+				// durable memory of this channel's actual value (the Host's own OL_statePoly is
+				// explicitly session-only, never persisted). Pulling a "takeover" value here
+				// would silently discard that correctly-restored value in favor of whatever the
+				// Host's own unrelated fallback (e.g. its real panel knob) happens to hold right
+				// now. A genuine fresh engage/re-arrival later in the same session
+				// (dataFromJsonCalled false by then) still correctly pulls from the Host exactly
+				// as before - only the just-loaded tick is different.
+				if (!dataFromJsonCalled)
+				{
+					int channels = getXKnobCount();
+					for (int c = 0; c < channels; c++)
+						params[KNOB_PARAM + c].setValue(xHost->getXParamTakeoverValue(browseIndex, c));
+				}
 				xKnobReady = true;
 			}
 		}
