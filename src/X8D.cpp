@@ -213,6 +213,28 @@ struct X8DWidget : ModuleWidget
 		nameDisplay->box.size = mm2px(Vec(X8D_PANEL_WIDTH_MM - 2.f * X8_NAME_DISPLAY_MARGIN_MM, 5.f));
 		addChild(nameDisplay);
 
+		// Position/size originally measured directly from res/X8DWork.svg's own "ButtonCover"
+		// guide layer (x=12.342694, width=16.867304, right edge 29.209998) - covering only the
+		// display column, since the knob column's own panel ring was, at the time, separately
+		// masked by the X8ValueButton's own opaque frame sitting exactly on top of it (button and
+		// knob shared the same x). Now that the button is centered across the full row width
+		// instead (see the per-channel loop below), it no longer sits over the knob ring, so this
+		// cover's top-left is widened/moved to x=2.5, y=32 with height 87.5 (Dieter's own measured
+		// values) - far enough left/tall to also cover the now-exposed knob-ring remnants - while
+		// keeping the exact same right edge (29.209998) the original measurement already
+		// established for the display column's own extent. Added BEFORE the per-channel loop
+		// below (not after, like before) so it draws behind the knobs/buttons/displays added
+		// afterward - previously harmless only because the button never overlapped this cover's
+		// own (narrower) box; now that it does, correct z-order actually matters. Hidden by
+		// default (matches the knob column's own "continuous shown until step() knows better"
+		// default below).
+		buttonCover = new X8DButtonCover();
+		buttonCover->module = module;
+		buttonCover->box.pos = calculateCoordinates(2.5f, 32.f, 0.f);
+		buttonCover->box.size = mm2px(Vec(29.209998f - 2.5f, 87.5f));
+		buttonCover->visible = false;
+		addChild(buttonCover);
+
 		// 8 channel knobs, top (channel 1) to bottom (channel 8) - identical x/y to X8's own
 		// knob column (verified against res/X8DWork.svg's knob group positions directly; "the
 		// knob column itself stays put" per ExpanderParamAccessSpec.md's doubling recipe).
@@ -234,7 +256,12 @@ struct X8DWidget : ModuleWidget
 			addParam(knob);
 			knobs[i] = knob;
 
-			X8ValueButton *button = createParamCentered<X8ValueButton>(calculateCoordinates(7.62f, knobY[i] , 0.f), module, KNOB_PARAM + i);
+			// Centered across the FULL row width (the knob column's old x through the display
+			// column's own right edge), not at the knob's own x - there's no numeric value shown
+			// in button mode (see X8DButtonCover above), so the whole display column's width sits
+			// unused otherwise; centering here reads better than leaving it knob-aligned with a
+			// large dead area to its right (Dieter's own callout).
+			X8ValueButton *button = createParamCentered<X8ValueButton>(calculateCoordinates(X8D_PANEL_WIDTH_MM / 2.f, knobY[i], 0.f), module, KNOB_PARAM + i);
 			button->channel = i;
 			button->visible = false; // default: knob shown (continuous) until step() knows better
 			addParam(button);
@@ -252,16 +279,6 @@ struct X8DWidget : ModuleWidget
 		extStrip = addXExtStrip(this, X8D_PANEL_WIDTH_MM);
 		extStripLeft = addXExtStripLeft(this);
 		addXLogoCovers(this, X8D_PANEL_WIDTH_MM, &logoCover1, &logoCover2);
-
-		// Position/size measured directly from res/X8DWork.svg's own "ButtonCover" guide layer -
-		// see X8DButtonCover's own comment. Hidden by default (matches the knob column's own
-		// "continuous shown until step() knows better" default above).
-		buttonCover = new X8DButtonCover();
-		buttonCover->module = module;
-		buttonCover->box.pos = calculateCoordinates(12.342694f, 32.76725f, 0.f);
-		buttonCover->box.size = mm2px(Vec(16.867304f, 85.090004f));
-		buttonCover->visible = false;
-		addChild(buttonCover);
 
 		if (module)
 			module->widgetReady = true;

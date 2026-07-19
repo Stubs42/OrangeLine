@@ -69,8 +69,11 @@ enum OutputIds {
 // Light Ids
 //
 enum LightIds {
-	OVERFLOW_LIGHT, // lit whenever the browsed output has more real channels than this module's
-	                // own fixed capacity
+	// Two-channel GreenRedLight - green while connected and every channel fits, red when the
+	// browsed output has more real channels than this module's own fixed capacity, both off
+	// while nothing is connected (see XOModuleCommon.hpp's own moduleProcess() comment).
+	OVERFLOW_LIGHT,
+	OVERFLOW_LIGHT_LAST = OVERFLOW_LIGHT + 1,
 
 	NUM_LIGHTS
 };

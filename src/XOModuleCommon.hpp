@@ -200,8 +200,16 @@ inline void moduleProcess(const ProcessArgs &args)
 
 	// Overflow warning: the browsed output's real channel count exceeds this module's own fixed
 	// capacity - some channels simply aren't exposed. Purely informational, no other effect.
-	bool overflow = xoHost && count > 0 && xoHost->getXOChannelCount(browseIndex) > XO_CAPACITY;
-	setStateLight(OVERFLOW_LIGHT, overflow ? 255.f : 0.f);
+	// Two-channel GreenRedLight now (OVERFLOW_LIGHT = green, OVERFLOW_LIGHT+1 = red - see each
+	// module's own LightIds enum) rather than a single red-only light: green confirms "connected
+	// and every channel fits" instead of just staying dark, which used to look identical to "not
+	// connected at all" and read as confusing next to the (separately, already-removed) old
+	// connection light. Both channels stay at 0 (fully invisible via AutoHideLight) while nothing
+	// is connected.
+	bool connectedForOverflow = xoHost && count > 0;
+	bool overflow = connectedForOverflow && xoHost->getXOChannelCount(browseIndex) > XO_CAPACITY;
+	setStateLight(OVERFLOW_LIGHT, (connectedForOverflow && !overflow) ? 255.f : 0.f);
+	setStateLight(OVERFLOW_LIGHT + 1, overflow ? 255.f : 0.f);
 
 	// Gate/trigger display stretch (see getXOBrowsedChannelGateLit()'s own comment in
 	// XOShared.hpp) - runs unconditionally (not just under XO_HAS_JACKS) since XD8/XD16 have no

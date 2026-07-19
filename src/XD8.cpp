@@ -53,6 +53,78 @@ struct XD8 : Module, XOExpanderInterface, ExpanderBridgeInterface
 };
 
 /**
+	Themed background mask matching the exact outline Dieter authored in res/XD8Work.svg's own
+	"MASK" layer - a jagged, hand-drawn path (dodging the per-row channel-number labels rather
+	than a plain rect covering everything, which is what made the earlier rect-based
+	XOButtonCover approach here complex/wrong) - replicated as literal NanoVG path commands
+	(absolute panel-mm coordinates, converted via mm2px() same as every other custom-drawn widget
+	in this codebase), NOT loaded as a separate SVG asset, so the per-theme fill still comes from
+	the SAME X_STRIP_BG_* runtime constants every other cover already uses. The color baked into
+	the guide path in Work.svg itself is only Dieter's own Inkscape visual marker - never read
+	here. Spans the whole 8-row column in one shape, always visible (same "never toggled"
+	reasoning as the previous per-row XOButtonCover instances this replaces - both the value
+	display and the gate indicator draw their own content on top of it).
+*/
+struct XD8DisplayMask : TransparentWidget
+{
+	Module *module = nullptr;
+
+	void draw(const DrawArgs &args) override
+	{
+		XOExpanderInterface *expander = module ? dynamic_cast<XOExpanderInterface*>(module) : nullptr;
+		float style = expander ? expander->getXOStyle() : STYLE_ORANGE;
+		NVGcolor fill = (style == STYLE_DARK) ? X_STRIP_BG_DARK
+		              : (style == STYLE_BRIGHT) ? X_STRIP_BG_BRIGHT
+		              : X_STRIP_BG_ORANGE;
+
+		auto P = [](float xmm, float ymm) { return mm2px(Vec(xmm, ymm)); };
+		nvgBeginPath(args.vg);
+		Vec p = P(0.9103849f, 35.036577f);
+		nvgMoveTo(args.vg, p.x, p.y);
+		p = P(0.9103849f, 40.116577f); nvgLineTo(args.vg, p.x, p.y);
+		p = P(3.4503849f, 40.116577f); nvgLineTo(args.vg, p.x, p.y);
+		p = P(3.4503849f, 45.958577f); nvgLineTo(args.vg, p.x, p.y);
+		p = P(0.9103853f, 45.958577f); nvgLineTo(args.vg, p.x, p.y);
+		p = P(1.0013353f, 51.038578f); nvgLineTo(args.vg, p.x, p.y);
+		p = P(3.4503849f, 51.038578f); nvgLineTo(args.vg, p.x, p.y);
+		p = P(3.4503849f, 56.880578f); nvgLineTo(args.vg, p.x, p.y);
+		p = P(0.9103853f, 56.880578f); nvgLineTo(args.vg, p.x, p.y);
+		p = P(0.9103849f, 62.214578f); nvgLineTo(args.vg, p.x, p.y);
+		p = P(3.4503849f, 62.214578f); nvgLineTo(args.vg, p.x, p.y);
+		p = P(3.4503849f, 67.802578f); nvgLineTo(args.vg, p.x, p.y);
+		p = P(0.9103853f, 67.802578f); nvgLineTo(args.vg, p.x, p.y);
+		p = P(0.9103849f, 73.136578f); nvgLineTo(args.vg, p.x, p.y);
+		p = P(3.4503849f, 73.136578f); nvgLineTo(args.vg, p.x, p.y);
+		p = P(3.4503849f, 78.724578f); nvgLineTo(args.vg, p.x, p.y);
+		p = P(0.9103853f, 78.724578f); nvgLineTo(args.vg, p.x, p.y);
+		p = P(0.9103849f, 84.058578f); nvgLineTo(args.vg, p.x, p.y);
+		p = P(3.4503849f, 84.058578f); nvgLineTo(args.vg, p.x, p.y);
+		p = P(3.4503849f, 89.646578f); nvgLineTo(args.vg, p.x, p.y);
+		p = P(0.9103849f, 89.646578f); nvgLineTo(args.vg, p.x, p.y);
+		p = P(0.9103849f, 94.980578f); nvgLineTo(args.vg, p.x, p.y);
+		p = P(3.4503849f, 94.980578f); nvgLineTo(args.vg, p.x, p.y);
+		p = P(3.4503849f, 100.822580f); nvgLineTo(args.vg, p.x, p.y);
+		p = P(0.9103853f, 100.822580f); nvgLineTo(args.vg, p.x, p.y);
+		p = P(0.9103849f, 105.902580f); nvgLineTo(args.vg, p.x, p.y);
+		p = P(3.4503849f, 105.902580f); nvgLineTo(args.vg, p.x, p.y);
+		p = P(3.4503849f, 111.744580f); nvgLineTo(args.vg, p.x, p.y);
+		p = P(0.9103853f, 111.744580f); nvgLineTo(args.vg, p.x, p.y);
+		p = P(0.9103849f, 116.824580f); nvgLineTo(args.vg, p.x, p.y);
+		p = P(14.372385f, 116.824580f); nvgLineTo(args.vg, p.x, p.y);
+		p = P(14.372385f, 35.036577f); nvgLineTo(args.vg, p.x, p.y);
+		{
+			Vec c1 = P(10.059018f, 35.037352f);
+			Vec c2 = P(5.2406038f, 35.033377f);
+			Vec e  = P(0.9103849f, 35.036577f);
+			nvgBezierTo(args.vg, c1.x, c1.y, c2.x, c2.y, e.x, e.y);
+		}
+		nvgClosePath(args.vg);
+		nvgFillColor(args.vg, fill);
+		nvgFill(args.vg);
+	}
+};
+
+/**
 	Main Module Widget - pure monitor, no real output jacks at all: a per-channel value/gate
 	display column occupies the space XO8's own jack column would have used.
 */
@@ -67,7 +139,7 @@ struct XD8Widget : ModuleWidget
 
 	XOValueDisplay *displays[XO_CAPACITY] = {};
 	XOGateIndicator *gates[XO_CAPACITY] = {};
-	XOButtonCover *covers[XO_CAPACITY] = {};
+	XD8DisplayMask *displayMask = nullptr;
 
 	XD8Widget(XD8 *module)
 	{
@@ -88,7 +160,13 @@ struct XD8Widget : ModuleWidget
 			addChild(darkPanel);
 		}
 
-		addChild(createLightCentered<AutoHideLight<TinyLight<RedLight>>>(calculateCoordinates(XD8_PANEL_WIDTH_MM - 3.5f, 4.f, 0.f), module, OVERFLOW_LIGHT));
+		// Moved down to (6.72, 26.163) - Dieter's own measured position, in the open gap between
+		// the LEFT/RIGHT nav buttons and the first display cell - the old top-right corner
+		// position collided with the name display's own text on this narrow panel and read as
+		// confusing next to the (separately, already-removed) old connection light. Two-channel
+		// GreenRedLight (green = connected and every channel fits, red = overflow, both off = not
+		// connected) - see XOModuleCommon.hpp's own moduleProcess() comment.
+		addChild(createLightCentered<AutoHideLight<TinyLight<GreenRedLight>>>(calculateCoordinates(6.72f, 26.163f, 0.f), module, OVERFLOW_LIGHT));
 
 		XOStepButton *leftButton = createParamCentered<XOStepButton>(calculateCoordinates(4.550f, 18.034f, 0.f), module, LEFT_PARAM);
 		leftButton->label = "<";
@@ -121,25 +199,23 @@ struct XD8Widget : ModuleWidget
 			35.3073f, 46.2655f, 57.2238f, 68.1821f,
 			79.1404f, 90.0987f, 101.057f, 112.0153f
 		};
+		// Whole-column background, replacing the earlier per-row plain-rect XOButtonCover
+		// instances - see XD8DisplayMask's own comment above for why (the real panel decoration
+		// includes per-row channel-number labels a plain rect can't dodge without also hiding
+		// them). Added before the per-row loop below so it draws underneath every value display /
+		// gate indicator, same z-order the old per-row covers used. Only shown in button/gate mode
+		// (toggled in step(), same showGate flag as the gate indicators themselves) - it hides
+		// decoration meant only to disappear behind the gate cap, not the value display, which
+		// needs the real panel showing through underneath it.
+		displayMask = new XD8DisplayMask();
+		displayMask->module = module;
+		displayMask->box.pos = calculateCoordinates(0.f, 0.f, 0.f);
+		displayMask->box.size = mm2px(Vec(XD8_PANEL_WIDTH_MM, PANELHEIGHT));
+		displayMask->visible = false;
+		addChild(displayMask);
+
 		for (int i = 0; i < XO_CAPACITY; i++)
 		{
-			// Always-visible per-row background, sized to fully cover the real panel decoration
-			// underneath (res/XD8Work.svg's own plain "rect1*" elements: x=0.762, width=13.716,
-			// height=4.064) - unlike XOButtonCover elsewhere in this family (which only shows while
-			// a gate/button type is browsed), this one is never toggled: XD8's own display cell
-			// spans nearly the whole narrow 15.24mm module, too wide for the gate cap's own fixed
-			// 9.144mm frame to mask on its own, so the row is covered unconditionally and both the
-			// value display and the gate indicator draw their own content on top of it.
-			// Inset 0.15mm on all four sides (13.716x4.064mm -> 13.416x3.764mm) so this opaque
-			// cover doesn't paint over the module's own outer frame artwork/decoration lines, which
-			// run right up against the rect1 cell's own edges on this narrow (15.24mm) panel.
-			XOButtonCover *cover = new XOButtonCover();
-			cover->module = module;
-			cover->box.pos = calculateCoordinates(0.762f + 0.15f, gateBoxY[i] + 0.15f, 0.f);
-			cover->box.size = mm2px(Vec(13.716f - 0.3f, 4.064f - 0.3f));
-			addChild(cover);
-			covers[i] = cover;
-
 			XOValueDisplay *display = new XOValueDisplay();
 			display->module = module;
 			display->channel = i;
@@ -178,6 +254,7 @@ struct XD8Widget : ModuleWidget
 			updateXOExtStripLeft(extStripLeft, xd8Module, xd8Module->leftExpander.module);
 			updateXOLogoCovers(logoCover1, logoCover2, xd8Module);
 			bool showGate = xd8Module->getXOBrowsedType() == XO_TYPE_GATE;
+			displayMask->visible = showGate;
 			for (int i = 0; i < XO_CAPACITY; i++)
 			{
 				displays[i]->visible = !showGate;

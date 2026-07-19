@@ -234,8 +234,12 @@ inline void moduleProcess(const ProcessArgs &args)
 	}
 	OL_state[BROWSE_INDEX_JSON] = (float) browseIndex;
 
-	bool overflow = xoHost && count > 0 && xoHost->getXOChannelCount(browseIndex) > XR_CAPACITY;
-	setStateLight(OVERFLOW_LIGHT, overflow ? 255.f : 0.f);
+	// Two-channel GreenRedLight now - see XOModuleCommon.hpp's identical comment for the full
+	// reasoning (green = connected and fits, red = overflow, both off = not connected).
+	bool connectedForOverflow = xoHost && count > 0;
+	bool overflow = connectedForOverflow && xoHost->getXOChannelCount(browseIndex) > XR_CAPACITY;
+	setStateLight(OVERFLOW_LIGHT, (connectedForOverflow && !overflow) ? 255.f : 0.f);
+	setStateLight(OVERFLOW_LIGHT + 1, overflow ? 255.f : 0.f);
 
 	// Per-channel independent seed -> deterministic random value. Each channel's own lastSeed[]
 	// starts at NAN (see the constructor) so the first-ever comparison is always true (NAN != x

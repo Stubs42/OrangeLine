@@ -86,9 +86,15 @@ struct XO8Widget : ModuleWidget
 			addChild(darkPanel);
 		}
 
-		// Connection light is gone (superseded by the seam/logo-cover mechanism) - OVERFLOW_LIGHT
-		// near the right edge stays.
-		addChild(createLightCentered<AutoHideLight<TinyLight<RedLight>>>(calculateCoordinates(XO8_PANEL_WIDTH_MM - 3.5f, 4.f, 0.f), module, OVERFLOW_LIGHT));
+		// Connection light is gone (superseded by the seam/logo-cover mechanism). OVERFLOW_LIGHT
+		// moved down to (6.72, 26.163) - Dieter's own measured position, in the open gap between
+		// the LEFT/RIGHT nav buttons and the first output jack - the old top-right corner
+		// position (the same row the old connection light used to occupy on the opposite side)
+		// collided with the name display's own text on this narrow panel and read as confusing
+		// next to that now-removed light. Two-channel GreenRedLight (green = connected and every
+		// channel fits, red = overflow, both off = not connected) - see XOModuleCommon.hpp's own
+		// moduleProcess() comment.
+		addChild(createLightCentered<AutoHideLight<TinyLight<GreenRedLight>>>(calculateCoordinates(6.72f, 26.163f, 0.f), module, OVERFLOW_LIGHT));
 
 		XOStepButton *leftButton = createParamCentered<XOStepButton>(calculateCoordinates(4.550f, 18.034f, 0.f), module, LEFT_PARAM);
 		leftButton->label = "<";

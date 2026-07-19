@@ -53,6 +53,121 @@ struct XD16 : Module, XOExpanderInterface, ExpanderBridgeInterface
 };
 
 /**
+	Themed background mask matching the exact outline Dieter authored in res/XD16Work.svg's own
+	"MASK" layer - one jagged, hand-drawn path per column (left and right are NOT a pure mirror of
+	each other - close, but with slightly different per-segment offsets - so both are replicated
+	verbatim rather than sharing a flipped transform). Same reasoning/mechanism as XD8's own
+	XD8DisplayMask (XD8.cpp) - literal NanoVG path commands in absolute panel-mm coordinates
+	(mm2px()-converted), filled with the runtime X_STRIP_BG_* constants, not a loaded SVG asset;
+	the guide path's own color in Work.svg is only Dieter's Inkscape visual marker. Each spans its
+	whole 8-row column in one shape, always visible, drawn before the per-row loop so both the
+	value displays and gate indicators land on top of it.
+*/
+struct XD16DisplayMask : TransparentWidget
+{
+	Module *module = nullptr;
+	bool leftColumn = true;
+
+	void draw(const DrawArgs &args) override
+	{
+		XOExpanderInterface *expander = module ? dynamic_cast<XOExpanderInterface*>(module) : nullptr;
+		float style = expander ? expander->getXOStyle() : STYLE_ORANGE;
+		NVGcolor fill = (style == STYLE_DARK) ? X_STRIP_BG_DARK
+		              : (style == STYLE_BRIGHT) ? X_STRIP_BG_BRIGHT
+		              : X_STRIP_BG_ORANGE;
+
+		auto P = [](float xmm, float ymm) { return mm2px(Vec(xmm, ymm)); };
+		nvgBeginPath(args.vg);
+		Vec p;
+		if (leftColumn)
+		{
+			p = P(1.27f, 34.79925f); nvgMoveTo(args.vg, p.x, p.y);
+			p = P(1.27f, 39.87925f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(3.81f, 39.87925f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(3.81f, 45.72125f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(1.2700004f, 45.72125f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(1.3609504f, 50.801251f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(3.81f, 50.801251f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(3.81f, 56.643251f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(1.2700004f, 56.643251f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(1.27f, 61.977251f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(3.81f, 61.977251f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(3.81f, 67.565251f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(1.2700004f, 67.565251f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(1.27f, 72.899251f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(3.81f, 72.899251f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(3.81f, 78.487251f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(1.2700004f, 78.487251f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(1.27f, 83.821251f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(3.81f, 83.821251f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(3.81f, 89.409251f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(1.27f, 89.409251f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(1.27f, 94.743251f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(3.81f, 94.743251f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(3.81f, 100.585250f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(1.2700004f, 100.585250f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(1.27f, 105.665250f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(3.81f, 105.665250f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(3.81f, 111.507250f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(1.2700004f, 111.507250f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(1.27f, 116.587250f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(14.732f, 116.587250f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(14.732f, 34.799250f); nvgLineTo(args.vg, p.x, p.y);
+			{
+				Vec c1 = P(10.418633f, 34.800025f);
+				Vec c2 = P(5.6002189f, 34.79605f);
+				Vec e  = P(1.27f, 34.79925f);
+				nvgBezierTo(args.vg, c1.x, c1.y, c2.x, c2.y, e.x, e.y);
+			}
+		}
+		else
+		{
+			p = P(29.21f, 34.79925f); nvgMoveTo(args.vg, p.x, p.y);
+			p = P(29.21f, 39.87925f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(26.67f, 39.87925f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(26.67f, 45.72125f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(29.21f, 45.72125f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(29.11905f, 50.801251f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(26.67f, 50.801251f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(26.67f, 56.643251f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(29.21f, 56.643251f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(29.21f, 61.977251f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(26.67f, 61.977251f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(26.67f, 67.565251f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(29.21f, 67.565251f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(29.21f, 72.899251f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(26.67f, 72.899251f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(26.67f, 78.487251f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(29.21f, 78.487251f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(29.21f, 83.821251f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(26.67f, 83.821251f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(26.67f, 89.409251f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(29.21f, 89.409251f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(29.21f, 94.743251f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(26.67f, 94.743251f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(26.67f, 100.585250f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(29.21f, 100.585250f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(29.21f, 105.665250f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(26.67f, 105.665250f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(26.67f, 111.507250f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(29.21f, 111.507250f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(29.21f, 116.587250f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(15.748f, 116.587250f); nvgLineTo(args.vg, p.x, p.y);
+			p = P(15.748f, 34.799250f); nvgLineTo(args.vg, p.x, p.y);
+			{
+				Vec c1 = P(20.061367f, 34.800025f);
+				Vec c2 = P(24.879781f, 34.79605f);
+				Vec e  = P(29.21f, 34.79925f);
+				nvgBezierTo(args.vg, c1.x, c1.y, c2.x, c2.y, e.x, e.y);
+			}
+		}
+		nvgClosePath(args.vg);
+		nvgFillColor(args.vg, fill);
+		nvgFill(args.vg);
+	}
+};
+
+/**
 	Main Module Widget - pure monitor, no real output jacks at all: two 8-cell value/gate display
 	columns occupy the space XO16's own two jack columns would have used.
 */
@@ -67,7 +182,8 @@ struct XD16Widget : ModuleWidget
 
 	XOValueDisplay *displays[XO_CAPACITY] = {};
 	XOGateIndicator *gates[XO_CAPACITY] = {};
-	XOButtonCover *covers[XO_CAPACITY] = {};
+	XD16DisplayMask *displayMaskLeft = nullptr;
+	XD16DisplayMask *displayMaskRight = nullptr;
 
 	XD16Widget(XD16 *module)
 	{
@@ -88,7 +204,10 @@ struct XD16Widget : ModuleWidget
 			addChild(darkPanel);
 		}
 
-		addChild(createLightCentered<AutoHideLight<TinyLight<RedLight>>>(calculateCoordinates(XD16_PANEL_WIDTH_MM - 3.5f, 4.f, 0.f), module, OVERFLOW_LIGHT));
+		// Moved down into the open gap between the LEFT/RIGHT nav buttons and the first row
+		// (centered horizontally, same y as XO8/XD8's own identical repositioning) rather than
+		// the old top-right corner - see XO8.cpp's own comment for the full reasoning.
+		addChild(createLightCentered<AutoHideLight<TinyLight<GreenRedLight>>>(calculateCoordinates(XD16_PANEL_WIDTH_MM / 2.f, 26.163f, 0.f), module, OVERFLOW_LIGHT));
 
 		XOStepButton *leftButton = createParamCentered<XOStepButton>(calculateCoordinates(8.382f, 18.035f, 0.f), module, LEFT_PARAM);
 		leftButton->label = "<";
@@ -122,27 +241,37 @@ struct XD16Widget : ModuleWidget
 			35.04f, 46.0f, 56.95f, 67.91f,
 			78.86f, 89.82f, 100.77f, 111.73f
 		};
-		static const float gateCenterX[2] = { 7.9955f, 22.4825f };
-		// Original rect5-* top-left x per column (1.513/16.0mm), matching gateCenterX - half the
-		// 12.965mm cell width - see the always-visible cover below.
-		static const float coverX[2] = { 1.513f, 16.0f };
+		// Dieter's own measured centers (2026-07-19) - left/right column button centers moved
+		// horizontally off the original rect5-* cell center to their own explicit position,
+		// independent of the mask's own (unchanged) geometry.
+		static const float gateCenterX[2] = { 9.15f, 21.3f };
+		// Always-visible whole-column backgrounds (one per column), replacing the earlier per-row
+		// plain-rect XOButtonCover instances - see XD16DisplayMask's own comment above. Added
+		// before the per-row loop below so both draw underneath every value display / gate
+		// indicator, same z-order the old per-row covers used.
+		// Only shown in button/gate mode (toggled in step(), same showGate flag as the gate
+		// indicators themselves) - hides decoration meant only to disappear behind the gate cap,
+		// not the value display, which needs the real panel showing through underneath it.
+		displayMaskLeft = new XD16DisplayMask();
+		displayMaskLeft->module = module;
+		displayMaskLeft->leftColumn = true;
+		displayMaskLeft->box.pos = calculateCoordinates(0.f, 0.f, 0.f);
+		displayMaskLeft->box.size = mm2px(Vec(XD16_PANEL_WIDTH_MM, PANELHEIGHT));
+		displayMaskLeft->visible = false;
+		addChild(displayMaskLeft);
+		displayMaskRight = new XD16DisplayMask();
+		displayMaskRight->module = module;
+		displayMaskRight->leftColumn = false;
+		displayMaskRight->box.pos = calculateCoordinates(0.f, 0.f, 0.f);
+		displayMaskRight->box.size = mm2px(Vec(XD16_PANEL_WIDTH_MM, PANELHEIGHT));
+		displayMaskRight->visible = false;
+		addChild(displayMaskRight);
+
 		for (int col = 0; col < 2; col++)
 		{
 			for (int row = 0; row < 8; row++)
 			{
 				int channel = col * 8 + row;
-
-				// Always-visible per-row background, sized to fully cover the real panel
-				// decoration underneath (res/XD16Work.svg's own edited "rect5-*"/"rect5-*b" paths:
-				// width=12.965, height=4.61) minus a 0.15mm inset on all four sides, same
-				// reasoning/values as XD8Widget's own per-row cover - never toggled, since both the
-				// value display and the gate indicator draw their own content on top of it.
-				XOButtonCover *cover = new XOButtonCover();
-				cover->module = module;
-				cover->box.pos = calculateCoordinates(coverX[col] + 0.15f, gateBoxY[row] + 0.15f, 0.f);
-				cover->box.size = mm2px(Vec(12.965f - 0.3f, 4.61f - 0.3f));
-				addChild(cover);
-				covers[channel] = cover;
 
 				XOValueDisplay *display = new XOValueDisplay();
 				display->module = module;
@@ -179,6 +308,8 @@ struct XD16Widget : ModuleWidget
 			updateXOExtStripLeft(extStripLeft, xd16Module, xd16Module->leftExpander.module);
 			updateXOLogoCovers(logoCover1, logoCover2, xd16Module);
 			bool showGate = xd16Module->getXOBrowsedType() == XO_TYPE_GATE;
+			displayMaskLeft->visible = showGate;
+			displayMaskRight->visible = showGate;
 			for (int i = 0; i < XO_CAPACITY; i++)
 			{
 				displays[i]->visible = !showGate;

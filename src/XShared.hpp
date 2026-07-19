@@ -571,11 +571,9 @@ inline float getXNeighborStyle(Module *neighbor)
 // widgets share the exact same semantic color (e.g. "inactive/taken" grey).
 #define X_BUTTON_FILL_ORANGE nvgRGB(0x10, 0x06, 0x00) // X8ButtonBase's own button-body fill, per
 #define X_BUTTON_FILL_DARK   nvgRGB(0x17, 0x17, 0x17) // theme - a separate triplet from
-#define X_BUTTON_FILL_BRIGHT nvgRGB(0xbb, 0xbb, 0xbb) // X_STRIP_BG_* even though BRIGHT's own
-//#define X_BUTTON_FILL_BRIGHT nvgRGB(0x15, 0x15, 0x2b) // X_STRIP_BG_* even though BRIGHT's own
-                                                       // value happens to coincide with
-                                                       // X_STRIP_BG_ORANGE (a dark navy fill
-                                                       // reads correctly against a light panel)
+#define X_BUTTON_FILL_BRIGHT nvgRGB(0xbb, 0xbb, 0xbb) // X_STRIP_BG_* (light grey, not a dark
+                                                       // navy - see X_TEXT_COLOR_BRIGHT below for
+                                                       // why that distinction now matters)
 
 #define X_FRAME_ORANGE nvgRGB(0x80, 0x33, 0x00) // X8ValueButton's drawThemeFrame() stroke color,
 #define X_FRAME_DARK   nvgRGB(0x60, 0x60, 0x60) // per theme (its background fill reuses
@@ -584,23 +582,24 @@ inline float getXNeighborStyle(Module *neighbor)
 
 // Per-theme accent color for X8ButtonBase/X8BindButtonBase/XOButtonBase's own frame-stroke+label
 // while active, replacing a fixed `ORANGE` that only coincidentally matched the Orange theme's
-// own value and stayed wrong (still bright orange, never themed) under Dark/Bright. Orange/Dark
-// match tools/bake_panel_theme.py's own THEME_TEXT_COLOR (#ff6600/#c4bac4) - Bright deliberately
-// does NOT (THEME_TEXT_COLOR's Bright value, #15152b, is meant for text drawn directly on the
-// panel's own light background, not for an accent against this button's own dark "display" fill,
-// X_BUTTON_FILL_BRIGHT - which is that exact same #15152b, making frame+label invisible against
-// their own background). Reuses X_FRAME_BRIGHT (THEME_FRAME_COLOR's Bright value, #606080)
-// instead - already the established, confirmed-visible accent color for this family's other
-// controls against the same kind of dark display-style surface.
+// own value and stayed wrong (still bright orange, never themed) under Dark/Bright. Matches
+// tools/bake_panel_theme.py's own THEME_TEXT_COLOR (#ff6600/#c4bac4/#15152b) for every theme now.
+// Bright used to deliberately reuse X_FRAME_BRIGHT instead of a real text color here, back when
+// X_BUTTON_FILL_BRIGHT was itself a dark navy (#15152b) - using the same dark text color for the
+// frame/label against a dark fill of the identical color would have made both invisible.
+// X_BUTTON_FILL_BRIGHT is a light grey now (see its own comment above), so that collision no
+// longer exists - Dieter's own live-tested confirmation (2026-07-19) that the button frame/label
+// should use the real, darker text color again, matching every other theme's own convention.
 #define X_TEXT_COLOR_ORANGE nvgRGB(0xff, 0x66, 0x00)
 #define X_TEXT_COLOR_DARK   nvgRGB(0xc4, 0xba, 0xc4)
+#define X_TEXT_COLOR_BRIGHT nvgRGB(0x15, 0x15, 0x2b)
 
 // Shared by X8ButtonBase/X8BindButtonBase (X8Common.hpp) and XOButtonBase (XOCommon.hpp) - the
 // themed accent color their frame stroke and label text both use while active.
 inline NVGcolor xThemedTextColor(float style)
 {
 	return (style == STYLE_DARK) ? X_TEXT_COLOR_DARK
-	     : (style == STYLE_BRIGHT) ? X_FRAME_BRIGHT
+	     : (style == STYLE_BRIGHT) ? X_TEXT_COLOR_BRIGHT
 	     : X_TEXT_COLOR_ORANGE;
 }
 

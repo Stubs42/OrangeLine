@@ -86,7 +86,10 @@ struct XO16Widget : ModuleWidget
 			addChild(darkPanel);
 		}
 
-		addChild(createLightCentered<AutoHideLight<TinyLight<RedLight>>>(calculateCoordinates(XO16_PANEL_WIDTH_MM - 3.5f, 4.f, 0.f), module, OVERFLOW_LIGHT));
+		// Moved down into the open gap between the LEFT/RIGHT nav buttons and the first port row
+		// (centered horizontally, same y as XO8/XD8's own identical repositioning) rather than
+		// the old top-right corner - see XO8.cpp's own comment for the full reasoning.
+		addChild(createLightCentered<AutoHideLight<TinyLight<GreenRedLight>>>(calculateCoordinates(XO16_PANEL_WIDTH_MM / 2.f, 26.163f, 0.f), module, OVERFLOW_LIGHT));
 
 		XOStepButton *leftButton = createParamCentered<XOStepButton>(calculateCoordinates(8.382f, 18.035f, 0.f), module, LEFT_PARAM);
 		leftButton->label = "<";

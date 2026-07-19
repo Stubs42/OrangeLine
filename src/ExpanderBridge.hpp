@@ -225,9 +225,15 @@ struct BridgeListenerRegistry
 	physical move can't un-connect them.
 
 	If exactly one side offers a compatible, already-resolved host id, returns it. If both sides
-	simultaneously offer something (compatible or not, equal or different - deliberately not
-	special-cased, see the plan's own reasoning), returns -1: connect to neither, rather than
-	picking a winner.
+	simultaneously offer something, the two offers are only genuinely ambiguous when they disagree
+	- if both sides already point at the SAME host id, that's not a conflict at all (e.g. this
+	module sandwiched between two other already-connected members of the same chain, both
+	correctly relaying the one real Host further down) and connecting is exactly right; only a
+	real disagreement (two different ids) returns -1, connect to neither, rather than picking a
+	winner. (Revised 2026-07-19 after live testing: the original version of this rule denied BOTH
+	the equal- and differing-id cases identically, which incorrectly refused a module sitting
+	between two already-connected same-host neighbors - Dieter's own live catch, XD8 never
+	connecting despite touching a fully legitimate chain on both sides.)
 
 	Deliberately does NO engine lookup at all (no APP->engine->getModule() anywhere in this
 	function) - see ExpanderBridgeInterface's own comment above for why that matters (a confirmed
@@ -261,7 +267,10 @@ inline int64_t resolveBridgeHostId(const std::vector<ExpanderFamily> &selfFamili
 	int64_t rightOffer = offeredHostId(rightNeighbor);
 
 	if (leftOffer != -1 && rightOffer != -1)
-		return -1; // sandwiched between two offers at once - connect to neither
+		// Both sides offer something: agreeing on the same host is not a conflict (sandwiched
+		// between two already-connected members of the same chain) - only a genuine disagreement
+		// means connect to neither.
+		return (leftOffer == rightOffer) ? leftOffer : -1;
 	return (leftOffer != -1) ? leftOffer : rightOffer;
 }
 

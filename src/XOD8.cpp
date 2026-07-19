@@ -94,7 +94,16 @@ struct XOD8Widget : ModuleWidget
 			addChild(darkPanel);
 		}
 
-		addChild(createLightCentered<AutoHideLight<TinyLight<RedLight>>>(calculateCoordinates(XOD8_PANEL_WIDTH_MM - 3.5f, 4.f, 0.f), module, OVERFLOW_LIGHT));
+		// Two-channel GreenRedLight now (green = connected and fits, red = overflow, both off =
+		// not connected) - was briefly commented out while tracking down why this looked like a
+		// leftover connection light; that was actually the real overflow indicator always firing
+		// because Morpheus typically runs 16-channel candidates against this module's 8-channel
+		// capacity, now fixed by giving it a genuine "fine" state (green) instead of just going
+		// dark, which read as indistinguishable from "not connected." Moved down into the open
+		// gap between the LEFT/RIGHT nav buttons and the first row (centered horizontally, same
+		// y as XO8/XD8's own identical repositioning) rather than the old top-right corner, which
+		// sat in the same row the old connection light used to occupy on the opposite side.
+		addChild(createLightCentered<AutoHideLight<TinyLight<GreenRedLight>>>(calculateCoordinates(XOD8_PANEL_WIDTH_MM / 2.f, 26.163f, 0.f), module, OVERFLOW_LIGHT));
 
 		XOStepButton *leftButton = createParamCentered<XOStepButton>(calculateCoordinates(8.382f, 18.035f, 0.f), module, LEFT_PARAM);
 		leftButton->label = "<";
@@ -111,13 +120,17 @@ struct XOD8Widget : ModuleWidget
 
 		// Always-visible display-column background (the panel's own static decoration there has
 		// been removed entirely - see XD8Widget's own per-row cover for the same reasoning) -
-		// covers the whole column at once, geometry taken directly from Dieter's own MASK guide
-		// rect in res/XOD8Work.svg. Added BEFORE the per-channel gate indicators/displays below so
-		// it draws underneath them (addChild order is also draw order).
+		// covers the whole column at once. Same corrected geometry as X8D's own identical fix
+		// (X8D.cpp): widened/moved to x=2.5, y=32, height=87.5 (Dieter's own measured values),
+		// keeping the original right edge (12.342694+16.867304=29.209998) the original MASK guide
+		// rect in res/XOD8Work.svg already established for the display column's own extent - the
+		// original, narrower box left a sliver of panel decoration exposed to its left/above.
+		// Added BEFORE the per-channel gate indicators/displays below so it draws underneath them
+		// (addChild order is also draw order).
 		buttonCover = new XOButtonCover();
 		buttonCover->module = module;
-		buttonCover->box.pos = calculateCoordinates(12.342694f, 32.76725f, 0.f);
-		buttonCover->box.size = mm2px(Vec(16.867304f, 85.090004f));
+		buttonCover->box.pos = calculateCoordinates(2.5f, 32.f, 0.f);
+		buttonCover->box.size = mm2px(Vec(29.209998f - 2.5f, 87.5f));
 		addChild(buttonCover);
 
 		static const float portY[XO_CAPACITY] = {
