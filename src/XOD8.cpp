@@ -82,7 +82,7 @@ struct XOD8Widget : ModuleWidget
 		}
 
 		addOrangeLineConnectionLight<AutoHideLight<TinyLight<GreenRedLight>>>(this, calculateCoordinates(3.5f, 4.f, 0.f), module, CONN_LIGHT);
-		addChild(createLightCentered<TinyLight<RedLight>>(calculateCoordinates(XOD8_PANEL_WIDTH_MM - 3.5f, 4.f, 0.f), module, OVERFLOW_LIGHT));
+		addChild(createLightCentered<AutoHideLight<TinyLight<RedLight>>>(calculateCoordinates(XOD8_PANEL_WIDTH_MM - 3.5f, 4.f, 0.f), module, OVERFLOW_LIGHT));
 
 		XOStepButton *leftButton = createParamCentered<XOStepButton>(calculateCoordinates(8.382f, 18.035f, 0.f), module, LEFT_PARAM);
 		leftButton->label = "<";

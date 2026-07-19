@@ -77,7 +77,7 @@ struct XO8Widget : ModuleWidget
 		// edge - mirrors the X family's own two-corner-light placement, just facing the other way
 		// since the Host sits on this family's LEFT instead of its RIGHT.
 		addOrangeLineConnectionLight<AutoHideLight<TinyLight<GreenRedLight>>>(this, calculateCoordinates(3.5f, 4.f, 0.f), module, CONN_LIGHT);
-		addChild(createLightCentered<TinyLight<RedLight>>(calculateCoordinates(XO8_PANEL_WIDTH_MM - 3.5f, 4.f, 0.f), module, OVERFLOW_LIGHT));
+		addChild(createLightCentered<AutoHideLight<TinyLight<RedLight>>>(calculateCoordinates(XO8_PANEL_WIDTH_MM - 3.5f, 4.f, 0.f), module, OVERFLOW_LIGHT));
 
 		XOStepButton *leftButton = createParamCentered<XOStepButton>(calculateCoordinates(4.550f, 18.034f, 0.f), module, LEFT_PARAM);
 		leftButton->label = "<";
