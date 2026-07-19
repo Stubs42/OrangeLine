@@ -1,0 +1,6 @@
+# Normalize every text file to LF in the repository, regardless of what line endings a local
+# editor/tool (Inkscape, MSYS2, etc.) saves on disk - matches what's already committed, avoids
+# the git status/diff churn from core.autocrlf's own CRLF<->LF conversion looking inconsistent
+# for files that end up with mixed or tool-specific endings. Binary files are auto-detected by
+# git's own content sniffing and left untouched.
+* text=auto eol=lf
