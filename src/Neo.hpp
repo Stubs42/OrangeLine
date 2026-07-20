@@ -278,19 +278,38 @@ inline float neoMinWidthHp(float columnWidthMm, float controlsWidthMm)
 }
 
 // Computed maximum resizable width, in HP - controls width + enough columns to show the
-// connected Host's own largest-possible channel content (getMaxLoopLen()) all at once, since no
-// channel can ever have more steps than that regardless of how much wider NEO gets. Rounded DOWN
-// to the next whole HP so the snap can never overshoot past what the Host can actually show.
+// connected Host's own longest CURRENTLY CONFIGURED channel content all at once, since no
+// visible column beyond that could ever show anything real regardless of how much wider NEO
+// gets. Deliberately the live per-channel getLoopLen() max across every one of the Host's
+// POLY_CHANNELS channels, not the fixed structural getMaxLoopLen() ceiling (Dieter's own catch,
+// 2026-07-20 - "should not extend the maximum size of a channel," meaning the actual live LEN of
+// all 16 channels, not the theoretical 128-step capacity) - ALL channels, not just the ones this
+// particular NEO instance happens to have its own rows currently showing, since any row could be
+// repointed to any channel at any time via its own channel selector. Rounded UP to the next
+// whole HP (Dieter's own catch, 2026-07-20, live-testing: "LEN 8 results in max size allowing
+// for 7 columns") - the exact mm needed for maxSteps columns almost never lands on a whole-HP
+// grid line, and rounding DOWN (the original, wrong assumption here - "so the snap can never
+// overshoot") can land the clamp a hair short of the width maxSteps columns actually need,
+// which getVisibleColumns()'s own floor() then reads as one fewer column than the Host can
+// really show. ceil() can only ever grant a hair MORE room than exactly maxSteps*columnWidthMm -
+// less than one further column's worth by construction, so it can never manufacture a column
+// that isn't real either, matching the same reasoning neoColumnFit()'s own epsilon uses.
 // Returns a generously large (effectively unbounded) fallback while disconnected - nothing to
 // size against yet, and the resize handle already re-clamps continuously as the user drags, so a
 // too-large value here is harmless (never actually reachable once a real Host is attached and its
 // own true ceiling takes over on the very next tick).
 inline float neoMaxWidthHp(NeoHostInterface *host, float columnWidthMm, float controlsWidthMm)
 {
-	int maxSteps = host ? host->getMaxLoopLen() : 100000;
+	int maxSteps = 100000;
+	if (host)
+	{
+		maxSteps = 1;
+		for (int c = 0; c < POLY_CHANNELS; c++)
+			maxSteps = std::max(maxSteps, host->getLoopLen(c));
+	}
 	float maxWidthMm = controlsWidthMm + (float) maxSteps * columnWidthMm;
 	float maxWidthPx = mm2px(Vec(maxWidthMm, 0.f)).x;
-	return std::floor(maxWidthPx / RACK_GRID_WIDTH);
+	return std::ceil(maxWidthPx / RACK_GRID_WIDTH);
 }
 
 /*
