@@ -450,20 +450,54 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 		return neoColumnPitchMm(fullHeight, rowsDisplayed);
 	}
 
-	// How much width is spent before the step-column grid begins right now - NEO_CONTROLS_WIDTH_MM
-	// plus Full Height's own reserved resize-handle strip when that's active.
+	// The row header's own ACTUAL current width - see NEO_ROW_HEADER_TARGET_WIDTH_MM's own
+	// comment (Neo.hpp) for the full drag-lifecycle mechanism that can grow it past its default.
+	float getRowHeaderWidthMm()
+	{
+		float w = OL_state[ROW_HEADER_WIDTH_MM_JSON];
+		return w > 0.f ? w : NEO_ROW_HEADER_TARGET_WIDTH_MM; // 0 = never set (e.g. a very old save)
+	}
+
+	// How much width is spent before the step-column grid begins right now - the global area,
+	// the row header's own current width, plus Full Height's own reserved resize-handle strip
+	// when that's active.
 	float getControlsWidthMm()
 	{
-		return neoRowAreaControlsWidthMm(OL_state[FULL_HEIGHT_JSON] > 0.5f);
+		return neoRowAreaControlsWidthMm(OL_state[FULL_HEIGHT_JSON] > 0.5f, getRowHeaderWidthMm());
 	}
 
 	// How many step-columns currently fit, given the panel's own current width - "however many
 	// fit," deliberately simple (Dieter's own "kiss" instruction from the spec conversation).
+	// Goes through the one shared neoColumnFit() (Neo.hpp) - see its own comment for why this
+	// must never be reimplemented inline again at any call site.
 	int getVisibleColumns()
 	{
 		float widthMm = OL_state[PANEL_WIDTH_HP_JSON] * 5.08f;
-		int cols = (int) ((widthMm - getControlsWidthMm()) / getColumnPitchMm());
-		return std::max(1, cols);
+		int visibleCols; float leftoverMm;
+		neoColumnFit(widthMm, getControlsWidthMm(), getColumnPitchMm(), visibleCols, leftoverMm);
+		return visibleCols;
+	}
+
+	// Grows the row header to absorb whatever leftover space the floor-based column count can't
+	// use, instead of leaving it as a dead gap after the last visible column (Dieter's own spec,
+	// 2026-07-20). Uses the header's own CURRENT width as the base (not a hardcoded target), so
+	// it's idempotent - calling it again once already settled (leftover 0) is a harmless no-op,
+	// and it stays correct even if some earlier step didn't manage to reset the header to Tw
+	// first. Called both from NeoResizeHandle::onDragEnd() (the instance actually being dragged)
+	// and from the Lock group's own width-convergence success (NeoWidget::step()) - a locked
+	// instance that only followed via the lock sync, never dragged directly, still needs this
+	// same settling step once ITS OWN width actually lands somewhere new. Goes through the same
+	// shared neoColumnFit() getVisibleColumns() does, so the column count/leftover this settles
+	// on can never disagree with what was actually shown live during the drag that led here.
+	void absorbLeftoverIntoHeader()
+	{
+		bool fullHeight = OL_state[FULL_HEIGHT_JSON] > 0.5f;
+		float widthMm = OL_state[PANEL_WIDTH_HP_JSON] * 5.08f;
+		float headerWidthMm = getRowHeaderWidthMm();
+		float controlsWidthMm = neoRowAreaControlsWidthMm(fullHeight, headerWidthMm);
+		int visibleCols; float leftoverMm;
+		neoColumnFit(widthMm, controlsWidthMm, getColumnPitchMm(), visibleCols, leftoverMm);
+		OL_setOutState(ROW_HEADER_WIDTH_MM_JSON, headerWidthMm + leftoverMm);
 	}
 
 	bool moduleSkipProcess() { return (idleSkipCounter != 0); }
@@ -479,6 +513,7 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 		setJsonLabel(ROWS_DISPLAYED_JSON, "rowsDisplayed");
 		setJsonLabel(FULL_HEIGHT_JSON, "fullHeight");
 		setJsonLabel(LOCKED_JSON, "locked");
+		setJsonLabel(ROW_HEADER_WIDTH_MM_JSON, "rowHeaderWidthMm");
 		// CONNECTED_HOST_ID_JSON is gone - neoConnectedHostId is a real int64_t now, persisted
 		// via this module's own moduleExtraDataToJson/FromJson instead (see its own comment).
 		for (int r = 0; r < NEO_NUM_ROWS; r++)
@@ -566,6 +601,14 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 		OL_state[ROWS_DISPLAYED_JSON] = (float) NEO_ROWS_DEFAULT;
 		OL_state[FULL_HEIGHT_JSON] = 0.f;
 		OL_state[LOCKED_JSON] = 0.f;
+		OL_state[ROW_HEADER_WIDTH_MM_JSON] = NEO_ROW_HEADER_TARGET_WIDTH_MM;
+		// NEO_DEFAULT_WIDTH_HP is whole-HP-rounded UP from the exact minimum, so it always
+		// leaves a small leftover past Tw - absorb it now (same settling pass onDragEnd() uses)
+		// so a freshly-placed module starts already correctly padded instead of showing that
+		// leftover as a visible gap on the right until the first resize drag (Dieter's own
+		// catch, 2026-07-20 - "the header size has to be adapted to show a correctly padded 4
+		// column grid at startup, this does not happen").
+		absorbLeftoverIntoHeader();
 		disconnectNeoHost();
 		for (int r = 0; r < NEO_NUM_ROWS; r++)
 		{
@@ -743,6 +786,20 @@ struct NeoResizeHandle : OpaqueWidget
 		ModuleWidget *mw = getAncestorOfType<ModuleWidget>();
 		assert(mw);
 		originalBox = mw->box;
+
+		// Snap the row header back to exactly its target width (Tw) - a flat state reset, and
+		// nothing else. The module's own width is deliberately left untouched (Dieter's own
+		// correction, 2026-07-20, after an earlier, much more complicated version of this also
+		// resized the module by a rounded delta "so the column count doesn't jump" - that turned
+		// out to be the actual SOURCE of a real column-count bug, not a fix for one): whatever
+		// the header had grown to absorb is by construction always LESS than one column pitch
+		// (Neo::absorbLeftoverIntoHeader() only ever grows the header by a leftover remainder,
+		// never a whole extra pitch), so shrinking the header back down can never free up enough
+		// room for one more column - the same columns keep showing, just left-aligned against
+		// the now-narrower header, with that same leftover reappearing as a plain visible gap on
+		// the right until onDragEnd()'s own absorb pass consumes it again.
+		if (module)
+			module->OL_setOutState(ROW_HEADER_WIDTH_MM_JSON, NEO_ROW_HEADER_TARGET_WIDTH_MM);
 	}
 
 	void onDragMove(const DragMoveEvent &e) override
@@ -756,7 +813,7 @@ struct NeoResizeHandle : OpaqueWidget
 		Rect newBox = originalBox;
 		Rect oldBox = mw->box;
 		float columnPitchMm = module ? module->getColumnPitchMm() : neoColumnPitchMm(false, NEO_ROWS_DEFAULT);
-		float controlsWidthMm = module ? module->getControlsWidthMm() : neoRowAreaControlsWidthMm(false);
+		float controlsWidthMm = module ? module->getControlsWidthMm() : neoRowAreaControlsWidthMm(false, NEO_ROW_HEADER_TARGET_WIDTH_MM);
 		float minWidth = neoMinWidthHp(columnPitchMm, controlsWidthMm) * RACK_GRID_WIDTH;
 		float maxWidth = neoMaxWidthHp(module ? module->neoHost : nullptr, columnPitchMm, controlsWidthMm) * RACK_GRID_WIDTH;
 		newBox.size.x += deltaX;
@@ -771,6 +828,39 @@ struct NeoResizeHandle : OpaqueWidget
 		{
 			float hp = std::round(mw->box.size.x / RACK_GRID_WIDTH);
 			module->OL_setOutState(PANEL_WIDTH_HP_JSON, hp);
+		}
+	}
+
+	// The header stayed at exactly its target width (Tw) throughout the drag (onDragMove never
+	// touches it), so this is the one moment that width actually changes - see
+	// Neo::absorbLeftoverIntoHeader()'s own comment for the full reasoning.
+	void onDragEnd(const DragEndEvent &e) override
+	{
+		if (!module)
+			return;
+		module->absorbLeftoverIntoHeader();
+
+		// A locked follower never gets its own onDragStart/onDragEnd - it only tracks this
+		// drag live via NeoWidget::step()'s own lock-width-sync, which deliberately just pins
+		// its header at Tw the whole time instead of absorbing on every intermediate tick (see
+		// that block's own comment). This is therefore the one real "the drag is truly over"
+		// event for the WHOLE group - finalize every other locked instance's header here too,
+		// not just this one's own. A single, one-shot getModule() lookup triggered by a real
+		// mouse-release, same already-established-safe pattern as toggleLock()/
+		// pruneStaleLockIds() above - not a per-tick moduleProcess()/onRemove() call, so none of
+		// CLAUDE.md's Pitfalls deadlock concerns about getModule() apply here.
+		if (module->OL_state[LOCKED_JSON] > 0.5f)
+		{
+			Neo::NeoLockData lockData = module->readLockData();
+			for (int64_t lockedId : lockData.ids)
+			{
+				if (lockedId == (int64_t) module->id)
+					continue;
+				Module *m = APP->engine->getModule(lockedId);
+				Neo *other = m ? dynamic_cast<Neo*>(m) : nullptr;
+				if (other)
+					other->absorbLeftoverIntoHeader();
+			}
 		}
 	}
 
@@ -808,14 +898,124 @@ struct NeoResizeHandle : OpaqueWidget
 	}
 };
 
+/*
+	Abstract cell editor - one "kind" of step-cell display/interaction. NEO's own JSON schema
+	(Neo module's own comment, near channelName[]/channelColor[]) already reserves "cellType"/
+	"cellConfig" for this; ROW_CELLTYPE_JSON (0=Gate, 1=Value) is the concrete per-row selector
+	for now. Each concrete editor owns everything about how ONE step's raw float value is drawn
+	and edited - NeoRowCellsWidget itself no longer knows what "gate" or "value" even mean, it
+	just asks whichever editor the row's own cellType selects to draw/drag/reset each visible
+	cell. Adding a future kind (Pitch, Curve, ... - see the plan) means writing one new
+	NeoCellEditor subclass and registering it in neoCellEditorForType() - nothing else in
+	NeoRowCellsWidget needs to change (2026-07-20 infrastructure, Dieter's own request).
+*/
+struct NeoCellEditor
+{
+	virtual ~NeoCellEditor() {}
+
+	// Draws ONE cell's own content at local (x, 0, cellWidthPx, cellHeightPx) - the shared
+	// per-cell backdrop behind every cell is already drawn generically by the caller; this only
+	// draws the value itself on top of it.
+	virtual void drawCell(const Widget::DrawArgs &args, float x, float cellWidthPx, float cellHeightPx, float value, NVGcolor color) = 0;
+
+	// What a double-click on a cell resets it to (NeoRowCellsWidget::onDoubleClick()).
+	virtual float defaultValue() { return 0.f; }
+
+	// Turns a drag gesture (the value the drag started from, the accumulated vertical pixel
+	// delta since, and the cell's own current pixel height) into a new value - lets a future
+	// editor define its own sensitivity/range/quantization independently of the others.
+	virtual float dragValue(float startValue, float deltaY, float cellHeightPx) = 0;
+};
+
+struct NeoGateCellEditor : NeoCellEditor
+{
+	void drawCell(const Widget::DrawArgs &args, float x, float cellWidthPx, float cellHeightPx, float value, NVGcolor color) override
+	{
+		bool on = value > 5.f; // plain 5V threshold on a real Host voltage - see CLAUDE.md's
+		                       // pitfall on X8-style dual-convention issues, doesn't apply here
+		                       // since this always reads a real Host value directly, never a raw
+		                       // 0..1 knob
+		if (!on)
+			return;
+		nvgBeginPath(args.vg);
+		nvgRect(args.vg, x, 0.f, cellWidthPx, cellHeightPx);
+		nvgFillColor(args.vg, color);
+		nvgFill(args.vg);
+	}
+	float defaultValue() override { return 0.f; } // off
+	float dragValue(float startValue, float deltaY, float cellHeightPx) override
+	{
+		float sensitivity = 20.f / cellHeightPx; // full cell height ~= 20V of travel
+		return clamp(startValue - deltaY * sensitivity, -10.f, 10.f);
+	}
+};
+
+struct NeoValueCellEditor : NeoCellEditor
+{
+	void drawCell(const Widget::DrawArgs &args, float x, float cellWidthPx, float cellHeightPx, float value, NVGcolor color) override
+	{
+		float t = clamp((value + 10.f) / 20.f, 0.f, 1.f); // -10..+10V -> 0..1
+		float barHeight = t * cellHeightPx;
+		nvgBeginPath(args.vg);
+		nvgRect(args.vg, x, cellHeightPx - barHeight, cellWidthPx, barHeight);
+		nvgFillColor(args.vg, color);
+		nvgFill(args.vg);
+	}
+	float defaultValue() override { return 0.f; } // center
+	float dragValue(float startValue, float deltaY, float cellHeightPx) override
+	{
+		float sensitivity = 20.f / cellHeightPx;
+		return clamp(startValue - deltaY * sensitivity, -10.f, 10.f);
+	}
+};
+
+// Replicates MorpheusDisplayWidget's own value-to-color technique (Morpheus.cpp) at NEO's own
+// per-cell scale, instead of an on/off square or a bar height - see NEO_MORPHEUS_CELL_LOW_COLOR's
+// own comment (Neo.hpp) for the full reasoning. First pass: just the color-lerp itself: the
+// match/dirty distinction and transient event-flash Morpheus's own display also has are left for
+// a later tuning pass, once this base technique is confirmed live (Dieter's own scoping,
+// 2026-07-20).
+struct NeoMorpheusStyleCellEditor : NeoCellEditor
+{
+	void drawCell(const Widget::DrawArgs &args, float x, float cellWidthPx, float cellHeightPx, float value, NVGcolor color) override
+	{
+		float t = clamp((value + 10.f) / 20.f, 0.f, 1.f); // -10..+10V -> 0..1, same as Morpheus's own display
+		NVGcolor fill = nvgLerpRGBA(NEO_MORPHEUS_CELL_LOW_COLOR, NEO_MORPHEUS_CELL_HIGH_COLOR, t);
+		nvgBeginPath(args.vg);
+		nvgRect(args.vg, x, 0.f, cellWidthPx, cellHeightPx);
+		nvgFillColor(args.vg, fill);
+		nvgFill(args.vg);
+	}
+	float defaultValue() override { return 0.f; } // center
+	float dragValue(float startValue, float deltaY, float cellHeightPx) override
+	{
+		float sensitivity = 20.f / cellHeightPx;
+		return clamp(startValue - deltaY * sensitivity, -10.f, 10.f);
+	}
+};
+
+// The one place a cellType number maps to its own editor - the entire registry a future cell
+// type needs to join. Static instances since editors are stateless (pure functions of whatever
+// cell they're currently asked to draw/edit), so there's never a need for more than one of each.
+inline NeoCellEditor* neoCellEditorForType(int cellType)
+{
+	static NeoGateCellEditor gate;
+	static NeoValueCellEditor value;
+	static NeoMorpheusStyleCellEditor morpheusStyle;
+	if (cellType <= 0)
+		return &gate;
+	if (cellType == 1)
+		return &value;
+	return &morpheusStyle;
+}
+
 /**
-	Draws (and handles single-cell drag-edit for) one row's currently-visible step cells - Gate
-	(on/off square) or Value (unidirectional bar) depending on that row's own cell-type choice.
-	One widget per row rather than one child widget per cell, since the visible column count
-	changes with the resizable panel width - simpler to just recompute what's visible each draw()
-	call than to create/destroy child widgets on every resize. Deliberately simple graphics per
-	Dieter's own "function first, polish later" instruction - fancier rendering (line-vs-rect
-	styles, gradients) is explicitly deferred, see the plan.
+	Draws (and handles single-cell drag/double-click-edit for) one row's currently-visible step
+	cells, entirely through whichever NeoCellEditor the row's own ROW_CELLTYPE_JSON selects - see
+	its own comment for the full abstraction. One widget per row rather than one child widget per
+	cell, since the visible column count changes with the resizable panel width - simpler to just
+	recompute what's visible each draw() call than to create/destroy child widgets on every
+	resize.
 */
 struct NeoRowCellsWidget : TransparentWidget
 {
@@ -852,8 +1052,8 @@ struct NeoRowCellsWidget : TransparentWidget
 		int visibleCols = m->getVisibleColumns();
 
 		// Always-visible per-cell backdrop - drawn for every visible column regardless of
-		// gate/value content, so individual cell boundaries read clearly even at rest (Dieter's
-		// own instruction, 2026-07-20, for visual support while testing).
+		// content, so individual cell boundaries read clearly even at rest (Dieter's own
+		// instruction, 2026-07-20, for visual support while testing).
 		for (int i = 0; i < visibleCols; i++)
 		{
 			float x = gapPx / 2.f + (float) i * pitchPx;
@@ -868,7 +1068,7 @@ struct NeoRowCellsWidget : TransparentWidget
 
 		int channel = clamp((int) m->OL_state[ROW_CHANNEL_JSON + row], 0, POLY_CHANNELS - 1);
 		bool mem = m->OL_state[ROW_MEMTAPE_JSON + row] > 0.5f;
-		bool gate = m->OL_state[ROW_CELLTYPE_JSON + row] < 0.5f;
+		NeoCellEditor *editor = neoCellEditorForType((int) m->OL_state[ROW_CELLTYPE_JSON + row]);
 		int page = (int) m->OL_state[ROW_PAGE_JSON + row];
 		int loopLen = m->neoHost->getLoopLen(channel);
 		int colorPacked = m->channelColor[channel]; // channel-owned, Host-shared - see its own comment
@@ -881,30 +1081,7 @@ struct NeoRowCellsWidget : TransparentWidget
 				break;
 			float value = mem ? m->neoHost->getMemStep(channel, step) : m->neoHost->getTapeStep(channel, step);
 			float x = gapPx / 2.f + (float) i * pitchPx;
-
-			if (gate)
-			{
-				bool on = value > 5.f; // plain 5V threshold on a real Host voltage - see
-				                       // CLAUDE.md's pitfall on X8-style dual-convention issues,
-				                       // doesn't apply here since this always reads a real Host
-				                       // value directly, never a raw 0..1 knob
-				if (on)
-				{
-					nvgBeginPath(args.vg);
-					nvgRect(args.vg, x, 0.f, cellWidthPx, box.size.y);
-					nvgFillColor(args.vg, color);
-					nvgFill(args.vg);
-				}
-			}
-			else
-			{
-				float t = clamp((value + 10.f) / 20.f, 0.f, 1.f); // -10..+10V -> 0..1
-				float barHeight = t * box.size.y;
-				nvgBeginPath(args.vg);
-				nvgRect(args.vg, x, box.size.y - barHeight, cellWidthPx, barHeight);
-				nvgFillColor(args.vg, color);
-				nvgFill(args.vg);
-			}
+			editor->drawCell(args, x, cellWidthPx, box.size.y, value, color);
 		}
 	}
 
@@ -946,8 +1123,8 @@ struct NeoRowCellsWidget : TransparentWidget
 
 		// e.mouseDelta is already zoom-corrected by Rack - accumulate it directly rather than
 		// re-deriving from absolute position, simplest correct approach for a continuous drag.
-		float sensitivity = 20.f / box.size.y; // full row height ~= 20V of travel
-		float newValue = clamp(dragStartValue - e.mouseDelta.y * sensitivity, -10.f, 10.f);
+		NeoCellEditor *editor = neoCellEditorForType((int) m->OL_state[ROW_CELLTYPE_JSON + row]);
+		float newValue = editor->dragValue(dragStartValue, e.mouseDelta.y, box.size.y);
 		dragStartValue = newValue;
 
 		if (mem)
@@ -960,6 +1137,28 @@ struct NeoRowCellsWidget : TransparentWidget
 	{
 		dragStep = -1;
 		TransparentWidget::onDragEnd(e);
+	}
+
+	// Resets whichever cell was last pressed (dragStep, still valid - Rack's own double-click
+	// detection dispatches this right after the second onButton() press, which already
+	// recomputed dragStep from that same click's own position) to its editor's own default.
+	void onDoubleClick(const DoubleClickEvent &e) override
+	{
+		Neo *m = neo();
+		if (m && m->neoHost && dragStep >= 0)
+		{
+			int visibleCols = m->getVisibleColumns();
+			int channel = clamp((int) m->OL_state[ROW_CHANNEL_JSON + row], 0, POLY_CHANNELS - 1);
+			bool mem = m->OL_state[ROW_MEMTAPE_JSON + row] > 0.5f;
+			int page = (int) m->OL_state[ROW_PAGE_JSON + row];
+			int step = page * visibleCols + dragStep;
+			float resetValue = neoCellEditorForType((int) m->OL_state[ROW_CELLTYPE_JSON + row])->defaultValue();
+			if (mem)
+				m->neoHost->setMemStep(channel, step, resetValue);
+			else
+				m->neoHost->setTapeStep(channel, step, resetValue);
+		}
+		TransparentWidget::onDoubleClick(e);
 	}
 };
 
@@ -1252,23 +1451,17 @@ struct NeoWidget : ModuleWidget
 	XExtStripWidget *extStripRight = nullptr;
 	XExtStripWidget *extStripLeft = nullptr;
 	NeoLockButton *lockButton = nullptr;
-	// Last column/controls width the auto-resize reconciliation (step(), below) actually ran
-	// against - negative means "not yet initialized," so the very first step() call just adopts
-	// the current values without attempting a resize (a freshly loaded/created module shouldn't
-	// immediately jerk its own width around). Tracking both (not just column width) so toggling
-	// Full Height still triggers a reconciliation even in the rare case its own resize-handle
-	// reservation is the only thing that changed.
-	float lastColumnPitchMm = -1.f;
-	float lastControlsWidthMm = -1.f;
 
 	NeoWidget(Neo *module)
 	{
 		setModule(module);
 
+		// NEO_DEFAULT_WIDTH_HP IS the module's fixed minimum (see its own comment, Neo.hpp) - a
+		// patch saved before that constant was corrected (2026-07-20) could still carry a stored
+		// width narrower than it now guarantees, so clamp up on load rather than re-deriving the
+		// floor at runtime.
 		float widthHp = module ? module->OL_state[PANEL_WIDTH_HP_JSON] : NEO_DEFAULT_WIDTH_HP;
-		float columnPitchMmInit = module ? module->getColumnPitchMm() : neoColumnPitchMm(false, NEO_ROWS_DEFAULT);
-		float controlsWidthMmInit = module ? module->getControlsWidthMm() : neoRowAreaControlsWidthMm(false);
-		if (widthHp < neoMinWidthHp(columnPitchMmInit, controlsWidthMmInit))
+		if (widthHp < NEO_DEFAULT_WIDTH_HP)
 			widthHp = NEO_DEFAULT_WIDTH_HP;
 		box.size = Vec(widthHp * RACK_GRID_WIDTH, RACK_GRID_HEIGHT);
 
@@ -1416,74 +1609,22 @@ struct NeoWidget : ModuleWidget
 			neoRowLayout(fullHeight, rowsDisplayed, firstRowYMm, cellHeightMm, rowPitchMm);
 			float columnPitchMm = rowPitchMm; // square cells + matching horizontal/vertical padding (2026-07-20) -
 			                                   // the per-column footprint always equals the row pitch exactly.
-			float controlsWidthMm = neoRowAreaControlsWidthMm(fullHeight);
+			float rowHeaderWidthMm = neoModule->getRowHeaderWidthMm();
+			float controlsWidthMm = neoRowAreaControlsWidthMm(fullHeight, rowHeaderWidthMm);
 
-			// Auto-adapt width to the current cell pitch - a Grid Rows/Full Height change
-			// indirectly changes it too (square cells), so the panel's own width may need to
-			// follow. Width, unlike height, is a WEAK constraint here - NEO controls its own
-			// left edge (the global area) and can freely grow/shrink rightward, unlike height
-			// which is Rack's own fixed 128.5mm no module can ever adapt (Dieter's own framing,
-			// 2026-07-20) - so there's no need for height's own HP-snap-then-absorb-leftover
-			// trick here; just resize to fit exactly. Never leaves a clipped or dead-space
-			// column: grow rightward to preserve the previously-visible column count if cells
-			// got wider (only if free space allows - requestModulePos() is Rack's own collision
-			// test, used exactly the same way NeoResizeHandle::onDragMove() already uses it for
-			// manual drags); if cells got narrower, leave the width alone and let more columns
-			// show, UNLESS that would exceed the Host's own max channel length, in which case
-			// shrink away the resulting dead space instead (Dieter's own spec, 2026-07-20).
-			if (lastColumnPitchMm < 0.f)
-			{
-				lastColumnPitchMm = columnPitchMm; // first tick - adopt without resizing
-				lastControlsWidthMm = controlsWidthMm;
-			}
-			else if (columnPitchMm != lastColumnPitchMm || controlsWidthMm != lastControlsWidthMm)
-			{
-				float currentWidthMm = neoModule->OL_state[PANEL_WIDTH_HP_JSON] * 5.08f;
-				int maxLoopLen = neoModule->neoHost ? neoModule->neoHost->getMaxLoopLen() : 100000;
-				int targetCols;
-				if (columnPitchMm > lastColumnPitchMm || controlsWidthMm > lastControlsWidthMm)
-				{
-					// cells grew, or the resize-handle reservation just grew (Full Height turned
-					// on) - try to preserve the column count that was visible before, so nothing
-					// already on screen just disappears.
-					targetCols = std::max(1, (int) ((currentWidthMm - lastControlsWidthMm) / lastColumnPitchMm));
-				}
-				else
-				{
-					// cells shrank (and the reservation didn't grow) - let the page size grow to
-					// fill the same width, capped at however many steps the Host could ever have.
-					targetCols = std::max(1, (int) ((currentWidthMm - controlsWidthMm) / columnPitchMm));
-				}
-				targetCols = clamp(targetCols, NEO_MIN_VISIBLE_COLS, maxLoopLen);
+			// KISS (Dieter's own instruction, 2026-07-20): NEO never auto-resizes itself just
+			// because Grid Rows/Full Height changed the cell pitch - it simply shows as many
+			// whole columns as currently fit (getVisibleColumns(), already floor-based), padded
+			// to the frame the same way every other edge already is. The module's own width only
+			// ever changes from an explicit user drag (NeoResizeHandle) or the Lock group's own
+			// target-width convergence below - never as an automatic side effect of a cell-size
+			// change.
 
-				float desiredWidthMm = controlsWidthMm + (float) targetCols * columnPitchMm;
-				float desiredWidthPx = std::round(mm2px(desiredWidthMm) / RACK_GRID_WIDTH) * RACK_GRID_WIDTH;
-				float minWidthPx = neoMinWidthHp(columnPitchMm, controlsWidthMm) * RACK_GRID_WIDTH;
-				float maxWidthPx = neoMaxWidthHp(neoModule->neoHost, columnPitchMm, controlsWidthMm) * RACK_GRID_WIDTH;
-				desiredWidthPx = clamp(desiredWidthPx, minWidthPx, maxWidthPx);
-
-				if (desiredWidthPx != box.size.x)
-				{
-					Rect oldBox = box;
-					Rect newBox = box;
-					newBox.size.x = desiredWidthPx;
-					box = newBox;
-					if (APP->scene->rack->requestModulePos(this, newBox.pos))
-						neoModule->OL_setOutState(PANEL_WIDTH_HP_JSON, std::round(box.size.x / RACK_GRID_WIDTH));
-					else
-						box = oldBox; // blocked by a neighbor - keep current width, columns just show as-is
-				}
-				lastColumnPitchMm = columnPitchMm;
-				lastControlsWidthMm = controlsWidthMm;
-			}
-
-			// Lock sync (width half) - runs after the cell-size-driven auto-resize above has
-			// already settled for this tick, so it converges toward the GROUP's target width
-			// rather than fighting the column-preserving resize that may have just happened.
-			// Width, unlike rows, is "weak" (Dieter's own framing) - a locked instance always
-			// keeps its own adopted row count, but only matches the common width as far as free
-			// space allows, remembering the target and retrying every tick so it grows (or
-			// shrinks) into it the moment room frees up, rather than failing the lock outright.
+			// Lock sync (width half) - width, unlike rows, is "weak" (Dieter's own framing) - a
+			// locked instance always keeps its own adopted row count, but only matches the common
+			// width as far as free space allows, remembering the target and retrying every tick
+			// so it grows (or shrinks) into it the moment room frees up, rather than failing the
+			// lock outright.
 			if (locked && lockDataValid)
 			{
 				int myWidthHp = (int) std::round(neoModule->OL_state[PANEL_WIDTH_HP_JSON]);
@@ -1503,9 +1644,27 @@ struct NeoWidget : ModuleWidget
 				}
 				if (myWidthHp != lockData.widthHp)
 				{
-					// Still (or newly) diverged from the group's target - try to converge,
-					// exactly the same collision-checked resize NeoResizeHandle::onDragMove()
-					// and the cell-size reconciliation above already use.
+					// Still (or newly) diverged from the group's target - the header stays
+					// pinned at its own target width (Tw) for as long as I'm still chasing the
+					// group's width, exactly like the actively-dragged instance's own header
+					// during a live drag (Dieter's own spec, 2026-07-20: "while dragging the
+					// header has to be targetWidth and this does not change"). This instance
+					// never gets its own onDragStart/onDragEnd (it only follows via this lock
+					// sync, never dragged directly) - the ONE place its header ever gets the
+					// "fill the leftover gap" treatment is when the actually-dragged instance's
+					// own onDragEnd() finalizes the whole locked group at once
+					// (NeoResizeHandle::onDragEnd() below), never here mid-chase - doing it here
+					// on every successful convergence step instead grows the header a little on
+					// every intermediate tick of a live drag (each one based on whatever the
+					// previous tick already grew it to, since nothing ever resets it back down in
+					// between) instead of staying flat at Tw until the drag truly ends.
+					if (rowHeaderWidthMm != NEO_ROW_HEADER_TARGET_WIDTH_MM)
+					{
+						neoModule->OL_setOutState(ROW_HEADER_WIDTH_MM_JSON, NEO_ROW_HEADER_TARGET_WIDTH_MM);
+						rowHeaderWidthMm = NEO_ROW_HEADER_TARGET_WIDTH_MM;
+						controlsWidthMm = neoRowAreaControlsWidthMm(fullHeight, rowHeaderWidthMm);
+					}
+
 					float minWidthPx = neoMinWidthHp(columnPitchMm, controlsWidthMm) * RACK_GRID_WIDTH;
 					float maxWidthPx = neoMaxWidthHp(neoModule->neoHost, columnPitchMm, controlsWidthMm) * RACK_GRID_WIDTH;
 					float targetWidthPx = clamp((float) lockData.widthHp * RACK_GRID_WIDTH, minWidthPx, maxWidthPx);
@@ -1531,7 +1690,16 @@ struct NeoWidget : ModuleWidget
 
 			float widthMm = neoModule->OL_state[PANEL_WIDTH_HP_JSON] * 5.08f; // may have just changed above
 			box.size.x = mm2px(widthMm);
-			float cellsWidthMm = std::max(1.f, widthMm - controlsWidthMm);
+			// Goes through the same shared neoColumnFit() (Neo.hpp) that Neo::getVisibleColumns()/
+			// Neo::absorbLeftoverIntoHeader() use, and sizes the widget to EXACTLY visibleCols
+			// worth of pitch (not the raw, possibly-fractional widthMm-controlsWidthMm) - so this
+			// widget's own box can never show a sliver of dead trailing space beyond the last
+			// column draw()/click-handling actually treats as real (Dieter's own catch,
+			// 2026-07-20: these used to be separate reimplementations of the same arithmetic that
+			// could silently disagree - "ugly and has to be resolved... by better coding").
+			int visibleColsThisFrame; float leftoverMmThisFrame;
+			neoColumnFit(widthMm, controlsWidthMm, columnPitchMm, visibleColsThisFrame, leftoverMmThisFrame);
+			float cellsWidthMm = (float) visibleColsThisFrame * columnPitchMm;
 
 			for (int r = 0; r < NEO_NUM_ROWS; r++)
 			{
@@ -1549,26 +1717,40 @@ struct NeoWidget : ModuleWidget
 				float y = firstRowYMm + (float) r * rowPitchMm;
 				float centerY = y + cellHeightMm / 2.f;
 
-				// Header-data frame: left edge matches the row area's own frame left edge
-				// (NEO_FRAME_GAP_MM/2 in from the global area boundary) plus the same cell
-				// padding (half the current row gap) the step-cells themselves use; right edge
-				// approximates the same on the other side with NEO_FRAME_GAP_MM (see its own
-				// comment, Neo.hpp, for why that side isn't exact) - Dieter's own spec, 2026-07-20.
-				float rowGapMm = rowPitchMm - cellHeightMm;
-				float headerFrameLeftMm = NEO_GLOBAL_AREA_WIDTH_MM + NEO_FRAME_GAP_MM / 2.f + rowGapMm / 2.f;
-				float headerFrameRightMm = NEO_CONTROLS_WIDTH_MM - NEO_FRAME_GAP_MM;
+				// Header-data frame: this is a NESTED frame inside the row area's own outer frame
+				// (matches NEO_ROW_HEADER_LEFT_RADIUS_MM's own comment, Neo.hpp - "separated from
+				// it by NEO_FRAME_GAP_MM"), not a packed cell - so its left edge needs a FULL
+				// NEO_FRAME_GAP_MM inset from the row area's own frame edge, not half of one
+				// (Dieter's own catch, 2026-07-20: the first attempt used half the row gap here,
+				// matching how step-cells pad themselves, and ended up visibly too far left/
+				// under-padded against the row area's own frame line). rowAreaFrameLeftMm mirrors
+				// NeoPanelWidget::draw()'s own row-area frame edge (globalAreaEdgePx + halfGapPx)
+				// exactly. Right edge approximates the same on the other side with NEO_FRAME_GAP_MM
+				// (see its own comment, Neo.hpp, for why that side isn't exact) - Dieter's own
+				// spec, 2026-07-20. headerBoundaryMm (global area + the header's own CURRENT
+				// width, deliberately NOT including Full Height's own resize-strip reservation -
+				// that's reserved at the panel's far right edge, unrelated to where the header/
+				// step-cells boundary sits) is where the step-cell grid actually begins.
+				float headerBoundaryMm = NEO_GLOBAL_AREA_WIDTH_MM + rowHeaderWidthMm;
+				float rowAreaFrameLeftMm = NEO_GLOBAL_AREA_WIDTH_MM + NEO_FRAME_GAP_MM / 2.f;
+				float headerFrameLeftMm = rowAreaFrameLeftMm + NEO_FRAME_GAP_MM;
+				float headerFrameRightMm = headerBoundaryMm - NEO_FRAME_GAP_MM;
 				rowHeaderFrames[r]->box.pos = calculateCoordinates(headerFrameLeftMm, y, 0.f);
 				rowHeaderFrames[r]->box.size = mm2px(Vec(std::max(1.f, headerFrameRightMm - headerFrameLeftMm), cellHeightMm));
 
 				rowNames[r]->box.pos = calculateCoordinates(NEO_ROW_NAME_X_MM + NEO_GLOBAL_AREA_WIDTH_MM, y, 0.f);
-				rowNames[r]->box.size = mm2px(Vec(NEO_ROW_NAME_WIDTH_MM, cellHeightMm));
+				// The name field is the one thing that actually grows to fill whatever extra
+				// width the header has beyond its own default target (Dieter's own spec,
+				// 2026-07-20) - every other control in the row keeps its own fixed size/position.
+				float nameWidthMm = NEO_ROW_NAME_WIDTH_MM + std::max(0.f, rowHeaderWidthMm - NEO_ROW_HEADER_TARGET_WIDTH_MM);
+				rowNames[r]->box.size = mm2px(Vec(nameWidthMm, cellHeightMm));
 
 				memTapeBtns[r]->box.pos = calculateCoordinates(NEO_ROW_MEMTAPE_X_MM + NEO_GLOBAL_AREA_WIDTH_MM, centerY, 0.f).minus(memTapeBtns[r]->box.size.div(2.f));
 				followBtns[r]->box.pos = calculateCoordinates(NEO_ROW_FOLLOW_X_MM + NEO_GLOBAL_AREA_WIDTH_MM, centerY, 0.f).minus(followBtns[r]->box.size.div(2.f));
 				leftBtns[r]->box.pos = calculateCoordinates(NEO_ROW_LEFT_X_MM + NEO_GLOBAL_AREA_WIDTH_MM, centerY, 0.f).minus(leftBtns[r]->box.size.div(2.f));
 				rightBtns[r]->box.pos = calculateCoordinates(NEO_ROW_RIGHT_X_MM + NEO_GLOBAL_AREA_WIDTH_MM, centerY, 0.f).minus(rightBtns[r]->box.size.div(2.f));
 
-				rowCells[r]->box.pos = calculateCoordinates(NEO_CONTROLS_WIDTH_MM, y, 0.f);
+				rowCells[r]->box.pos = calculateCoordinates(headerBoundaryMm, y, 0.f);
 				rowCells[r]->box.size = mm2px(Vec(cellsWidthMm, cellHeightMm));
 			}
 			// addXExtStrip() positions the right strip against the panel width it's given at
@@ -1741,8 +1923,8 @@ struct NeoWidget : ModuleWidget
 				MenuLabel *typeLabel = new MenuLabel();
 				typeLabel->text = "Cell Type";
 				menu->addChild(typeLabel);
-				const char *typeNames[2] = { "Gate", "Value" };
-				for (int t = 0; t < 2; t++)
+				const char *typeNames[3] = { "Gate", "Value", "Morpheus" };
+				for (int t = 0; t < 3; t++)
 				{
 					NeoRowCellTypeItem *item = new NeoRowCellTypeItem();
 					item->module = module;
