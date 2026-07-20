@@ -133,6 +133,45 @@ int64_t OL_selfId = -1;
 */
 int OL_jsonSkipFrom = -1;
 
+/*
+	Generic, opaque per-Expander-type shared storage every module gets for free - see
+	ExpanderBridgeInterface's own comment (ExpanderBridge.hpp) for the full design (Dieter,
+	2026-07-19). Deliberately NOT marked `override` below: OrangeLineCommon.hpp is included in
+	EVERY module, but only some (X/XO/LANES/NEO family Hosts/Expanders) actually declare
+	`ExpanderBridgeInterface` as a base class - for those, these three still correctly participate
+	in virtual dispatch regardless (any derived-class method matching a base's virtual signature
+	overrides it in C++, `override` is only a compile-time typo-catcher, not a requirement), while
+	for every other module they're just inert, never-called plain methods - cheaper and simpler
+	than requiring every module to opt in individually. Suppressed via pragma rather than adding
+	`override` everywhere, since forcing it here would break compilation for modules that don't
+	inherit the interface at all.
+*/
+ExpanderDataStore expanderDataStore;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsuggest-override"
+void writeExpanderData(const std::string &slug, const std::string &json) { expanderDataStore.write(slug, json); }
+std::string readExpanderData(const std::string &slug) { return expanderDataStore.read(slug); }
+int64_t getExpanderDataTimestampMs(const std::string &slug) { return expanderDataStore.timestampMs(slug); }
+#pragma GCC diagnostic pop
+// Convenience wrappers for the CALLING side - auto-supply this module's own slug (already
+// available via `model`) so a call site never spells out a literal module-name string (which
+// would need updating by hand if this module is ever renamed - see the STYX->NEO rename earlier
+// this project for exactly that risk). The explicit, slug-taking methods above remain fully
+// available directly for the deliberate case of one Expander type reading/writing another
+// specific, known Expander type's own data.
+void writeHostData(ExpanderBridgeInterface *host, const std::string &json)
+{
+	if (host) host->writeExpanderData(model->slug, json);
+}
+std::string readHostData(ExpanderBridgeInterface *host)
+{
+	return host ? host->readExpanderData(model->slug) : "";
+}
+int64_t getHostDataTimestampMs(ExpanderBridgeInterface *host)
+{
+	return host ? host->getExpanderDataTimestampMs(model->slug) : 0;
+}
+
 const char *channelNumbers[16] = {
 	"1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16"
 };
@@ -873,6 +912,7 @@ json_t *dataToJson () override {
 		json_object_set_new (rootJ, OL_jsonLabel[jsonIdx], json_real (getStateJson (jsonIdx)));
 	}
 	if (moduleExtraDataToJson) moduleExtraDataToJson (rootJ);
+	expanderDataStore.toJson (rootJ); // no-op / omits the key entirely while empty - see its own comment
 #ifndef OL_TOUCH_DISABLED
 	json_object_set_new (rootJ, "touchVisible", json_boolean (OL_touchVisible));
 #endif
@@ -895,6 +935,7 @@ void dataFromJson (json_t *rootJ) override {
 		if ((pJson = json_object_get (rootJ, OL_jsonLabel[jsonIdx])) != nullptr)
 			setStateJson (jsonIdx, json_real_value (pJson));
 	if (moduleExtraDataFromJson) moduleExtraDataFromJson (rootJ);
+	expanderDataStore.fromJson (rootJ); // no-op if the "expanderData" key was never written
 #ifndef OL_TOUCH_DISABLED
 	// Read directly (not via the module's own jsonLabel loop above) - Touch is a cross-cutting
 	// framework feature, deliberately kept outside every module's own jsonIds enum. Guarded

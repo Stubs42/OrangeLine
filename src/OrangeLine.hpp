@@ -27,6 +27,16 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define ORANGE_LINE_HPP
 
 #include "plugin.hpp"
+// Guarantees ExpanderBridgeInterface/ExpanderDataStore/etc. are always defined at global scope,
+// for every module, before OrangeLineCommon.hpp's own #include "ExpanderBridge.hpp" (needed so
+// every module gets a real ExpanderDataStore member - see that file's own comment) ever runs.
+// OrangeLineCommon.hpp is always #include'd literally INSIDE a module's struct body - if
+// ExpanderBridge.hpp's own first-ever expansion happened there (for a module that doesn't
+// otherwise pull it in via XShared.hpp/XOShared.hpp/etc. at file scope first), every type in it
+// would become a nested, module-private duplicate instead of the single global one everything
+// else references. Safe despite the circular #include (ExpanderBridge.hpp includes this file
+// right back) - neither file's own content actually depends on anything defined by the other.
+#include "ExpanderBridge.hpp"
 
 #define ORANGE		nvgRGB (255, 102,   0)
 #define WHITE		nvgRGB (255, 255, 255)

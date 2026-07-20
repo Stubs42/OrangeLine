@@ -26,6 +26,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <map>
 #include <string>
 #include <algorithm>
+#include <chrono>
 
 /*
 	Generic, family-agnostic "how does an Expander find its Host" mechanism - shared by every
@@ -171,6 +172,30 @@ struct ExpanderBridgeInterface
 	// exactly mirroring how X-family's own setXBoundHostId(-1) already works.
 	virtual void invalidateBridgeCache() {}
 
+	// Generic, opaque per-Expander-type shared storage (Dieter's own design, 2026-07-19) - lets
+	// an Expander persist/share arbitrary data on whichever Host it's attached to, WITHOUT that
+	// Host's own code ever needing to know what the data means. Keyed by the *calling Expander's
+	// own model->slug* (never a free-form string): since Rack already guarantees module slugs are
+	// globally unique, this makes collisions between unrelated Expander types structurally
+	// impossible with zero naming-convention discipline required, and since every instance of the
+	// same Expander TYPE shares one slug, every instance automatically reads/writes the same slot
+	// - which is the whole point (e.g. multiple NEO instances on one Morpheus agreeing on channel
+	// names/colors). The value itself is a plain, already-serialized JSON string, not a json_t* -
+	// deliberately: a Host that "just stores whatever string it's handed" needs zero Jansson
+	// refcounting/lifetime awareness at all, unlike a scheme that hands around live json_t*
+	// objects. Every module gets a real, working, storage-backed implementation of these three for
+	// free via OrangeLineCommon.hpp's own ExpanderDataStore member (see its own comment) - default
+	// bodies here only matter for the (impossible in practice, since every module includes
+	// OrangeLineCommon.hpp) case of a bespoke ExpanderBridgeInterface implementer that doesn't.
+	virtual void writeExpanderData(const std::string &slug, const std::string &json) {}
+	virtual std::string readExpanderData(const std::string &slug) { return ""; } // "" = never written
+	// Real (not simulated/logical) milliseconds, purely for cheap change detection - a caller
+	// compares this against its own last-seen value and only re-parses readExpanderData()'s
+	// (potentially large) JSON string when it actually changed, rather than every tick. Not
+	// persisted across a save/reload - see ExpanderDataStore::timestampMs()'s own comment for why
+	// that's fine.
+	virtual int64_t getExpanderDataTimestampMs(const std::string &slug) { return 0; } // 0 = never written
+
 	virtual ~ExpanderBridgeInterface() {}
 };
 
@@ -206,6 +231,69 @@ struct BridgeListenerRegistry
 		for (ExpanderBridgeInterface *listener : listeners)
 			listener->invalidateBridgeCache();
 		listeners.clear();
+	}
+};
+
+/**
+	Reusable backing store for ExpanderBridgeInterface::writeExpanderData()/readExpanderData()/
+	getExpanderDataTimestampMs() - any module composes exactly one of these (OrangeLineCommon.hpp
+	already does, for every module, see its own comment) and forwards those three interface
+	methods straight to it. One entry per calling Expander's own slug - see the interface method's
+	own comment for why keying on slug (rather than a free-form string) makes cross-Expander-type
+	collisions structurally impossible without any naming convention.
+*/
+struct ExpanderDataStore
+{
+	struct Entry
+	{
+		std::string json;
+		int64_t timestampMs = 0;
+	};
+	std::map<std::string, Entry> bySlug;
+
+	void write(const std::string &slug, const std::string &json)
+	{
+		Entry &e = bySlug[slug];
+		e.json = json;
+		e.timestampMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+			std::chrono::system_clock::now().time_since_epoch()).count();
+	}
+	std::string read(const std::string &slug) const
+	{
+		auto it = bySlug.find(slug);
+		return it != bySlug.end() ? it->second.json : "";
+	}
+	int64_t timestampMs(const std::string &slug) const
+	{
+		auto it = bySlug.find(slug);
+		return it != bySlug.end() ? it->second.timestampMs : 0;
+	}
+
+	// Omits the whole key entirely when empty - the vast majority of modules never call write()
+	// at all, and shouldn't carry a stray empty JSON object in every saved patch because of it.
+	void toJson(json_t *rootJ) const
+	{
+		if (bySlug.empty())
+			return;
+		json_t *dataJ = json_object();
+		for (const auto &pair : bySlug)
+			json_object_set_new(dataJ, pair.first.c_str(), json_string(pair.second.json.c_str()));
+		json_object_set_new(rootJ, "expanderData", dataJ);
+	}
+	// timestampMs is deliberately NOT persisted/restored - it only ever exists to answer "has
+	// this changed since I last looked, this session", and a freshly loaded module's own readers
+	// all start with no last-seen value cached anyway, so they correctly do one read to sync up
+	// regardless of what timestamp a restored entry would otherwise carry.
+	void fromJson(json_t *rootJ)
+	{
+		json_t *dataJ = json_object_get(rootJ, "expanderData");
+		if (!dataJ)
+			return;
+		const char *slug;
+		json_t *valueJ;
+		json_object_foreach(dataJ, slug, valueJ)
+			if (json_is_string(valueJ))
+				bySlug[slug].json = json_string_value(valueJ);
 	}
 };
 
