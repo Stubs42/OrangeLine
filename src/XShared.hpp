@@ -627,6 +627,14 @@ inline NVGcolor xThemedTextColor(float style)
 #define X_STRIP_SEEM_WIDTH_MM 2.f //1.524f
 #define X_STRIP_LINE_ADD_MM   1.f
 
+// The strip's own visible reach (X_STRIP_SEEM_WIDTH_MM/2 = 1.0mm from the true edge) very
+// slightly overshot the universal content-frame convention (0.762mm margin path + 0.3mm stroke,
+// reaching to ~0.912mm from the true edge) - nudge each strip further OUTWARD (away from the
+// panel body: the right-edge strip further right, the left-edge strip further left) by this much
+// so it stops covering part of the frame's own stroke line (Dieter's own instruction, 2026-07-20,
+// confirmed live on both Morpheus and NEO - a shared-code issue, not specific to either).
+#define X_STRIP_FRAME_NUDGE_MM 0.1f
+
 /**
 	Seamless panel-merge strip 
 */
@@ -659,7 +667,7 @@ struct XExtStripWidget : Widget
 inline XExtStripWidget* addXExtStrip(ModuleWidget *w, float panelWidthMm)
 {
 	XExtStripWidget *strip = new XExtStripWidget();
-	strip->box.pos = mm2px(Vec(panelWidthMm - X_STRIP_SEEM_WIDTH_MM / 2.f , 0.35f));
+	strip->box.pos = mm2px(Vec(panelWidthMm - X_STRIP_SEEM_WIDTH_MM / 2.f + X_STRIP_FRAME_NUDGE_MM, 0.35f));
 	strip->box.size = mm2px(Vec(X_STRIP_SEEM_WIDTH_MM + X_STRIP_LINE_ADD_MM, PANELHEIGHT - 0.5f));
 	strip->topInsetMm = 0.35f;
 	strip->visible = false;
@@ -695,7 +703,7 @@ inline void updateXExtStrip(XExtStripWidget *strip, Module *self, Module *rightN
 inline XExtStripWidget* addXExtStripLeft(ModuleWidget *w)
 {
 	XExtStripWidget *strip = new XExtStripWidget();
-	strip->box.pos = mm2px(Vec(-X_STRIP_SEEM_WIDTH_MM / 2.f - X_STRIP_LINE_ADD_MM, 0.35f));
+	strip->box.pos = mm2px(Vec(-X_STRIP_SEEM_WIDTH_MM / 2.f - X_STRIP_LINE_ADD_MM - X_STRIP_FRAME_NUDGE_MM, 0.35f));
 	strip->box.size = mm2px(Vec(X_STRIP_SEEM_WIDTH_MM + X_STRIP_LINE_ADD_MM, PANELHEIGHT - 0.5f));
 	strip->topInsetMm = 0.35f;
 	strip->mirror = true;

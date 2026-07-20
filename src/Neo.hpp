@@ -78,6 +78,12 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define NEO_RESIZE_RESERVED_WIDTH_HP 1
 #define NEO_RESIZE_RESERVED_WIDTH_MM (NEO_RESIZE_RESERVED_WIDTH_HP * 5.08f)
 
+// Seam-bridging Ext strips very slightly covered NEO's (and Morpheus's) own panel frame line -
+// turned out to be a shared-code issue, not NEO-specific; the actual fix (X_STRIP_FRAME_NUDGE_MM)
+// now lives in XShared.hpp's own addXExtStrip()/addXExtStripLeft(), fixing every module that uses
+// them at once. NEO's own per-tick right-strip re-derivation (NeoWidget::step(), since its width
+// isn't fixed) just matches that same shared formula.
+
 // Lock button (global area, see Neo module's own NeoLockData/toggleLock()) - upper left corner
 // of the global area's own frame, spaced per PanelDesignGuide.md's own "Positioning controls"
 // target (5 grid units, ~1.27mm) from both the left and top frame edges. Same flat-fill square
@@ -102,13 +108,6 @@ inline float neoRowAreaControlsWidthMm(bool fullHeight)
 // step-columns are now SQUARE, i.e. column width always equals the current row cell height, so
 // it varies with Grid Rows/Full Height and is computed via neoColumnWidthMm() below instead.
 
-// The one gap value that drives the ENTIRE vertical rhythm of the row grid: the space between
-// two consecutive rows' own cells, AND (per Dieter's own instruction, 2026-07-20) the space
-// between the frame and the first/last row in normal mode - "the padding between the grid cells
-// and the frame would be the same as the spacing of the grid cells." See neoRowLayout() below
-// for how this one value turns into actual row positions/heights.
-#define NEO_ROW_VPAD_MM       0.5f
-
 // How many of NEO_NUM_ROWS's 16 row-slots are actually shown at once on a given instance -
 // right-click "Grid Rows" (2026-07-20 addition). Two NEO instances each showing NEO_ROWS_MAX (8)
 // rows, one placed directly above the other (same HP position, adjacent rack row) with Full
@@ -130,15 +129,17 @@ inline float neoRowAreaControlsWidthMm(bool fullHeight)
 #define NEO_ROW_TOGGLE_HEIGHT_MM 4.f
 #define NEO_ROW_PAGEBTN_SIZE_MM  4.f  // LEFT/RIGHT paging buttons (square)
 
-// Step-cell colors (NeoRowCellsWidget). The horizontal padding between cells is NOT a separate
+// Step-cell color (NeoRowCellsWidget). The horizontal padding between cells is NOT a separate
 // fixed value - it's derived every draw() call from the actual current gap (pitch minus cell
 // width), which always equals the row-gap neoRowLayout() computes, so horizontal spacing matches
 // vertical spacing exactly (Dieter's own instruction, 2026-07-20 - "buttons should have the same
 // padding horizontally [as rows do vertically]"). NEO_CELL_BG_COLOR is an always-visible per-cell
 // backdrop drawn for every column regardless of gate/value content, so individual cell
 // boundaries read clearly even at rest - explicitly "for better visual support during future
-// testing," not necessarily the final look.
-#define NEO_ROW_BG_COLOR  nvgRGB(0x10, 0x10, 0x10)
+// testing," not necessarily the final look. No separate row-background fill behind it anymore
+// (removed 2026-07-20, Dieter's own instruction - it read as a solid black box behind each row);
+// the gaps between cells and any space past the last visible column just show the row area's
+// own panel background straight through.
 #define NEO_CELL_BG_COLOR nvgRGB(0x30, 0x30, 0x30)
 
 // Smallest number of step columns the resize handle must always leave visible - Dieter's own
@@ -161,6 +162,22 @@ inline float neoRowAreaControlsWidthMm(bool fullHeight)
 #define NEO_FRAME_RADIUS_MM   2.5f
 #define NEO_FRAME_STROKE_MM   0.3f
 #define NEO_FRAME_GAP_MM      1.524f
+// Per-row "header data" frame (name/MEM-TAPE/FOLLOW/paging) - 2026-07-20, Dieter's own spec: own
+// outer height matches the current cell height. Left corners follow PanelDesignGuide.md's own
+// "Nested frames" corner-radius rule (inner_radius = outer_radius - padding) rather than the
+// outer frame's own full radius directly - this frame is NESTED inside the row area's own frame,
+// separated from it by NEO_FRAME_GAP_MM, so its own radius must shrink by that same amount to
+// keep a constant-width ring of space around the corner (corrected 2026-07-20 after the first,
+// too-large attempt used NEO_FRAME_RADIUS_MM directly - Dieter's own catch, "about half"). Right
+// corners get an even smaller radius still, deliberately emphasizing that this frame leads into
+// (belongs with) the step-cell grid rather than standing apart from it - scaled down from the
+// left radius by the same ratio the original (2.5mm outer / 2mm right) pairing used. Horizontal
+// padding matches the step-cells' own cell padding (half the current row gap) on the left; on
+// the right, matching that exactly runs into the step-cell grid's own separate coordinate space,
+// so it just uses NEO_FRAME_GAP_MM instead - close in practice, not worth the complexity of
+// reconciling the two exactly (Dieter's own call).
+#define NEO_ROW_HEADER_LEFT_RADIUS_MM  (NEO_FRAME_RADIUS_MM - NEO_FRAME_GAP_MM)
+#define NEO_ROW_HEADER_RIGHT_RADIUS_MM (NEO_ROW_HEADER_LEFT_RADIUS_MM * 0.8f)
 #define NEO_ACCENT_Y_MM       124.71525f
 #define NEO_TITLE_CENTER_Y_MM 3.810f
 #define NEO_TITLE_BASELINE_Y_MM 5.873f // see NeoWork.svg's own text-title for how this was measured
@@ -210,48 +227,31 @@ inline float neoMaxWidthHp(NeoHostInterface *host, float columnWidthMm, float co
 	know where the row-area's own usable content starts/ends) call this, so the two can never
 	disagree about the layout.
 
-	Normal mode: content runs from NEO_FRAME_TOP_MM to (PANELHEIGHT - NEO_FRAME_BOTTOM_MM), and
-	the padding from the frame to the first/last row equals NEO_ROW_VPAD_MM - the same gap used
-	BETWEEN rows - so the whole grid (frame edges included) reads as one evenly-spaced rhythm.
-
-	Full Height mode: content runs the full 0..PANELHEIGHT (no frame margin at all - see
-	FULL_HEIGHT_JSON's own comment), and the top/bottom padding is HALF of NEO_ROW_VPAD_MM. Two
-	stacked instances each showing the same row count this way each contribute one half-gap at
-	their own touching edge, which together add up to exactly one normal inter-row gap right at
-	the seam - the grid reads as continuous across the two panels, not doubled or pinched.
+	Both modes use the SAME algorithm now (Dieter's own instruction, 2026-07-20 - "the same for
+	normal mode," after applying it to Full Height first): cell size is snapped to the largest
+	whole HP that still leaves a gap of at least NEO_FRAME_GAP_MM (the established frame-to-frame
+	spacing) - cell padding should never end up SMALLER than that, only bigger when sizing
+	constraints force it. Whatever space is left over past the chosen cell size IS the gap, split
+	half at the top edge and half at the bottom edge of whatever content range this mode uses -
+	so two stacked instances (same row count) each contribute one half-gap at their own touching
+	edge, which together add up to exactly one ordinary inter-row gap right at the seam. The one
+	difference between modes is which content range this applies to: Normal mode uses the fixed
+	band between NEO_FRAME_TOP_MM and (PANELHEIGHT - NEO_FRAME_BOTTOM_MM) (it can still "cheat" -
+	nothing outside the module depends on this range closing exactly to anything); Full Height
+	uses the full 0..PANELHEIGHT (no frame margin at all - see FULL_HEIGHT_JSON's own comment) -
+	it can't cheat, since two stacked instances' row grids need to tile the real, fixed panel
+	edges seamlessly.
 */
 inline void neoRowLayout(bool fullHeight, int rowsDisplayed, float &outFirstRowYMm, float &outCellHeightMm, float &outRowPitchMm)
 {
-	if (fullHeight)
-	{
-		// Full Height can't "cheat" the way normal mode can (Dieter's own framing, 2026-07-20) -
-		// it touches the panel's true, fixed top/bottom edges, so two stacked NEOs only tile as
-		// one continuous grid if the math closes to PANELHEIGHT with zero leftover. Cell size is
-		// snapped to the largest whole HP that still leaves a gap of at least NEO_FRAME_MARGIN_MM
-		// (never thinner than the panel's own standard frame margin) - whatever's left over IS
-		// exactly the gap needed to close the total, so nothing is separately solved for. This
-		// always produces a valid, exactly-closing result for any row count (3..NEO_ROWS_MAX) -
-		// some (5, 7) just end up with a proportionally bigger gap relative to cell size than
-		// others (4, 6, 8), not a broken one, so every row count stays selectable in both modes -
-		// deliberately no exclusion list (Dieter's own call, 2026-07-20: "maybe there's no
-		// restriction necessary at all").
-		float budgetMm = PANELHEIGHT / (float) rowsDisplayed;
-		int hp = (int) std::floor((budgetMm - NEO_FRAME_MARGIN_MM) / 5.08f);
-		hp = std::max(1, hp);
-		outCellHeightMm = (float) hp * 5.08f;
-		outRowPitchMm = budgetMm; // cell + gap always sums to exactly PANELHEIGHT/rowsDisplayed
-		outFirstRowYMm = (budgetMm - outCellHeightMm) / 2.f; // half-gap edge, same convention as normal mode
-	}
-	else
-	{
-		float contentTopMm = NEO_FRAME_TOP_MM;
-		float contentBottomMm = PANELHEIGHT - NEO_FRAME_BOTTOM_MM;
-		float padMm = NEO_ROW_VPAD_MM;
-		float availableMm = (contentBottomMm - contentTopMm) - 2.f * padMm;
-		outCellHeightMm = (availableMm - (float) (rowsDisplayed - 1) * NEO_ROW_VPAD_MM) / (float) rowsDisplayed;
-		outRowPitchMm = outCellHeightMm + NEO_ROW_VPAD_MM;
-		outFirstRowYMm = contentTopMm + padMm;
-	}
+	float contentTopMm = fullHeight ? 0.f : NEO_FRAME_TOP_MM;
+	float contentBottomMm = fullHeight ? PANELHEIGHT : (PANELHEIGHT - NEO_FRAME_BOTTOM_MM);
+	float budgetMm = (contentBottomMm - contentTopMm) / (float) rowsDisplayed;
+	int hp = (int) std::floor((budgetMm - NEO_FRAME_GAP_MM) / 5.08f);
+	hp = std::max(1, hp);
+	outCellHeightMm = (float) hp * 5.08f;
+	outRowPitchMm = budgetMm; // cell + gap always sums to exactly this mode's own content range / rowsDisplayed
+	outFirstRowYMm = contentTopMm + (budgetMm - outCellHeightMm) / 2.f; // half-gap edge
 }
 
 // Step-columns are square (Dieter's own instruction, 2026-07-20) - column width always equals

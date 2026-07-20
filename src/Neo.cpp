@@ -834,11 +834,6 @@ struct NeoRowCellsWidget : TransparentWidget
 	void draw(const DrawArgs &args) override
 	{
 		Neo *m = neo();
-		nvgBeginPath(args.vg);
-		nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
-		nvgFillColor(args.vg, NEO_ROW_BG_COLOR);
-		nvgFill(args.vg);
-
 		if (!m)
 			return;
 
@@ -1000,6 +995,34 @@ struct NeoRowNameWidget : TransparentWidget
 		snprintf(buffer, sizeof(buffer), "%d", channel + 1);
 		nvgText(args.vg, 0.f, box.size.y / 2.f, buffer, nullptr);
 		Widget::drawLayer(args, 1);
+	}
+};
+
+/**
+	Frame around one row's own "header data" (name/MEM-TAPE/FOLLOW/paging) - 2026-07-20, Dieter's
+	own spec: own outer height matches the current cell height, left corners match the outer
+	content frame's own radius, right corners get a smaller radius emphasizing that this frame
+	leads into the step-cell grid rather than standing apart from it. Stroke-only (no fill), so
+	it draws cleanly behind or in front of the real controls it frames either way - positioned/
+	sized by NeoWidget::step(), same as every other per-row widget.
+*/
+struct NeoRowHeaderFrameWidget : TransparentWidget
+{
+	Module *module = nullptr;
+
+	void draw(const DrawArgs &args) override
+	{
+		Neo *m = module ? dynamic_cast<Neo*>(module) : nullptr;
+		float style = m ? m->OL_state[STYLE_JSON] : STYLE_ORANGE;
+		NVGcolor frame = (style == STYLE_DARK) ? X_FRAME_DARK : (style == STYLE_BRIGHT) ? X_FRAME_BRIGHT : X_FRAME_ORANGE;
+
+		nvgBeginPath(args.vg);
+		nvgRoundedRectVarying(args.vg, 0.f, 0.f, box.size.x, box.size.y,
+			mm2px(NEO_ROW_HEADER_LEFT_RADIUS_MM), mm2px(NEO_ROW_HEADER_RIGHT_RADIUS_MM),
+			mm2px(NEO_ROW_HEADER_RIGHT_RADIUS_MM), mm2px(NEO_ROW_HEADER_LEFT_RADIUS_MM));
+		nvgStrokeWidth(args.vg, mm2px(NEO_FRAME_STROKE_MM));
+		nvgStrokeColor(args.vg, frame);
+		nvgStroke(args.vg);
 	}
 };
 
@@ -1215,6 +1238,7 @@ struct NeoWidget : ModuleWidget
 	NeoPanelWidget *panelWidget = nullptr;
 	NeoRowCellsWidget *rowCells[NEO_NUM_ROWS] = {};
 	NeoRowNameWidget *rowNames[NEO_NUM_ROWS] = {};
+	NeoRowHeaderFrameWidget *rowHeaderFrames[NEO_NUM_ROWS] = {};
 	NeoRowButton *memTapeBtns[NEO_NUM_ROWS] = {};
 	NeoRowButton *followBtns[NEO_NUM_ROWS] = {};
 	NeoRowButton *leftBtns[NEO_NUM_ROWS] = {};
@@ -1254,7 +1278,7 @@ struct NeoWidget : ModuleWidget
 		addChild(panelWidget);
 
 		extStripRight = addXExtStrip(this, widthHp * 5.08f);
-		extStripLeft = addXExtStripLeft(this);
+		extStripLeft = addXExtStripLeft(this); // both already include X_STRIP_FRAME_NUDGE_MM (XShared.hpp)
 
 		// Upper left corner of the global area's own frame (NEO_FRAME_MARGIN_MM left edge,
 		// NEO_FRAME_TOP_MM top edge), spaced by PanelDesignGuide.md's own "Positioning controls"
@@ -1273,6 +1297,11 @@ struct NeoWidget : ModuleWidget
 		// the buttons - their own size never depends on row height, only their position does).
 		for (int r = 0; r < NEO_NUM_ROWS; r++)
 		{
+			NeoRowHeaderFrameWidget *headerFrame = new NeoRowHeaderFrameWidget();
+			headerFrame->module = module;
+			addChild(headerFrame);
+			rowHeaderFrames[r] = headerFrame;
+
 			NeoRowNameWidget *name = new NeoRowNameWidget();
 			name->module = module;
 			name->row = r;
@@ -1507,6 +1536,7 @@ struct NeoWidget : ModuleWidget
 			for (int r = 0; r < NEO_NUM_ROWS; r++)
 			{
 				bool rowVisible = r < rowsDisplayed;
+				rowHeaderFrames[r]->visible = rowVisible;
 				rowNames[r]->visible = rowVisible;
 				memTapeBtns[r]->visible = rowVisible;
 				followBtns[r]->visible = rowVisible;
@@ -1518,6 +1548,17 @@ struct NeoWidget : ModuleWidget
 
 				float y = firstRowYMm + (float) r * rowPitchMm;
 				float centerY = y + cellHeightMm / 2.f;
+
+				// Header-data frame: left edge matches the row area's own frame left edge
+				// (NEO_FRAME_GAP_MM/2 in from the global area boundary) plus the same cell
+				// padding (half the current row gap) the step-cells themselves use; right edge
+				// approximates the same on the other side with NEO_FRAME_GAP_MM (see its own
+				// comment, Neo.hpp, for why that side isn't exact) - Dieter's own spec, 2026-07-20.
+				float rowGapMm = rowPitchMm - cellHeightMm;
+				float headerFrameLeftMm = NEO_GLOBAL_AREA_WIDTH_MM + NEO_FRAME_GAP_MM / 2.f + rowGapMm / 2.f;
+				float headerFrameRightMm = NEO_CONTROLS_WIDTH_MM - NEO_FRAME_GAP_MM;
+				rowHeaderFrames[r]->box.pos = calculateCoordinates(headerFrameLeftMm, y, 0.f);
+				rowHeaderFrames[r]->box.size = mm2px(Vec(std::max(1.f, headerFrameRightMm - headerFrameLeftMm), cellHeightMm));
 
 				rowNames[r]->box.pos = calculateCoordinates(NEO_ROW_NAME_X_MM + NEO_GLOBAL_AREA_WIDTH_MM, y, 0.f);
 				rowNames[r]->box.size = mm2px(Vec(NEO_ROW_NAME_WIDTH_MM, cellHeightMm));
@@ -1535,7 +1576,7 @@ struct NeoWidget : ModuleWidget
 			// own width isn't fixed, so its x needs re-deriving here every time too.
 			if (extStripRight)
 			{
-				extStripRight->box.pos.x = mm2px(widthMm - X_STRIP_SEEM_WIDTH_MM / 2.f);
+				extStripRight->box.pos.x = mm2px(widthMm - X_STRIP_SEEM_WIDTH_MM / 2.f + X_STRIP_FRAME_NUDGE_MM); // matches addXExtStrip()'s own formula (XShared.hpp) - re-derived every tick since NEO's own width isn't fixed
 				updateXExtStrip(extStripRight, neoModule, neoModule->rightExpander.module);
 			}
 			if (extStripLeft)
