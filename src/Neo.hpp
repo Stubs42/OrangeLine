@@ -19,8 +19,13 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 // NEO v1: bidirectional Morpheus tape/memory editor. No real jacks at all yet (pure Expander,
-// standalone/X-family-input modes deferred - see the approved plan). Always 16 rows for v1
-// (8/16-row mode toggle deferred); panel width IS resizable (see NeoResizeHandle in Neo.cpp).
+// standalone/X-family-input modes deferred - see the approved plan). Panel width IS resizable
+// (see NeoResizeHandle in Neo.cpp). NEO_NUM_ROWS (16) is the structural row-slot count - every
+// row's own state (channel/mem-tape/follow/page/celltype) always exists for all 16, persisted
+// regardless of how many are currently ON SCREEN; ROWS_DISPLAYED_JSON (below, 4-8, right-click
+// "Grid Rows") independently controls how many of those 16 slots are actually shown/active on
+// THIS instance - the rest just stay hidden. See NEO_ROWS_MIN/MAX/DEFAULT and neoRowLayout()
+// further down for the mechanism that makes fewer displayed rows show up taller, not blank.
 #define NEO_NUM_ROWS POLY_CHANNELS
 
 // No real jacks at all in v1 - Touch/Wakeup-Ready exists to relay a real CV signal through a real
@@ -62,12 +67,45 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define NEO_ROW_CONTROLS_WIDTH_MM 40.f
 #define NEO_CONTROLS_WIDTH_MM (NEO_GLOBAL_AREA_WIDTH_MM + NEO_ROW_CONTROLS_WIDTH_MM)
 
-#define NEO_COLUMN_WIDTH_MM   4.f   // width of one step-column cell
-#define NEO_ROW_HEIGHT_MM     6.5f
-// Vertical gap trimmed off the bottom of every row's own controls/cells, so adjacent rows never
-// visually touch - subtracted from NEO_ROW_HEIGHT_MM wherever a row control's own height is set.
+// Resize handle geometry (2026-07-20, Dieter's own instruction) - Normal mode's handle is a
+// small icon confined to the header band (right upper corner, vertically centered on the same
+// y as the title text), entirely above the grid content, so it needs no reserved width at all.
+// Full Height's own grid has no header band to hide the handle in (it spans the full panel
+// height, chrome-free) - so it gets a dedicated, full-height 1HP-wide strip at the right edge
+// instead, and that width has to come OUT of the grid's own usable width or the handle would
+// visually cut across the (otherwise seamless) cells.
+#define NEO_RESIZE_ICON_SIZE_MM     5.f
+#define NEO_RESIZE_RESERVED_WIDTH_HP 1
+#define NEO_RESIZE_RESERVED_WIDTH_MM (NEO_RESIZE_RESERVED_WIDTH_HP * 5.08f)
+
+// How much width is "spent" before the step-column grid begins - NEO_CONTROLS_WIDTH_MM always,
+// plus Full Height's own reserved resize-handle strip when active. THE one place this decision
+// is made; every width/column computation in Neo.cpp threads its result through rather than
+// referencing NEO_CONTROLS_WIDTH_MM directly.
+inline float neoRowAreaControlsWidthMm(bool fullHeight)
+{
+	return NEO_CONTROLS_WIDTH_MM + (fullHeight ? NEO_RESIZE_RESERVED_WIDTH_MM : 0.f);
+}
+
+// Column width used to live here as a fixed 4mm constant - 2026-07-20, Dieter's own instruction:
+// step-columns are now SQUARE, i.e. column width always equals the current row cell height, so
+// it varies with Grid Rows/Full Height and is computed via neoColumnWidthMm() below instead.
+
+// The one gap value that drives the ENTIRE vertical rhythm of the row grid: the space between
+// two consecutive rows' own cells, AND (per Dieter's own instruction, 2026-07-20) the space
+// between the frame and the first/last row in normal mode - "the padding between the grid cells
+// and the frame would be the same as the spacing of the grid cells." See neoRowLayout() below
+// for how this one value turns into actual row positions/heights.
 #define NEO_ROW_VPAD_MM       0.5f
-#define NEO_FIRST_ROW_Y_MM    12.f
+
+// How many of NEO_NUM_ROWS's 16 row-slots are actually shown at once on a given instance -
+// right-click "Grid Rows" (2026-07-20 addition). Two NEO instances each showing NEO_ROWS_MAX (8)
+// rows, one placed directly above the other (same HP position, adjacent rack row) with Full
+// Height enabled on both, together show all 16 channels as one seamless 16-row grid - see
+// FULL_HEIGHT_JSON's own comment.
+#define NEO_ROWS_MIN     3
+#define NEO_ROWS_MAX     8
+#define NEO_ROWS_DEFAULT 8
 
 // Per-row control x-offsets, measured from the global area's own right edge (added to
 // NEO_GLOBAL_AREA_WIDTH_MM at each use site) - and their own widget sizes.
@@ -80,6 +118,17 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define NEO_ROW_TOGGLE_WIDTH_MM  6.f  // MEM/TAPE and FOLLOW toggle buttons
 #define NEO_ROW_TOGGLE_HEIGHT_MM 4.f
 #define NEO_ROW_PAGEBTN_SIZE_MM  4.f  // LEFT/RIGHT paging buttons (square)
+
+// Step-cell colors (NeoRowCellsWidget). The horizontal padding between cells is NOT a separate
+// fixed value - it's derived every draw() call from the actual current gap (pitch minus cell
+// width), which always equals the row-gap neoRowLayout() computes, so horizontal spacing matches
+// vertical spacing exactly (Dieter's own instruction, 2026-07-20 - "buttons should have the same
+// padding horizontally [as rows do vertically]"). NEO_CELL_BG_COLOR is an always-visible per-cell
+// backdrop drawn for every column regardless of gate/value content, so individual cell
+// boundaries read clearly even at rest - explicitly "for better visual support during future
+// testing," not necessarily the final look.
+#define NEO_ROW_BG_COLOR  nvgRGB(0x10, 0x10, 0x10)
+#define NEO_CELL_BG_COLOR nvgRGB(0x30, 0x30, 0x30)
 
 // Smallest number of step columns the resize handle must always leave visible - Dieter's own
 // call, 2026-07-20, replacing the earlier fixed NEO_MIN_WIDTH_HP guess with an actual usability
@@ -114,31 +163,109 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 // by hand: a stroke the same width as NEO_BACKGROUND_INSET_MM, traced around the full box.size.
 #define NEO_PANEL_BORDER_COLOR nvgRGB(0x5a, 0x5a, 0x5a)
 
-// Computed minimum resizable width, in HP - global area + row controls + at least
-// NEO_MIN_VISIBLE_COLS columns, rounded UP to the next whole HP (Rack's own resize-snap grain)
-// so rounding can never leave fewer than that many columns visible. A plain function (not a
-// #define) since it depends on RACK_GRID_WIDTH/mm2px().
-inline float neoMinWidthHp()
+// Computed minimum resizable width, in HP - controls width (including Full Height's own
+// reserved resize-handle strip, see neoRowAreaControlsWidthMm()) + at least NEO_MIN_VISIBLE_COLS
+// columns, rounded UP to the next whole HP (Rack's own resize-snap grain) so rounding can never
+// leave fewer than that many columns visible. A plain function (not a #define) since it depends
+// on RACK_GRID_WIDTH/mm2px(). columnWidthMm/controlsWidthMm are the CURRENT values (see
+// neoColumnWidthMm()/neoRowAreaControlsWidthMm()) - the caller already has them, recomputing
+// fresh from rowsDisplayed/fullHeight here again would just duplicate that same call.
+inline float neoMinWidthHp(float columnWidthMm, float controlsWidthMm)
 {
-	float minWidthMm = NEO_CONTROLS_WIDTH_MM + NEO_MIN_VISIBLE_COLS * NEO_COLUMN_WIDTH_MM;
+	float minWidthMm = controlsWidthMm + NEO_MIN_VISIBLE_COLS * columnWidthMm;
 	float minWidthPx = mm2px(Vec(minWidthMm, 0.f)).x;
 	return std::ceil(minWidthPx / RACK_GRID_WIDTH);
 }
 
-// Computed maximum resizable width, in HP - global area + row controls + enough columns to show
-// the connected Host's own largest-possible channel content (getMaxLoopLen()) all at once, since
-// no channel can ever have more steps than that regardless of how much wider NEO gets. Rounded
-// DOWN to the next whole HP so the snap can never overshoot past what the Host can actually show.
+// Computed maximum resizable width, in HP - controls width + enough columns to show the
+// connected Host's own largest-possible channel content (getMaxLoopLen()) all at once, since no
+// channel can ever have more steps than that regardless of how much wider NEO gets. Rounded DOWN
+// to the next whole HP so the snap can never overshoot past what the Host can actually show.
 // Returns a generously large (effectively unbounded) fallback while disconnected - nothing to
 // size against yet, and the resize handle already re-clamps continuously as the user drags, so a
 // too-large value here is harmless (never actually reachable once a real Host is attached and its
 // own true ceiling takes over on the very next tick).
-inline float neoMaxWidthHp(NeoHostInterface *host)
+inline float neoMaxWidthHp(NeoHostInterface *host, float columnWidthMm, float controlsWidthMm)
 {
 	int maxSteps = host ? host->getMaxLoopLen() : 100000;
-	float maxWidthMm = NEO_CONTROLS_WIDTH_MM + (float) maxSteps * NEO_COLUMN_WIDTH_MM;
+	float maxWidthMm = controlsWidthMm + (float) maxSteps * columnWidthMm;
 	float maxWidthPx = mm2px(Vec(maxWidthMm, 0.f)).x;
 	return std::floor(maxWidthPx / RACK_GRID_WIDTH);
+}
+
+/*
+	THE single formula for where every row sits and how tall its own cells are - both
+	NeoWidget::step() (positions the actual row widgets) and NeoPanelWidget::draw() (needs to
+	know where the row-area's own usable content starts/ends) call this, so the two can never
+	disagree about the layout.
+
+	Normal mode: content runs from NEO_FRAME_TOP_MM to (PANELHEIGHT - NEO_FRAME_BOTTOM_MM), and
+	the padding from the frame to the first/last row equals NEO_ROW_VPAD_MM - the same gap used
+	BETWEEN rows - so the whole grid (frame edges included) reads as one evenly-spaced rhythm.
+
+	Full Height mode: content runs the full 0..PANELHEIGHT (no frame margin at all - see
+	FULL_HEIGHT_JSON's own comment), and the top/bottom padding is HALF of NEO_ROW_VPAD_MM. Two
+	stacked instances each showing the same row count this way each contribute one half-gap at
+	their own touching edge, which together add up to exactly one normal inter-row gap right at
+	the seam - the grid reads as continuous across the two panels, not doubled or pinched.
+*/
+inline void neoRowLayout(bool fullHeight, int rowsDisplayed, float &outFirstRowYMm, float &outCellHeightMm, float &outRowPitchMm)
+{
+	if (fullHeight)
+	{
+		// Full Height can't "cheat" the way normal mode can (Dieter's own framing, 2026-07-20) -
+		// it touches the panel's true, fixed top/bottom edges, so two stacked NEOs only tile as
+		// one continuous grid if the math closes to PANELHEIGHT with zero leftover. Cell size is
+		// snapped to the largest whole HP that still leaves a gap of at least NEO_FRAME_MARGIN_MM
+		// (never thinner than the panel's own standard frame margin) - whatever's left over IS
+		// exactly the gap needed to close the total, so nothing is separately solved for. This
+		// always produces a valid, exactly-closing result for any row count (3..NEO_ROWS_MAX) -
+		// some (5, 7) just end up with a proportionally bigger gap relative to cell size than
+		// others (4, 6, 8), not a broken one, so every row count stays selectable in both modes -
+		// deliberately no exclusion list (Dieter's own call, 2026-07-20: "maybe there's no
+		// restriction necessary at all").
+		float budgetMm = PANELHEIGHT / (float) rowsDisplayed;
+		int hp = (int) std::floor((budgetMm - NEO_FRAME_MARGIN_MM) / 5.08f);
+		hp = std::max(1, hp);
+		outCellHeightMm = (float) hp * 5.08f;
+		outRowPitchMm = budgetMm; // cell + gap always sums to exactly PANELHEIGHT/rowsDisplayed
+		outFirstRowYMm = (budgetMm - outCellHeightMm) / 2.f; // half-gap edge, same convention as normal mode
+	}
+	else
+	{
+		float contentTopMm = NEO_FRAME_TOP_MM;
+		float contentBottomMm = PANELHEIGHT - NEO_FRAME_BOTTOM_MM;
+		float padMm = NEO_ROW_VPAD_MM;
+		float availableMm = (contentBottomMm - contentTopMm) - 2.f * padMm;
+		outCellHeightMm = (availableMm - (float) (rowsDisplayed - 1) * NEO_ROW_VPAD_MM) / (float) rowsDisplayed;
+		outRowPitchMm = outCellHeightMm + NEO_ROW_VPAD_MM;
+		outFirstRowYMm = contentTopMm + padMm;
+	}
+}
+
+// Step-columns are square (Dieter's own instruction, 2026-07-20) - column width always equals
+// the current row cell height, so it moves whenever Grid Rows/Full Height does. Thin wrapper
+// around neoRowLayout() for call sites that only need this one output.
+inline float neoColumnWidthMm(bool fullHeight, int rowsDisplayed)
+{
+	float firstRowYMm, cellHeightMm, rowPitchMm;
+	neoRowLayout(fullHeight, rowsDisplayed, firstRowYMm, cellHeightMm, rowPitchMm);
+	return cellHeightMm;
+}
+
+// The horizontal spacing between column STARTS (cell + gap), not just the visible cell size -
+// the actual footprint one column occupies. Equals neoRowLayout()'s own rowPitchMm exactly,
+// since cells are square and (Dieter's own instruction, 2026-07-20) horizontal inter-column
+// padding must match vertical inter-row padding - "buttons should have the same padding
+// horizontally [as rows do vertically]." Every width-BUDGET computation (how many columns fit,
+// min/max resizable width, the auto-resize reconciliation) must use this, not
+// neoColumnWidthMm() - that one is for drawing the cell itself, this one is for laying columns
+// out at all.
+inline float neoColumnPitchMm(bool fullHeight, int rowsDisplayed)
+{
+	float firstRowYMm, cellHeightMm, rowPitchMm;
+	neoRowLayout(fullHeight, rowsDisplayed, firstRowYMm, cellHeightMm, rowPitchMm);
+	return rowPitchMm;
 }
 
 //
@@ -147,6 +274,15 @@ inline float neoMaxWidthHp(NeoHostInterface *host)
 enum jsonIds {
 	STYLE_JSON,
 	PANEL_WIDTH_HP_JSON, // current panel width in HP - persisted, applied to box.size.x on load
+	ROWS_DISPLAYED_JSON, // NEO_ROWS_MIN..NEO_ROWS_MAX - right-click "Grid Rows"
+	// Full Height: row-area frame/border stops being drawn and its content spans the FULL panel
+	// height (0..PANELHEIGHT, no top/bottom margin at all), while the header/footer brand text
+	// (title, accent stripe, "ORANGE LINE" wordmark) retreats to span only the global area's own
+	// width instead of the whole panel - so the row grid becomes a chrome-free rectangle that can
+	// butt seamlessly against another NEO's row grid directly above/below it (same HP position, a
+	// different rack row) with no rounded corner, border stroke, or brand text crossing the seam.
+	// See neoRowLayout()'s own comment for the matching row-padding halving.
+	FULL_HEIGHT_JSON,
 
 	// The non-adjacent stay-connected target host id used to live here as a float
 	// (CONNECTED_HOST_ID_JSON) - that assumption ("Rack module ids are small sequential

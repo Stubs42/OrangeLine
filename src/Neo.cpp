@@ -226,12 +226,39 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 		};
 	}
 
+	// The current square cell size in mm - driven ONLY by Grid Rows/Full Height, deliberately
+	// NEVER by the panel's own current width (Dieter's own instruction, 2026-07-20: cell size
+	// must stay visually fixed while resizing - only the visible column COUNT changes).
+	float getColumnWidthMm()
+	{
+		bool fullHeight = OL_state[FULL_HEIGHT_JSON] > 0.5f;
+		int rowsDisplayed = clamp((int) OL_state[ROWS_DISPLAYED_JSON], NEO_ROWS_MIN, NEO_ROWS_MAX);
+		return neoColumnWidthMm(fullHeight, rowsDisplayed);
+	}
+
+	// The actual per-column footprint (cell + gap) - horizontal padding matches vertical padding
+	// (Dieter's own instruction, 2026-07-20), so this always equals the current row pitch. Every
+	// width-BUDGET computation uses this, never getColumnWidthMm() (that one's for drawing).
+	float getColumnPitchMm()
+	{
+		bool fullHeight = OL_state[FULL_HEIGHT_JSON] > 0.5f;
+		int rowsDisplayed = clamp((int) OL_state[ROWS_DISPLAYED_JSON], NEO_ROWS_MIN, NEO_ROWS_MAX);
+		return neoColumnPitchMm(fullHeight, rowsDisplayed);
+	}
+
+	// How much width is spent before the step-column grid begins right now - NEO_CONTROLS_WIDTH_MM
+	// plus Full Height's own reserved resize-handle strip when that's active.
+	float getControlsWidthMm()
+	{
+		return neoRowAreaControlsWidthMm(OL_state[FULL_HEIGHT_JSON] > 0.5f);
+	}
+
 	// How many step-columns currently fit, given the panel's own current width - "however many
 	// fit," deliberately simple (Dieter's own "kiss" instruction from the spec conversation).
 	int getVisibleColumns()
 	{
 		float widthMm = OL_state[PANEL_WIDTH_HP_JSON] * 5.08f;
-		int cols = (int) ((widthMm - NEO_CONTROLS_WIDTH_MM) / NEO_COLUMN_WIDTH_MM);
+		int cols = (int) ((widthMm - getControlsWidthMm()) / getColumnPitchMm());
 		return std::max(1, cols);
 	}
 
@@ -245,6 +272,8 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 
 		setJsonLabel(STYLE_JSON, "style");
 		setJsonLabel(PANEL_WIDTH_HP_JSON, "panelWidthHp");
+		setJsonLabel(ROWS_DISPLAYED_JSON, "rowsDisplayed");
+		setJsonLabel(FULL_HEIGHT_JSON, "fullHeight");
 		// CONNECTED_HOST_ID_JSON is gone - neoConnectedHostId is a real int64_t now, persisted
 		// via this module's own moduleExtraDataToJson/FromJson instead (see its own comment).
 		for (int r = 0; r < NEO_NUM_ROWS; r++)
@@ -320,6 +349,8 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 	{
 		styleChanged = true;
 		OL_state[PANEL_WIDTH_HP_JSON] = (float) NEO_DEFAULT_WIDTH_HP;
+		OL_state[ROWS_DISPLAYED_JSON] = (float) NEO_ROWS_DEFAULT;
+		OL_state[FULL_HEIGHT_JSON] = 0.f;
 		disconnectNeoHost();
 		for (int r = 0; r < NEO_NUM_ROWS; r++)
 		{
@@ -485,10 +516,9 @@ struct NeoResizeHandle : OpaqueWidget
 	Vec dragPos;
 	Rect originalBox;
 
-	NeoResizeHandle()
-	{
-		box.size = Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT);
-	}
+	// box.size/pos are set fresh every NeoWidget::step() (mode-dependent - see its own comment),
+	// so no initial value is needed here beyond a harmless placeholder before the first step().
+	NeoResizeHandle() {}
 
 	void onDragStart(const DragStartEvent &e) override
 	{
@@ -510,8 +540,10 @@ struct NeoResizeHandle : OpaqueWidget
 
 		Rect newBox = originalBox;
 		Rect oldBox = mw->box;
-		float minWidth = neoMinWidthHp() * RACK_GRID_WIDTH;
-		float maxWidth = neoMaxWidthHp(module ? module->neoHost : nullptr) * RACK_GRID_WIDTH;
+		float columnPitchMm = module ? module->getColumnPitchMm() : neoColumnPitchMm(false, NEO_ROWS_DEFAULT);
+		float controlsWidthMm = module ? module->getControlsWidthMm() : neoRowAreaControlsWidthMm(false);
+		float minWidth = neoMinWidthHp(columnPitchMm, controlsWidthMm) * RACK_GRID_WIDTH;
+		float maxWidth = neoMaxWidthHp(module ? module->neoHost : nullptr, columnPitchMm, controlsWidthMm) * RACK_GRID_WIDTH;
 		newBox.size.x += deltaX;
 		newBox.size.x = clamp(newBox.size.x, minWidth, maxWidth);
 		newBox.size.x = std::round(newBox.size.x / RACK_GRID_WIDTH) * RACK_GRID_WIDTH;
@@ -529,14 +561,34 @@ struct NeoResizeHandle : OpaqueWidget
 
 	void draw(const DrawArgs &args) override
 	{
-		for (float x = 5.f; x <= 10.f; x += 5.f)
+		bool fullHeight = module && module->OL_state[FULL_HEIGHT_JSON] > 0.5f;
+		if (fullHeight)
 		{
-			nvgBeginPath(args.vg);
-			nvgMoveTo(args.vg, x + 0.5f, 5.5f);
-			nvgLineTo(args.vg, x + 0.5f, box.size.y - 4.5f);
-			nvgStrokeWidth(args.vg, 1.f);
-			nvgStrokeColor(args.vg, nvgRGBAf(0.5f, 0.5f, 0.5f, 0.5f));
-			nvgStroke(args.vg);
+			// Full-height grip strip - same look as before, just now confined to its own
+			// dedicated reserved column instead of overlapping the grid.
+			for (float x = 5.f; x <= 10.f; x += 5.f)
+			{
+				nvgBeginPath(args.vg);
+				nvgMoveTo(args.vg, x + 0.5f, 5.5f);
+				nvgLineTo(args.vg, x + 0.5f, box.size.y - 4.5f);
+				nvgStrokeWidth(args.vg, 1.f);
+				nvgStrokeColor(args.vg, nvgRGBAf(0.5f, 0.5f, 0.5f, 0.5f));
+				nvgStroke(args.vg);
+			}
+		}
+		else
+		{
+			// Small header-corner resize glyph - standard diagonal-lines resize affordance,
+			// anchored to the icon's own bottom-right corner.
+			for (float d = 0.32f; d <= 0.82f; d += 0.25f)
+			{
+				nvgBeginPath(args.vg);
+				nvgMoveTo(args.vg, box.size.x * d, box.size.y);
+				nvgLineTo(args.vg, box.size.x, box.size.y * d);
+				nvgStrokeWidth(args.vg, 1.f);
+				nvgStrokeColor(args.vg, nvgRGBAf(0.5f, 0.5f, 0.5f, 0.6f));
+				nvgStroke(args.vg);
+			}
 		}
 	}
 };
@@ -559,10 +611,9 @@ struct NeoRowCellsWidget : TransparentWidget
 
 	Neo* neo() { return module ? dynamic_cast<Neo*>(module) : nullptr; }
 
-	int stepAtLocalX(float x, int visibleCols)
+	int stepAtLocalX(float x, float pitchPx, int visibleCols)
 	{
-		float cellWidth = box.size.x / (float) visibleCols;
-		return clamp((int) (x / cellWidth), 0, visibleCols - 1);
+		return clamp((int) (x / pitchPx), 0, visibleCols - 1);
 	}
 
 	void draw(const DrawArgs &args) override
@@ -570,19 +621,46 @@ struct NeoRowCellsWidget : TransparentWidget
 		Neo *m = neo();
 		nvgBeginPath(args.vg);
 		nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
-		nvgFillColor(args.vg, nvgRGB(0x10, 0x10, 0x10));
+		nvgFillColor(args.vg, NEO_ROW_BG_COLOR);
 		nvgFill(args.vg);
 
-		if (!m || !m->neoHost)
+		if (!m)
+			return;
+
+		// Cell size/pitch are fixed by Grid Rows/Full Height alone, never by the row-cells
+		// widget's own current box.size.x - so they never change while resizing; only how many
+		// whole columns fit (visibleCols, already floored) does. This widget's own box.size.y is
+		// ALREADY exactly one cell's height with no gap baked in - the inter-row gap is external,
+		// from how NeoWidget::step() spaces consecutive row-cells widgets apart - so a cell fills
+		// its own full height with zero vertical inset. Horizontally it gets the matching
+		// treatment (Dieter's own instruction, 2026-07-20 - horizontal padding must equal
+		// vertical padding): inset by half the actual current gap on each side within its own
+		// pitch slot, the same half-gap-edge convention neoRowLayout() already uses for rows.
+		float cellWidthPx = mm2px(m->getColumnWidthMm());
+		float pitchPx = mm2px(m->getColumnPitchMm());
+		float gapPx = pitchPx - cellWidthPx;
+		int visibleCols = m->getVisibleColumns();
+
+		// Always-visible per-cell backdrop - drawn for every visible column regardless of
+		// gate/value content, so individual cell boundaries read clearly even at rest (Dieter's
+		// own instruction, 2026-07-20, for visual support while testing).
+		for (int i = 0; i < visibleCols; i++)
+		{
+			float x = gapPx / 2.f + (float) i * pitchPx;
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, x, 0.f, cellWidthPx, box.size.y);
+			nvgFillColor(args.vg, NEO_CELL_BG_COLOR);
+			nvgFill(args.vg);
+		}
+
+		if (!m->neoHost)
 			return;
 
 		int channel = clamp((int) m->OL_state[ROW_CHANNEL_JSON + row], 0, POLY_CHANNELS - 1);
 		bool mem = m->OL_state[ROW_MEMTAPE_JSON + row] > 0.5f;
 		bool gate = m->OL_state[ROW_CELLTYPE_JSON + row] < 0.5f;
-		int visibleCols = m->getVisibleColumns();
 		int page = (int) m->OL_state[ROW_PAGE_JSON + row];
 		int loopLen = m->neoHost->getLoopLen(channel);
-		float cellWidth = box.size.x / (float) visibleCols;
 		int colorPacked = m->channelColor[channel]; // channel-owned, Host-shared - see its own comment
 		NVGcolor color = nvgRGB((colorPacked >> 16) & 0xff, (colorPacked >> 8) & 0xff, colorPacked & 0xff);
 
@@ -592,7 +670,7 @@ struct NeoRowCellsWidget : TransparentWidget
 			if (step >= loopLen)
 				break;
 			float value = mem ? m->neoHost->getMemStep(channel, step) : m->neoHost->getTapeStep(channel, step);
-			float x = i * cellWidth;
+			float x = gapPx / 2.f + (float) i * pitchPx;
 
 			if (gate)
 			{
@@ -600,17 +678,20 @@ struct NeoRowCellsWidget : TransparentWidget
 				                       // CLAUDE.md's pitfall on X8-style dual-convention issues,
 				                       // doesn't apply here since this always reads a real Host
 				                       // value directly, never a raw 0..1 knob
-				nvgBeginPath(args.vg);
-				nvgRect(args.vg, x + 1.f, 1.f, cellWidth - 2.f, box.size.y - 2.f);
-				nvgFillColor(args.vg, on ? color : nvgRGB(0x30, 0x30, 0x30));
-				nvgFill(args.vg);
+				if (on)
+				{
+					nvgBeginPath(args.vg);
+					nvgRect(args.vg, x, 0.f, cellWidthPx, box.size.y);
+					nvgFillColor(args.vg, color);
+					nvgFill(args.vg);
+				}
 			}
 			else
 			{
 				float t = clamp((value + 10.f) / 20.f, 0.f, 1.f); // -10..+10V -> 0..1
 				float barHeight = t * box.size.y;
 				nvgBeginPath(args.vg);
-				nvgRect(args.vg, x + 1.f, box.size.y - barHeight, cellWidth - 2.f, barHeight);
+				nvgRect(args.vg, x, box.size.y - barHeight, cellWidthPx, barHeight);
 				nvgFillColor(args.vg, color);
 				nvgFill(args.vg);
 			}
@@ -625,7 +706,8 @@ struct NeoRowCellsWidget : TransparentWidget
 			if (m && m->neoHost)
 			{
 				int visibleCols = m->getVisibleColumns();
-				dragStep = stepAtLocalX(e.pos.x, visibleCols);
+				float pitchPx = mm2px(m->getColumnPitchMm());
+				dragStep = stepAtLocalX(e.pos.x, pitchPx, visibleCols);
 				int channel = clamp((int) m->OL_state[ROW_CHANNEL_JSON + row], 0, POLY_CHANNELS - 1);
 				bool mem = m->OL_state[ROW_MEMTAPE_JSON + row] > 0.5f;
 				int page = (int) m->OL_state[ROW_PAGE_JSON + row];
@@ -724,11 +806,15 @@ struct NeoPanelWidget : Widget
 	{
 		Neo *m = module ? dynamic_cast<Neo*>(module) : nullptr;
 		float style = m ? m->OL_state[STYLE_JSON] : STYLE_ORANGE;
+		bool fullHeight = m && m->OL_state[FULL_HEIGHT_JSON] > 0.5f;
 		NVGcolor bg = (style == STYLE_DARK) ? X_STRIP_BG_DARK : (style == STYLE_BRIGHT) ? X_STRIP_BG_BRIGHT : X_STRIP_BG_ORANGE;
 		NVGcolor frame = (style == STYLE_DARK) ? X_FRAME_DARK : (style == STYLE_BRIGHT) ? X_FRAME_BRIGHT : X_FRAME_ORANGE;
 		NVGcolor text = xThemedTextColor(style);
 
 		float marginPx = mm2px(NEO_FRAME_MARGIN_MM);
+		float bgInsetPx = mm2px(NEO_BACKGROUND_INSET_MM);
+		float globalAreaEdgePx = mm2px(NEO_GLOBAL_AREA_WIDTH_MM);
+		float halfGapPx = mm2px(NEO_FRAME_GAP_MM) / 2.f;
 
 		// Rack's own SvgPanel convention never paints a module's true background flush to the
 		// panel's literal edges - the real panel content stays inset by this same margin, and
@@ -737,65 +823,91 @@ struct NeoPanelWidget : Widget
 		// module gets this for free since its baked SvgPanel is loaded through Rack's own
 		// panel-drawing path; NEO draws its own background directly and has to respect the same
 		// inset by hand. addXExtStrip()/addXExtStripLeft() (below) are the ONLY things allowed
-		// to paint into this margin, and only while actually bridgeConnected() - that's what
-		// closes the seam specifically when connected, instead of always.
-		float bgInsetPx = mm2px(NEO_BACKGROUND_INSET_MM);
+		// to paint into the LEFT/RIGHT margin, and only while actually bridgeConnected(). In
+		// Full Height mode the row area additionally drops its own TOP/BOTTOM inset entirely
+		// (see FULL_HEIGHT_JSON's own comment) - the global area's own inset never changes.
 		nvgBeginPath(args.vg);
-		nvgRect(args.vg, bgInsetPx, bgInsetPx, box.size.x - bgInsetPx * 2.f, box.size.y - bgInsetPx * 2.f);
+		nvgRect(args.vg, bgInsetPx, bgInsetPx, globalAreaEdgePx - bgInsetPx, box.size.y - bgInsetPx * 2.f);
+		nvgFillColor(args.vg, bg);
+		nvgFill(args.vg);
+
+		float rowTopPx = fullHeight ? 0.f : bgInsetPx;
+		float rowBottomPx = fullHeight ? box.size.y : box.size.y - bgInsetPx;
+		nvgBeginPath(args.vg);
+		nvgRect(args.vg, globalAreaEdgePx, rowTopPx, box.size.x - bgInsetPx - globalAreaEdgePx, rowBottomPx - rowTopPx);
 		nvgFillColor(args.vg, bg);
 		nvgFill(args.vg);
 
 		// Reproduces Rack's own PanelBorder - a stroke right at the panel's true bounds, the
 		// same width as the background inset above, so it fills exactly the gap the inset
-		// leaves rather than a plain transparent sliver. nvgStroke() centers the stroke on the
-		// path, so the path itself is inset by half the stroke width on every side - otherwise
-		// half the stroke bleeds past box.size and gets clipped away, leaving the outer half of
-		// the intended border missing instead of reaching the true edge.
+		// leaves rather than a plain transparent sliver. nvgStroke() centers a straight line on
+		// its own path, so each edge is drawn inset by half the stroke width from the true
+		// boundary - otherwise half the stroke bleeds past box.size and gets clipped away,
+		// leaving the outer half of the intended border missing instead of reaching the true
+		// edge. Left/right edges always run the panel's full height (they're unrelated to
+		// vertical stacking); top/bottom edges only span the global area's own width in Full
+		// Height mode, since nothing should cross the row area there at all in that mode.
 		float borderHalfStrokePx = bgInsetPx / 2.f;
-		nvgBeginPath(args.vg);
-		nvgRect(args.vg, borderHalfStrokePx, borderHalfStrokePx,
-			box.size.x - bgInsetPx, box.size.y - bgInsetPx);
-		nvgStrokeWidth(args.vg, bgInsetPx);
-		nvgStrokeColor(args.vg, NEO_PANEL_BORDER_COLOR);
-		nvgStroke(args.vg);
+		float topBottomRightPx = fullHeight ? globalAreaEdgePx : box.size.x;
+		auto strokeBorderEdge = [&](float x1, float y1, float x2, float y2)
+		{
+			nvgBeginPath(args.vg);
+			nvgMoveTo(args.vg, x1, y1);
+			nvgLineTo(args.vg, x2, y2);
+			nvgStrokeWidth(args.vg, bgInsetPx);
+			nvgStrokeColor(args.vg, NEO_PANEL_BORDER_COLOR);
+			nvgStroke(args.vg);
+		};
+		strokeBorderEdge(borderHalfStrokePx, borderHalfStrokePx, borderHalfStrokePx, box.size.y - borderHalfStrokePx); // left
+		strokeBorderEdge(box.size.x - borderHalfStrokePx, borderHalfStrokePx, box.size.x - borderHalfStrokePx, box.size.y - borderHalfStrokePx); // right
+		strokeBorderEdge(borderHalfStrokePx, borderHalfStrokePx, topBottomRightPx, borderHalfStrokePx); // top
+		strokeBorderEdge(borderHalfStrokePx, box.size.y - borderHalfStrokePx, topBottomRightPx, box.size.y - borderHalfStrokePx); // bottom
 
 		float topPx = mm2px(NEO_FRAME_TOP_MM);
 		float bottomPx = box.size.y - mm2px(NEO_FRAME_BOTTOM_MM);
 		float radiusPx = mm2px(NEO_FRAME_RADIUS_MM);
-		float globalAreaEdgePx = mm2px(NEO_GLOBAL_AREA_WIDTH_MM);
-		float halfGapPx = mm2px(NEO_FRAME_GAP_MM) / 2.f;
 
 		// Two independent, fully-rounded peer frames (not a shared edge) - a fixed-width
-		// "global" sidebar frame on the left and a "row area" frame that resizes with the
-		// module on the right, separated by PanelDesignGuide.md's own nested-frame padding
-		// value (NEO_FRAME_GAP_MM) instead of touching directly. See NeoWork.svg's own file
-		// comment for the full reasoning.
+		// "global" sidebar frame on the left (always drawn, unaffected by Full Height) and a
+		// "row area" frame that resizes with the module on the right, separated by
+		// PanelDesignGuide.md's own nested-frame padding value (NEO_FRAME_GAP_MM) instead of
+		// touching directly. See NeoWork.svg's own file comment for the full reasoning. In Full
+		// Height mode the row area's own frame is skipped entirely (Dieter's own instruction,
+		// 2026-07-20) - a stacked pair needs a chrome-free rectangle there, not a frame that
+		// would visibly interrupt the seam.
 		nvgBeginPath(args.vg);
 		nvgRoundedRect(args.vg, marginPx, topPx, globalAreaEdgePx - halfGapPx - marginPx, bottomPx - topPx, radiusPx);
 		nvgStrokeWidth(args.vg, mm2px(NEO_FRAME_STROKE_MM));
 		nvgStrokeColor(args.vg, frame);
 		nvgStroke(args.vg);
 
-		nvgBeginPath(args.vg);
-		nvgRoundedRect(args.vg, globalAreaEdgePx + halfGapPx, topPx, box.size.x - marginPx - globalAreaEdgePx - halfGapPx, bottomPx - topPx, radiusPx);
-		nvgStrokeWidth(args.vg, mm2px(NEO_FRAME_STROKE_MM));
-		nvgStrokeColor(args.vg, frame);
-		nvgStroke(args.vg);
+		if (!fullHeight)
+		{
+			nvgBeginPath(args.vg);
+			nvgRoundedRect(args.vg, globalAreaEdgePx + halfGapPx, topPx, box.size.x - marginPx - globalAreaEdgePx - halfGapPx, bottomPx - topPx, radiusPx);
+			nvgStrokeWidth(args.vg, mm2px(NEO_FRAME_STROKE_MM));
+			nvgStrokeColor(args.vg, frame);
+			nvgStroke(args.vg);
+		}
 
-		// "ORANGE LINE" brand accent stripe - same geometry/color convention as every other
-		// panel, always #ff6600 regardless of theme, spanning the panel's full current width.
+		// Title + "ORANGE LINE" wordmark/accent stripe. Normally centered on the full current
+		// box.size.x, recomputed every draw() call so it stays horizontally centered through any
+		// resize (a baked SVG's fixed x, correct at one width, cannot do this on its own). In
+		// Full Height mode all of this retreats to span only the global area's own content
+		// width instead - the row area becomes a pure chrome-free grid (see FULL_HEIGHT_JSON's
+		// own comment) so nothing brand-related crosses the seam when two instances are stacked.
+		float accentX1 = marginPx;
+		float accentX2 = fullHeight ? (globalAreaEdgePx - halfGapPx) : (box.size.x - marginPx);
+		float centerX = fullHeight ? (accentX1 + accentX2) / 2.f : box.size.x / 2.f;
+
 		nvgBeginPath(args.vg);
-		nvgMoveTo(args.vg, marginPx, mm2px(NEO_ACCENT_Y_MM));
-		nvgLineTo(args.vg, box.size.x - marginPx, mm2px(NEO_ACCENT_Y_MM));
+		nvgMoveTo(args.vg, accentX1, mm2px(NEO_ACCENT_Y_MM));
+		nvgLineTo(args.vg, accentX2, mm2px(NEO_ACCENT_Y_MM));
 		nvgStrokeWidth(args.vg, mm2px(NEO_FRAME_STROKE_MM));
 		nvgStrokeColor(args.vg, ORANGE);
 		nvgLineCap(args.vg, NVG_ROUND);
 		nvgStroke(args.vg);
 
-		// Title + "ORANGE LINE" wordmark - centered on box.size.x, recomputed every draw() call
-		// so both stay horizontally centered through any resize, per Dieter's own requirement
-		// (a baked SVG's fixed x, correct at one width, cannot do this on its own).
-		float centerX = box.size.x / 2.f;
 		std::shared_ptr<Font> font = APP->window->loadFont(asset::plugin(pluginInstance, "res/RobotoCondensed-Bold.ttf"));
 		if (font && font->handle >= 0)
 		{
@@ -817,8 +929,38 @@ struct NeoPanelWidget : Widget
 };
 
 /**
-	Main Module Widget - resizable panel, 16 fixed rows (8/16-row mode toggle deferred). Function
-	first, styling later per Dieter's own instruction - simple graphics throughout.
+	Small square/pill toggle button shared by all four per-row Params (MEM/TAPE, FOLLOW, LEFT,
+	RIGHT) - file-scope (not a constructor-local type) so NeoWidget can hold typed arrays of
+	these and reposition them every step() as the row layout changes (Grid Rows / Full Height).
+*/
+struct NeoRowButton : ParamWidget
+{
+	NVGcolor onColor = ORANGE;
+	void draw(const DrawArgs &args) override
+	{
+		engine::ParamQuantity *pq = getParamQuantity();
+		bool on = pq && pq->getValue() > 0.5f;
+		nvgBeginPath(args.vg);
+		nvgRoundedRect(args.vg, 0.f, 0.f, box.size.x, box.size.y, 1.f);
+		nvgFillColor(args.vg, on ? onColor : nvgRGB(0x30, 0x30, 0x30));
+		nvgFill(args.vg);
+	}
+	void onButton(const event::Button &e) override
+	{
+		engine::ParamQuantity *pq = getParamQuantity();
+		if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_PRESS && pq)
+		{
+			pq->setValue(pq->getValue() > 0.5f ? 0.f : 1.f);
+			e.consume(this);
+		}
+		ParamWidget::onButton(e);
+	}
+};
+
+/**
+	Main Module Widget - resizable panel, up to 16 row-slots, NEO_ROWS_MIN..NEO_ROWS_MAX (4..8) of
+	them actually shown at once (right-click "Grid Rows"). Function first, styling later per
+	Dieter's own instruction - simple graphics throughout.
 */
 struct NeoWidget : ModuleWidget
 {
@@ -826,6 +968,10 @@ struct NeoWidget : ModuleWidget
 	NeoPanelWidget *panelWidget = nullptr;
 	NeoRowCellsWidget *rowCells[NEO_NUM_ROWS] = {};
 	NeoRowNameWidget *rowNames[NEO_NUM_ROWS] = {};
+	NeoRowButton *memTapeBtns[NEO_NUM_ROWS] = {};
+	NeoRowButton *followBtns[NEO_NUM_ROWS] = {};
+	NeoRowButton *leftBtns[NEO_NUM_ROWS] = {};
+	NeoRowButton *rightBtns[NEO_NUM_ROWS] = {};
 	// Seam-bridging strips, reused verbatim from XShared.hpp (XExtStripWidget is already fully
 	// family-agnostic - Neo already implements XExpanderInterface::getXStyle() for the X-family
 	// relay above, which is all getXNeighborStyle()/updateXExtStrip() need to work here too).
@@ -834,13 +980,23 @@ struct NeoWidget : ModuleWidget
 	// module that owns one of these, NEO's own panel width isn't fixed.
 	XExtStripWidget *extStripRight = nullptr;
 	XExtStripWidget *extStripLeft = nullptr;
+	// Last column/controls width the auto-resize reconciliation (step(), below) actually ran
+	// against - negative means "not yet initialized," so the very first step() call just adopts
+	// the current values without attempting a resize (a freshly loaded/created module shouldn't
+	// immediately jerk its own width around). Tracking both (not just column width) so toggling
+	// Full Height still triggers a reconciliation even in the rare case its own resize-handle
+	// reservation is the only thing that changed.
+	float lastColumnPitchMm = -1.f;
+	float lastControlsWidthMm = -1.f;
 
 	NeoWidget(Neo *module)
 	{
 		setModule(module);
 
 		float widthHp = module ? module->OL_state[PANEL_WIDTH_HP_JSON] : NEO_DEFAULT_WIDTH_HP;
-		if (widthHp < neoMinWidthHp())
+		float columnPitchMmInit = module ? module->getColumnPitchMm() : neoColumnPitchMm(false, NEO_ROWS_DEFAULT);
+		float controlsWidthMmInit = module ? module->getControlsWidthMm() : neoRowAreaControlsWidthMm(false);
+		if (widthHp < neoMinWidthHp(columnPitchMmInit, controlsWidthMmInit))
 			widthHp = NEO_DEFAULT_WIDTH_HP;
 		box.size = Vec(widthHp * RACK_GRID_WIDTH, RACK_GRID_HEIGHT);
 
@@ -852,65 +1008,47 @@ struct NeoWidget : ModuleWidget
 		extStripRight = addXExtStrip(this, widthHp * 5.08f);
 		extStripLeft = addXExtStripLeft(this);
 
+		// All real geometry (position, size, visibility) for every one of these is set fresh
+		// every step() below, driven by the current Grid Rows count / Full Height state - it can
+		// change at runtime via the right-click menu, so nothing here can be a fixed one-time
+		// layout the way it used to be when NEO always showed a fixed 16 rows. What's created
+		// here is only the widgets themselves plus whatever's genuinely constant (box.size for
+		// the buttons - their own size never depends on row height, only their position does).
 		for (int r = 0; r < NEO_NUM_ROWS; r++)
 		{
-			float y = NEO_FIRST_ROW_Y_MM + r * NEO_ROW_HEIGHT_MM;
-
 			NeoRowNameWidget *name = new NeoRowNameWidget();
 			name->module = module;
 			name->row = r;
-			name->box.pos = calculateCoordinates(NEO_ROW_NAME_X_MM + NEO_GLOBAL_AREA_WIDTH_MM, y, 0.f);
-			name->box.size = mm2px(Vec(NEO_ROW_NAME_WIDTH_MM, NEO_ROW_HEIGHT_MM - NEO_ROW_VPAD_MM));
+			name->box.size = mm2px(Vec(NEO_ROW_NAME_WIDTH_MM, 1.f));
 			addChild(name);
 			rowNames[r] = name;
 
-			struct NeoRowButton : ParamWidget
-			{
-				NVGcolor onColor = ORANGE;
-				void draw(const DrawArgs &args) override
-				{
-					engine::ParamQuantity *pq = getParamQuantity();
-					bool on = pq && pq->getValue() > 0.5f;
-					nvgBeginPath(args.vg);
-					nvgRoundedRect(args.vg, 0.f, 0.f, box.size.x, box.size.y, 1.f);
-					nvgFillColor(args.vg, on ? onColor : nvgRGB(0x30, 0x30, 0x30));
-					nvgFill(args.vg);
-				}
-				void onButton(const event::Button &e) override
-				{
-					engine::ParamQuantity *pq = getParamQuantity();
-					if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_PRESS && pq)
-					{
-						pq->setValue(pq->getValue() > 0.5f ? 0.f : 1.f);
-						e.consume(this);
-					}
-					ParamWidget::onButton(e);
-				}
-			};
-
-			NeoRowButton *memTapeBtn = createParamCentered<NeoRowButton>(calculateCoordinates(NEO_ROW_MEMTAPE_X_MM + NEO_GLOBAL_AREA_WIDTH_MM, y + NEO_ROW_HEIGHT_MM / 2.f - NEO_ROW_VPAD_MM, 0.f), module, ROW_MEMTAPE_PARAM + r);
+			NeoRowButton *memTapeBtn = createParam<NeoRowButton>(Vec(), module, ROW_MEMTAPE_PARAM + r);
 			memTapeBtn->box.size = mm2px(Vec(NEO_ROW_TOGGLE_WIDTH_MM, NEO_ROW_TOGGLE_HEIGHT_MM));
 			memTapeBtn->onColor = nvgRGB(0x00, 0x99, 0xff);
 			addParam(memTapeBtn);
+			memTapeBtns[r] = memTapeBtn;
 
-			NeoRowButton *followBtn = createParamCentered<NeoRowButton>(calculateCoordinates(NEO_ROW_FOLLOW_X_MM + NEO_GLOBAL_AREA_WIDTH_MM, y + NEO_ROW_HEIGHT_MM / 2.f - NEO_ROW_VPAD_MM, 0.f), module, ROW_FOLLOW_PARAM + r);
+			NeoRowButton *followBtn = createParam<NeoRowButton>(Vec(), module, ROW_FOLLOW_PARAM + r);
 			followBtn->box.size = mm2px(Vec(NEO_ROW_TOGGLE_WIDTH_MM, NEO_ROW_TOGGLE_HEIGHT_MM));
 			followBtn->onColor = nvgRGB(0x00, 0xdd, 0x44);
 			addParam(followBtn);
+			followBtns[r] = followBtn;
 
-			NeoRowButton *leftBtn = createParamCentered<NeoRowButton>(calculateCoordinates(NEO_ROW_LEFT_X_MM + NEO_GLOBAL_AREA_WIDTH_MM, y + NEO_ROW_HEIGHT_MM / 2.f - NEO_ROW_VPAD_MM, 0.f), module, ROW_LEFT_PARAM + r);
+			NeoRowButton *leftBtn = createParam<NeoRowButton>(Vec(), module, ROW_LEFT_PARAM + r);
 			leftBtn->box.size = mm2px(Vec(NEO_ROW_PAGEBTN_SIZE_MM, NEO_ROW_PAGEBTN_SIZE_MM));
 			addParam(leftBtn);
+			leftBtns[r] = leftBtn;
 
-			NeoRowButton *rightBtn = createParamCentered<NeoRowButton>(calculateCoordinates(NEO_ROW_RIGHT_X_MM + NEO_GLOBAL_AREA_WIDTH_MM, y + NEO_ROW_HEIGHT_MM / 2.f - NEO_ROW_VPAD_MM, 0.f), module, ROW_RIGHT_PARAM + r);
+			NeoRowButton *rightBtn = createParam<NeoRowButton>(Vec(), module, ROW_RIGHT_PARAM + r);
 			rightBtn->box.size = mm2px(Vec(NEO_ROW_PAGEBTN_SIZE_MM, NEO_ROW_PAGEBTN_SIZE_MM));
 			addParam(rightBtn);
+			rightBtns[r] = rightBtn;
 
 			NeoRowCellsWidget *cells = new NeoRowCellsWidget();
 			cells->module = module;
 			cells->row = r;
-			cells->box.pos = calculateCoordinates(NEO_CONTROLS_WIDTH_MM, y, 0.f);
-			cells->box.size = mm2px(Vec(1.f, NEO_ROW_HEIGHT_MM - NEO_ROW_VPAD_MM)); // width fixed up in step()
+			cells->box.size = mm2px(Vec(1.f, 1.f)); // fixed up in step()
 			addChild(cells);
 			rowCells[r] = cells;
 		}
@@ -925,11 +1063,103 @@ struct NeoWidget : ModuleWidget
 		Neo *neoModule = dynamic_cast<Neo *>(module);
 		if (neoModule)
 		{
-			float widthMm = neoModule->OL_state[PANEL_WIDTH_HP_JSON] * 5.08f;
+			int rowsDisplayed = clamp((int) neoModule->OL_state[ROWS_DISPLAYED_JSON], NEO_ROWS_MIN, NEO_ROWS_MAX);
+			bool fullHeight = neoModule->OL_state[FULL_HEIGHT_JSON] > 0.5f;
+			float firstRowYMm, cellHeightMm, rowPitchMm;
+			neoRowLayout(fullHeight, rowsDisplayed, firstRowYMm, cellHeightMm, rowPitchMm);
+			float columnPitchMm = rowPitchMm; // square cells + matching horizontal/vertical padding (2026-07-20) -
+			                                   // the per-column footprint always equals the row pitch exactly.
+			float controlsWidthMm = neoRowAreaControlsWidthMm(fullHeight);
+
+			// Auto-adapt width to the current cell pitch - a Grid Rows/Full Height change
+			// indirectly changes it too (square cells), so the panel's own width may need to
+			// follow. Width, unlike height, is a WEAK constraint here - NEO controls its own
+			// left edge (the global area) and can freely grow/shrink rightward, unlike height
+			// which is Rack's own fixed 128.5mm no module can ever adapt (Dieter's own framing,
+			// 2026-07-20) - so there's no need for height's own HP-snap-then-absorb-leftover
+			// trick here; just resize to fit exactly. Never leaves a clipped or dead-space
+			// column: grow rightward to preserve the previously-visible column count if cells
+			// got wider (only if free space allows - requestModulePos() is Rack's own collision
+			// test, used exactly the same way NeoResizeHandle::onDragMove() already uses it for
+			// manual drags); if cells got narrower, leave the width alone and let more columns
+			// show, UNLESS that would exceed the Host's own max channel length, in which case
+			// shrink away the resulting dead space instead (Dieter's own spec, 2026-07-20).
+			if (lastColumnPitchMm < 0.f)
+			{
+				lastColumnPitchMm = columnPitchMm; // first tick - adopt without resizing
+				lastControlsWidthMm = controlsWidthMm;
+			}
+			else if (columnPitchMm != lastColumnPitchMm || controlsWidthMm != lastControlsWidthMm)
+			{
+				float currentWidthMm = neoModule->OL_state[PANEL_WIDTH_HP_JSON] * 5.08f;
+				int maxLoopLen = neoModule->neoHost ? neoModule->neoHost->getMaxLoopLen() : 100000;
+				int targetCols;
+				if (columnPitchMm > lastColumnPitchMm || controlsWidthMm > lastControlsWidthMm)
+				{
+					// cells grew, or the resize-handle reservation just grew (Full Height turned
+					// on) - try to preserve the column count that was visible before, so nothing
+					// already on screen just disappears.
+					targetCols = std::max(1, (int) ((currentWidthMm - lastControlsWidthMm) / lastColumnPitchMm));
+				}
+				else
+				{
+					// cells shrank (and the reservation didn't grow) - let the page size grow to
+					// fill the same width, capped at however many steps the Host could ever have.
+					targetCols = std::max(1, (int) ((currentWidthMm - controlsWidthMm) / columnPitchMm));
+				}
+				targetCols = clamp(targetCols, NEO_MIN_VISIBLE_COLS, maxLoopLen);
+
+				float desiredWidthMm = controlsWidthMm + (float) targetCols * columnPitchMm;
+				float desiredWidthPx = std::round(mm2px(desiredWidthMm) / RACK_GRID_WIDTH) * RACK_GRID_WIDTH;
+				float minWidthPx = neoMinWidthHp(columnPitchMm, controlsWidthMm) * RACK_GRID_WIDTH;
+				float maxWidthPx = neoMaxWidthHp(neoModule->neoHost, columnPitchMm, controlsWidthMm) * RACK_GRID_WIDTH;
+				desiredWidthPx = clamp(desiredWidthPx, minWidthPx, maxWidthPx);
+
+				if (desiredWidthPx != box.size.x)
+				{
+					Rect oldBox = box;
+					Rect newBox = box;
+					newBox.size.x = desiredWidthPx;
+					box = newBox;
+					if (APP->scene->rack->requestModulePos(this, newBox.pos))
+						neoModule->OL_setOutState(PANEL_WIDTH_HP_JSON, std::round(box.size.x / RACK_GRID_WIDTH));
+					else
+						box = oldBox; // blocked by a neighbor - keep current width, columns just show as-is
+				}
+				lastColumnPitchMm = columnPitchMm;
+				lastControlsWidthMm = controlsWidthMm;
+			}
+
+			float widthMm = neoModule->OL_state[PANEL_WIDTH_HP_JSON] * 5.08f; // may have just changed above
 			box.size.x = mm2px(widthMm);
-			float cellsWidthMm = std::max(1.f, widthMm - NEO_CONTROLS_WIDTH_MM);
+			float cellsWidthMm = std::max(1.f, widthMm - controlsWidthMm);
+
 			for (int r = 0; r < NEO_NUM_ROWS; r++)
-				rowCells[r]->box.size.x = mm2px(cellsWidthMm);
+			{
+				bool rowVisible = r < rowsDisplayed;
+				rowNames[r]->visible = rowVisible;
+				memTapeBtns[r]->visible = rowVisible;
+				followBtns[r]->visible = rowVisible;
+				leftBtns[r]->visible = rowVisible;
+				rightBtns[r]->visible = rowVisible;
+				rowCells[r]->visible = rowVisible;
+				if (!rowVisible)
+					continue;
+
+				float y = firstRowYMm + (float) r * rowPitchMm;
+				float centerY = y + cellHeightMm / 2.f;
+
+				rowNames[r]->box.pos = calculateCoordinates(NEO_ROW_NAME_X_MM + NEO_GLOBAL_AREA_WIDTH_MM, y, 0.f);
+				rowNames[r]->box.size = mm2px(Vec(NEO_ROW_NAME_WIDTH_MM, cellHeightMm));
+
+				memTapeBtns[r]->box.pos = calculateCoordinates(NEO_ROW_MEMTAPE_X_MM + NEO_GLOBAL_AREA_WIDTH_MM, centerY, 0.f).minus(memTapeBtns[r]->box.size.div(2.f));
+				followBtns[r]->box.pos = calculateCoordinates(NEO_ROW_FOLLOW_X_MM + NEO_GLOBAL_AREA_WIDTH_MM, centerY, 0.f).minus(followBtns[r]->box.size.div(2.f));
+				leftBtns[r]->box.pos = calculateCoordinates(NEO_ROW_LEFT_X_MM + NEO_GLOBAL_AREA_WIDTH_MM, centerY, 0.f).minus(leftBtns[r]->box.size.div(2.f));
+				rightBtns[r]->box.pos = calculateCoordinates(NEO_ROW_RIGHT_X_MM + NEO_GLOBAL_AREA_WIDTH_MM, centerY, 0.f).minus(rightBtns[r]->box.size.div(2.f));
+
+				rowCells[r]->box.pos = calculateCoordinates(NEO_CONTROLS_WIDTH_MM, y, 0.f);
+				rowCells[r]->box.size = mm2px(Vec(cellsWidthMm, cellHeightMm));
+			}
 			// addXExtStrip() positions the right strip against the panel width it's given at
 			// construction time only - unlike every other module that owns one of these, NEO's
 			// own width isn't fixed, so its x needs re-deriving here every time too.
@@ -944,7 +1174,26 @@ struct NeoWidget : ModuleWidget
 		if (panelWidget)
 			panelWidget->box.size = box.size;
 		if (resizeHandle)
-			resizeHandle->box.pos.x = box.size.x - resizeHandle->box.size.x;
+		{
+			// Normal mode: a small icon confined to the header band, right upper corner,
+			// vertically centered on the same y the title text uses - entirely above the grid
+			// content, so it needs no reserved width. Full Height: the dedicated full-height 1HP
+			// strip at the right edge that neoRowAreaControlsWidthMm() already reserved room for
+			// in the grid's own width above (Dieter's own instruction, 2026-07-20).
+			bool fullHeightForHandle = neoModule && neoModule->OL_state[FULL_HEIGHT_JSON] > 0.5f;
+			if (fullHeightForHandle)
+			{
+				resizeHandle->box.size = Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT);
+				resizeHandle->box.pos = Vec(box.size.x - resizeHandle->box.size.x, 0.f);
+			}
+			else
+			{
+				float iconPx = mm2px(NEO_RESIZE_ICON_SIZE_MM);
+				float marginPx = mm2px(NEO_FRAME_MARGIN_MM);
+				resizeHandle->box.size = Vec(iconPx, iconPx);
+				resizeHandle->box.pos = Vec(box.size.x - marginPx - iconPx, mm2px(NEO_TITLE_CENTER_Y_MM) - iconPx / 2.f);
+			}
+		}
 		ModuleWidget::step();
 	}
 
@@ -961,6 +1210,59 @@ struct NeoWidget : ModuleWidget
 		{
 			if (module)
 				rightText = (module->OL_state[STYLE_JSON] == style) ? "✔" : "";
+		}
+	};
+
+	// How many of the 16 row-slots are actually shown at once (NEO_ROWS_MIN..NEO_ROWS_MAX) -
+	// named "Grid Rows" specifically to avoid colliding with NeoRowsItem's own "Rows" menu below
+	// (per-row channel assignment - a completely different setting).
+	struct NeoGridRowsItem : MenuItem
+	{
+		Neo *module;
+
+		struct NeoGridRowsCountItem : MenuItem
+		{
+			Neo *module;
+			int count;
+			void onAction(const event::Action &e) override
+			{
+				module->OL_setOutState(ROWS_DISPLAYED_JSON, float(count));
+			}
+			void step() override
+			{
+				if (module)
+					rightText = ((int) module->OL_state[ROWS_DISPLAYED_JSON] == count) ? "✔" : "";
+			}
+		};
+
+		Menu *createChildMenu() override
+		{
+			Menu *menu = new Menu;
+			for (int count = NEO_ROWS_MIN; count <= NEO_ROWS_MAX; count++)
+			{
+				NeoGridRowsCountItem *item = new NeoGridRowsCountItem();
+				item->module = module;
+				item->count = count;
+				item->text = string::f("%d", count);
+				item->setSize(Vec(50, 20));
+				menu->addChild(item);
+			}
+			return menu;
+		}
+	};
+
+	// See FULL_HEIGHT_JSON's own comment (Neo.hpp) for what this actually does to the layout.
+	struct NeoFullHeightItem : MenuItem
+	{
+		Neo *module;
+		void onAction(const event::Action &e) override
+		{
+			module->OL_setOutState(FULL_HEIGHT_JSON, module->OL_state[FULL_HEIGHT_JSON] > 0.5f ? 0.f : 1.f);
+		}
+		void step() override
+		{
+			if (module)
+				rightText = (module->OL_state[FULL_HEIGHT_JSON] > 0.5f) ? "✔" : "";
 		}
 	};
 
@@ -1195,6 +1497,20 @@ struct NeoWidget : ModuleWidget
 		style3Item->module = module;
 		style3Item->style = STYLE_DARK;
 		menu->addChild(style3Item);
+
+		spacerLabel = new MenuLabel();
+		menu->addChild(spacerLabel);
+
+		NeoGridRowsItem *gridRowsItem = new NeoGridRowsItem();
+		gridRowsItem->module = module;
+		gridRowsItem->text = "Grid Rows";
+		gridRowsItem->rightText = RIGHT_ARROW;
+		menu->addChild(gridRowsItem);
+
+		NeoFullHeightItem *fullHeightItem = new NeoFullHeightItem();
+		fullHeightItem->module = module;
+		fullHeightItem->text = "Full Height";
+		menu->addChild(fullHeightItem);
 
 		spacerLabel = new MenuLabel();
 		menu->addChild(spacerLabel);
