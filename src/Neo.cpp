@@ -26,12 +26,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <algorithm>
 
 #include "Neo.hpp"
-
-#define NEO_DEFAULT_WIDTH_HP 24
-#define NEO_CONTROLS_WIDTH_MM 40.f  // reserved left-hand width for name/toggle/page controls
-#define NEO_COLUMN_WIDTH_MM   4.f   // width of one step-column cell
-#define NEO_ROW_HEIGHT_MM     6.5f
-#define NEO_FIRST_ROW_Y_MM    12.f
+// All NEO layout/geometry constants (row height, column width, global-area width, per-row
+// control offsets/sizes, content-frame margins, neoMinWidthHp()/neoMaxWidthHp()) now live in
+// Neo.hpp - see its own "NEO layout constants" section, the single source of truth for all of it.
 
 struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterface, ExpanderBridgeInterface
 {
@@ -55,7 +52,6 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 	// rather than copying the string, so a temporary std::string's c_str() would dangle the
 	// instant the temporary is destroyed (see CLAUDE.md-adjacent lesson from XR8/XR16 today).
 	char rowChannelLabelBuf[NEO_NUM_ROWS][20];
-	char channelColorLabelBuf[POLY_CHANNELS][20];
 	char rowMemTapeLabelBuf[NEO_NUM_ROWS][20];
 	char rowFollowLabelBuf[NEO_NUM_ROWS][20];
 	char rowPageLabelBuf[NEO_NUM_ROWS][20];
@@ -67,6 +63,152 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 	// module ids run into the quadrillions - a float silently corrupts them). Persisted via
 	// this module's own moduleExtraDataToJson/FromJson below.
 	int64_t neoConnectedHostId = -1;
+
+	/*
+		Channel identity - name/color (and, later, cell-editor type/config) are properties of the
+		underlying Morpheus CHANNEL, not of whichever NEO row happens to be looking at it right
+		now (confirmed 2026-07-20: a channel shouldn't have an ambiguous identity depending on
+		which row/instance is viewing it, and this data only ever changes at sequencer-setup time,
+		never while running - both point at the same place, not per-row/per-instance state).
+		Stored on the HOST itself (shared automatically across every NEO instance attached to it)
+		via the generic, opaque, slug-keyed storage every Host offers for free
+		(ExpanderBridgeInterface::writeExpanderData()/readExpanderData(), see ExpanderBridge.hpp) -
+		Morpheus (or any future NeoHostInterface implementer) never parses or understands any of
+		this, it's just a string NEO itself reads/writes under its own slug ("Neo").
+
+		Schema (NEO's own, living, private contract - update this comment whenever a field is
+		added, this IS the documentation):
+
+		{
+		  "channels": [
+		    { "name": "Kick", "color": 16711680, "cellType": "gate",  "cellConfig": {} },
+		    { "name": "Lead", "color": 65280,    "cellType": "value", "cellConfig": { "default": 0.0, "min": -10, "max": 10 } },
+		    ...
+		  ]
+		}
+
+		One entry per POLY_CHANNELS (16) - array index IS the channel index, no separate "channel"
+		key needed. "cellType"/"cellConfig" are RESERVED for the abstract cell-editor system
+		(2026-07-20 design discussion, still unspecified beyond this placeholder) - not read or
+		written by any code yet, only "name" and "color" are live today. Every read/write below
+		treats an entry as a whole JSON object and only ever touches the ONE key it cares about,
+		so a future version that adds cellType/cellConfig will never clobber name/color written by
+		this version, and vice versa.
+	*/
+	std::string channelName[POLY_CHANNELS];
+	int channelColor[POLY_CHANNELS] = {};
+	// -1 = never refreshed yet, forces the very first refreshChannelTable() call to actually
+	// read - see its own comment for why comparing against the Host's cheap timestamp (rather
+	// than re-parsing the JSON string every tick) is the whole point of this cache.
+	int64_t channelTableSeenTimestampMs = -1;
+
+	// Resolves neoHostModule to ExpanderBridgeInterface* - every channel-table read/write goes
+	// through this, never neoHost directly, since NeoHostInterface itself has no idea the generic
+	// opaque-storage mechanism exists (nor should it - see ExpanderBridge.hpp's own "deliberately
+	// dumb" framing for why that separation is intentional).
+	ExpanderBridgeInterface* neoHostBridge()
+	{
+		return neoHostModule ? dynamic_cast<ExpanderBridgeInterface*>(neoHostModule) : nullptr;
+	}
+
+	// Refreshes the local channelName[]/channelColor[] cache from the Host's own stored JSON -
+	// cheap no-op in the common case (a plain int64 compare) unless another NEO instance (or this
+	// one, via setChannelName()/setChannelColor() below) has actually written since we last
+	// looked. Called once per moduleProcess() tick while connected - see its own call site.
+	void refreshChannelTable()
+	{
+		ExpanderBridgeInterface *host = neoHostBridge();
+		if (!host)
+			return;
+		int64_t ts = getHostDataTimestampMs(host);
+		if (ts == channelTableSeenTimestampMs)
+			return;
+		channelTableSeenTimestampMs = ts;
+
+		// Reset to sane defaults first - covers both "never configured at all" (brand new patch)
+		// and "this channel's own entry doesn't exist/doesn't have this field yet" uniformly,
+		// without needing a separate has-value check at every read site elsewhere.
+		for (int c = 0; c < POLY_CHANNELS; c++)
+		{
+			channelName[c] = "";
+			channelColor[c] = 0xff6600; // ORANGE, matches the old CHANNEL_COLOR_JSON default
+		}
+
+		std::string raw = readHostData(host);
+		if (raw.empty())
+			return;
+		json_error_t error;
+		json_t *rootJ = json_loads(raw.c_str(), 0, &error);
+		if (!rootJ)
+			return;
+		json_t *channelsJ = json_object_get(rootJ, "channels");
+		if (channelsJ && json_is_array(channelsJ))
+		{
+			size_t index;
+			json_t *entryJ;
+			json_array_foreach(channelsJ, index, entryJ)
+			{
+				if (index >= (size_t) POLY_CHANNELS)
+					break;
+				json_t *nameJ = json_object_get(entryJ, "name");
+				if (nameJ && json_is_string(nameJ))
+					channelName[index] = json_string_value(nameJ);
+				json_t *colorJ = json_object_get(entryJ, "color");
+				if (colorJ && json_is_integer(colorJ))
+					channelColor[index] = (int) json_integer_value(colorJ);
+			}
+		}
+		json_decref(rootJ);
+	}
+
+	// Shared read-modify-write for a single channel/single field - reads the CURRENT full blob
+	// (not our own local cache, which may be stale relative to another instance's own more recent
+	// write), mutates only the one key requested on the one entry requested, and writes the whole
+	// blob back. Every other key on every entry (including ones this code doesn't know about,
+	// e.g. a future cellType/cellConfig) round-trips completely untouched, since entries are
+	// mutated in place rather than rebuilt from scratch. Takes ownership of `value`.
+	void writeChannelField(int channel, const char *key, json_t *value)
+	{
+		ExpanderBridgeInterface *host = neoHostBridge();
+		if (!host || channel < 0 || channel >= POLY_CHANNELS)
+		{
+			json_decref(value);
+			return;
+		}
+
+		std::string raw = readHostData(host);
+		json_error_t error;
+		json_t *rootJ = raw.empty() ? nullptr : json_loads(raw.c_str(), 0, &error);
+		if (!rootJ)
+			rootJ = json_object();
+		json_t *channelsJ = json_object_get(rootJ, "channels");
+		if (!channelsJ || !json_is_array(channelsJ))
+		{
+			channelsJ = json_array();
+			json_object_set_new(rootJ, "channels", channelsJ);
+		}
+		// Pad with empty objects up to this channel's own index - leaves every earlier entry's
+		// own existing content completely untouched.
+		while (json_array_size(channelsJ) <= (size_t) channel)
+			json_array_append_new(channelsJ, json_object());
+		json_t *entryJ = json_array_get(channelsJ, channel);
+		json_object_set_new(entryJ, key, value); // mutates in place - every other key untouched
+
+		char *serialized = json_dumps(rootJ, JSON_COMPACT);
+		writeHostData(host, serialized ? serialized : "");
+		free(serialized);
+		json_decref(rootJ);
+
+		// Force our own next refreshChannelTable() to actually re-read, rather than trusting a
+		// timestamp we might already have seen (this same write bumps the Host's own timestamp,
+		// but polling that on the very next tick already happens naturally either way - this just
+		// makes it unconditional so this instance sees its own edit immediately, not on whatever
+		// tick happens to poll next).
+		channelTableSeenTimestampMs = -1;
+	}
+
+	void setChannelName(int channel, const std::string &name) { writeChannelField(channel, "name", json_string(name.c_str())); }
+	void setChannelColor(int channel, int packedColor) { writeChannelField(channel, "color", json_integer(packedColor)); }
 
 	Neo()
 	{
@@ -117,11 +259,6 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 			setJsonLabel(ROW_PAGE_JSON + r, rowPageLabelBuf[r]);
 			snprintf(rowCellTypeLabelBuf[r], sizeof(rowCellTypeLabelBuf[r]), "rowCellType%d", r);
 			setJsonLabel(ROW_CELLTYPE_JSON + r, rowCellTypeLabelBuf[r]);
-		}
-		for (int c = 0; c < POLY_CHANNELS; c++)
-		{
-			snprintf(channelColorLabelBuf[c], sizeof(channelColorLabelBuf[c]), "channelColor%d", c);
-			setJsonLabel(CHANNEL_COLOR_JSON + c, channelColorLabelBuf[c]);
 		}
 
 #pragma GCC diagnostic pop
@@ -192,8 +329,10 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 			OL_state[ROW_PAGE_JSON + r] = 0.f;
 			OL_state[ROW_CELLTYPE_JSON + r] = 1.f;      // Value (more generally useful default)
 		}
-		for (int c = 0; c < POLY_CHANNELS; c++)
-			OL_state[CHANNEL_COLOR_JSON + c] = (float) 0xff6600; // ORANGE, packed 24-bit RGB
+		// Channel name/color are Host-shared, not this instance's own state (see their own
+		// member comment) - resetting THIS NEO must never wipe out data every other NEO instance
+		// attached to the same Host still relies on, so there's deliberately nothing to reset
+		// here anymore.
 	}
 
 	inline void moduleProcess(const ProcessArgs &args)
@@ -241,6 +380,8 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 					hostBridge->registerBridgeListener(this);
 			}
 		}
+		if (neoHost)
+			refreshChannelTable();
 
 		int visibleCols = getVisibleColumns();
 
@@ -369,9 +510,10 @@ struct NeoResizeHandle : OpaqueWidget
 
 		Rect newBox = originalBox;
 		Rect oldBox = mw->box;
-		float minWidth = NEO_MIN_WIDTH_HP * RACK_GRID_WIDTH;
+		float minWidth = neoMinWidthHp() * RACK_GRID_WIDTH;
+		float maxWidth = neoMaxWidthHp(module ? module->neoHost : nullptr) * RACK_GRID_WIDTH;
 		newBox.size.x += deltaX;
-		newBox.size.x = std::fmax(newBox.size.x, minWidth);
+		newBox.size.x = clamp(newBox.size.x, minWidth, maxWidth);
 		newBox.size.x = std::round(newBox.size.x / RACK_GRID_WIDTH) * RACK_GRID_WIDTH;
 
 		mw->box = newBox;
@@ -441,7 +583,7 @@ struct NeoRowCellsWidget : TransparentWidget
 		int page = (int) m->OL_state[ROW_PAGE_JSON + row];
 		int loopLen = m->neoHost->getLoopLen(channel);
 		float cellWidth = box.size.x / (float) visibleCols;
-		int colorPacked = (int) m->OL_state[CHANNEL_COLOR_JSON + channel];
+		int colorPacked = m->channelColor[channel]; // channel-owned, Host-shared - see its own comment
 		NVGcolor color = nvgRGB((colorPacked >> 16) & 0xff, (colorPacked >> 8) & 0xff, colorPacked & 0xff);
 
 		for (int i = 0; i < visibleCols; i++)
@@ -572,6 +714,8 @@ struct NeoRowNameWidget : TransparentWidget
 	per Dieter's own "function first, polish later" instruction - a themed flat fill + border, no
 	hand-authored art at all yet.
 */
+// Frame/accent/title geometry constants now live in Neo.hpp's own "NEO layout constants"
+// section (NEO_FRAME_MARGIN_MM etc.) - the single source of truth for all of NEO's own layout.
 struct NeoPanelWidget : Widget
 {
 	Module *module = nullptr;
@@ -582,13 +726,92 @@ struct NeoPanelWidget : Widget
 		float style = m ? m->OL_state[STYLE_JSON] : STYLE_ORANGE;
 		NVGcolor bg = (style == STYLE_DARK) ? X_STRIP_BG_DARK : (style == STYLE_BRIGHT) ? X_STRIP_BG_BRIGHT : X_STRIP_BG_ORANGE;
 		NVGcolor frame = (style == STYLE_DARK) ? X_FRAME_DARK : (style == STYLE_BRIGHT) ? X_FRAME_BRIGHT : X_FRAME_ORANGE;
+		NVGcolor text = xThemedTextColor(style);
+
+		float marginPx = mm2px(NEO_FRAME_MARGIN_MM);
+
+		// Rack's own SvgPanel convention never paints a module's true background flush to the
+		// panel's literal edges - the real panel content stays inset by this same margin, and
+		// Rack's own PanelBorder/rail rendering shows through the remaining sliver as the
+		// natural "seam" between two adjacent, unconnected modules. Every other OrangeLine
+		// module gets this for free since its baked SvgPanel is loaded through Rack's own
+		// panel-drawing path; NEO draws its own background directly and has to respect the same
+		// inset by hand. addXExtStrip()/addXExtStripLeft() (below) are the ONLY things allowed
+		// to paint into this margin, and only while actually bridgeConnected() - that's what
+		// closes the seam specifically when connected, instead of always.
+		float bgInsetPx = mm2px(NEO_BACKGROUND_INSET_MM);
 		nvgBeginPath(args.vg);
-		nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+		nvgRect(args.vg, bgInsetPx, bgInsetPx, box.size.x - bgInsetPx * 2.f, box.size.y - bgInsetPx * 2.f);
 		nvgFillColor(args.vg, bg);
 		nvgFill(args.vg);
-		nvgStrokeWidth(args.vg, mm2px(0.5f));
+
+		// Reproduces Rack's own PanelBorder - a stroke right at the panel's true bounds, the
+		// same width as the background inset above, so it fills exactly the gap the inset
+		// leaves rather than a plain transparent sliver. nvgStroke() centers the stroke on the
+		// path, so the path itself is inset by half the stroke width on every side - otherwise
+		// half the stroke bleeds past box.size and gets clipped away, leaving the outer half of
+		// the intended border missing instead of reaching the true edge.
+		float borderHalfStrokePx = bgInsetPx / 2.f;
+		nvgBeginPath(args.vg);
+		nvgRect(args.vg, borderHalfStrokePx, borderHalfStrokePx,
+			box.size.x - bgInsetPx, box.size.y - bgInsetPx);
+		nvgStrokeWidth(args.vg, bgInsetPx);
+		nvgStrokeColor(args.vg, NEO_PANEL_BORDER_COLOR);
+		nvgStroke(args.vg);
+
+		float topPx = mm2px(NEO_FRAME_TOP_MM);
+		float bottomPx = box.size.y - mm2px(NEO_FRAME_BOTTOM_MM);
+		float radiusPx = mm2px(NEO_FRAME_RADIUS_MM);
+		float globalAreaEdgePx = mm2px(NEO_GLOBAL_AREA_WIDTH_MM);
+		float halfGapPx = mm2px(NEO_FRAME_GAP_MM) / 2.f;
+
+		// Two independent, fully-rounded peer frames (not a shared edge) - a fixed-width
+		// "global" sidebar frame on the left and a "row area" frame that resizes with the
+		// module on the right, separated by PanelDesignGuide.md's own nested-frame padding
+		// value (NEO_FRAME_GAP_MM) instead of touching directly. See NeoWork.svg's own file
+		// comment for the full reasoning.
+		nvgBeginPath(args.vg);
+		nvgRoundedRect(args.vg, marginPx, topPx, globalAreaEdgePx - halfGapPx - marginPx, bottomPx - topPx, radiusPx);
+		nvgStrokeWidth(args.vg, mm2px(NEO_FRAME_STROKE_MM));
 		nvgStrokeColor(args.vg, frame);
 		nvgStroke(args.vg);
+
+		nvgBeginPath(args.vg);
+		nvgRoundedRect(args.vg, globalAreaEdgePx + halfGapPx, topPx, box.size.x - marginPx - globalAreaEdgePx - halfGapPx, bottomPx - topPx, radiusPx);
+		nvgStrokeWidth(args.vg, mm2px(NEO_FRAME_STROKE_MM));
+		nvgStrokeColor(args.vg, frame);
+		nvgStroke(args.vg);
+
+		// "ORANGE LINE" brand accent stripe - same geometry/color convention as every other
+		// panel, always #ff6600 regardless of theme, spanning the panel's full current width.
+		nvgBeginPath(args.vg);
+		nvgMoveTo(args.vg, marginPx, mm2px(NEO_ACCENT_Y_MM));
+		nvgLineTo(args.vg, box.size.x - marginPx, mm2px(NEO_ACCENT_Y_MM));
+		nvgStrokeWidth(args.vg, mm2px(NEO_FRAME_STROKE_MM));
+		nvgStrokeColor(args.vg, ORANGE);
+		nvgLineCap(args.vg, NVG_ROUND);
+		nvgStroke(args.vg);
+
+		// Title + "ORANGE LINE" wordmark - centered on box.size.x, recomputed every draw() call
+		// so both stay horizontally centered through any resize, per Dieter's own requirement
+		// (a baked SVG's fixed x, correct at one width, cannot do this on its own).
+		float centerX = box.size.x / 2.f;
+		std::shared_ptr<Font> font = APP->window->loadFont(asset::plugin(pluginInstance, "res/RobotoCondensed-Bold.ttf"));
+		if (font && font->handle >= 0)
+		{
+			nvgFontFaceId(args.vg, font->handle);
+			nvgFillColor(args.vg, text);
+
+			nvgFontSize(args.vg, mm2px(NEO_TITLE_SIZE_MM));
+			nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+			nvgText(args.vg, centerX, mm2px(NEO_TITLE_CENTER_Y_MM), "NEO", nullptr);
+
+			nvgFontSize(args.vg, mm2px(NEO_WORDMARK_SIZE_MM));
+			nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_BASELINE);
+			nvgText(args.vg, centerX, mm2px(NEO_WORDMARK_ORANGE_Y_MM), "ORANGE", nullptr);
+			nvgText(args.vg, centerX, mm2px(NEO_WORDMARK_LINE_Y_MM), "LINE", nullptr);
+		}
+
 		Widget::draw(args);
 	}
 };
@@ -603,13 +826,21 @@ struct NeoWidget : ModuleWidget
 	NeoPanelWidget *panelWidget = nullptr;
 	NeoRowCellsWidget *rowCells[NEO_NUM_ROWS] = {};
 	NeoRowNameWidget *rowNames[NEO_NUM_ROWS] = {};
+	// Seam-bridging strips, reused verbatim from XShared.hpp (XExtStripWidget is already fully
+	// family-agnostic - Neo already implements XExpanderInterface::getXStyle() for the X-family
+	// relay above, which is all getXNeighborStyle()/updateXExtStrip() need to work here too).
+	// Both edges get one (NEO's own bridged Host can sit on either side, no fixed direction) -
+	// the right one's own x-position needs re-deriving every step() since, unlike every other
+	// module that owns one of these, NEO's own panel width isn't fixed.
+	XExtStripWidget *extStripRight = nullptr;
+	XExtStripWidget *extStripLeft = nullptr;
 
 	NeoWidget(Neo *module)
 	{
 		setModule(module);
 
 		float widthHp = module ? module->OL_state[PANEL_WIDTH_HP_JSON] : NEO_DEFAULT_WIDTH_HP;
-		if (widthHp < NEO_MIN_WIDTH_HP)
+		if (widthHp < neoMinWidthHp())
 			widthHp = NEO_DEFAULT_WIDTH_HP;
 		box.size = Vec(widthHp * RACK_GRID_WIDTH, RACK_GRID_HEIGHT);
 
@@ -618,6 +849,9 @@ struct NeoWidget : ModuleWidget
 		panelWidget->box.size = box.size;
 		addChild(panelWidget);
 
+		extStripRight = addXExtStrip(this, widthHp * 5.08f);
+		extStripLeft = addXExtStripLeft(this);
+
 		for (int r = 0; r < NEO_NUM_ROWS; r++)
 		{
 			float y = NEO_FIRST_ROW_Y_MM + r * NEO_ROW_HEIGHT_MM;
@@ -625,8 +859,8 @@ struct NeoWidget : ModuleWidget
 			NeoRowNameWidget *name = new NeoRowNameWidget();
 			name->module = module;
 			name->row = r;
-			name->box.pos = calculateCoordinates(1.f, y, 0.f);
-			name->box.size = mm2px(Vec(16.f, NEO_ROW_HEIGHT_MM - 0.5f));
+			name->box.pos = calculateCoordinates(NEO_ROW_NAME_X_MM + NEO_GLOBAL_AREA_WIDTH_MM, y, 0.f);
+			name->box.size = mm2px(Vec(NEO_ROW_NAME_WIDTH_MM, NEO_ROW_HEIGHT_MM - NEO_ROW_VPAD_MM));
 			addChild(name);
 			rowNames[r] = name;
 
@@ -654,29 +888,29 @@ struct NeoWidget : ModuleWidget
 				}
 			};
 
-			NeoRowButton *memTapeBtn = createParamCentered<NeoRowButton>(calculateCoordinates(19.f, y + NEO_ROW_HEIGHT_MM / 2.f - 0.5f, 0.f), module, ROW_MEMTAPE_PARAM + r);
-			memTapeBtn->box.size = mm2px(Vec(6.f, 4.f));
+			NeoRowButton *memTapeBtn = createParamCentered<NeoRowButton>(calculateCoordinates(NEO_ROW_MEMTAPE_X_MM + NEO_GLOBAL_AREA_WIDTH_MM, y + NEO_ROW_HEIGHT_MM / 2.f - NEO_ROW_VPAD_MM, 0.f), module, ROW_MEMTAPE_PARAM + r);
+			memTapeBtn->box.size = mm2px(Vec(NEO_ROW_TOGGLE_WIDTH_MM, NEO_ROW_TOGGLE_HEIGHT_MM));
 			memTapeBtn->onColor = nvgRGB(0x00, 0x99, 0xff);
 			addParam(memTapeBtn);
 
-			NeoRowButton *followBtn = createParamCentered<NeoRowButton>(calculateCoordinates(26.f, y + NEO_ROW_HEIGHT_MM / 2.f - 0.5f, 0.f), module, ROW_FOLLOW_PARAM + r);
-			followBtn->box.size = mm2px(Vec(6.f, 4.f));
+			NeoRowButton *followBtn = createParamCentered<NeoRowButton>(calculateCoordinates(NEO_ROW_FOLLOW_X_MM + NEO_GLOBAL_AREA_WIDTH_MM, y + NEO_ROW_HEIGHT_MM / 2.f - NEO_ROW_VPAD_MM, 0.f), module, ROW_FOLLOW_PARAM + r);
+			followBtn->box.size = mm2px(Vec(NEO_ROW_TOGGLE_WIDTH_MM, NEO_ROW_TOGGLE_HEIGHT_MM));
 			followBtn->onColor = nvgRGB(0x00, 0xdd, 0x44);
 			addParam(followBtn);
 
-			NeoRowButton *leftBtn = createParamCentered<NeoRowButton>(calculateCoordinates(33.f, y + NEO_ROW_HEIGHT_MM / 2.f - 0.5f, 0.f), module, ROW_LEFT_PARAM + r);
-			leftBtn->box.size = mm2px(Vec(4.f, 4.f));
+			NeoRowButton *leftBtn = createParamCentered<NeoRowButton>(calculateCoordinates(NEO_ROW_LEFT_X_MM + NEO_GLOBAL_AREA_WIDTH_MM, y + NEO_ROW_HEIGHT_MM / 2.f - NEO_ROW_VPAD_MM, 0.f), module, ROW_LEFT_PARAM + r);
+			leftBtn->box.size = mm2px(Vec(NEO_ROW_PAGEBTN_SIZE_MM, NEO_ROW_PAGEBTN_SIZE_MM));
 			addParam(leftBtn);
 
-			NeoRowButton *rightBtn = createParamCentered<NeoRowButton>(calculateCoordinates(38.f, y + NEO_ROW_HEIGHT_MM / 2.f - 0.5f, 0.f), module, ROW_RIGHT_PARAM + r);
-			rightBtn->box.size = mm2px(Vec(4.f, 4.f));
+			NeoRowButton *rightBtn = createParamCentered<NeoRowButton>(calculateCoordinates(NEO_ROW_RIGHT_X_MM + NEO_GLOBAL_AREA_WIDTH_MM, y + NEO_ROW_HEIGHT_MM / 2.f - NEO_ROW_VPAD_MM, 0.f), module, ROW_RIGHT_PARAM + r);
+			rightBtn->box.size = mm2px(Vec(NEO_ROW_PAGEBTN_SIZE_MM, NEO_ROW_PAGEBTN_SIZE_MM));
 			addParam(rightBtn);
 
 			NeoRowCellsWidget *cells = new NeoRowCellsWidget();
 			cells->module = module;
 			cells->row = r;
 			cells->box.pos = calculateCoordinates(NEO_CONTROLS_WIDTH_MM, y, 0.f);
-			cells->box.size = mm2px(Vec(1.f, NEO_ROW_HEIGHT_MM - 0.5f)); // width fixed up in step()
+			cells->box.size = mm2px(Vec(1.f, NEO_ROW_HEIGHT_MM - NEO_ROW_VPAD_MM)); // width fixed up in step()
 			addChild(cells);
 			rowCells[r] = cells;
 		}
@@ -696,6 +930,16 @@ struct NeoWidget : ModuleWidget
 			float cellsWidthMm = std::max(1.f, widthMm - NEO_CONTROLS_WIDTH_MM);
 			for (int r = 0; r < NEO_NUM_ROWS; r++)
 				rowCells[r]->box.size.x = mm2px(cellsWidthMm);
+			// addXExtStrip() positions the right strip against the panel width it's given at
+			// construction time only - unlike every other module that owns one of these, NEO's
+			// own width isn't fixed, so its x needs re-deriving here every time too.
+			if (extStripRight)
+			{
+				extStripRight->box.pos.x = mm2px(widthMm - X_STRIP_SEEM_WIDTH_MM / 2.f);
+				updateXExtStrip(extStripRight, neoModule, neoModule->rightExpander.module);
+			}
+			if (extStripLeft)
+				updateXExtStripLeft(extStripLeft, neoModule, neoModule->leftExpander.module);
 		}
 		if (panelWidget)
 			panelWidget->box.size = box.size;
@@ -828,11 +1072,9 @@ struct NeoWidget : ModuleWidget
 			int channel;
 			void onChange(const ChangeEvent &e) override
 			{
-				// Names aren't part of this v1 pass's OL_state (only color is, packed as a
-				// float) - left as a visual-only field for now; full persistence needs the
-				// moduleExtraDataToJson/FromJson hook (see CLAUDE.md), deferred alongside the
-				// rest of the styling/polish pass.
 				TextField::onChange(e);
+				if (module)
+					module->setChannelName(channel, text);
 			}
 		};
 
@@ -843,12 +1085,12 @@ struct NeoWidget : ModuleWidget
 			int color;
 			void onAction(const event::Action &e) override
 			{
-				module->OL_setOutState(CHANNEL_COLOR_JSON + channel, float(color));
+				module->setChannelColor(channel, color);
 			}
 			void step() override
 			{
 				if (module)
-					rightText = ((int) module->OL_state[CHANNEL_COLOR_JSON + channel] == color) ? "✔" : "";
+					rightText = (module->channelColor[channel] == color) ? "✔" : "";
 			}
 		};
 
@@ -860,6 +1102,17 @@ struct NeoWidget : ModuleWidget
 			Menu *createChildMenu() override
 			{
 				Menu *menu = new Menu;
+
+				NeoChannelNameField *nameField = new NeoChannelNameField();
+				nameField->module = module;
+				nameField->channel = channel;
+				nameField->text = module->channelName[channel];
+				nameField->box.size = Vec(140.f, 20.f);
+				menu->addChild(nameField);
+
+				MenuLabel *colorSpacer = new MenuLabel();
+				menu->addChild(colorSpacer);
+
 				// Simple preset-swatch grid for v1 (per the plan - "a simple preset-swatch grid
 				// submenu is enough for v1, a full custom color wheel is not necessary yet").
 				static const int swatches[8] = {

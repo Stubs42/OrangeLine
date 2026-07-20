@@ -1499,6 +1499,7 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, NeoHostInterface, Exp
 	// Reuses the existing getChannelLoopLength() helper (already resolves the LOOP_LEN_INPUT-
 	// poly-vs-LOOP_LEN_PARAM-knob distinction) rather than duplicating that logic here.
 	int getLoopLen(int channel) override { return (int) getChannelLoopLength(channel); }
+	int getMaxLoopLen() override { return MAX_LOOP_LEN; }
 	int getPlayCursor(int channel) override { return (int) getStateJson(HEAD_JSON + channel); }
 	float getNeoStyle() override { return OL_state[STYLE_JSON]; }
 };

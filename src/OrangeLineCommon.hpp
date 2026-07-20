@@ -152,6 +152,7 @@ ExpanderDataStore expanderDataStore;
 void writeExpanderData(const std::string &slug, const std::string &json) { expanderDataStore.write(slug, json); }
 std::string readExpanderData(const std::string &slug) { return expanderDataStore.read(slug); }
 int64_t getExpanderDataTimestampMs(const std::string &slug) { return expanderDataStore.timestampMs(slug); }
+float getBridgeStyle() { return OL_state[STYLE_JSON]; }
 #pragma GCC diagnostic pop
 // Convenience wrappers for the CALLING side - auto-supply this module's own slug (already
 // available via `model`) so a call site never spells out a literal module-name string (which

@@ -145,6 +145,16 @@ struct ExpanderBridgeInterface
 	// name set) - see each family's own Free/Disconnect-style menu item, which is where this
 	// gets shown; no separate display widget needed anywhere.
 	virtual std::string getBridgeHostName() = 0;
+	// This module's own OL_state[STYLE_JSON] (STYLE_ORANGE/DARK/BRIGHT) - default body here only
+	// matters for the same impossible-in-practice bespoke-implementer case as the data-store
+	// methods below; every real module gets a real override via OrangeLineCommon.hpp. Used ONLY
+	// by bridgeConnected() to decide whether a genuinely connected pair should also visually
+	// close their seam - two modules can be logically bridged while running different themes
+	// (nothing stops that), and a seam that closes anyway would stitch two mismatched colors
+	// together, so bridgeConnected() additionally requires both sides to agree here. Dieter's
+	// own instruction, 2026-07-20: this must live once, in the common bridge code every family
+	// already shares, not be reimplemented (or forgotten) per family/module.
+	virtual float getBridgeStyle() { return -1.f; }
 
 	// Lifecycle-safety hooks for a module that caches a raw pointer to another bridge module
 	// across ticks (XO/XR/LANES/NEO all do this - see XOShared.hpp's resolveXOHostBridge(),
@@ -366,10 +376,12 @@ inline int64_t resolveBridgeHostId(const std::vector<ExpanderFamily> &selfFamili
 	Whether two Modules genuinely belong to the same connected group right now - own resolved
 	bridge host id equals the neighbor's, and neither is simply "unconnected" (-1 == -1 must NOT
 	count, or two unrelated, disconnected same-family modules sitting side by side would
-	incorrectly read as belonging together). Drives the seam-bridging Ext-strip and logo-cover-
-	hide visibility for every family (replaces the old per-family theme/style-only comparison) -
-	a genuinely simpler AND more correct condition, since it reflects actual logical connection
-	rather than merely matching color schemes. Either argument may be nullptr (no neighbor there).
+	incorrectly read as belonging together) - AND both currently run the same theme, so a closed
+	seam never stitches two mismatched panel colors together (2026-07-20 addition, Dieter's own
+	instruction: a logical connection can span different themes, but the VISUAL seam-closing
+	should not, and that rule belongs here once rather than in each family's own strip code).
+	Drives the seam-bridging Ext-strip and logo-cover-hide visibility for every family. Either
+	argument may be nullptr (no neighbor there).
 */
 inline bool bridgeConnected(Module *a, Module *b)
 {
@@ -378,7 +390,9 @@ inline bool bridgeConnected(Module *a, Module *b)
 	if (!bridgeA || !bridgeB)
 		return false;
 	int64_t idA = bridgeA->getBridgeHostId();
-	return idA != -1 && idA == bridgeB->getBridgeHostId();
+	if (idA == -1 || idA != bridgeB->getBridgeHostId())
+		return false;
+	return bridgeA->getBridgeStyle() == bridgeB->getBridgeStyle();
 }
 
 #endif

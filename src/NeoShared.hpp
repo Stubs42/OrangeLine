@@ -53,9 +53,16 @@ struct NeoHostInterface
 	// freely choosable slot from NEO's side (NEO's own per-row toggle only ever picks TAPE vs.
 	// MEM, never a specific one of several memory slots).
 	virtual float getMemStep(int channel, int step) = 0;
-	// How many of the up-to-128 steps are actually active/looping right now for this channel -
-	// used to decide whether NEO's own per-row paging UI needs to appear at all.
+	// How many of this channel's own currently-configured steps are actually active/looping
+	// right now - used to decide whether NEO's own per-row paging UI needs to appear at all.
 	virtual int getLoopLen(int channel) = 0;
+	// The Host's own structural ceiling on loop length - the most steps ANY channel could ever
+	// have, regardless of what's currently configured (Morpheus: MAX_LOOP_LEN, 128). Generic
+	// (Host-wide, not per-channel) since that's what every real Host actually has: one fixed
+	// capacity, not a per-channel-varying one. Used purely to size NEO's own resizable panel -
+	// past this many visible columns, more width can never show anything new, since no channel
+	// can ever exceed it.
+	virtual int getMaxLoopLen() = 0;
 	// Current play-cursor position (0..loopLen-1) for this channel - used to auto-page a row
 	// when its own FOLLOW toggle is on.
 	virtual int getPlayCursor(int channel) = 0;
