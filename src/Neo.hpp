@@ -141,15 +141,27 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 // them at once. NEO's own per-tick right-strip re-derivation (NeoWidget::step(), since its width
 // isn't fixed) just matches that same shared formula.
 
-// Lock button (global area, see Neo module's own NeoLockData/toggleLock()) - upper left corner
-// of the global area's own frame, spaced per PanelDesignGuide.md's own "Positioning controls"
-// target (5 grid units, ~1.27mm) from both the left and top frame edges. Same flat-fill square
-// style as the row LEFT/RIGHT paging buttons and X-family's own Bind/Free button - grey when
-// unlocked, green when locked (matching NEO's own FOLLOW toggle green) - just a plain square for
-// now, a locked/unlocked icon is a later styling pass (Dieter's own instruction, 2026-07-20).
-#define NEO_LOCK_BUTTON_SIZE_MM    6.f
-#define NEO_LOCK_BUTTON_SPACING_MM 1.27f
-#define NEO_LOCK_OFF_COLOR nvgRGB(0x30, 0x30, 0x30)
+// Lock button (global area, see Neo module's own NeoLockData/toggleLock()) - restyled 2026-07-20
+// (Dieter's own instruction) to match X-family's own BIND/FREE button convention
+// (X8BindButtonBase, X8Common.hpp): a full-width labeled bar, not a small square icon. Text reads
+// "LOCK" while unlocked, "FREE" while locked (mirrors X-family's own Free rename). Color is
+// three-state, same shape as X8ButtonBase's own accent color: grey (X_COLOR_INACTIVE_GREY) with
+// no Host connected, the normal per-theme text color (xThemedTextColor()) while unlocked/showing
+// "LOCK", green (NEO_LOCK_ON_COLOR) while locked/showing "FREE". Spans the global area's own
+// frame width, inset by one frame-padding unit (NEO_FRAME_GAP_MM) on the left/top/right from that
+// frame's own edges - same "nested element gets one frame-gap from its own containing frame"
+// rule as every other framed element in NEO (see CLAUDE.md's "Code-drawn digital displays and
+// knob rings" section) - height is a fixed 5mm, not tied to the frame's own bottom edge.
+#define NEO_LOCK_BUTTON_X_MM      (NEO_FRAME_MARGIN_MM + NEO_FRAME_GAP_MM)
+#define NEO_LOCK_BUTTON_Y_MM      (NEO_FRAME_TOP_MM + NEO_FRAME_GAP_MM)
+#define NEO_LOCK_BUTTON_WIDTH_MM  (NEO_GLOBAL_AREA_WIDTH_MM - 1.5f * NEO_FRAME_GAP_MM - NEO_LOCK_BUTTON_X_MM)
+#define NEO_LOCK_BUTTON_HEIGHT_MM 5.f
+// Shared by EVERY button in the global area, not just the lock button (Dieter's own instruction,
+// 2026-07-20: "all of those buttons in the global area will have the same fontsize, so one
+// fontsize for all") - named generically for that reason, not after any one specific button.
+// Was an inline literal (X8ButtonBase's own "2.82222f" copied verbatim) until Dieter asked
+// whether it was configurable at all.
+#define NEO_GLOBAL_AREA_BUTTON_FONT_SIZE_MM 4.f
 #define NEO_LOCK_ON_COLOR  nvgRGB(0x00, 0xdd, 0x44)
 
 // How much width is "spent" on either side of the step-column grid, total - the global area,
@@ -185,17 +197,135 @@ inline float neoRowAreaControlsWidthMm(bool fullHeight, float rowHeaderWidthMm)
 #define NEO_ROWS_MAX     8
 #define NEO_ROWS_DEFAULT 8
 
+// Track select knob's own fixed Param range - real Params need a fixed range at configParam()
+// time, but a Host's actual track count is only known once connected (Morpheus: 18) and is
+// generically allowed to differ per Host. A generous fixed ceiling with the actually-used track
+// id clamped to min(paramValue, host->getTrackCount()-1) at read time (Neo.cpp) - turning the
+// knob past a connected Host's own real count just holds at its last real track, same spirit as
+// X-family's own dimming-beyond-channel-limit convention - avoids ever needing to reconfigure a
+// live Param's own range/ParamQuantity when the connected Host changes.
+#define NEO_MAX_TRACKS 32
+
+// Approximate per-character advance width for res/repetition-scrolling.regular.ttf, as a
+// fraction of font size - derived from Dieter's own live-measured/tuned reference point
+// (2026-07-20): the 4-char track display settled at 14.9mm wide for a 6mm font with 0.81mm
+// insets on each side, i.e. (14.9 - 2*0.81) / 4 / 6 = 0.553.
+#define NEO_DISPLAY_CHAR_WIDTH_RATIO 0.553f
+
+// A display field's own width, derived from its character count and font size rather than a
+// hand-picked constant per field (Dieter's own instruction, 2026-07-20: "the display width of
+// those displays should be a result of a common function f(#chars, fontsize), not a field
+// specific define") - every one of NEO's own row displays (track/channel/position) computes its
+// own width through this one function instead of an independent literal that needs separate
+// live-tuning and can drift out of proportion with the others.
+inline float neoDisplayWidthMm(int numChars, float fontSizeMm, float insetMm)
+{
+	return (float) numChars * fontSizeMm * NEO_DISPLAY_CHAR_WIDTH_RATIO + 2.f * insetMm;
+}
+
 // Per-row control x-offsets, measured from the global area's own right edge (added to
 // NEO_GLOBAL_AREA_WIDTH_MM at each use site) - and their own widget sizes.
-#define NEO_ROW_NAME_X_MM        1.f
+// Track/channel select knobs + their own numeric displays (2026-07-20 addition) - sequentially
+// first in the header, ahead of the name field, per Dieter's own spec: "for the beginning we
+// just put them sequentially in the header." Track display is 4 characters ("TAPE"/"MSEL"/
+// "M-01".."M-16"), channel display is 2 ("1".."16") - widths sized for those exact character
+// counts at NEO_ROW_NUMBER_DISPLAY_FONT_SIZE_MM plus the display-background frame's own inset.
+// Knob positions are CENTER x (matches createParamCentered()'s own convention), everything else
+// here is a left edge. Sizing/spacing enlarged 2026-07-20 (Dieter's own follow-up, after seeing
+// the first pass live: bigger font, a real display-background+frame around each number, vertical
+// centering, frame height trimmed down ~0.5mm) - the actual per-widget gap between any two
+// header controls is always NEO_FRAME_GAP_MM, the same one universal padding unit every other
+// gap in NEO already uses (Dieter's own instruction: "the spacing between the displays and
+// buttons should be as always frame padding") - no separate hand-picked gap constant, so "the
+// padding stays the same" automatically even if a display's own width changes again later,
+// rather than independent gap values that could silently drift out of sync with each other.
+// Exact values below are lifted from Dieter's own reference SVG (res/DisplaysWithKnobsInFrame.svg,
+// 2026-07-20) rather than hand-picked - see its own extraction notes: every gap is exactly
+// NEO_FRAME_GAP_MM (confirmed 3 times, the SVG even has literal "h 1.524" tick marks spanning
+// each one), the knob gets a themed drawn ring (NeoRowKnobRingWidget) matching the display's own
+// frame styling - Dieter's own instruction: build it as its own separable widget/option here,
+// don't retrofit it onto any OTHER module's knobs yet ("will use the drawn version in future
+// because it makes layout much easier").
+// NEO_ROW_TRACK_DISPLAY_X_MM (2026-07-20, Dieter's own correction): the first display needs the
+// SAME padding from the row-header-frame's own left edge that the row-header-frame itself has
+// from ITS surrounding (row area) frame in Normal mode - that inset is exactly NEO_FRAME_GAP_MM
+// (see headerFrameLeftMm's own comment, NeoWidget::step()). headerFrameLeftMm itself, relative
+// to the global area edge, is (NEO_FRAME_GAP_MM / 2 + NEO_FRAME_GAP_MM) = 1.5x the gap - add one
+// more full gap for the display's own inset: 2.5x total.
+#define NEO_ROW_TRACK_DISPLAY_X_MM      (2.5f * NEO_FRAME_GAP_MM)
+#define NEO_ROW_TRACK_DISPLAY_WIDTH_MM  neoDisplayWidthMm(4, NEO_ROW_NUMBER_DISPLAY_FONT_SIZE_MM, NEO_ROW_DISPLAY_TEXT_INSET_MM)
+#define NEO_ROW_CHANNEL_DISPLAY_WIDTH_MM neoDisplayWidthMm(2, NEO_ROW_NUMBER_DISPLAY_FONT_SIZE_MM, NEO_ROW_DISPLAY_TEXT_INSET_MM)
+#define NEO_ROW_NUMBER_DISPLAY_HEIGHT_MM 6.1f
+// Text sits 0.25mm below the box's own vertical center (Dieter's own correction, 2026-07-20) -
+// shared by every one of NEO's row displays, not just track/channel.
+#define NEO_ROW_DISPLAY_TEXT_Y_OFFSET_MM 0.25f
+#define NEO_ROW_SELECT_KNOB_SIZE_MM     (6.f * NEO_FRAME_GAP_MM) // = 9.144mm ring diameter, matches
+                                                                  // the reference SVG's own knob
+                                                                  // ring exactly (radius = 3x gap)
+#define NEO_ROW_NUMBER_DISPLAY_FONT_SIZE_MM 6.f
+
+// Derived, not hand-picked - see NEO_ROW_TRACK_DISPLAY_X_MM's own comment. Kept as real
+// constant-expressions (not runtime code) so they're still usable as compile-time #defines
+// everywhere the older hand-picked ones were.
+#define NEO_ROW_TRACK_KNOB_X_MM    (NEO_ROW_TRACK_DISPLAY_X_MM + NEO_ROW_TRACK_DISPLAY_WIDTH_MM + NEO_FRAME_GAP_MM + NEO_ROW_SELECT_KNOB_SIZE_MM / 2.f)
+#define NEO_ROW_CHANNEL_DISPLAY_X_MM (NEO_ROW_TRACK_KNOB_X_MM + NEO_ROW_SELECT_KNOB_SIZE_MM / 2.f + NEO_FRAME_GAP_MM)
+#define NEO_ROW_CHANNEL_KNOB_X_MM    (NEO_ROW_CHANNEL_DISPLAY_X_MM + NEO_ROW_CHANNEL_DISPLAY_WIDTH_MM + NEO_FRAME_GAP_MM + NEO_ROW_SELECT_KNOB_SIZE_MM / 2.f)
+#define NEO_ROW_NAME_X_MM            (NEO_ROW_CHANNEL_KNOB_X_MM + NEO_ROW_SELECT_KNOB_SIZE_MM / 2.f + NEO_FRAME_GAP_MM)
+
 #define NEO_ROW_NAME_WIDTH_MM    16.f
-#define NEO_ROW_MEMTAPE_X_MM     19.f
-#define NEO_ROW_FOLLOW_X_MM      26.f
-#define NEO_ROW_LEFT_X_MM        33.f
-#define NEO_ROW_RIGHT_X_MM       38.f
-#define NEO_ROW_TOGGLE_WIDTH_MM  6.f  // MEM/TAPE and FOLLOW toggle buttons
+#define NEO_ROW_FOLLOW_X_MM      (NEO_ROW_NAME_X_MM + NEO_ROW_NAME_WIDTH_MM + NEO_FRAME_GAP_MM)
+#define NEO_ROW_LEFT_X_MM        (NEO_ROW_FOLLOW_X_MM + NEO_ROW_TOGGLE_WIDTH_MM + NEO_FRAME_GAP_MM)
+#define NEO_ROW_RIGHT_X_MM       (NEO_ROW_LEFT_X_MM + NEO_ROW_PAGEBTN_SIZE_MM + NEO_FRAME_GAP_MM)
+#define NEO_ROW_TOGGLE_WIDTH_MM  6.f  // FOLLOW toggle button
 #define NEO_ROW_TOGGLE_HEIGHT_MM 4.f
 #define NEO_ROW_PAGEBTN_SIZE_MM  4.f  // LEFT/RIGHT paging buttons (square)
+
+// Right-aligned page/position display (2026-07-20 addition, Dieter's own spec: "pp/PP:sss/SSS
+// with pp current page, PP number of pages and sss current step pos and SSS LEN", later split
+// into two stacked lines - see getText/getText2's own comment, Neo.cpp). Anchored to the header's
+// own actual current right edge (NeoWidget::step(), since header width isn't fixed) rather than
+// a fixed left-edge offset like every other row control above - shrinking this width alone keeps
+// the right margin fixed and just eats into the left side, by construction of that same
+// right-edge-derived formula. Width sized for the longer of the two lines now ("sss/SSS",
+// 7 characters, space-padded per-field like "%3d/%3d" rather than zero-padded, monospace font so
+// this reads as right-aligned within each field) - a first estimate, not yet visually confirmed.
+#define NEO_ROW_POSITION_DISPLAY_WIDTH_MM neoDisplayWidthMm(7, NEO_ROW_POSITION_DISPLAY_FONT_SIZE_MM, NEO_ROW_DISPLAY_TEXT_INSET_MM)
+// Experiment, 2026-07-20 (Dieter's own request, "just to see how it looks"): height matched to
+// the knob ring's own diameter instead of the near-zero-padding text-height ratio every other
+// display uses - not yet a confirmed final choice.
+#define NEO_ROW_POSITION_DISPLAY_HEIGHT_MM NEO_ROW_SELECT_KNOB_SIZE_MM
+#define NEO_ROW_POSITION_DISPLAY_FONT_SIZE_MM 4.7f
+#define NEO_ROW_POSITION_DISPLAY_MARGIN_MM NEO_FRAME_GAP_MM // gap from the header's own right edge
+// Two-line stacked experiment (2026-07-20) - the second line nudged up a hair from where the
+// plain half-height centering would otherwise put it.
+#define NEO_ROW_DISPLAY_LINE2_Y_NUDGE_MM -0.2f
+
+// Display background + frame (2026-07-20, Dieter's own follow-up spec, exact values from
+// res/DisplaysWithKnobsInFrame.svg) - shared by every one of NEO's own row displays (track/
+// channel/position). Matches the codebase's established "X_DISPLAY_BG_*" convention (see
+// CLAUDE.md's own "Self-drawn widget backgrounds" section and tools/bake_panel_theme.py's
+// THEME_DISPLAYFILL_COLOR) rather than the plain panel/strip background - a genuinely different,
+// darker per-theme color, since these are true "digital display" cells, not a knob-ring cover or
+// similar. Frame stroke uses the same theme lookup (X_FRAME_ORANGE/DARK/BRIGHT, XShared.hpp)
+// every other framed element in NEO already uses. Corner radius/stroke width both reuse existing
+// established constants (NEO_FRAME_MARGIN_MM/NEO_FRAME_STROKE_MM) rather than new ones - the
+// reference SVG's own measured radius (0.762mm) and stroke (0.3mm) turned out to already exactly
+// match those.
+#define NEO_ROW_DISPLAY_BG_ORANGE nvgRGB(0x10, 0x06, 0x00)
+#define NEO_ROW_DISPLAY_BG_DARK   nvgRGB(0x17, 0x17, 0x17)
+#define NEO_ROW_DISPLAY_BG_BRIGHT nvgRGB(0x15, 0x15, 0x2b)
+#define NEO_ROW_DISPLAY_STROKE_MM NEO_FRAME_STROKE_MM
+#define NEO_ROW_DISPLAY_RADIUS_MM NEO_FRAME_MARGIN_MM
+#define NEO_ROW_DISPLAY_TEXT_INSET_MM 0.81f // left inset of the text within its own display background
+
+// Knob ring (2026-07-20, Dieter's own follow-up spec, exact values from the same reference SVG) -
+// a themed circle drawn around each track/channel knob, same stroke/color convention as the
+// display frame above. Diameter is NEO_ROW_SELECT_KNOB_SIZE_MM (already the reference SVG's own
+// exact ring size) - built as its own separate, self-contained widget (NeoRowKnobRingWidget,
+// Neo.cpp) specifically so it stays optional per knob rather than baked into the knob itself;
+// Dieter's own instruction: only these two NEO knobs get one for now, not retrofitted onto any
+// other module's own knobs yet.
+#define NEO_ROW_KNOB_RING_STROKE_MM NEO_FRAME_STROKE_MM
 
 // Step-cell color (NeoRowCellsWidget). The horizontal padding between cells is NOT a separate
 // fixed value - it's derived every draw() call from the actual current gap (pitch minus cell
@@ -454,11 +584,12 @@ enum jsonIds {
 	// which silently corrupts when stored in a float) - moved to a real int64_t member
 	// (neoConnectedHostId, Neo.cpp), persisted via moduleExtraDataToJson/FromJson instead.
 
-	// Which of the 16 real Morpheus channels each row currently displays - "each row has exactly
-	// one selector," not the other way around, so two rows can (harmlessly) show the same
-	// channel but no row can ever end up ambiguous about which channel it shows.
-	ROW_CHANNEL_JSON,
-	ROW_CHANNEL_JSON_LAST = ROW_CHANNEL_JSON + NEO_NUM_ROWS - 1,
+	// Which channel/track each row currently displays used to live here as OL_state
+	// (ROW_CHANNEL_JSON) - moved 2026-07-20 to the new ROW_TRACK_PARAM/ROW_CHANNEL_PARAM real
+	// knobs (ParamIds below) once they stopped being a right-click-menu-only choice and became
+	// on-panel controls, for the same reason ROW_MEMTAPE_JSON did (see its own note below) - a
+	// real Param is Rack-natively persisted, so a separate JSON mirror would just be a second,
+	// possibly-disagreeing source of truth for the exact same value.
 
 	// Channel name/color used to live here as per-channel, per-instance state (CHANNEL_COLOR_JSON)
 	// - moved 2026-07-20 to genuinely channel-owned, Host-shared storage instead (Neo.cpp's own
@@ -467,10 +598,11 @@ enum jsonIds {
 	// see ExpanderBridge.hpp). A channel's identity shouldn't depend on which NEO instance/row is
 	// currently looking at it, and every attached NEO instance now automatically agrees.
 
-	// Per-row MEM/TAPE toggle (0 = TAPE, 1 = MEM) and FOLLOW toggle (0 = off/manual page, 1 = on/
-	// auto-follow play cursor) - real button Params below, these mirror their current value.
-	ROW_MEMTAPE_JSON,
-	ROW_MEMTAPE_JSON_LAST = ROW_MEMTAPE_JSON + NEO_NUM_ROWS - 1,
+	// Per-row MEM/TAPE toggle used to live here (ROW_MEMTAPE_JSON) - removed 2026-07-20, replaced
+	// entirely by the new ROW_TRACK_PARAM knob (TAPE/MSEL are now just two of its own choices).
+	// FOLLOW toggle (0 = off/manual page, 1 = on/auto-follow play cursor) - real button Param
+	// below, this mirrors its current value (a momentary button's own raw param value is
+	// meaningless on its own, unlike a knob's).
 	ROW_FOLLOW_JSON,
 	ROW_FOLLOW_JSON_LAST = ROW_FOLLOW_JSON + NEO_NUM_ROWS - 1,
 
@@ -489,12 +621,24 @@ enum jsonIds {
 };
 
 //
-// Parameter Ids - per-row toggle buttons only; the step cells themselves are not Params (they
-// write directly through NeoHostInterface to Morpheus, not to Neo's own state)
+// Parameter Ids - per-row toggle buttons, plus (2026-07-20) the track/channel select knobs.
+// The step cells themselves are not Params (they write directly through NeoHostInterface to
+// Morpheus, not to Neo's own state). ROW_MEMTAPE_PARAM is gone (Dieter's own instruction,
+// 2026-07-20: the new ROW_TRACK_PARAM knob fully replaces it - TAPE/MSEL are now just two of a
+// track knob's own choices, so a separate toggle would be redundant and could disagree).
+// ROW_TRACK_PARAM/ROW_CHANNEL_PARAM are real, Rack-native discrete knobs (matching MidiBus's own
+// RX/TX_CHANNEL_PARAM precedent) rather than virtual OL_state - real Params are persisted by
+// Rack's own base Module::toJson()/fromJson() independent of OrangeLineCommon's dataToJson()/
+// dataFromJson() override (which only ever handles the OL_state/jsonLabel "data" blob), so no
+// extra JSON mirror is needed for them to survive a save/reload, unlike the momentary buttons
+// below (whose own raw param value is meaningless - only the OL_state toggle result they drive
+// needs to persist).
 //
 enum ParamIds {
-	ROW_MEMTAPE_PARAM,
-	ROW_MEMTAPE_PARAM_LAST = ROW_MEMTAPE_PARAM + NEO_NUM_ROWS - 1,
+	ROW_TRACK_PARAM,   // which of the Host's own tracks (TAPE/MSEL/M-01..M-16 for Morpheus)
+	ROW_TRACK_PARAM_LAST = ROW_TRACK_PARAM + NEO_NUM_ROWS - 1,
+	ROW_CHANNEL_PARAM, // which of the Host's own channels (1..16 for Morpheus)
+	ROW_CHANNEL_PARAM_LAST = ROW_CHANNEL_PARAM + NEO_NUM_ROWS - 1,
 	ROW_FOLLOW_PARAM,
 	ROW_FOLLOW_PARAM_LAST = ROW_FOLLOW_PARAM + NEO_NUM_ROWS - 1,
 	ROW_LEFT_PARAM,  // manual page-back, active only while that row's FOLLOW is off

@@ -1472,32 +1472,55 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, NeoHostInterface, Exp
 	// NeoHostInterface - see NeoShared.hpp's own architecture comment. Unlike XHostInterface/
 	// XOHostInterface above, this is bidirectional (NEO can write back), but still exposes only
 	// proper named methods - NEO never touches OL_state/STEPS_JSON/MEM_JSON addressing directly.
-	float getTapeStep(int channel, int step) override
+	// 18 tracks (2026-07-20 generic track/channel redesign): trackId 0 = TAPE (STEPS_JSON,
+	// today's live/in-progress tape), trackId 1 = MSEL (MEM_JSON at whichever slot
+	// ACTIVE_MEM_JSON currently selects - the same indirection the original getMemStep() always
+	// used), trackId 2..17 = M-01..M-16 (MEM_JSON at a FIXED slot index, addressed directly,
+	// bypassing ACTIVE_MEM_JSON entirely - Dieter's own spec, "M-01 to M-16"). memSlotForTrack()
+	// is the one place that trackId -> MEM_JSON slot mapping is decided.
+	int memSlotForTrack(int trackId)
 	{
-		return getStateJson(STEPS_JSON + MAX_LOOP_LEN * channel + step);
+		return (trackId == 1) ? (int) getStateJson(ACTIVE_MEM_JSON) : (trackId - 2);
 	}
-	void setTapeStep(int channel, int step, float value) override
+	int getTrackCount() override { return 2 + MEM_SLOTS; }
+	std::string getTrackName(int trackId) override
 	{
-		setStateJson(STEPS_JSON + MAX_LOOP_LEN * channel + step, value);
+		if (trackId == 0)
+			return "TAPE";
+		if (trackId == 1)
+			return "MSEL";
+		char buf[8];
+		snprintf(buf, sizeof(buf), "M-%02d", trackId - 2 + 1);
+		return std::string(buf);
 	}
-	// Addressing mirrors MorpheusDisplayWidget's own existing read of the active Mem slot
-	// (Morpheus.cpp's draw() code, "int mem = MEM_JSON + (int) getStateJson(ACTIVE_MEM_JSON) *
-	// POLY_CHANNELS * MAX_LOOP_LEN + row * MAX_LOOP_LEN + step") - same active-slot addressing,
-	// just wrapped as a proper method instead of inline arithmetic at the call site.
-	float getMemStep(int channel, int step) override
+	// Every one of Morpheus's own 18 tracks uses the same POLY_CHANNELS structure - the per-track
+	// count exists on the interface purely for Hosts that genuinely differ per track, not because
+	// Morpheus itself needs to.
+	int getTrackChannelCount(int trackId) override { (void) trackId; return POLY_CHANNELS; }
+	float getTrackStep(int trackId, int channel, int step) override
 	{
-		int mem = MEM_JSON + (int) getStateJson(ACTIVE_MEM_JSON) * POLY_CHANNELS * MAX_LOOP_LEN
+		if (trackId == 0)
+			return getStateJson(STEPS_JSON + MAX_LOOP_LEN * channel + step);
+		int mem = MEM_JSON + memSlotForTrack(trackId) * POLY_CHANNELS * MAX_LOOP_LEN
 		        + channel * MAX_LOOP_LEN + step;
 		return getStateJson(mem);
 	}
-	void setMemStep(int channel, int step, float value) override
+	void setTrackStep(int trackId, int channel, int step, float value) override
 	{
-		int mem = MEM_JSON + (int) getStateJson(ACTIVE_MEM_JSON) * POLY_CHANNELS * MAX_LOOP_LEN
+		if (trackId == 0)
+		{
+			setStateJson(STEPS_JSON + MAX_LOOP_LEN * channel + step, value);
+			return;
+		}
+		int mem = MEM_JSON + memSlotForTrack(trackId) * POLY_CHANNELS * MAX_LOOP_LEN
 		        + channel * MAX_LOOP_LEN + step;
 		setStateJson(mem, value);
 	}
 	// Reuses the existing getChannelLoopLength() helper (already resolves the LOOP_LEN_INPUT-
-	// poly-vs-LOOP_LEN_PARAM-knob distinction) rather than duplicating that logic here.
+	// poly-vs-LOOP_LEN_PARAM-knob distinction) rather than duplicating that logic here. Always
+	// the live TAPE's own length regardless of which track a row is currently viewing (Dieter's
+	// own instruction, 2026-07-20 - stored memory has no length concept of its own, "we just
+	// access the part which is accessible by LEN").
 	int getLoopLen(int channel) override { return (int) getChannelLoopLength(channel); }
 	int getMaxLoopLen() override { return MAX_LOOP_LEN; }
 	int getPlayCursor(int channel) override { return (int) getStateJson(HEAD_JSON + channel); }

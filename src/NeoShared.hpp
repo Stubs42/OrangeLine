@@ -44,17 +44,36 @@ struct NeoHostInterface
 {
 	virtual ~NeoHostInterface() {}
 
-	// Read - "step" is 0..127 (MAX_LOOP_LEN), "channel" is 0..15 (POLY_CHANNELS). A step is a
-	// single raw float, full stop - no separate gate/microtiming/volume/pitchbend sub-values;
-	// NEO's own per-row cell-type widgets are purely different display/edit interpretations of
-	// this one same value, confirmed explicitly during spec discussion.
-	virtual float getTapeStep(int channel, int step) = 0;
-	// Whichever of the Host's stored memory slots is currently active/selected - implicit, not a
-	// freely choosable slot from NEO's side (NEO's own per-row toggle only ever picks TAPE vs.
-	// MEM, never a specific one of several memory slots).
-	virtual float getMemStep(int channel, int step) = 0;
+	// Generic track/channel addressing (2026-07-20 redesign, replacing the original hardcoded
+	// tape-vs-current-mem-slot binary) - a "track" is any one of a Host's own addressable step
+	// storages, generic-sequencer-conform rather than Morpheus-specific: Morpheus itself exposes
+	// 18 (TAPE, MSEL - whichever memory slot is currently selected/active, same indirection the
+	// old getMemStep() always used - and M-01..M-16, each of its own 16 stored memory slots
+	// addressed directly regardless of which one is currently "active"). trackId is 0..
+	// getTrackCount()-1; a Host is free to expose as many or as few as make sense for it - NEO
+	// never assumes any particular count or ordering beyond that.
+	virtual int getTrackCount() = 0;
+	// A short, fixed-width display label for this track (Morpheus: "TAPE"/"MSEL"/"M-01".."M-16",
+	// each already <=4 characters to fit NEO's own 4-char track display without truncation).
+	virtual std::string getTrackName(int trackId) = 0;
+	// How many channels this specific track exposes - deliberately NOT assumed to equal
+	// POLY_CHANNELS for every track/Host (Dieter's own instruction, 2026-07-20: "with tracks we
+	// are not bound to 16 poly channels") even though every one of Morpheus's own 18 tracks
+	// happens to use all 16.
+	virtual int getTrackChannelCount(int trackId) = 0;
+	// Read - "step" is 0..127 (MAX_LOOP_LEN). A step is a single raw float, full stop - no
+	// separate gate/microtiming/volume/pitchbend sub-values; NEO's own per-row cell-type widgets
+	// are purely different display/edit interpretations of this one same value, confirmed
+	// explicitly during spec discussion. There is no independent "content length" per track/
+	// memory slot (Dieter's own instruction, 2026-07-20: "there is no content length of memory,
+	// we just access the part which is accessible by LEN - memory is always 128 steps but mostly
+	// unused") - getLoopLen()/getMaxLoopLen() below are the one and only length concept, and
+	// apply regardless of which track a row is currently viewing.
+	virtual float getTrackStep(int trackId, int channel, int step) = 0;
 	// How many of this channel's own currently-configured steps are actually active/looping
-	// right now - used to decide whether NEO's own per-row paging UI needs to appear at all.
+	// right now - used to decide whether NEO's own per-row paging UI needs to appear at all, and
+	// to bound editing (nothing past this is ever readable/writable through a row, regardless of
+	// which track it's currently viewing - "it does not make sense to edit anything beyond LEN").
 	virtual int getLoopLen(int channel) = 0;
 	// The Host's own structural ceiling on loop length - the most steps ANY channel could ever
 	// have, regardless of what's currently configured (Morpheus: MAX_LOOP_LEN, 128). Generic
@@ -64,15 +83,16 @@ struct NeoHostInterface
 	// can ever exceed it.
 	virtual int getMaxLoopLen() = 0;
 	// Current play-cursor position (0..loopLen-1) for this channel - used to auto-page a row
-	// when its own FOLLOW toggle is on.
+	// when its own FOLLOW toggle is on. Always reflects the live TAPE playback position
+	// regardless of which track a row is currently viewing (Dieter's own instruction, 2026-07-20)
+	// - a stored memory track has no cursor of its own, nothing is "playing" it.
 	virtual int getPlayCursor(int channel) = 0;
 
 	// Write - same addressing as the read side above. No engagement/exclusivity concept at all;
 	// concurrent writers (a real cable, a second Expander, etc.) resolve via plain last-write-
 	// wins, confirmed explicitly during spec discussion as sufficient (not security/safety
 	// critical, this is a musical instrument).
-	virtual void setTapeStep(int channel, int step, float value) = 0;
-	virtual void setMemStep(int channel, int step, float value) = 0;
+	virtual void setTrackStep(int trackId, int channel, int step, float value) = 0;
 
 	// This Host's own STYLE_JSON value - purely cosmetic (seam-bridging strip), unrelated to
 	// resolution health. Named distinctly per-interface so a Host implementing several of these

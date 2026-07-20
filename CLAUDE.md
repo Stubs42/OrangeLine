@@ -204,6 +204,55 @@ one's sizing/coloring.
    nudge). If unsure which direction a requested nudge means, match whatever the
    already-confirmed-correct axis did.
 
+## Code-drawn digital displays and knob rings
+
+First built for NEO's per-row track/channel select controls (`Neo.cpp`'s `NeoRowTextDisplayWidget`/
+`NeoRowKnobRingWidget`, 2026-07-20) - a self-contained, code-drawn "digital display" (background +
+frame + text) and a themed ring drawn around a knob, both entirely NVG-drawn rather than baked into
+panel SVG art. Exact sizing came from a reference SVG Dieter hand-authored and measured
+(`res/DisplaysWithKnobsInFrame.svg`) after several rounds of misunderstanding a purely verbal
+"padding" spec - when a similar drawn-decoration need comes up in another module, measure a
+reference SVG the same way rather than re-guessing these numbers from scratch, and apply the same
+proportions:
+
+- **Display background + frame**: corner radius = the same nested-frame margin used everywhere
+  else in the codebase (`NEO_FRAME_MARGIN_MM`/`X_FRAME_MARGIN_MM`-equivalent, 0.762mm), stroke
+  width = the standard frame stroke (`NEO_FRAME_STROKE_MM`/0.3mm), fill = the `X_DISPLAY_BG_*`
+  themed color (a genuinely darker "digital display" color, never the plain panel/strip
+  background - see the "Self-drawn widget backgrounds" section above for that distinction), stroke
+  color = the standard per-theme frame color (`X_FRAME_ORANGE/DARK/BRIGHT`).
+- **Display height is barely taller than its own font size** - close to zero top/bottom padding
+  (the reference SVG measured 6.096mm tall text field for a 5.997mm font - under 0.05mm padding
+  per side). Don't add generous vertical padding here the way a button or a knob-ring gets;
+  a digital-display cell in this codebase reads as correct when the glyph nearly fills its own
+  box vertically.
+- **Text left inset** ≈ 0.81mm from the display's own left edge (not flush, not more).
+- **Text vertical position**: NanoVG's `NVG_ALIGN_MIDDLE` baseline sits very slightly high for
+  this font at this size - nudge the draw position down about 0.25mm from the box's own vertical
+  center to actually look centered.
+- **Knob ring**: a themed stroke-only circle drawn as its OWN separate widget (not baked into the
+  knob's own SvgKnob), sized independently of the real knob's natural SVG size (same "frame drawn
+  at its own fixed size, independent of the control it surrounds" principle as `X8ValueButton`'s
+  own theming, see the "Self-drawn widget backgrounds" section, point 4) - diameter = 6x the
+  standard frame-gap unit (radius = 3x), stroke = the standard frame stroke, positioned centered
+  on the exact same point as the real knob widget it surrounds. Built as a genuinely separate,
+  addable/removable widget specifically so it stays optional per-knob - Dieter's own instruction
+  when first adding it: only the knobs that explicitly ask for one get it, it is not a blanket
+  retrofit onto every existing knob in the codebase.
+- **The minimum spacing between ANY two of these drawn objects (a display and its knob, a knob
+  and the next display, a nested frame and its own containing frame) is exactly one frame-padding
+  unit (`NEO_FRAME_GAP_MM`/1.524mm in NEO's own case) - never less.** This is a hard floor, not a
+  suggestion: a nested element (e.g. a display sitting inside a row-header-frame) needs the SAME
+  padding distance from ITS containing frame that the containing frame itself has from its own
+  parent frame - derive a new element's position from "containing frame's own edge + one frame-gap
+  unit," never from an independent hand-picked offset from some more distant reference point (the
+  first pass at NEO's own track display used a small offset from the far-away global-area edge
+  instead of the row-header-frame's own actual edge, and ended up looking too close to its own
+  frame - Dieter's own catch, 2026-07-20). When multiple such elements chain together (display →
+  knob → display → knob → ...), derive every later position from the previous element's own edge
+  plus one frame-gap unit, rather than independent constants for each - that way "the padding
+  stays the same" automatically even if one element's own size changes later.
+
 ## Pitfalls learned the hard way (read before writing `moduleProcess()`)
 
 - **A per-candidate "virtual input buffer" array (e.g. Morpheus's `OL_statePoly`) must have exactly ONE unit convention across every writer, or a knob-takeover round-trip diverges.** Morpheus's own `OL_statePoly` held **raw 0..1 knob units** when written by the idle-branch fallback (`computeTakeoverRaw()`, explicitly converting real→raw) but **real cable units** when written by the active-bound branch (`scaleXParamValue()`, converting raw→real) - the same array, two incompatible conventions depending on binding state. `getXParamTakeoverValue()` used to just return `OL_statePoly[...]` directly and feed it straight into `params[KNOB_PARAM+c].setValue()` (which expects raw 0..1) - fine while idle (already raw), silently wrong the instant a real value (e.g. real -10..10 for SCL/OFS) got misread as if it were already raw. Rack's raw `engine::Param::setValue()` does **not** clamp to the configured min/max, so the error doesn't just sit there - each further active-branch read (`scaleXParamValue`) re-applies the real-units scale/offset to an already-real number, amplifying it by `rawScale` every round trip (0 -> -10 -> -210 -> -4210 -> ...), seen live as a bound SCL/OFS candidate's takeover value exploding to a nonsense number like -210 on the very first bind. Fix: `getXParamTakeoverValue()` must never read the buffer directly - it should call `computeTakeoverRaw()` (or equivalent), which already knows, per candidate, how to convert "whatever the Host is actually using for this channel right now" into raw 0..1 units, regardless of current binding state. See `XHostImplementationGuide.md` for the broader rule this belongs to (a Host's virtual input buffer must always be valid, in one consistent unit, for every channel).

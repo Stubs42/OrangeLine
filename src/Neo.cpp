@@ -19,6 +19,7 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 #include <string>
+#include <functional>
 #include <stdio.h>
 #include <limits.h>
 #include <cmath>
@@ -43,7 +44,6 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 	// implements all three interfaces on one instance).
 	Module *neoHostModule = nullptr;
 
-	dsp::SchmittTrigger memTapeTrigger[NEO_NUM_ROWS];
 	dsp::SchmittTrigger followTrigger[NEO_NUM_ROWS];
 	dsp::SchmittTrigger leftTrigger[NEO_NUM_ROWS];
 	dsp::SchmittTrigger rightTrigger[NEO_NUM_ROWS];
@@ -51,8 +51,9 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 	// Persistent per-instance label buffers - setJsonLabel() stores the raw char* handed to it
 	// rather than copying the string, so a temporary std::string's c_str() would dangle the
 	// instant the temporary is destroyed (see CLAUDE.md-adjacent lesson from XR8/XR16 today).
-	char rowChannelLabelBuf[NEO_NUM_ROWS][20];
-	char rowMemTapeLabelBuf[NEO_NUM_ROWS][20];
+	// rowChannelLabelBuf/rowMemTapeLabelBuf are gone - ROW_CHANNEL_JSON/ROW_MEMTAPE_JSON were
+	// both replaced by real Params (ROW_TRACK_PARAM/ROW_CHANNEL_PARAM, 2026-07-20), which Rack's
+	// own base Module persistence handles without needing a jsonLabel at all.
 	char rowFollowLabelBuf[NEO_NUM_ROWS][20];
 	char rowPageLabelBuf[NEO_NUM_ROWS][20];
 	char rowCellTypeLabelBuf[NEO_NUM_ROWS][20];
@@ -344,7 +345,7 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 		data.ids = alive;
 	}
 
-	// Right-click-free - a real panel widget (NeoLockButton) toggles this. Handles both "I'm the
+	// Right-click-free - a real panel widget (the LOCK/FREE button, OLLabelButton) toggles this. Handles both "I'm the
 	// first to lock in" (my own current config becomes the group's) and "joining an existing
 	// group" (adopt its rows/fullHeight immediately; width converges gradually via the per-tick
 	// sync in NeoWidget::step(), so a blocked instance still locks in successfully at whatever
@@ -458,6 +459,23 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 		return w > 0.f ? w : NEO_ROW_HEADER_TARGET_WIDTH_MM; // 0 = never set (e.g. a very old save)
 	}
 
+	// THE one place a row's own current channel/track selection is read - every call site
+	// (moduleProcess(), NeoRowCellsWidget, NeoRowNameWidget, the new track/channel displays)
+	// must go through these rather than reading ROW_CHANNEL_PARAM/ROW_TRACK_PARAM directly, so
+	// the clamping rules can never drift between them (2026-07-20 track/channel knob redesign).
+	int getRowChannel(int row)
+	{
+		return clamp((int) std::round(getStateParam(ROW_CHANNEL_PARAM + row)), 0, POLY_CHANNELS - 1);
+	}
+	// See NEO_MAX_TRACKS's own comment (Neo.hpp) for why the knob's own raw value is clamped to
+	// the connected Host's actual track count here rather than reconfiguring the Param's range.
+	int getRowTrack(int row)
+	{
+		int raw = (int) std::round(getStateParam(ROW_TRACK_PARAM + row));
+		int maxTrack = neoHost ? std::max(0, neoHost->getTrackCount() - 1) : 0;
+		return clamp(raw, 0, maxTrack);
+	}
+
 	// How much width is spent before the step-column grid begins right now - the global area,
 	// the row header's own current width, plus Full Height's own reserved resize-handle strip
 	// when that's active.
@@ -518,10 +536,6 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 		// via this module's own moduleExtraDataToJson/FromJson instead (see its own comment).
 		for (int r = 0; r < NEO_NUM_ROWS; r++)
 		{
-			snprintf(rowChannelLabelBuf[r], sizeof(rowChannelLabelBuf[r]), "rowChannel%d", r);
-			setJsonLabel(ROW_CHANNEL_JSON + r, rowChannelLabelBuf[r]);
-			snprintf(rowMemTapeLabelBuf[r], sizeof(rowMemTapeLabelBuf[r]), "rowMemTape%d", r);
-			setJsonLabel(ROW_MEMTAPE_JSON + r, rowMemTapeLabelBuf[r]);
 			snprintf(rowFollowLabelBuf[r], sizeof(rowFollowLabelBuf[r]), "rowFollow%d", r);
 			setJsonLabel(ROW_FOLLOW_JSON + r, rowFollowLabelBuf[r]);
 			snprintf(rowPageLabelBuf[r], sizeof(rowPageLabelBuf[r]), "rowPage%d", r);
@@ -537,7 +551,13 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 	{
 		for (int r = 0; r < NEO_NUM_ROWS; r++)
 		{
-			configParam(ROW_MEMTAPE_PARAM + r, 0.f, 1.f, 0.f, string::f("Row %d Mem/Tape", r + 1));
+			// Real discrete knobs (2026-07-20), matching MidiBus's own RX/TX_CHANNEL_PARAM
+			// precedent - see NEO_MAX_TRACKS's own comment for why the track knob's range is a
+			// fixed ceiling rather than the connected Host's own actual track count.
+			configParam(ROW_TRACK_PARAM + r, 0.f, (float) (NEO_MAX_TRACKS - 1), 0.f, string::f("Row %d Track", r + 1));
+			paramQuantities[ROW_TRACK_PARAM + r]->snapEnabled = true;
+			configParam(ROW_CHANNEL_PARAM + r, 0.f, (float) (POLY_CHANNELS - 1), (float) (r % POLY_CHANNELS), string::f("Row %d Channel", r + 1));
+			paramQuantities[ROW_CHANNEL_PARAM + r]->snapEnabled = true;
 			configParam(ROW_FOLLOW_PARAM + r, 0.f, 1.f, 0.f, string::f("Row %d Follow", r + 1));
 			configParam(ROW_LEFT_PARAM + r, 0.f, 1.f, 0.f, string::f("Row %d Page Back", r + 1));
 			configParam(ROW_RIGHT_PARAM + r, 0.f, 1.f, 0.f, string::f("Row %d Page Forward", r + 1));
@@ -612,8 +632,8 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 		disconnectNeoHost();
 		for (int r = 0; r < NEO_NUM_ROWS; r++)
 		{
-			OL_state[ROW_CHANNEL_JSON + r] = (float) r; // row r shows channel r by default
-			OL_state[ROW_MEMTAPE_JSON + r] = 0.f;       // TAPE
+			// Row r's default track/channel (row r shows channel r, track TAPE) come from
+			// ROW_TRACK_PARAM/ROW_CHANNEL_PARAM's own configParam() defaults now, not OL_state.
 			OL_state[ROW_FOLLOW_JSON + r] = 1.f;        // auto-follow the play cursor
 			OL_state[ROW_PAGE_JSON + r] = 0.f;
 			OL_state[ROW_CELLTYPE_JSON + r] = 1.f;      // Value (more generally useful default)
@@ -676,15 +696,13 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 
 		for (int r = 0; r < NEO_NUM_ROWS; r++)
 		{
-			if (memTapeTrigger[r].process(params[ROW_MEMTAPE_PARAM + r].getValue()))
-				OL_state[ROW_MEMTAPE_JSON + r] = (OL_state[ROW_MEMTAPE_JSON + r] > 0.5f) ? 0.f : 1.f;
 			if (followTrigger[r].process(params[ROW_FOLLOW_PARAM + r].getValue()))
 				OL_state[ROW_FOLLOW_JSON + r] = (OL_state[ROW_FOLLOW_JSON + r] > 0.5f) ? 0.f : 1.f;
 
 			bool follow = OL_state[ROW_FOLLOW_JSON + r] > 0.5f;
 			if (neoHost)
 			{
-				int channel = clamp((int) OL_state[ROW_CHANNEL_JSON + r], 0, POLY_CHANNELS - 1);
+				int channel = getRowChannel(r);
 				if (follow)
 				{
 					int cursor = neoHost->getPlayCursor(channel);
@@ -1031,6 +1049,14 @@ struct NeoRowCellsWidget : TransparentWidget
 		return clamp((int) (x / pitchPx), 0, visibleCols - 1);
 	}
 
+	// Deferred interface idea, noted 2026-07-20, not implemented: clicking in the GAP between two
+	// cells and dragging right should copy the value of the step immediately to the left of the
+	// drag start across every cell the drag comes to fully cover (a "paint the last value
+	// forward" gesture) - and, symmetrically, dragging left from a gap should copy the value of
+	// the step immediately to the RIGHT of the drag start across every cell it covers going that
+	// direction. Distinct from the existing single-cell onButton()/onDragMove() behavior above,
+	// which only ever edits the one cell where the press began.
+
 	void draw(const DrawArgs &args) override
 	{
 		Neo *m = neo();
@@ -1066,8 +1092,8 @@ struct NeoRowCellsWidget : TransparentWidget
 		if (!m->neoHost)
 			return;
 
-		int channel = clamp((int) m->OL_state[ROW_CHANNEL_JSON + row], 0, POLY_CHANNELS - 1);
-		bool mem = m->OL_state[ROW_MEMTAPE_JSON + row] > 0.5f;
+		int channel = m->getRowChannel(row);
+		int track = m->getRowTrack(row);
 		NeoCellEditor *editor = neoCellEditorForType((int) m->OL_state[ROW_CELLTYPE_JSON + row]);
 		int page = (int) m->OL_state[ROW_PAGE_JSON + row];
 		int loopLen = m->neoHost->getLoopLen(channel);
@@ -1079,7 +1105,7 @@ struct NeoRowCellsWidget : TransparentWidget
 			int step = page * visibleCols + i;
 			if (step >= loopLen)
 				break;
-			float value = mem ? m->neoHost->getMemStep(channel, step) : m->neoHost->getTapeStep(channel, step);
+			float value = m->neoHost->getTrackStep(track, channel, step);
 			float x = gapPx / 2.f + (float) i * pitchPx;
 			editor->drawCell(args, x, cellWidthPx, box.size.y, value, color);
 		}
@@ -1094,12 +1120,20 @@ struct NeoRowCellsWidget : TransparentWidget
 			{
 				int visibleCols = m->getVisibleColumns();
 				float pitchPx = mm2px(m->getColumnPitchMm());
-				dragStep = stepAtLocalX(e.pos.x, pitchPx, visibleCols);
-				int channel = clamp((int) m->OL_state[ROW_CHANNEL_JSON + row], 0, POLY_CHANNELS - 1);
-				bool mem = m->OL_state[ROW_MEMTAPE_JSON + row] > 0.5f;
+				int candidateStep = stepAtLocalX(e.pos.x, pitchPx, visibleCols);
+				int channel = m->getRowChannel(row);
 				int page = (int) m->OL_state[ROW_PAGE_JSON + row];
-				int step = page * visibleCols + dragStep;
-				dragStartValue = mem ? m->neoHost->getMemStep(channel, step) : m->neoHost->getTapeStep(channel, step);
+				int step = page * visibleCols + candidateStep;
+				// "It does not make sense to edit anything beyond LEN" (Dieter's own instruction,
+				// 2026-07-20) - a step this widget would otherwise never even draw (see draw()'s
+				// own loopLen break above) must not be editable either, so a click landing in
+				// that trailing dead space on the loop's last page simply starts no drag at all.
+				if (step < m->neoHost->getLoopLen(channel))
+				{
+					dragStep = candidateStep;
+					int track = m->getRowTrack(row);
+					dragStartValue = m->neoHost->getTrackStep(track, channel, step);
+				}
 			}
 			e.consume(this);
 		}
@@ -1116,8 +1150,8 @@ struct NeoRowCellsWidget : TransparentWidget
 		if (!m || !m->neoHost || dragStep < 0)
 			return;
 		int visibleCols = m->getVisibleColumns();
-		int channel = clamp((int) m->OL_state[ROW_CHANNEL_JSON + row], 0, POLY_CHANNELS - 1);
-		bool mem = m->OL_state[ROW_MEMTAPE_JSON + row] > 0.5f;
+		int channel = m->getRowChannel(row);
+		int track = m->getRowTrack(row);
 		int page = (int) m->OL_state[ROW_PAGE_JSON + row];
 		int step = page * visibleCols + dragStep;
 
@@ -1127,10 +1161,7 @@ struct NeoRowCellsWidget : TransparentWidget
 		float newValue = editor->dragValue(dragStartValue, e.mouseDelta.y, box.size.y);
 		dragStartValue = newValue;
 
-		if (mem)
-			m->neoHost->setMemStep(channel, step, newValue);
-		else
-			m->neoHost->setTapeStep(channel, step, newValue);
+		m->neoHost->setTrackStep(track, channel, step, newValue);
 	}
 
 	void onDragEnd(const DragEndEvent &e) override
@@ -1148,31 +1179,59 @@ struct NeoRowCellsWidget : TransparentWidget
 		if (m && m->neoHost && dragStep >= 0)
 		{
 			int visibleCols = m->getVisibleColumns();
-			int channel = clamp((int) m->OL_state[ROW_CHANNEL_JSON + row], 0, POLY_CHANNELS - 1);
-			bool mem = m->OL_state[ROW_MEMTAPE_JSON + row] > 0.5f;
+			int channel = m->getRowChannel(row);
+			int track = m->getRowTrack(row);
 			int page = (int) m->OL_state[ROW_PAGE_JSON + row];
 			int step = page * visibleCols + dragStep;
 			float resetValue = neoCellEditorForType((int) m->OL_state[ROW_CELLTYPE_JSON + row])->defaultValue();
-			if (mem)
-				m->neoHost->setMemStep(channel, step, resetValue);
-			else
-				m->neoHost->setTapeStep(channel, step, resetValue);
+			m->neoHost->setTrackStep(track, channel, step, resetValue);
 		}
 		TransparentWidget::onDoubleClick(e);
 	}
 };
 
 /**
-	Plain row-number label (v1) - full channel renaming via right-click is deferred (see
-	NeoChannelNameField's own comment below), so this just shows which channel the row currently
-	displays. Simple direct nvgText() draw, mirroring the rest of the codebase's own small label
-	widgets rather than OrangeLine.hpp's own TextWidget (a much more specialized scrolling-display
-	widget tied to module-specific animation state, not a fit for a plain static/row-number label).
+	OrangeLine-style small digital-look text display (2026-07-20) - same font asset as
+	OrangeLine.hpp's own NumberWidget (res/repetition-scrolling.regular.ttf) and the same
+	theme-aware ORANGE/WHITE fill, but takes a live getText() callback instead of NumberWidget's
+	own persistent float-pointer + printf-format-string shape: every one of NEO's own new
+	displays (track name, channel number, page/position) is cheap to recompute fresh from the
+	module's real state every draw() call, so there's no need for NumberWidget's own cached
+	buffer/pointer indirection, and getText() can return arbitrary text (not just a formatted
+	number) which the track display genuinely needs ("TAPE"/"MSEL"/"M-01".."M-16").
 */
-struct NeoRowNameWidget : TransparentWidget
+struct NeoRowTextDisplayWidget : TransparentWidget
 {
 	Module *module = nullptr;
-	int row = 0;
+	std::function<std::string(Neo*)> getText;
+	// Optional second stacked line (2026-07-20 experiment, Dieter's own request - a step toward
+	// the "pack two rows of controls into one taller cell" idea noted for later) - unset (default)
+	// keeps the original single centered line; once set, both lines instead split the box into
+	// top/bottom halves, each centered within its own half the same way the single line used to
+	// center within the whole box.
+	std::function<std::string(Neo*)> getText2;
+	float fontSize = 1.f; // set by the caller right after construction
+
+	// Display background + frame (2026-07-20, Dieter's own follow-up spec after seeing the first
+	// text-only pass live) - always drawn (plain draw(), not layer-1-gated like the text itself),
+	// same reasoning as NeoRowHeaderFrameWidget's own frame: a background/frame is decoration,
+	// not dimmable content.
+	void draw(const DrawArgs &args) override
+	{
+		Neo *m = module ? dynamic_cast<Neo*>(module) : nullptr;
+		float style = m ? m->OL_state[STYLE_JSON] : STYLE_ORANGE;
+		NVGcolor bg = (style == STYLE_DARK) ? NEO_ROW_DISPLAY_BG_DARK : (style == STYLE_BRIGHT) ? NEO_ROW_DISPLAY_BG_BRIGHT : NEO_ROW_DISPLAY_BG_ORANGE;
+		NVGcolor frame = (style == STYLE_DARK) ? X_FRAME_DARK : (style == STYLE_BRIGHT) ? X_FRAME_BRIGHT : X_FRAME_ORANGE;
+
+		nvgBeginPath(args.vg);
+		nvgRoundedRect(args.vg, 0.f, 0.f, box.size.x, box.size.y, mm2px(NEO_ROW_DISPLAY_RADIUS_MM));
+		nvgFillColor(args.vg, bg);
+		nvgFill(args.vg);
+		nvgStrokeWidth(args.vg, mm2px(NEO_ROW_DISPLAY_STROKE_MM));
+		nvgStrokeColor(args.vg, frame);
+		nvgStroke(args.vg);
+		TransparentWidget::draw(args);
+	}
 
 	void drawLayer(const DrawArgs &args, int layer) override
 	{
@@ -1182,19 +1241,77 @@ struct NeoRowNameWidget : TransparentWidget
 			return;
 		}
 		Neo *m = module ? dynamic_cast<Neo*>(module) : nullptr;
-		int channel = m ? clamp((int) m->OL_state[ROW_CHANNEL_JSON + row], 0, POLY_CHANNELS - 1) : row;
-
-		float fontSizePx = mm2px(Vec(3.5f, 0.f)).x;
-		std::shared_ptr<Font> font = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
-		nvgFontFaceId(args.vg, font->handle);
-		nvgFontSize(args.vg, fontSizePx);
-		nvgFillColor(args.vg, ORANGE);
-		nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-		char buffer[8];
-		snprintf(buffer, sizeof(buffer), "%d", channel + 1);
-		nvgText(args.vg, 0.f, box.size.y / 2.f, buffer, nullptr);
+		if (m && getText)
+		{
+			std::shared_ptr<Font> font = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
+			nvgFontFaceId(args.vg, font->handle);
+			nvgFontSize(args.vg, fontSize);
+			nvgFillColor(args.vg, (m->OL_state[STYLE_JSON] == STYLE_ORANGE) ? ORANGE : WHITE);
+			nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+			float insetX = mm2px(NEO_ROW_DISPLAY_TEXT_INSET_MM);
+			float yOffset = mm2px(NEO_ROW_DISPLAY_TEXT_Y_OFFSET_MM);
+			if (getText2)
+			{
+				// Two lines - each centered within its own half of the box, same convention the
+				// single line uses for the whole box.
+				float halfHeight = box.size.y / 2.f;
+				std::string text1 = getText(m);
+				std::string text2 = getText2(m);
+				nvgText(args.vg, insetX, halfHeight / 2.f + yOffset, text1.c_str(), nullptr);
+				nvgText(args.vg, insetX, halfHeight + halfHeight / 2.f + yOffset + mm2px(NEO_ROW_DISPLAY_LINE2_Y_NUDGE_MM), text2.c_str(), nullptr);
+			}
+			else
+			{
+				std::string text = getText(m);
+				nvgText(args.vg, insetX, box.size.y / 2.f + yOffset, text.c_str(), nullptr);
+			}
+		}
 		Widget::drawLayer(args, 1);
 	}
+};
+
+/**
+	Themed ring drawn around a knob (2026-07-20), matching NeoRowTextDisplayWidget's own frame
+	styling - lifted from Dieter's own reference SVG (res/DisplaysWithKnobsInFrame.svg). A
+	separate, self-contained widget (not baked into the knob) specifically so it stays an
+	optional add-on per knob - only NEO's own new track/channel knobs get one for now (Dieter's
+	own instruction: "add this here but do not draw them elsewhere for now, will use the drawn
+	version in future because it makes layout much easier"). Always drawn (plain draw(), not
+	layer-1-gated), same reasoning as every other frame/decoration widget in this file.
+*/
+struct NeoRowKnobRingWidget : TransparentWidget
+{
+	Module *module = nullptr;
+
+	void draw(const DrawArgs &args) override
+	{
+		Neo *m = module ? dynamic_cast<Neo*>(module) : nullptr;
+		float style = m ? m->OL_state[STYLE_JSON] : STYLE_ORANGE;
+		NVGcolor frame = (style == STYLE_DARK) ? X_FRAME_DARK : (style == STYLE_BRIGHT) ? X_FRAME_BRIGHT : X_FRAME_ORANGE;
+		float r = box.size.x / 2.f;
+
+		nvgBeginPath(args.vg);
+		nvgCircle(args.vg, r, r, r);
+		nvgStrokeWidth(args.vg, mm2px(NEO_ROW_KNOB_RING_STROKE_MM));
+		nvgStrokeColor(args.vg, frame);
+		nvgStroke(args.vg);
+		TransparentWidget::draw(args);
+	}
+};
+
+/**
+	Plain row-name label (v1) - full channel renaming via right-click is deferred (see
+	NeoChannelNameField's own comment below). Used to also draw the row's own channel number as a
+	stand-in (there was no dedicated channel display yet) - that's now redundant and removed
+	(2026-07-20) now that a real channel display+knob exists (NEO_ROW_CHANNEL_DISPLAY_X_MM,
+	NeoWidget::step()), so this currently draws nothing at all until real per-row naming exists;
+	kept as an empty placeholder widget (not deleted outright) since its box/position are already
+	wired into NeoWidget::step()'s own layout and it's the natural home for a future name.
+*/
+struct NeoRowNameWidget : TransparentWidget
+{
+	Module *module = nullptr;
+	int row = 0;
 };
 
 /**
@@ -1395,38 +1512,6 @@ struct NeoRowButton : ParamWidget
 };
 
 /**
-	Lock button - global area, join/leave the Host-shared "common config" group (see the Neo
-	module's own NeoLockData/toggleLock() for the full mechanism). A plain clickable square, not
-	a Rack Param - locking has complex cross-instance side effects that don't fit the automatable-
-	parameter model. Same flat-fill style as NeoRowButton (the row paging buttons) and X-family's
-	own Bind/Free button - grey when unlocked, green when locked; a locked/unlocked icon on top of
-	this same square is a later styling pass (Dieter's own instruction, 2026-07-20).
-*/
-struct NeoLockButton : OpaqueWidget
-{
-	Neo *module = nullptr;
-
-	void draw(const DrawArgs &args) override
-	{
-		bool locked = module && module->OL_state[LOCKED_JSON] > 0.5f;
-		nvgBeginPath(args.vg);
-		nvgRoundedRect(args.vg, 0.f, 0.f, box.size.x, box.size.y, 1.f);
-		nvgFillColor(args.vg, locked ? NEO_LOCK_ON_COLOR : NEO_LOCK_OFF_COLOR);
-		nvgFill(args.vg);
-	}
-
-	void onButton(const event::Button &e) override
-	{
-		if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_PRESS && module)
-		{
-			module->toggleLock();
-			e.consume(this);
-		}
-		OpaqueWidget::onButton(e);
-	}
-};
-
-/**
 	Main Module Widget - resizable panel, up to 16 row-slots, NEO_ROWS_MIN..NEO_ROWS_MAX (4..8) of
 	them actually shown at once (right-click "Grid Rows"). Function first, styling later per
 	Dieter's own instruction - simple graphics throughout.
@@ -1438,7 +1523,17 @@ struct NeoWidget : ModuleWidget
 	NeoRowCellsWidget *rowCells[NEO_NUM_ROWS] = {};
 	NeoRowNameWidget *rowNames[NEO_NUM_ROWS] = {};
 	NeoRowHeaderFrameWidget *rowHeaderFrames[NEO_NUM_ROWS] = {};
-	NeoRowButton *memTapeBtns[NEO_NUM_ROWS] = {};
+	// Track/channel select knobs + their own numeric displays (2026-07-20) - replace the old
+	// memTapeBtns entirely (see ROW_MEMTAPE_PARAM's own removal note, Neo.hpp).
+	NeoRowTextDisplayWidget *trackDisplays[NEO_NUM_ROWS] = {};
+	ParamWidget *trackKnobs[NEO_NUM_ROWS] = {};
+	NeoRowKnobRingWidget *trackKnobRings[NEO_NUM_ROWS] = {};
+	NeoRowTextDisplayWidget *channelDisplays[NEO_NUM_ROWS] = {};
+	ParamWidget *channelKnobs[NEO_NUM_ROWS] = {};
+	NeoRowKnobRingWidget *channelKnobRings[NEO_NUM_ROWS] = {};
+	// Right-aligned page/position display (2026-07-20) - see NEO_ROW_POSITION_DISPLAY_WIDTH_MM's
+	// own comment (Neo.hpp).
+	NeoRowTextDisplayWidget *positionDisplays[NEO_NUM_ROWS] = {};
 	NeoRowButton *followBtns[NEO_NUM_ROWS] = {};
 	NeoRowButton *leftBtns[NEO_NUM_ROWS] = {};
 	NeoRowButton *rightBtns[NEO_NUM_ROWS] = {};
@@ -1450,7 +1545,7 @@ struct NeoWidget : ModuleWidget
 	// module that owns one of these, NEO's own panel width isn't fixed.
 	XExtStripWidget *extStripRight = nullptr;
 	XExtStripWidget *extStripLeft = nullptr;
-	NeoLockButton *lockButton = nullptr;
+	OLLabelButton *lockButton = nullptr;
 
 	NeoWidget(Neo *module)
 	{
@@ -1473,13 +1568,40 @@ struct NeoWidget : ModuleWidget
 		extStripRight = addXExtStrip(this, widthHp * 5.08f);
 		extStripLeft = addXExtStripLeft(this); // both already include X_STRIP_FRAME_NUDGE_MM (XShared.hpp)
 
-		// Upper left corner of the global area's own frame (NEO_FRAME_MARGIN_MM left edge,
-		// NEO_FRAME_TOP_MM top edge), spaced by PanelDesignGuide.md's own "Positioning controls"
-		// target (NEO_LOCK_BUTTON_SPACING_MM) from both.
-		lockButton = new NeoLockButton();
-		lockButton->module = module;
-		lockButton->box.pos = mm2px(Vec(NEO_FRAME_MARGIN_MM + NEO_LOCK_BUTTON_SPACING_MM, NEO_FRAME_TOP_MM + NEO_LOCK_BUTTON_SPACING_MM));
-		lockButton->box.size = mm2px(Vec(NEO_LOCK_BUTTON_SIZE_MM, NEO_LOCK_BUTTON_SIZE_MM));
+		// Spans the global area's own frame width, inset by one frame-padding unit on left/top/
+		// right from that frame's own edges (see NEO_LOCK_BUTTON_X/Y/WIDTH_MM's own comment).
+		// Built on the shared OLLabelButton (OrangeLine.hpp, 2026-07-20 partial refactor,
+		// Dieter's own instruction: "let just NEO use this common code for now... roll it out to
+		// the rest of the modules... another day") - three-state grey/themed/green accent color
+		// and the "LOCK"/"FREE" label are wired here via callbacks, the shared widget only owns
+		// the actual drawing (fill/stroke/centered-label-via-nvgTextBounds).
+		lockButton = new OLLabelButton();
+		lockButton->fontSize = mm2px(Vec(NEO_GLOBAL_AREA_BUTTON_FONT_SIZE_MM, 0.f)).x;
+		lockButton->cornerRadiusPx = mm2px(NEO_ROW_DISPLAY_RADIUS_MM);
+		lockButton->strokeWidthPx = mm2px(NEO_FRAME_STROKE_MM);
+		lockButton->textYNudgePx = mm2px(0.2f); // first guess at the residual nudge, live-tuning
+		lockButton->getFillColor = [module]() {
+			float style = module ? module->OL_state[STYLE_JSON] : STYLE_ORANGE;
+			return (style == STYLE_DARK) ? X_BUTTON_FILL_DARK : (style == STYLE_BRIGHT) ? X_BUTTON_FILL_BRIGHT : X_BUTTON_FILL_ORANGE;
+		};
+		lockButton->getAccentColor = [module]() {
+			if (!module || !module->neoHost)
+				return X_COLOR_INACTIVE_GREY;
+			bool locked = module->OL_state[LOCKED_JSON] > 0.5f;
+			if (locked)
+				return NEO_LOCK_ON_COLOR;
+			return xThemedTextColor(module->OL_state[STYLE_JSON]);
+		};
+		lockButton->getLabel = [module]() {
+			bool locked = module && module->OL_state[LOCKED_JSON] > 0.5f;
+			return std::string(locked ? "FREE" : "LOCK");
+		};
+		lockButton->onClick = [module]() {
+			if (module)
+				module->toggleLock();
+		};
+		lockButton->box.pos = mm2px(Vec(NEO_LOCK_BUTTON_X_MM, NEO_LOCK_BUTTON_Y_MM));
+		lockButton->box.size = mm2px(Vec(NEO_LOCK_BUTTON_WIDTH_MM, NEO_LOCK_BUTTON_HEIGHT_MM));
 		addChild(lockButton);
 
 		// All real geometry (position, size, visibility) for every one of these is set fresh
@@ -1502,11 +1624,98 @@ struct NeoWidget : ModuleWidget
 			addChild(name);
 			rowNames[r] = name;
 
-			NeoRowButton *memTapeBtn = createParam<NeoRowButton>(Vec(), module, ROW_MEMTAPE_PARAM + r);
-			memTapeBtn->box.size = mm2px(Vec(NEO_ROW_TOGGLE_WIDTH_MM, NEO_ROW_TOGGLE_HEIGHT_MM));
-			memTapeBtn->onColor = nvgRGB(0x00, 0x99, 0xff);
-			addParam(memTapeBtn);
-			memTapeBtns[r] = memTapeBtn;
+			// Track select (2026-07-20) - display + knob, replacing the old MEM/TAPE toggle
+			// button entirely (see ROW_MEMTAPE_PARAM's own removal note, Neo.hpp).
+			NeoRowTextDisplayWidget *trackDisplay = new NeoRowTextDisplayWidget();
+			trackDisplay->module = module;
+			trackDisplay->fontSize = mm2px(Vec(NEO_ROW_NUMBER_DISPLAY_FONT_SIZE_MM, 0.f)).x;
+			trackDisplay->box.size = mm2px(Vec(NEO_ROW_TRACK_DISPLAY_WIDTH_MM, NEO_ROW_NUMBER_DISPLAY_HEIGHT_MM));
+			trackDisplay->getText = [r](Neo *m) {
+				return (m->neoHost) ? m->neoHost->getTrackName(m->getRowTrack(r)) : std::string("----");
+			};
+			addChild(trackDisplay);
+			trackDisplays[r] = trackDisplay;
+
+			NeoRowKnobRingWidget *trackKnobRing = new NeoRowKnobRingWidget();
+			trackKnobRing->module = module;
+			trackKnobRing->box.size = mm2px(Vec(NEO_ROW_SELECT_KNOB_SIZE_MM, NEO_ROW_SELECT_KNOB_SIZE_MM));
+			addChild(trackKnobRing);
+			trackKnobRings[r] = trackKnobRing;
+
+			ParamWidget *trackKnob = createParam<RoundSmallBlackKnob>(Vec(), module, ROW_TRACK_PARAM + r);
+			addParam(trackKnob);
+			trackKnobs[r] = trackKnob;
+
+			// Channel select (2026-07-20) - display + knob, replacing the old right-click-only
+			// "Rows -> Row N -> channel" submenu entirely (same reasoning as the track knob
+			// replacing MEM/TAPE - a separate menu would be redundant and could disagree).
+			NeoRowTextDisplayWidget *channelDisplay = new NeoRowTextDisplayWidget();
+			channelDisplay->module = module;
+			channelDisplay->fontSize = mm2px(Vec(NEO_ROW_NUMBER_DISPLAY_FONT_SIZE_MM, 0.f)).x;
+			channelDisplay->box.size = mm2px(Vec(NEO_ROW_CHANNEL_DISPLAY_WIDTH_MM, NEO_ROW_NUMBER_DISPLAY_HEIGHT_MM));
+			channelDisplay->getText = [r](Neo *m) {
+				char buf[8];
+				// Space-padded, right-aligned within a 2-char field (Dieter's own instruction,
+				// 2026-07-20 - same "%Nd already right-aligns with blanks" convention as the
+				// position display's own fields).
+				snprintf(buf, sizeof(buf), "%2d", m->getRowChannel(r) + 1);
+				return std::string(buf);
+			};
+			addChild(channelDisplay);
+			channelDisplays[r] = channelDisplay;
+
+			NeoRowKnobRingWidget *channelKnobRing = new NeoRowKnobRingWidget();
+			channelKnobRing->module = module;
+			channelKnobRing->box.size = mm2px(Vec(NEO_ROW_SELECT_KNOB_SIZE_MM, NEO_ROW_SELECT_KNOB_SIZE_MM));
+			addChild(channelKnobRing);
+			channelKnobRings[r] = channelKnobRing;
+
+			ParamWidget *channelKnob = createParam<RoundSmallBlackKnob>(Vec(), module, ROW_CHANNEL_PARAM + r);
+			addParam(channelKnob);
+			channelKnobs[r] = channelKnob;
+
+			// Page/position display (2026-07-20) - two stacked lines, right-aligned against the
+			// header's own actual current right edge (set in step(), unlike every left-anchored
+			// control above, since header width isn't fixed): line 1 is "pp/PP" (page/pages),
+			// line 2 is "sss/SSS" (step/steps) - split out of the original single-line
+			// "pp/PP:sss/SSS" spec once the two-line stack itself looked good. sss is read as the
+			// live play cursor position (first-pass interpretation of Dieter's own spec -
+			// "current step pos" - not yet visually confirmed).
+			NeoRowTextDisplayWidget *positionDisplay = new NeoRowTextDisplayWidget();
+			positionDisplay->module = module;
+			positionDisplay->fontSize = mm2px(Vec(NEO_ROW_POSITION_DISPLAY_FONT_SIZE_MM, 0.f)).x;
+			positionDisplay->box.size = mm2px(Vec(NEO_ROW_POSITION_DISPLAY_WIDTH_MM, NEO_ROW_POSITION_DISPLAY_HEIGHT_MM));
+			positionDisplay->getText = [r](Neo *m) {
+				if (!m->neoHost)
+					return std::string("HELLO");
+				int channel = m->getRowChannel(r);
+				int visibleCols = m->getVisibleColumns();
+				int page = (int) m->OL_state[ROW_PAGE_JSON + r];
+				int loopLen = std::max(1, m->neoHost->getLoopLen(channel));
+				int numPages = std::max(1, (loopLen + visibleCols - 1) / visibleCols);
+				// Right-align the WHOLE "page/pages" string within a 7-char field using spaces,
+				// not each number padded individually (Dieter's own correction, 2026-07-20 -
+				// "____1/1" and "__12/64", 7 chars total either way).
+				char inner[16];
+				snprintf(inner, sizeof(inner), "%d/%d", page + 1, numPages);
+				char buf[20];
+				snprintf(buf, sizeof(buf), "%7s", inner);
+				return std::string(buf);
+			};
+			positionDisplay->getText2 = [r](Neo *m) {
+				if (!m->neoHost)
+					return std::string("HELLO");
+				int channel = m->getRowChannel(r);
+				int loopLen = std::max(1, m->neoHost->getLoopLen(channel));
+				int cursor = m->neoHost->getPlayCursor(channel);
+				char inner[16];
+				snprintf(inner, sizeof(inner), "%d/%d", cursor + 1, loopLen);
+				char buf[20];
+				snprintf(buf, sizeof(buf), "%7s", inner);
+				return std::string(buf);
+			};
+			addChild(positionDisplay);
+			positionDisplays[r] = positionDisplay;
 
 			NeoRowButton *followBtn = createParam<NeoRowButton>(Vec(), module, ROW_FOLLOW_PARAM + r);
 			followBtn->box.size = mm2px(Vec(NEO_ROW_TOGGLE_WIDTH_MM, NEO_ROW_TOGGLE_HEIGHT_MM));
@@ -1706,7 +1915,13 @@ struct NeoWidget : ModuleWidget
 				bool rowVisible = r < rowsDisplayed;
 				rowHeaderFrames[r]->visible = rowVisible;
 				rowNames[r]->visible = rowVisible;
-				memTapeBtns[r]->visible = rowVisible;
+				trackDisplays[r]->visible = rowVisible;
+				trackKnobs[r]->visible = rowVisible;
+				trackKnobRings[r]->visible = rowVisible;
+				channelDisplays[r]->visible = rowVisible;
+				channelKnobs[r]->visible = rowVisible;
+				channelKnobRings[r]->visible = rowVisible;
+				positionDisplays[r]->visible = rowVisible;
 				followBtns[r]->visible = rowVisible;
 				leftBtns[r]->visible = rowVisible;
 				rightBtns[r]->visible = rowVisible;
@@ -1738,6 +1953,17 @@ struct NeoWidget : ModuleWidget
 				rowHeaderFrames[r]->box.pos = calculateCoordinates(headerFrameLeftMm, y, 0.f);
 				rowHeaderFrames[r]->box.size = mm2px(Vec(std::max(1.f, headerFrameRightMm - headerFrameLeftMm), cellHeightMm));
 
+				// Track/channel displays are vertically centered on the row (Dieter's own
+				// follow-up spec, 2026-07-20) - X stays a plain left edge, only Y shifts up by
+				// half the display's own height from centerY, same convention every
+				// center-positioned control in this loop already uses via .minus(size.div(2)).
+				trackDisplays[r]->box.pos = calculateCoordinates(NEO_ROW_TRACK_DISPLAY_X_MM + NEO_GLOBAL_AREA_WIDTH_MM, centerY, 0.f).minus(Vec(0.f, trackDisplays[r]->box.size.y / 2.f));
+				trackKnobRings[r]->box.pos = calculateCoordinates(NEO_ROW_TRACK_KNOB_X_MM + NEO_GLOBAL_AREA_WIDTH_MM, centerY, 0.f).minus(trackKnobRings[r]->box.size.div(2.f));
+				trackKnobs[r]->box.pos = calculateCoordinates(NEO_ROW_TRACK_KNOB_X_MM + NEO_GLOBAL_AREA_WIDTH_MM, centerY, 0.f).minus(trackKnobs[r]->box.size.div(2.f));
+				channelDisplays[r]->box.pos = calculateCoordinates(NEO_ROW_CHANNEL_DISPLAY_X_MM + NEO_GLOBAL_AREA_WIDTH_MM, centerY, 0.f).minus(Vec(0.f, channelDisplays[r]->box.size.y / 2.f));
+				channelKnobRings[r]->box.pos = calculateCoordinates(NEO_ROW_CHANNEL_KNOB_X_MM + NEO_GLOBAL_AREA_WIDTH_MM, centerY, 0.f).minus(channelKnobRings[r]->box.size.div(2.f));
+				channelKnobs[r]->box.pos = calculateCoordinates(NEO_ROW_CHANNEL_KNOB_X_MM + NEO_GLOBAL_AREA_WIDTH_MM, centerY, 0.f).minus(channelKnobs[r]->box.size.div(2.f));
+
 				rowNames[r]->box.pos = calculateCoordinates(NEO_ROW_NAME_X_MM + NEO_GLOBAL_AREA_WIDTH_MM, y, 0.f);
 				// The name field is the one thing that actually grows to fill whatever extra
 				// width the header has beyond its own default target (Dieter's own spec,
@@ -1745,10 +1971,16 @@ struct NeoWidget : ModuleWidget
 				float nameWidthMm = NEO_ROW_NAME_WIDTH_MM + std::max(0.f, rowHeaderWidthMm - NEO_ROW_HEADER_TARGET_WIDTH_MM);
 				rowNames[r]->box.size = mm2px(Vec(nameWidthMm, cellHeightMm));
 
-				memTapeBtns[r]->box.pos = calculateCoordinates(NEO_ROW_MEMTAPE_X_MM + NEO_GLOBAL_AREA_WIDTH_MM, centerY, 0.f).minus(memTapeBtns[r]->box.size.div(2.f));
 				followBtns[r]->box.pos = calculateCoordinates(NEO_ROW_FOLLOW_X_MM + NEO_GLOBAL_AREA_WIDTH_MM, centerY, 0.f).minus(followBtns[r]->box.size.div(2.f));
 				leftBtns[r]->box.pos = calculateCoordinates(NEO_ROW_LEFT_X_MM + NEO_GLOBAL_AREA_WIDTH_MM, centerY, 0.f).minus(leftBtns[r]->box.size.div(2.f));
 				rightBtns[r]->box.pos = calculateCoordinates(NEO_ROW_RIGHT_X_MM + NEO_GLOBAL_AREA_WIDTH_MM, centerY, 0.f).minus(rightBtns[r]->box.size.div(2.f));
+
+				// Right-aligned against the header's own actual current right edge (headerFrameRightMm,
+				// already computed above) minus its own width and a small margin - unlike every
+				// other row control, this one's x genuinely depends on the header's current
+				// (possibly grown-past-Tw) width, not a fixed left-edge offset.
+				float positionDisplayXMm = headerFrameRightMm - NEO_ROW_POSITION_DISPLAY_WIDTH_MM - NEO_ROW_POSITION_DISPLAY_MARGIN_MM;
+				positionDisplays[r]->box.pos = calculateCoordinates(positionDisplayXMm, centerY, 0.f).minus(Vec(0.f, positionDisplays[r]->box.size.y / 2.f));
 
 				rowCells[r]->box.pos = calculateCoordinates(headerBoundaryMm, y, 0.f);
 				rowCells[r]->box.size = mm2px(Vec(cellsWidthMm, cellHeightMm));
@@ -1859,8 +2091,11 @@ struct NeoWidget : ModuleWidget
 		}
 	};
 
-	// Per-row "which channel" submenu - two-level, "Rows" -> "Row N" -> the 16 channel choices,
-	// same setSize()-required pattern as CLAUDE.md's documented "Channels" submenu convention.
+	// Per-row "Cell Type" submenu - two-level, "Rows" -> "Row N" -> the cell-type choices, same
+	// setSize()-required pattern as CLAUDE.md's documented "Channels" submenu convention. Used to
+	// also hold a "which channel" choice here (NeoRowChannelItem) - removed 2026-07-20, replaced
+	// entirely by the new on-panel ROW_CHANNEL_PARAM knob (a separate right-click menu for the
+	// exact same setting would be redundant and could disagree with the knob).
 	struct NeoRowsItem : MenuItem
 	{
 		Neo *module;
@@ -1869,22 +2104,6 @@ struct NeoWidget : ModuleWidget
 		{
 			Neo *module;
 			int row;
-
-			struct NeoRowChannelItem : MenuItem
-			{
-				Neo *module;
-				int row;
-				int channel;
-				void onAction(const event::Action &e) override
-				{
-					module->OL_setOutState(ROW_CHANNEL_JSON + row, float(channel));
-				}
-				void step() override
-				{
-					if (module)
-						rightText = (module->OL_state[ROW_CHANNEL_JSON + row] == channel) ? "✔" : "";
-				}
-			};
 
 			struct NeoRowCellTypeItem : MenuItem
 			{
@@ -1905,20 +2124,6 @@ struct NeoWidget : ModuleWidget
 			Menu *createChildMenu() override
 			{
 				Menu *menu = new Menu;
-
-				MenuLabel *channelLabel = new MenuLabel();
-				channelLabel->text = "Channel";
-				menu->addChild(channelLabel);
-				for (int c = 0; c < POLY_CHANNELS; c++)
-				{
-					NeoRowChannelItem *item = new NeoRowChannelItem();
-					item->module = module;
-					item->row = row;
-					item->channel = c;
-					item->text = string::f("Channel %d", c + 1);
-					item->setSize(Vec(90, 20));
-					menu->addChild(item);
-				}
 
 				MenuLabel *typeLabel = new MenuLabel();
 				typeLabel->text = "Cell Type";

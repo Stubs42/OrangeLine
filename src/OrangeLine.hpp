@@ -22,6 +22,7 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 #include <math.h>
+#include <functional>
 
 #ifndef ORANGE_LINE_HPP
 #define ORANGE_LINE_HPP
@@ -468,6 +469,95 @@ struct TextWidget : TransparentWidget {
 			nvgText (drawArgs.vg, 0, mm2px (5), buf + scrollPos, nullptr);
 		}
 		Widget::drawLayer(drawArgs, 1);
+	}
+};
+
+/**
+	Generic drawn "labeled state button" (2026-07-20) - filled rounded rect + stroke + centered
+	text, all in one caller-supplied accent color, the caller resolving that color however it
+	needs to (a three-state grey/themed/highlight scheme is the established convention - see
+	X8BindButtonBase's own getAccentColor()/getLabel() pattern, X8Common.hpp, which this
+	generalizes). First real caller: NEO's own LOCK/FREE button (Neo.cpp) - built here so other
+	modules (X8's own BIND/FREE included) can adopt the same drawing code later without
+	re-deriving it, per Dieter's own instruction: "let just NEO use this common code for now...
+	roll it out to the rest of the modules using this kind of button... another day."
+
+	Deliberately generic/theme-agnostic itself (no X_BUTTON_FILL_* or X_COLOR_INACTIVE_GREY
+	reference here - those are X-family-specific, defined in XShared.hpp, which itself includes
+	this file, so the dependency can't run the other way) - every color and the label text are
+	supplied via callbacks the caller wires up from its own module state.
+
+	Text is vertically (AND horizontally) centered using nvgTextBounds() against the ACTUAL
+	rendered glyph bounds of the current text/font/size, not NVG_ALIGN_MIDDLE/CENTER's own
+	font-metric-based guess (which drifts off-center differently at different font sizes for a
+	pixel-style font like repetition-scrolling, confirmed live) - so this stays visually centered
+	regardless of fontSize or which font is loaded, by construction rather than a hand-tuned nudge.
+
+	A plain OpaqueWidget, not a Rack ParamWidget - a simple click callback (onClick) rather than a
+	bound param, matching NEO's own toggleLock()-style direct action; a future ParamWidget-backed
+	variant (for X8's own real BIND param) is a separate, not-yet-built concern.
+*/
+struct OLLabelButton : OpaqueWidget
+{
+	std::function<NVGcolor()> getFillColor;
+	std::function<NVGcolor()> getAccentColor;
+	std::function<std::string()> getLabel;
+	std::function<void()> onClick;
+	float fontSize = 12.f;
+	float cornerRadiusPx = 1.f;
+	float strokeWidthPx = 1.f;
+	// Small residual correction on top of the measured-bounds centering below (2026-07-20,
+	// Dieter's own live-tuning) - the font atlas's own padding/hinting keeps the TOP-aligned
+	// measurement from landing pixel-perfect on its own; a caller-tunable escape hatch rather
+	// than baking one specific number in here for every possible font/size.
+	float textYNudgePx = 0.f;
+	const char *fontPath = "res/repetition-scrolling.regular.ttf";
+
+	void draw(const DrawArgs &args) override
+	{
+		NVGcolor fill = getFillColor ? getFillColor() : nvgRGB(0, 0, 0);
+		NVGcolor accent = getAccentColor ? getAccentColor() : nvgRGB(255, 255, 255);
+
+		nvgBeginPath(args.vg);
+		nvgRoundedRect(args.vg, 0.f, 0.f, box.size.x, box.size.y, cornerRadiusPx);
+		nvgFillColor(args.vg, fill);
+		nvgFill(args.vg);
+		nvgStrokeWidth(args.vg, strokeWidthPx);
+		nvgStrokeColor(args.vg, accent);
+		nvgStroke(args.vg);
+
+		std::string text = getLabel ? getLabel() : std::string();
+		if (!text.empty())
+		{
+			std::shared_ptr<Font> font = APP->window->loadFont(asset::plugin(pluginInstance, fontPath));
+			nvgFontFaceId(args.vg, font->handle);
+			nvgFontSize(args.vg, fontSize);
+			nvgFillColor(args.vg, accent);
+			// TOP alignment for both the measurement and the actual draw (not BASELINE) -
+			// two baseline-relative attempts both went wrong in confusing, seemingly
+			// inconsistent directions (Dieter's own live-test catches, 2026-07-20), which TOP
+			// alignment sidesteps entirely: with TOP alignment, "y" already means "the top of
+			// the text sits here," so centering is just "put that top at (H - textHeight) / 2,"
+			// no ascender/descender sign reasoning needed at all.
+			nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
+			float bounds[4];
+			nvgTextBounds(args.vg, 0.f, 0.f, text.c_str(), nullptr, bounds);
+			float textWidth = bounds[2] - bounds[0];
+			float textHeight = bounds[3] - bounds[1];
+			float x = (box.size.x - textWidth) / 2.f - bounds[0];
+			float y = (box.size.y - textHeight) / 2.f - bounds[1] + textYNudgePx;
+			nvgText(args.vg, x, y, text.c_str(), nullptr);
+		}
+	}
+
+	void onButton(const event::Button &e) override
+	{
+		if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_PRESS && onClick)
+		{
+			onClick();
+			e.consume(this);
+		}
+		OpaqueWidget::onButton(e);
 	}
 };
 
