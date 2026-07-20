@@ -210,6 +210,210 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 	void setChannelName(int channel, const std::string &name) { writeChannelField(channel, "name", json_string(name.c_str())); }
 	void setChannelColor(int channel, int packedColor) { writeChannelField(channel, "color", json_integer(packedColor)); }
 
+	/*
+		Lock - lets multiple NEO instances attached to the same Host agree on a common Grid
+		Rows/Full Height/width, so a stack of them (same HP position, different rack rows) reads
+		as one continuous grid (2026-07-20 design, worked out together with Dieter). ANY locked-in
+		instance can change the group's config; every other locked instance adopts it live -
+		locking in is joining a group that stays in sync, not a one-time snapshot. Width is
+		opportunistic: a locked instance always adopts the common row count, and tries to match
+		the common width too, but only as far as free space allows (requestModulePos() is Rack's
+		own collision test) - it keeps retrying every tick, so it grows (or shrinks) into the
+		target the moment room frees up, never clipping columns in the meantime.
+
+		Schema addition (same top-level object "channels" lives in, see its own comment above):
+		{
+		  "channels": [...],
+		  "lock": {
+		    "ids": [123, 456],   // module ids of every instance currently locked in - each
+		                         // instance adds itself on lock, removes itself on unlock/removal
+		    "rows": 6,
+		    "fullHeight": true,
+		    "widthHp": 32
+		  }
+		}
+	*/
+	struct NeoLockData
+	{
+		std::vector<int64_t> ids;
+		int rows = NEO_ROWS_DEFAULT;
+		bool fullHeight = false;
+		int widthHp = NEO_DEFAULT_WIDTH_HP;
+	};
+
+	NeoLockData readLockData()
+	{
+		NeoLockData result;
+		ExpanderBridgeInterface *host = neoHostBridge();
+		if (!host)
+			return result;
+		std::string raw = readHostData(host);
+		if (raw.empty())
+			return result;
+		json_error_t error;
+		json_t *rootJ = json_loads(raw.c_str(), 0, &error);
+		if (!rootJ)
+			return result;
+		json_t *lockJ = json_object_get(rootJ, "lock");
+		if (lockJ)
+		{
+			json_t *idsJ = json_object_get(lockJ, "ids");
+			if (idsJ && json_is_array(idsJ))
+			{
+				size_t index;
+				json_t *idJ;
+				json_array_foreach(idsJ, index, idJ)
+					if (json_is_integer(idJ))
+						result.ids.push_back(json_integer_value(idJ));
+			}
+			json_t *rowsJ = json_object_get(lockJ, "rows");
+			if (rowsJ && json_is_integer(rowsJ))
+				result.rows = (int) json_integer_value(rowsJ);
+			json_t *fhJ = json_object_get(lockJ, "fullHeight");
+			if (fhJ && json_is_boolean(fhJ))
+				result.fullHeight = json_is_true(fhJ);
+			json_t *widthJ = json_object_get(lockJ, "widthHp");
+			if (widthJ && json_is_integer(widthJ))
+				result.widthHp = (int) json_integer_value(widthJ);
+		}
+		json_decref(rootJ);
+		return result;
+	}
+
+	// Same shared read-modify-write-whole-blob convention as writeChannelField() - "channels"
+	// (and any other future top-level field) round-trips completely untouched. Unlike
+	// writeChannelField() this replaces the WHOLE "lock" object at once rather than mutating a
+	// single key - safe here since every field in it is owned end-to-end by this same code, no
+	// other writer ever touches any part of it (unlike a channel entry, which cellType/cellConfig
+	// will eventually also write into).
+	void writeLockData(const NeoLockData &data)
+	{
+		ExpanderBridgeInterface *host = neoHostBridge();
+		if (!host)
+			return;
+		std::string raw = readHostData(host);
+		json_error_t error;
+		json_t *rootJ = raw.empty() ? nullptr : json_loads(raw.c_str(), 0, &error);
+		if (!rootJ)
+			rootJ = json_object();
+
+		json_t *lockJ = json_object();
+		json_t *idsJ = json_array();
+		for (int64_t lockedId : data.ids)
+			json_array_append_new(idsJ, json_integer(lockedId));
+		json_object_set_new(lockJ, "ids", idsJ);
+		json_object_set_new(lockJ, "rows", json_integer(data.rows));
+		json_object_set_new(lockJ, "fullHeight", json_boolean(data.fullHeight));
+		json_object_set_new(lockJ, "widthHp", json_integer(data.widthHp));
+		json_object_set_new(rootJ, "lock", lockJ);
+
+		char *serialized = json_dumps(rootJ, JSON_COMPACT);
+		writeHostData(host, serialized ? serialized : "");
+		free(serialized);
+		json_decref(rootJ);
+
+		channelTableSeenTimestampMs = -1; // this write also bumped the shared timestamp - force
+		                                   // our own next refreshChannelTable() to re-read promptly
+	}
+
+	// Session-only (never persisted - see NeoWidget::step()'s own lock-sync block for how these
+	// are used): the width/rows/fullHeight this instance last physically CONFIRMED matching,
+	// distinguishing "I just made a local edit" (propagate) from "the group's target changed"
+	// (adopt) from "I'm still converging toward an already-known target" (keep retrying). -1 =
+	// not yet synced, so the first locked tick always adopts rather than misreading as an edit.
+	float neoLockLastSyncedRows = -1.f;
+	float neoLockLastSyncedFullHeight = -1.f;
+	float neoLockLastSyncedWidthHp = -1.f;
+
+	// Called only from the rare, one-time "am I first or joining" moment in toggleLock() - a real
+	// UI click, not a per-tick lookup, so APP->engine->getModule() here is safe (the deadlock
+	// pattern this codebase already hit and fixed was specifically about calling it from every
+	// tick of moduleProcess()/widget step(), not an occasional user action - see CLAUDE.md's
+	// Pitfalls). Drops any id that no longer resolves to a real, still-in-the-patch NEO instance -
+	// an automatic cleanup safety net against a stale id left behind by, say, a crash that
+	// skipped a normal onRemove() (Dieter's own instruction, 2026-07-20).
+	void pruneStaleLockIds(NeoLockData &data)
+	{
+		std::vector<int64_t> alive;
+		for (int64_t lockedId : data.ids)
+		{
+			Module *m = APP->engine->getModule(lockedId);
+			if (m && dynamic_cast<NeoExpanderInterface*>(m))
+				alive.push_back(lockedId);
+		}
+		data.ids = alive;
+	}
+
+	// Right-click-free - a real panel widget (NeoLockButton) toggles this. Handles both "I'm the
+	// first to lock in" (my own current config becomes the group's) and "joining an existing
+	// group" (adopt its rows/fullHeight immediately; width converges gradually via the per-tick
+	// sync in NeoWidget::step(), so a blocked instance still locks in successfully at whatever
+	// width it can currently manage rather than failing the lock outright).
+	void toggleLock()
+	{
+		bool wasLocked = OL_state[LOCKED_JSON] > 0.5f;
+		ExpanderBridgeInterface *host = neoHostBridge();
+		if (!host)
+			return; // no Host connected - nothing to lock into
+
+		NeoLockData data = readLockData();
+		if (!wasLocked)
+		{
+			pruneStaleLockIds(data);
+			if (data.ids.empty())
+			{
+				// First to lock in - my own current config becomes the group's.
+				data.rows = clamp((int) OL_state[ROWS_DISPLAYED_JSON], NEO_ROWS_MIN, NEO_ROWS_MAX);
+				data.fullHeight = OL_state[FULL_HEIGHT_JSON] > 0.5f;
+				data.widthHp = (int) std::round(OL_state[PANEL_WIDTH_HP_JSON]);
+			}
+			else
+			{
+				// Joining an existing group - adopt its rows/fullHeight now; width is left to
+				// the per-tick convergence in NeoWidget::step().
+				OL_setOutState(ROWS_DISPLAYED_JSON, (float) data.rows);
+				OL_setOutState(FULL_HEIGHT_JSON, data.fullHeight ? 1.f : 0.f);
+			}
+			neoLockLastSyncedRows = (float) data.rows;
+			neoLockLastSyncedFullHeight = data.fullHeight ? 1.f : 0.f;
+			neoLockLastSyncedWidthHp = OL_state[PANEL_WIDTH_HP_JSON]; // current, NOT data.widthHp -
+			                                                          // the per-tick sync's own
+			                                                          // convergence check picks up
+			                                                          // the gap to data.widthHp
+			                                                          // from here if not yet equal
+			if (std::find(data.ids.begin(), data.ids.end(), (int64_t) id) == data.ids.end())
+				data.ids.push_back((int64_t) id);
+			writeLockData(data);
+			OL_setOutState(LOCKED_JSON, 1.f);
+		}
+		else
+		{
+			data.ids.erase(std::remove(data.ids.begin(), data.ids.end(), (int64_t) id), data.ids.end());
+			writeLockData(data);
+			OL_setOutState(LOCKED_JSON, 0.f);
+			neoLockLastSyncedRows = -1.f;
+			neoLockLastSyncedFullHeight = -1.f;
+			neoLockLastSyncedWidthHp = -1.f;
+		}
+	}
+
+	// Called from onRemove()/invalidateBridgeCache() below - proactively drops this instance's
+	// own id from the shared list using the ALREADY-CACHED host pointer (no getModule() lookup,
+	// same reasoning as disconnectNeoHost()'s own sibling cleanup) so the list never accumulates
+	// a stale id for an instance that's actually gone. Safe to call even while unlocked/
+	// disconnected (both branches degrade to a no-op).
+	void leaveLockGroupOnRemoval()
+	{
+		if (OL_state[LOCKED_JSON] <= 0.5f)
+			return;
+		ExpanderBridgeInterface *host = neoHostBridge();
+		if (!host)
+			return;
+		NeoLockData data = readLockData();
+		data.ids.erase(std::remove(data.ids.begin(), data.ids.end(), (int64_t) id), data.ids.end());
+		writeLockData(data);
+	}
+
 	Neo()
 	{
 		initializeInstance();
@@ -274,6 +478,7 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 		setJsonLabel(PANEL_WIDTH_HP_JSON, "panelWidthHp");
 		setJsonLabel(ROWS_DISPLAYED_JSON, "rowsDisplayed");
 		setJsonLabel(FULL_HEIGHT_JSON, "fullHeight");
+		setJsonLabel(LOCKED_JSON, "locked");
 		// CONNECTED_HOST_ID_JSON is gone - neoConnectedHostId is a real int64_t now, persisted
 		// via this module's own moduleExtraDataToJson/FromJson instead (see its own comment).
 		for (int r = 0; r < NEO_NUM_ROWS; r++)
@@ -324,18 +529,27 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 	}
 	// Called BY the cached Host itself, right before it's destroyed (see
 	// ExpanderBridgeInterface's own comment, ExpanderBridge.hpp) - just drop the connection
-	// directly (no unregister needed, the Host is already tearing down its own registry).
+	// directly (no unregister needed, the Host is already tearing down its own registry). No
+	// point trying to leaveLockGroupOnRemoval() here - the shared storage is going away WITH the
+	// Host, so there's nothing left to write into; just reset this instance's own local lock
+	// state so it doesn't think it's still part of a group that no longer has anywhere to live.
 	void invalidateBridgeCache() override
 	{
 		neoHost = nullptr;
 		neoHostModule = nullptr;
 		neoConnectedHostId = -1;
+		OL_state[LOCKED_JSON] = 0.f;
+		neoLockLastSyncedRows = -1.f;
+		neoLockLastSyncedFullHeight = -1.f;
+		neoLockLastSyncedWidthHp = -1.f;
 	}
 	// Symmetric with the Host's own onRemove() (Morpheus.cpp) - proactively tells the cached
 	// Host to forget this Neo instance before it's actually destroyed, using only the pointer
-	// already held (no engine lookup of any kind).
+	// already held (no engine lookup of any kind). leaveLockGroupOnRemoval() first, while
+	// neoHostModule is still valid - same reasoning, own cached pointer, no engine lookup.
 	void onRemove(const RemoveEvent &e) override
 	{
+		leaveLockGroupOnRemoval();
 		if (neoHostModule)
 		{
 			ExpanderBridgeInterface *hostBridge = dynamic_cast<ExpanderBridgeInterface*>(neoHostModule);
@@ -351,6 +565,7 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 		OL_state[PANEL_WIDTH_HP_JSON] = (float) NEO_DEFAULT_WIDTH_HP;
 		OL_state[ROWS_DISPLAYED_JSON] = (float) NEO_ROWS_DEFAULT;
 		OL_state[FULL_HEIGHT_JSON] = 0.f;
+		OL_state[LOCKED_JSON] = 0.f;
 		disconnectNeoHost();
 		for (int r = 0; r < NEO_NUM_ROWS; r++)
 		{
@@ -958,6 +1173,38 @@ struct NeoRowButton : ParamWidget
 };
 
 /**
+	Lock button - global area, join/leave the Host-shared "common config" group (see the Neo
+	module's own NeoLockData/toggleLock() for the full mechanism). A plain clickable square, not
+	a Rack Param - locking has complex cross-instance side effects that don't fit the automatable-
+	parameter model. Same flat-fill style as NeoRowButton (the row paging buttons) and X-family's
+	own Bind/Free button - grey when unlocked, green when locked; a locked/unlocked icon on top of
+	this same square is a later styling pass (Dieter's own instruction, 2026-07-20).
+*/
+struct NeoLockButton : OpaqueWidget
+{
+	Neo *module = nullptr;
+
+	void draw(const DrawArgs &args) override
+	{
+		bool locked = module && module->OL_state[LOCKED_JSON] > 0.5f;
+		nvgBeginPath(args.vg);
+		nvgRoundedRect(args.vg, 0.f, 0.f, box.size.x, box.size.y, 1.f);
+		nvgFillColor(args.vg, locked ? NEO_LOCK_ON_COLOR : NEO_LOCK_OFF_COLOR);
+		nvgFill(args.vg);
+	}
+
+	void onButton(const event::Button &e) override
+	{
+		if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_PRESS && module)
+		{
+			module->toggleLock();
+			e.consume(this);
+		}
+		OpaqueWidget::onButton(e);
+	}
+};
+
+/**
 	Main Module Widget - resizable panel, up to 16 row-slots, NEO_ROWS_MIN..NEO_ROWS_MAX (4..8) of
 	them actually shown at once (right-click "Grid Rows"). Function first, styling later per
 	Dieter's own instruction - simple graphics throughout.
@@ -980,6 +1227,7 @@ struct NeoWidget : ModuleWidget
 	// module that owns one of these, NEO's own panel width isn't fixed.
 	XExtStripWidget *extStripRight = nullptr;
 	XExtStripWidget *extStripLeft = nullptr;
+	NeoLockButton *lockButton = nullptr;
 	// Last column/controls width the auto-resize reconciliation (step(), below) actually ran
 	// against - negative means "not yet initialized," so the very first step() call just adopts
 	// the current values without attempting a resize (a freshly loaded/created module shouldn't
@@ -1007,6 +1255,15 @@ struct NeoWidget : ModuleWidget
 
 		extStripRight = addXExtStrip(this, widthHp * 5.08f);
 		extStripLeft = addXExtStripLeft(this);
+
+		// Upper left corner of the global area's own frame (NEO_FRAME_MARGIN_MM left edge,
+		// NEO_FRAME_TOP_MM top edge), spaced by PanelDesignGuide.md's own "Positioning controls"
+		// target (NEO_LOCK_BUTTON_SPACING_MM) from both.
+		lockButton = new NeoLockButton();
+		lockButton->module = module;
+		lockButton->box.pos = mm2px(Vec(NEO_FRAME_MARGIN_MM + NEO_LOCK_BUTTON_SPACING_MM, NEO_FRAME_TOP_MM + NEO_LOCK_BUTTON_SPACING_MM));
+		lockButton->box.size = mm2px(Vec(NEO_LOCK_BUTTON_SIZE_MM, NEO_LOCK_BUTTON_SIZE_MM));
+		addChild(lockButton);
 
 		// All real geometry (position, size, visibility) for every one of these is set fresh
 		// every step() below, driven by the current Grid Rows count / Full Height state - it can
@@ -1063,6 +1320,67 @@ struct NeoWidget : ModuleWidget
 		Neo *neoModule = dynamic_cast<Neo *>(module);
 		if (neoModule)
 		{
+			// Lock sync (rows/fullHeight half) - see Neo::NeoLockData's own comment for the full
+			// mechanism. Runs BEFORE the row-layout computation below, so any adoption this tick
+			// is already reflected in it (Dieter's own instruction, 2026-07-20: any locked
+			// instance can change the group's config, and it propagates live to every other
+			// locked instance; width itself is synced separately, further down, after the normal
+			// cell-size-driven auto-resize has already settled for this tick).
+			bool locked = neoModule->OL_state[LOCKED_JSON] > 0.5f;
+			Neo::NeoLockData lockData;
+			bool lockDataValid = false;
+			if (locked && neoModule->neoHost)
+			{
+				lockData = neoModule->readLockData();
+				bool amIRegistered = std::find(lockData.ids.begin(), lockData.ids.end(), (int64_t) neoModule->id) != lockData.ids.end();
+				if (!amIRegistered)
+				{
+					// My own id isn't actually in the shared group - almost certainly a preset
+					// was just loaded (Rack module ids aren't stable across a save/reload, so a
+					// persisted "lock" object can never correspond to a freshly-loaded instance's
+					// own id) or the group otherwise no longer exists. Auto-unlock rather than
+					// silently pretending to be part of a group I'm not really registered in -
+					// Dieter's own instruction, 2026-07-20: the user re-locks with one click once
+					// they've confirmed which instances should actually be grouped.
+					neoModule->OL_setOutState(LOCKED_JSON, 0.f);
+					neoModule->neoLockLastSyncedRows = -1.f;
+					neoModule->neoLockLastSyncedFullHeight = -1.f;
+					neoModule->neoLockLastSyncedWidthHp = -1.f;
+					locked = false;
+				}
+				else
+				{
+					lockDataValid = true;
+					float myRows = neoModule->OL_state[ROWS_DISPLAYED_JSON];
+					bool myFullHeight = neoModule->OL_state[FULL_HEIGHT_JSON] > 0.5f;
+					bool rowsLocallyChanged = (myRows != neoModule->neoLockLastSyncedRows) ||
+						(myFullHeight != (neoModule->neoLockLastSyncedFullHeight > 0.5f));
+					bool lockNeedsWrite = false;
+					if (rowsLocallyChanged)
+					{
+						// My own value diverged from what I last confirmed matching - a genuine
+						// local edit (menu click), not something this sync block itself just
+						// did - propagate it as the group's new target.
+						lockData.rows = (int) myRows;
+						lockData.fullHeight = myFullHeight;
+						lockNeedsWrite = true;
+						neoModule->neoLockLastSyncedRows = myRows;
+						neoModule->neoLockLastSyncedFullHeight = myFullHeight ? 1.f : 0.f;
+					}
+					else if ((int) myRows != lockData.rows || myFullHeight != lockData.fullHeight)
+					{
+						// I'm still at what I last confirmed, but the group's own target has
+						// since moved (someone else changed it) - adopt it.
+						neoModule->OL_setOutState(ROWS_DISPLAYED_JSON, (float) lockData.rows);
+						neoModule->OL_setOutState(FULL_HEIGHT_JSON, lockData.fullHeight ? 1.f : 0.f);
+						neoModule->neoLockLastSyncedRows = (float) lockData.rows;
+						neoModule->neoLockLastSyncedFullHeight = lockData.fullHeight ? 1.f : 0.f;
+					}
+					if (lockNeedsWrite)
+						neoModule->writeLockData(lockData);
+				}
+			}
+
 			int rowsDisplayed = clamp((int) neoModule->OL_state[ROWS_DISPLAYED_JSON], NEO_ROWS_MIN, NEO_ROWS_MAX);
 			bool fullHeight = neoModule->OL_state[FULL_HEIGHT_JSON] > 0.5f;
 			float firstRowYMm, cellHeightMm, rowPitchMm;
@@ -1128,6 +1446,58 @@ struct NeoWidget : ModuleWidget
 				}
 				lastColumnPitchMm = columnPitchMm;
 				lastControlsWidthMm = controlsWidthMm;
+			}
+
+			// Lock sync (width half) - runs after the cell-size-driven auto-resize above has
+			// already settled for this tick, so it converges toward the GROUP's target width
+			// rather than fighting the column-preserving resize that may have just happened.
+			// Width, unlike rows, is "weak" (Dieter's own framing) - a locked instance always
+			// keeps its own adopted row count, but only matches the common width as far as free
+			// space allows, remembering the target and retrying every tick so it grows (or
+			// shrinks) into it the moment room frees up, rather than failing the lock outright.
+			if (locked && lockDataValid)
+			{
+				int myWidthHp = (int) std::round(neoModule->OL_state[PANEL_WIDTH_HP_JSON]);
+				bool lockNeedsWrite = false;
+				if (myWidthHp != (int) std::round(neoModule->neoLockLastSyncedWidthHp))
+				{
+					// My own physical width changed since I last confirmed it - either a manual
+					// drag, or the row-count reconciliation above just moved me as a side effect
+					// of adopting a new row count. Either way this IS my new confirmed state;
+					// propagate it as the group's target if it doesn't already match.
+					if (myWidthHp != lockData.widthHp)
+					{
+						lockData.widthHp = myWidthHp;
+						lockNeedsWrite = true;
+					}
+					neoModule->neoLockLastSyncedWidthHp = (float) myWidthHp;
+				}
+				if (myWidthHp != lockData.widthHp)
+				{
+					// Still (or newly) diverged from the group's target - try to converge,
+					// exactly the same collision-checked resize NeoResizeHandle::onDragMove()
+					// and the cell-size reconciliation above already use.
+					float minWidthPx = neoMinWidthHp(columnPitchMm, controlsWidthMm) * RACK_GRID_WIDTH;
+					float maxWidthPx = neoMaxWidthHp(neoModule->neoHost, columnPitchMm, controlsWidthMm) * RACK_GRID_WIDTH;
+					float targetWidthPx = clamp((float) lockData.widthHp * RACK_GRID_WIDTH, minWidthPx, maxWidthPx);
+					if (targetWidthPx != box.size.x)
+					{
+						Rect oldBox = box;
+						Rect newBox = box;
+						newBox.size.x = targetWidthPx;
+						box = newBox;
+						if (APP->scene->rack->requestModulePos(this, newBox.pos))
+						{
+							int newHp = (int) std::round(box.size.x / RACK_GRID_WIDTH);
+							neoModule->OL_setOutState(PANEL_WIDTH_HP_JSON, (float) newHp);
+							neoModule->neoLockLastSyncedWidthHp = (float) newHp;
+						}
+						else
+							box = oldBox; // still blocked - keep current width, retry next tick
+					}
+				}
+				if (lockNeedsWrite)
+					neoModule->writeLockData(lockData);
 			}
 
 			float widthMm = neoModule->OL_state[PANEL_WIDTH_HP_JSON] * 5.08f; // may have just changed above

@@ -78,6 +78,17 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define NEO_RESIZE_RESERVED_WIDTH_HP 1
 #define NEO_RESIZE_RESERVED_WIDTH_MM (NEO_RESIZE_RESERVED_WIDTH_HP * 5.08f)
 
+// Lock button (global area, see Neo module's own NeoLockData/toggleLock()) - upper left corner
+// of the global area's own frame, spaced per PanelDesignGuide.md's own "Positioning controls"
+// target (5 grid units, ~1.27mm) from both the left and top frame edges. Same flat-fill square
+// style as the row LEFT/RIGHT paging buttons and X-family's own Bind/Free button - grey when
+// unlocked, green when locked (matching NEO's own FOLLOW toggle green) - just a plain square for
+// now, a locked/unlocked icon is a later styling pass (Dieter's own instruction, 2026-07-20).
+#define NEO_LOCK_BUTTON_SIZE_MM    6.f
+#define NEO_LOCK_BUTTON_SPACING_MM 1.27f
+#define NEO_LOCK_OFF_COLOR nvgRGB(0x30, 0x30, 0x30)
+#define NEO_LOCK_ON_COLOR  nvgRGB(0x00, 0xdd, 0x44)
+
 // How much width is "spent" before the step-column grid begins - NEO_CONTROLS_WIDTH_MM always,
 // plus Full Height's own reserved resize-handle strip when active. THE one place this decision
 // is made; every width/column computation in Neo.cpp threads its result through rather than
@@ -283,6 +294,12 @@ enum jsonIds {
 	// different rack row) with no rounded corner, border stroke, or brand text crossing the seam.
 	// See neoRowLayout()'s own comment for the matching row-padding halving.
 	FULL_HEIGHT_JSON,
+
+	// Lock - this instance's own membership in the Host-shared "common config" group (2026-07-20
+	// design). Right-click-free, a real panel widget (NeoLockButton) in the global area. See
+	// Neo.cpp's own NeoLockData/readLockData()/writeLockData() and NeoWidget::step()'s lock-sync
+	// block for the full mechanism and its own schema documentation.
+	LOCKED_JSON,
 
 	// The non-adjacent stay-connected target host id used to live here as a float
 	// (CONNECTED_HOST_ID_JSON) - that assumption ("Rack module ids are small sequential
