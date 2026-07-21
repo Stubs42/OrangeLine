@@ -721,8 +721,7 @@
      inkscape:groupmode="layer"
      id="layer-controls"
      inkscape:label="Controls"
-     style="display:inline"
-     sodipodi:insensitive="true">
+     style="display:inline">
     <text
        xml:space="preserve"
        style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:4.49792px;line-height:1.25;font-family:'Repetition Scrolling';-inkscape-font-specification:'Repetition Scrolling, Normal';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;text-align:start;letter-spacing:0px;word-spacing:0px;writing-mode:lr-tb;text-anchor:start;display:inline;opacity:0.98;fill:#00dd00;fill-opacity:1;stroke:none;stroke-width:0.264583"
@@ -742,7 +741,7 @@
       <path
          id="rect21"
          style="fill:#100600;fill-opacity:1;stroke:#ff6600;stroke-width:0.3;stroke-linejoin:round;stroke-opacity:1"
-         d="M 2.7940002,15.74925 H 13.97 a 0.50800017,0.50800017 45 0 1 0.508,0.508 l 0,3.556 a 0.50800017,0.50800017 135 0 1 -0.508,0.508 H 2.7940002 A 0.50800017,0.50800017 45 0 1 2.286,19.81325 v -3.556 a 0.50800017,0.50800017 135 0 1 0.5080002,-0.508 z"
+         d="M 2.7940002,15.74925 H 13.97 a 0.50800017,0.50800017 45 0 1 0.508,0.508 v 3.556 a 0.50800017,0.50800017 135 0 1 -0.508,0.508 H 2.7940002 A 0.50800017,0.50800017 45 0 1 2.286,19.81325 v -3.556 a 0.50800017,0.50800017 135 0 1 0.5080002,-0.508 z"
          sodipodi:nodetypes="ccccc"
          inkscape:path-effect="#path-effect23"
          inkscape:original-d="m 2.286,15.74925 h 12.192 v 4.572 H 2.286 Z"
@@ -766,7 +765,7 @@
       <path
          id="rect21-8"
          style="display:inline;fill:#100600;fill-opacity:1;stroke:#ff6600;stroke-width:0.3;stroke-linejoin:round;stroke-opacity:1"
-         d="m 16.51,15.74925 h 11.176 a 0.50799979,0.50799979 45 0 1 0.508,0.508 l 0,3.556 a 0.50799979,0.50799979 135 0 1 -0.508,0.508 l -11.176,0 a 0.50799979,0.50799979 45 0 1 -0.508,-0.508 v -3.556 a 0.50799979,0.50799979 135 0 1 0.508,-0.508 z"
+         d="m 16.51,15.74925 h 11.176 a 0.50799979,0.50799979 45 0 1 0.508,0.508 v 3.556 a 0.50799979,0.50799979 135 0 1 -0.508,0.508 H 16.51 a 0.50799979,0.50799979 45 0 1 -0.508,-0.508 v -3.556 a 0.50799979,0.50799979 135 0 1 0.508,-0.508 z"
          sodipodi:nodetypes="ccccc"
          inkscape:path-effect="#path-effect23-8"
          inkscape:original-d="m 16.002,15.74925 h 12.192 v 4.572 H 16.002 Z"

@@ -97,7 +97,14 @@ struct XR16Widget : ModuleWidget
 			addChild(darkPanel);
 		}
 
-		addChild(createLightCentered<AutoHideLight<TinyLight<GreenRedLight>>>(calculateCoordinates(XR16_PANEL_WIDTH_MM - 3.5f, 4.f, 0.f), module, OVERFLOW_LIGHT));
+		// Moved down to the open gap between the LEFT/RIGHT nav buttons and the first output jack,
+		// X centered on the panel's own half-width - matches XO8/XD8/XO16/XD16/XOD8/XOD16's own
+		// convention (the old top-right-corner position here had never been moved down like the
+		// rest of the family, Dieter's own catch 2026-07-21 - "XR8 and XR16 still have this light
+		// in the header"). Two-channel GreenRedLight (green = connected and every channel fits,
+		// red = overflow, both off = not connected) - see XRModuleCommon.hpp's own moduleProcess()
+		// comment.
+		addChild(createLightCentered<AutoHideLight<TinyLight<GreenRedLight>>>(calculateCoordinates(XR16_PANEL_WIDTH_MM / 2.f, 26.163f, 0.f), module, OVERFLOW_LIGHT));
 
 		XOStepButton *leftButton = createParamCentered<XOStepButton>(calculateCoordinates(8.382f, 18.035f, 0.f), module, LEFT_PARAM);
 		leftButton->label = "<";
@@ -106,10 +113,15 @@ struct XR16Widget : ModuleWidget
 		rightButton->label = ">";
 		addParam(rightButton);
 
+		// Width spans this module's own (double-width) panel, not the narrow 8-channel sibling's
+		// fixed 13mm - it had been left at that stale narrow value (Dieter's own catch, 2026-07-21:
+		// "the shortnames in the output modules are still not centered" - not a centering-math
+		// bug, the box itself was too narrow and sat flush left, matching X16/X16D's own already-
+		// correct PANEL_WIDTH_MM-based sizing).
 		XONameDisplay *nameDisplay = new XONameDisplay();
 		nameDisplay->module = module;
-		nameDisplay->box.pos = calculateCoordinates(1.41287f, 12.449f, 0.f);
-		nameDisplay->box.size = mm2px(Vec(13.f, 5.f));
+		nameDisplay->box.pos = calculateCoordinates(XO_NAME_DISPLAY_MARGIN_MM, 12.449f, 0.f);
+		nameDisplay->box.size = mm2px(Vec(XR16_PANEL_WIDTH_MM - 2.f * XO_NAME_DISPLAY_MARGIN_MM, 5.f));
 		addChild(nameDisplay);
 
 		static const float portY[8] = {

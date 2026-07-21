@@ -242,28 +242,18 @@ struct X8ButtonBase : ParamWidget
 		              : X_BUTTON_FILL_ORANGE;
 		NVGcolor accent = getAccentColor();
 
-		float r = mm2px(Vec(0.529f, 0.f)).x;
-		nvgBeginPath(args.vg);
-		nvgRoundedRect(args.vg, 0.f, 0.f, box.size.x, box.size.y, r);
-		nvgFillColor(args.vg, fill);
-		nvgFill(args.vg);
-		nvgStrokeWidth(args.vg, mm2px(Vec(0.3f, 0.f)).x);
-		nvgStrokeColor(args.vg, accent);
-		nvgStroke(args.vg);
-
-		std::string text = getLabel();
-		if (!text.empty())
-		{
-			// 8pt, per Dieter (matches the panel's own BUTTON_TEXT tspan override,
-			// "2.82222px" - this SVG's viewBox makes 1 user unit == 1mm, so that raw number
-			// already IS the mm size directly: 8pt * 0.3528 mm/pt == 2.82222mm).
-			std::shared_ptr<Font> font = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
-			nvgFontFaceId(args.vg, font->handle);
-			nvgFontSize(args.vg, mm2px(Vec(2.82222f, 0.f)).x);
-			nvgFillColor(args.vg, accent);
-			nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-			nvgText(args.vg, box.size.x / 2.f, box.size.y / 2.f, text.c_str(), nullptr);
-		}
+		// Shared drawing (2026-07-21 rollout, OrangeLine.hpp's own olDrawLabelButton() - see its
+		// comment for why this is a free function rather than a shared widget class here: this
+		// stays a real ParamWidget with its own press/hold/release semantics, only the drawing
+		// itself is shared with NEO's OLLabelButton). 8pt font per Dieter (matches the panel's
+		// own BUTTON_TEXT tspan override, "2.82222px" - this SVG's viewBox makes 1 user unit ==
+		// 1mm, so that raw number already IS the mm size directly: 8pt * 0.3528 mm/pt ==
+		// 2.82222mm). textYNudgePx left at 0 for now - not yet live-tuned for this font size/
+		// button shape the way NEO's own button was; the switch from NVG_ALIGN_MIDDLE to the
+		// shared function's measured-bounds centering may want a small nudge once checked live.
+		olDrawLabelButton(args.vg, box.size, fill, accent, getLabel(),
+			"res/repetition-scrolling.regular.ttf", mm2px(Vec(2.82222f, 0.f)).x,
+			mm2px(Vec(0.529f, 0.f)).x, mm2px(Vec(0.3f, 0.f)).x);
 	}
 };
 
@@ -634,6 +624,13 @@ struct X8ValueButton : ParamWidget
 // leave X8 at its own hand-tuned 13mm untouched) stays in one place.
 #define X8_NAME_DISPLAY_MARGIN_MM 1.41287f
 
+// Whether X8NameDisplay ever shows the full descriptive name at all, on the wider (X8D/X16/X16D)
+// displays that have room for it - disabled 2026-07-21 (Dieter's own instruction: "showing the
+// long name was a nice idea but it confuses myself... always show the short name"). Kept as a
+// single easy-to-flip switch, not deleted, specifically so the long-name code path below can be
+// re-enabled later without re-deriving it - flip to true to restore it.
+#define X8_NAME_DISPLAY_SHOW_LONG_NAME false
+
 /**
 	Currently-browsed param name, LCD-style like every other OrangeLine display - color-coded per
 	ExpanderParamAccessSpec.md's "Name display": grey dashes when no Host is resolved (doubles as
@@ -642,16 +639,10 @@ struct X8ValueButton : ParamWidget
 	browsed param, grey when it's taken (bound elsewhere, or a real cable is patched in), orange
 	when it's available (nobody holds it).
 
-	Three display-width tiers, all handled by ONE generic "does it fit?" measurement
-	(nvgTextBounds()) against this widget's own box.size.x - no per-module special-casing
-	anywhere, the tiering falls out purely from each widget's own box width (Dieter's own
-	breakdown): X8's narrow ~13mm display always shows getXParamShortName() centered (or just
-	OL_GREETING_WORD1 while unbound) - long content never fits there. X8D/X16's wider ~27mm
-	display shows the full getXParamName() left-aligned when it fits, else falls back to
-	getXParamShortName() centered (or the full "WORD1 WORD2" greeting, else just WORD1, while
-	unbound). X16D's widest ~58mm display uses the exact same logic, but its width means the long
-	name fits for essentially every candidate - "mostly showing the Long name of a slot" in
-	practice, not a separate code path.
+	Always shows getXParamShortName(), centered (X8_NAME_DISPLAY_SHOW_LONG_NAME above) - X8D/X16/
+	X16D's wider displays used to prefer the full getXParamName() left-aligned when it fit, but
+	that read as confusing rather than helpful in practice (Dieter's own catch, 2026-07-21) - the
+	long-name branch is still here, just gated off, not removed.
 */
 struct X8NameDisplay : TransparentWidget
 {
@@ -667,14 +658,17 @@ struct X8NameDisplay : TransparentWidget
 		return (bounds[2] - bounds[0]) <= box.size.x;
 	}
 
-	// Centers <=5-char content using the existing hand-tuned X8_CENTER_OFFSET_MM table (pixel-
-	// identical to the previous behavior); anything longer (a long name, or the full two-word
-	// greeting) is centered via a measured nvgTextBounds() width instead, since the hand-tuned
-	// table only ever covered up to 5 characters.
+	// Always measures the actual rendered text via nvgTextBounds() and centers that within this
+	// widget's own CURRENT box.size.x - this widget is reused as-is across X8/X8D/X16/X16D, each
+	// with its own different display width, so a single hand-tuned fixed-offset table (the
+	// shared X8_CENTER_OFFSET_MM, correctly used elsewhere for genuinely fixed-width displays)
+	// could only ever be tuned correctly for ONE of those widths - it was originally carried over
+	// from X8's own narrow display, and read visibly off-center on the wider X8D/X16/X16D
+	// variants (Dieter's own catch, 2026-07-21: "the text is not centered horizontally correctly
+	// to the page on all modules"). Measuring fresh against whatever box.size.x actually is here
+	// fixes all widths at once, by construction, rather than needing a per-module offset.
 	float centerX(NVGcontext *vg, const std::string &text)
 	{
-		if (text.size() <= 5)
-			return mm2px(X8_CENTER_OFFSET_MM[text.size()]);
 		float bounds[4];
 		nvgTextBounds(vg, 0.f, 0.f, text.c_str(), nullptr, bounds);
 		float x = (box.size.x - (bounds[2] - bounds[0])) / 2.f;
@@ -749,9 +743,11 @@ struct X8NameDisplay : TransparentWidget
 
 				// Prefer the full descriptive name, left-aligned, whenever this display is wide
 				// enough to show it without clipping - falls back to the short name, centered,
-				// otherwise (X8's narrow display always takes this branch).
+				// otherwise (X8's narrow display always takes this branch). Gated off entirely
+				// for now (X8_NAME_DISPLAY_SHOW_LONG_NAME, its own comment above) - always takes
+				// the short-name branch below instead.
 				std::string longName = xHost->getXParamName(idx);
-				if (fits(args.vg, longName))
+				if (X8_NAME_DISPLAY_SHOW_LONG_NAME && fits(args.vg, longName))
 				{
 					text = longName;
 					leftAlign = true;

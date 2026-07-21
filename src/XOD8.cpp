@@ -114,8 +114,10 @@ struct XOD8Widget : ModuleWidget
 
 		XONameDisplay *nameDisplay = new XONameDisplay();
 		nameDisplay->module = module;
-		nameDisplay->box.pos = calculateCoordinates(1.41287f, 12.449f, 0.f);
-		nameDisplay->box.size = mm2px(Vec(13.f, 5.f));
+		// XOD8 is double-width like the "16" siblings, not slim like plain XO8/XD8/XR8 (Dieter's
+		// own catch, 2026-07-21 - same stale-narrow-box bug as XO16/XD16/XOD16/XR16 just fixed).
+		nameDisplay->box.pos = calculateCoordinates(XO_NAME_DISPLAY_MARGIN_MM, 12.449f, 0.f);
+		nameDisplay->box.size = mm2px(Vec(XOD8_PANEL_WIDTH_MM - 2.f * XO_NAME_DISPLAY_MARGIN_MM, 5.f));
 		addChild(nameDisplay);
 
 		// Always-visible display-column background (the panel's own static decoration there has

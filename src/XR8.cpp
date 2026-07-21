@@ -98,7 +98,14 @@ struct XR8Widget : ModuleWidget
 			addChild(darkPanel);
 		}
 
-		addChild(createLightCentered<AutoHideLight<TinyLight<GreenRedLight>>>(calculateCoordinates(XR8_PANEL_WIDTH_MM - 3.5f, 4.f, 0.f), module, OVERFLOW_LIGHT));
+		// Moved down to the open gap between the LEFT/RIGHT nav buttons and the first output jack,
+		// X centered on the panel's own half-width - matches XO8/XD8/XO16/XD16/XOD8/XOD16's own
+		// convention (the old top-right-corner position here had never been moved down like the
+		// rest of the family, Dieter's own catch 2026-07-21 - "XR8 and XR16 still have this light
+		// in the header"). Two-channel GreenRedLight (green = connected and every channel fits,
+		// red = overflow, both off = not connected) - see XRModuleCommon.hpp's own moduleProcess()
+		// comment.
+		addChild(createLightCentered<AutoHideLight<TinyLight<GreenRedLight>>>(calculateCoordinates(XR8_PANEL_WIDTH_MM / 2.f, 26.163f, 0.f), module, OVERFLOW_LIGHT));
 
 		XOStepButton *leftButton = createParamCentered<XOStepButton>(calculateCoordinates(4.550f, 18.034f, 0.f), module, LEFT_PARAM);
 		leftButton->label = "<";

@@ -87,6 +87,17 @@ inline void updateXOLogoCovers(XOLogoCover *cover1, XOLogoCover *cover2, Module 
 // decision above.
 static const float XO_CENTER_OFFSET_MM[6] = { 0.f, 3.725f + 1.242f, 3.725f, 2.483f, 1.242f, 0.f }; // index = strlen
 
+// Same left/right margin as X8Common.hpp's own X8_NAME_DISPLAY_MARGIN_MM - every XONameDisplay
+// instance's own box.pos.x, and (for the double-width XO16/XD16/XOD16/XR16 siblings) its box.size.x
+// too, is measured against this same margin from each module's own panel edge.
+#define XO_NAME_DISPLAY_MARGIN_MM 1.41287f
+
+// Whether XONameDisplay ever shows the full descriptive name at all, on the wider displays that
+// have room for it - disabled 2026-07-21, same instruction and same reasoning as X8Common.hpp's
+// own X8_NAME_DISPLAY_SHOW_LONG_NAME ("showing the long name was a nice idea but it confuses
+// myself... always show the short name... on all modules"). Kept as an easy-to-flip switch.
+#define XO_NAME_DISPLAY_SHOW_LONG_NAME false
+
 // Is `channel` within the browsed output's actual LIVE channel count right now? Below this, a
 // value display should read as inert/dimmed (there's real no signal on that channel at all) even
 // though the module itself has physical capacity for it (8 or 16 jacks/cells) - mirrors X8Knob's
@@ -185,10 +196,15 @@ struct XONameDisplay : TransparentWidget
 		return (bounds[2] - bounds[0]) <= box.size.x;
 	}
 
+	// Always measures the actual rendered text and centers it within this widget's own CURRENT
+	// box.size.x, rather than the hand-tuned XO_CENTER_OFFSET_MM table - this widget is reused
+	// as-is across XO8/XO16/XOD8/XOD16/XD8/XD16/XR8/XR16, each with its own different display
+	// width, so a single fixed-offset table could only ever be right for one of them (Dieter's
+	// own catch, 2026-07-21 - see X8NameDisplay's own identical fix, X8Common.hpp, for the full
+	// reasoning - XO_CENTER_OFFSET_MM itself is untouched, still correct for its OTHER use below
+	// against a genuinely fixed-width display).
 	float centerX(NVGcontext *vg, const std::string &text)
 	{
-		if (text.size() <= 5)
-			return mm2px(XO_CENTER_OFFSET_MM[text.size()]);
 		float bounds[4];
 		nvgTextBounds(vg, 0.f, 0.f, text.c_str(), nullptr, bounds);
 		float x = (box.size.x - (bounds[2] - bounds[0])) / 2.f;
@@ -236,7 +252,7 @@ struct XONameDisplay : TransparentWidget
 				color = xoHost->getXOColor(idx); // always full brightness - watching is never exclusive
 
 				std::string longName = xoHost->getXOName(idx);
-				if (fits(args.vg, longName))
+				if (XO_NAME_DISPLAY_SHOW_LONG_NAME && fits(args.vg, longName))
 				{
 					text = longName;
 					leftAlign = true;

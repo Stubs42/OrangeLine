@@ -98,10 +98,15 @@ struct XO16Widget : ModuleWidget
 		rightButton->label = ">";
 		addParam(rightButton);
 
+		// Width spans this module's own (double-width) panel, not the narrow 8-channel sibling's
+		// fixed 13mm - it had been left at that stale narrow value (Dieter's own catch, 2026-07-21:
+		// "the shortnames in the output modules are still not centered" - not a centering-math
+		// bug, the box itself was too narrow and sat flush left, matching X16/X16D's own already-
+		// correct XO16_PANEL_WIDTH_MM-based sizing).
 		XONameDisplay *nameDisplay = new XONameDisplay();
 		nameDisplay->module = module;
-		nameDisplay->box.pos = calculateCoordinates(1.41287f, 12.449f, 0.f);
-		nameDisplay->box.size = mm2px(Vec(13.f, 5.f));
+		nameDisplay->box.pos = calculateCoordinates(XO_NAME_DISPLAY_MARGIN_MM, 12.449f, 0.f);
+		nameDisplay->box.size = mm2px(Vec(XO16_PANEL_WIDTH_MM - 2.f * XO_NAME_DISPLAY_MARGIN_MM, 5.f));
 		addChild(nameDisplay);
 
 		static const float portY[8] = {

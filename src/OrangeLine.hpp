@@ -473,29 +473,69 @@ struct TextWidget : TransparentWidget {
 };
 
 /**
-	Generic drawn "labeled state button" (2026-07-20) - filled rounded rect + stroke + centered
-	text, all in one caller-supplied accent color, the caller resolving that color however it
-	needs to (a three-state grey/themed/highlight scheme is the established convention - see
-	X8BindButtonBase's own getAccentColor()/getLabel() pattern, X8Common.hpp, which this
-	generalizes). First real caller: NEO's own LOCK/FREE button (Neo.cpp) - built here so other
-	modules (X8's own BIND/FREE included) can adopt the same drawing code later without
-	re-deriving it, per Dieter's own instruction: "let just NEO use this common code for now...
-	roll it out to the rest of the modules using this kind of button... another day."
-
-	Deliberately generic/theme-agnostic itself (no X_BUTTON_FILL_* or X_COLOR_INACTIVE_GREY
-	reference here - those are X-family-specific, defined in XShared.hpp, which itself includes
-	this file, so the dependency can't run the other way) - every color and the label text are
-	supplied via callbacks the caller wires up from its own module state.
+	Shared drawing for a "labeled state button" (2026-07-20) - filled rounded rect + stroke +
+	centered text, all in one caller-supplied accent color. Extracted as a free function (not
+	tied to any one widget class) specifically so it can back BOTH a plain OpaqueWidget-style
+	direct-action button (OLLabelButton below, NEO's own LOCK/FREE) AND a real Rack ParamWidget
+	button (X8ButtonBase/X8BindButtonBase, X8Common.hpp - X8's BIND/FREE, a genuine automatable
+	param with its own press/hold/release semantics that don't fit OLLabelButton's simple
+	onClick shape) - 2026-07-21 rollout, per Dieter's own instruction the day before ("let just
+	NEO use this common code for now... roll it out to the rest of the modules... another day").
+	Deliberately theme-agnostic itself (no X_BUTTON_FILL_* or X_COLOR_INACTIVE_GREY reference here -
+	those are X-family-specific, XShared.hpp, which itself includes this file) - every color,
+	the label text, and all sizing are passed in by the caller.
 
 	Text is vertically (AND horizontally) centered using nvgTextBounds() against the ACTUAL
-	rendered glyph bounds of the current text/font/size, not NVG_ALIGN_MIDDLE/CENTER's own
-	font-metric-based guess (which drifts off-center differently at different font sizes for a
-	pixel-style font like repetition-scrolling, confirmed live) - so this stays visually centered
-	regardless of fontSize or which font is loaded, by construction rather than a hand-tuned nudge.
+	rendered glyph bounds of the current text/font/size, with NVG_ALIGN_TOP for both the
+	measurement and the actual draw call - not NVG_ALIGN_MIDDLE/CENTER's own font-metric-based
+	guess (which drifts off-center differently at different font sizes for a pixel-style font
+	like repetition-scrolling, confirmed live), and not NVG_ALIGN_BASELINE either (two separate
+	baseline-relative attempts both went wrong in confusingly opposite-seeming directions before
+	landing on TOP alignment, which sidesteps the ascender/descender sign reasoning entirely).
+	textYNudgePx is a small tunable residual correction on top of that (font atlas padding/
+	hinting keeps the measurement from landing pixel-perfect on its own) - expect to live-tune
+	it per font/size rather than assume one caller's value transfers to another.
+*/
+inline void olDrawLabelButton(NVGcontext *vg, Vec size, NVGcolor fill, NVGcolor accent,
+	const std::string &label, const char *fontPath, float fontSize,
+	float cornerRadiusPx, float strokeWidthPx, float textYNudgePx = 0.f)
+{
+	nvgBeginPath(vg);
+	nvgRoundedRect(vg, 0.f, 0.f, size.x, size.y, cornerRadiusPx);
+	nvgFillColor(vg, fill);
+	nvgFill(vg);
+	nvgStrokeWidth(vg, strokeWidthPx);
+	nvgStrokeColor(vg, accent);
+	nvgStroke(vg);
+
+	if (label.empty())
+		return;
+
+	std::shared_ptr<Font> font = APP->window->loadFont(asset::plugin(pluginInstance, fontPath));
+	nvgFontFaceId(vg, font->handle);
+	nvgFontSize(vg, fontSize);
+	nvgFillColor(vg, accent);
+	nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
+	float bounds[4];
+	nvgTextBounds(vg, 0.f, 0.f, label.c_str(), nullptr, bounds);
+	float textWidth = bounds[2] - bounds[0];
+	float textHeight = bounds[3] - bounds[1];
+	float x = (size.x - textWidth) / 2.f - bounds[0];
+	float y = (size.y - textHeight) / 2.f - bounds[1] + textYNudgePx;
+	nvgText(vg, x, y, label.c_str(), nullptr);
+}
+
+/**
+	Generic drawn "labeled state button" widget, built on olDrawLabelButton() above (2026-07-20)
+	- the caller resolves fill/accent/label however it needs to via callbacks (a three-state
+	grey/themed/highlight scheme is the established convention - see X8BindButtonBase's own
+	getAccentColor()/getLabel() pattern, X8Common.hpp, which this generalizes). First real
+	caller: NEO's own LOCK/FREE button (Neo.cpp).
 
 	A plain OpaqueWidget, not a Rack ParamWidget - a simple click callback (onClick) rather than a
-	bound param, matching NEO's own toggleLock()-style direct action; a future ParamWidget-backed
-	variant (for X8's own real BIND param) is a separate, not-yet-built concern.
+	bound param, matching NEO's own toggleLock()-style direct action; X8's own real BIND param
+	uses olDrawLabelButton() directly from its own ParamWidget-based X8ButtonBase instead of this
+	widget, since its press/hold/release semantics don't fit a plain onClick.
 */
 struct OLLabelButton : OpaqueWidget
 {
@@ -506,10 +546,6 @@ struct OLLabelButton : OpaqueWidget
 	float fontSize = 12.f;
 	float cornerRadiusPx = 1.f;
 	float strokeWidthPx = 1.f;
-	// Small residual correction on top of the measured-bounds centering below (2026-07-20,
-	// Dieter's own live-tuning) - the font atlas's own padding/hinting keeps the TOP-aligned
-	// measurement from landing pixel-perfect on its own; a caller-tunable escape hatch rather
-	// than baking one specific number in here for every possible font/size.
 	float textYNudgePx = 0.f;
 	const char *fontPath = "res/repetition-scrolling.regular.ttf";
 
@@ -517,37 +553,8 @@ struct OLLabelButton : OpaqueWidget
 	{
 		NVGcolor fill = getFillColor ? getFillColor() : nvgRGB(0, 0, 0);
 		NVGcolor accent = getAccentColor ? getAccentColor() : nvgRGB(255, 255, 255);
-
-		nvgBeginPath(args.vg);
-		nvgRoundedRect(args.vg, 0.f, 0.f, box.size.x, box.size.y, cornerRadiusPx);
-		nvgFillColor(args.vg, fill);
-		nvgFill(args.vg);
-		nvgStrokeWidth(args.vg, strokeWidthPx);
-		nvgStrokeColor(args.vg, accent);
-		nvgStroke(args.vg);
-
 		std::string text = getLabel ? getLabel() : std::string();
-		if (!text.empty())
-		{
-			std::shared_ptr<Font> font = APP->window->loadFont(asset::plugin(pluginInstance, fontPath));
-			nvgFontFaceId(args.vg, font->handle);
-			nvgFontSize(args.vg, fontSize);
-			nvgFillColor(args.vg, accent);
-			// TOP alignment for both the measurement and the actual draw (not BASELINE) -
-			// two baseline-relative attempts both went wrong in confusing, seemingly
-			// inconsistent directions (Dieter's own live-test catches, 2026-07-20), which TOP
-			// alignment sidesteps entirely: with TOP alignment, "y" already means "the top of
-			// the text sits here," so centering is just "put that top at (H - textHeight) / 2,"
-			// no ascender/descender sign reasoning needed at all.
-			nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
-			float bounds[4];
-			nvgTextBounds(args.vg, 0.f, 0.f, text.c_str(), nullptr, bounds);
-			float textWidth = bounds[2] - bounds[0];
-			float textHeight = bounds[3] - bounds[1];
-			float x = (box.size.x - textWidth) / 2.f - bounds[0];
-			float y = (box.size.y - textHeight) / 2.f - bounds[1] + textYNudgePx;
-			nvgText(args.vg, x, y, text.c_str(), nullptr);
-		}
+		olDrawLabelButton(args.vg, box.size, fill, accent, text, fontPath, fontSize, cornerRadiusPx, strokeWidthPx, textYNudgePx);
 	}
 
 	void onButton(const event::Button &e) override

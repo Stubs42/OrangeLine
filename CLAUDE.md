@@ -206,30 +206,56 @@ one's sizing/coloring.
 
 ## Code-drawn digital displays and knob rings
 
-First built for NEO's per-row track/channel select controls (`Neo.cpp`'s `NeoRowTextDisplayWidget`/
-`NeoRowKnobRingWidget`, 2026-07-20) - a self-contained, code-drawn "digital display" (background +
-frame + text) and a themed ring drawn around a knob, both entirely NVG-drawn rather than baked into
-panel SVG art. Exact sizing came from a reference SVG Dieter hand-authored and measured
-(`res/DisplaysWithKnobsInFrame.svg`) after several rounds of misunderstanding a purely verbal
-"padding" spec - when a similar drawn-decoration need comes up in another module, measure a
-reference SVG the same way rather than re-guessing these numbers from scratch, and apply the same
-proportions:
+First built for NEO's per-row track/channel select controls (`NeoRowTextDisplayWidget`, and the
+shared `OLLabelButton` in `OrangeLine.hpp`, 2026-07-20) - self-contained, code-drawn "digital
+display" (background + frame + text) and button widgets, plus a themed ring drawn around a knob,
+all entirely NVG-drawn rather than baked into panel SVG art. Exact sizing came from a reference
+SVG Dieter hand-authored and measured (`res/DisplaysWithKnobsInFrame.svg`) after several rounds of
+misunderstanding a purely verbal "padding" spec - when a similar drawn-decoration need comes up in
+another module, measure a reference SVG the same way rather than re-guessing these numbers from
+scratch, and apply the same proportions:
 
-- **Display background + frame**: corner radius = the same nested-frame margin used everywhere
-  else in the codebase (`NEO_FRAME_MARGIN_MM`/`X_FRAME_MARGIN_MM`-equivalent, 0.762mm), stroke
-  width = the standard frame stroke (`NEO_FRAME_STROKE_MM`/0.3mm), fill = the `X_DISPLAY_BG_*`
-  themed color (a genuinely darker "digital display" color, never the plain panel/strip
-  background - see the "Self-drawn widget backgrounds" section above for that distinction), stroke
-  color = the standard per-theme frame color (`X_FRAME_ORANGE/DARK/BRIGHT`).
+- **Display/button background + frame**: corner radius = the same nested-frame margin used
+  everywhere else in the codebase (`NEO_FRAME_MARGIN_MM`/`X_FRAME_MARGIN_MM`-equivalent, 0.762mm),
+  stroke width = the standard frame stroke (`NEO_FRAME_STROKE_MM`/0.3mm), fill = the
+  `X_DISPLAY_BG_*` themed color for a true digital-display cell (a genuinely darker color, never
+  the plain panel/strip background - see "Self-drawn widget backgrounds" above for that
+  distinction) or the `X_BUTTON_FILL_*` themed color for a button, stroke color = the standard
+  per-theme frame color (`X_FRAME_ORANGE/DARK/BRIGHT`).
 - **Display height is barely taller than its own font size** - close to zero top/bottom padding
   (the reference SVG measured 6.096mm tall text field for a 5.997mm font - under 0.05mm padding
   per side). Don't add generous vertical padding here the way a button or a knob-ring gets;
   a digital-display cell in this codebase reads as correct when the glyph nearly fills its own
   box vertically.
-- **Text left inset** ≈ 0.81mm from the display's own left edge (not flush, not more).
-- **Text vertical position**: NanoVG's `NVG_ALIGN_MIDDLE` baseline sits very slightly high for
-  this font at this size - nudge the draw position down about 0.25mm from the box's own vertical
-  center to actually look centered.
+- **Display width should be derived from a shared `f(numChars, fontSizeMm)` formula, not an
+  independent hand-picked constant per field.** NEO's `neoDisplayWidthMm()` (`Neo.hpp`) does
+  `numChars * fontSizeMm * CHAR_WIDTH_RATIO + 2*insetMm`, with `CHAR_WIDTH_RATIO` (≈0.553 for
+  `repetition-scrolling.regular.ttf`) measured once from a live-tuned reference field and reused
+  for every other display of the same font - Dieter's own instruction after several fields had
+  each been hand-tuned to a slightly different, inconsistent per-character ratio: "the display
+  width... should be a result of a common function, not a field specific define." Only the display
+  *background/frame* width needs this treatment - the button label centering below already
+  measures the real rendered text directly, so it has no analogous "width formula" of its own.
+- **Text left inset** ≈ 0.81mm from a display's own left edge (not flush, not more) - this one
+  applies to left-aligned digital displays specifically; a centered button label doesn't need an
+  inset at all (see the centering technique below).
+- **Text vertical (and horizontal) centering for a button label - measure, don't guess or
+  hand-tune.** `OLLabelButton` uses `nvgTextBounds()` against the *actual rendered glyph bounds*
+  of the current text/font/size, with **`NVG_ALIGN_TOP` for both the measurement and the actual
+  draw call - not `NVG_ALIGN_BASELINE`.** Two separate baseline-relative attempts (subtracting,
+  then adding, half the measured ascent/descent) both rendered wrong, in confusingly opposite-
+  seeming directions (Dieter's own live-test catches, 2026-07-20) - baseline-relative bounds math
+  for this font's ascender/descender sign convention was never reliably reasoned about correctly.
+  Switching to `NVG_ALIGN_TOP` for both calls removes that ambiguity entirely: the y you pass
+  *is* "where the top of the text sits," so centering is just `(boxHeight - textHeight) / 2 -
+  bounds[1]`, no sign reasoning needed. Even with this, a small residual pixel-level offset can
+  still be needed (font atlas padding/hinting) - keep it as a tunable field (`textYNudgePx`) rather
+  than baking one guessed number in, and expect to live-tune it per font/size rather than assume
+  it transfers. **A plain digital-display readout (not a button) still just uses a hand-tuned
+  fixed offset from `NVG_ALIGN_MIDDLE`** (`NEO_ROW_DISPLAY_TEXT_Y_OFFSET_MM`, +0.25mm below center)
+  - it works fine for that narrower use (a single known glyph set, not arbitrary button labels) and
+  hasn't been revisited since the more robust technique was worked out for the button; prefer the
+  `nvgTextBounds()`+`ALIGN_TOP` technique for anything new.
 - **Knob ring**: a themed stroke-only circle drawn as its OWN separate widget (not baked into the
   knob's own SvgKnob), sized independently of the real knob's natural SVG size (same "frame drawn
   at its own fixed size, independent of the control it surrounds" principle as `X8ValueButton`'s
@@ -252,6 +278,88 @@ proportions:
   knob → display → knob → ...), derive every later position from the previous element's own edge
   plus one frame-gap unit, rather than independent constants for each - that way "the padding
   stays the same" automatically even if one element's own size changes later.
+- **A shared, reusable button widget already exists - `OLLabelButton` (`OrangeLine.hpp`).** Filled
+  rounded rect + stroke + centered label, all in one caller-supplied accent color; the caller
+  wires up `getFillColor`/`getAccentColor`/`getLabel`/`onClick` as `std::function`s rather than
+  subclassing, so it works for a plain `OpaqueWidget`-style direct-action button (NEO's own
+  LOCK/FREE) without requiring a real Rack `ParamWidget`/`configParam` the way `X8ButtonBase`
+  (`X8Common.hpp`) still independently does for X-family's BIND/FREE. Reuse this for any future
+  "filled bar, themed accent color, centered label" control rather than writing a new one-off
+  `draw()` - `X8ButtonBase` itself is a queued (not yet done) candidate to migrate onto it, see
+  the `project_shared_button_widget_refactor` memory note for the current state of that.
+
+## Resizable panel design (first built for NEO)
+
+NEO is OrangeLine's first module with a genuinely runtime-resizable panel width - these are the
+general lessons, independent of NEO's own specific row-header content, worth reapplying if a
+future module needs the same capability:
+
+- **A row/cell layout formula should treat padding as the FIXED, primary quantity and cell size as
+  whatever real number is left over** - never snap cell size to a grid and let padding become
+  whatever's left (that let padding blow up disproportionately at high row counts in an earlier
+  pass, "nearly as big as the cell itself"). See `neoRowLayout()` (`Neo.hpp`) for the reference
+  implementation.
+- **A module meant to tile seamlessly against a stacked neighbor (NEO's "Full Height" mode) needs
+  a DIFFERENT padding rule than the same module's normal, chrome-having mode - they are not the
+  same formula at different content ranges.** Normal mode (which always keeps its own visible
+  frame/border and never touches a neighbor) uses full, equal padding everywhere - N+1 equal
+  gap-units for N rows, including a full gap at the very top and bottom edges. The seamlessly-
+  stacking mode instead uses a "half-edge" convention - half a gap at the very top and bottom
+  edges, full gaps between rows (N gap-units total, not N+1) - so that two stacked instances each
+  contribute one half-padding at their own touching edge, summing back to exactly one ordinary
+  gap right at the seam. Applying the half-edge convention to the *normal* (non-stacking) mode too
+  was an early mistake here - it left normal mode's own first/last row visibly under-padded
+  against its own frame for no reason, since normal mode never needed to reserve half a gap for a
+  neighbor that will never be there.
+- **A module's minimum (and, if applicable, initial/default) width should be calculated ONCE, by
+  hand, from the actual fixed layout constants that determine it - and kept in a comment showing
+  the exact arithmetic - rather than left as a stale guess.** NEO's own minimum-width constant
+  went stale exactly this way: it predated a later 4x widening of a fixed-width sub-component
+  (the row header), and nothing re-derived it, so the module could be resized (or even loaded at
+  its own "default") narrower than its own header actually needed - only caught via live-testing.
+  Whenever a fixed-size sub-component that feeds into a min/max-width formula changes, the derived
+  constant must be recomputed by hand and the derivation comment updated to match, not left as
+  whatever number happened to work before.
+- **Don't add a flat fudge-factor margin on top of a min/max-width formula that doesn't yet
+  correctly account for trailing padding - fix the formula's own right-side accounting instead,
+  then remove the fudge factor.** A first fix for "the last visible column runs flush against the
+  frame with no margin" was a flat `+1 HP`; once the width formula was corrected to properly
+  include the real right-side padding term, the flat fudge factor started double-counting margin
+  ("still too wide," caught live) and had to be removed again the same day it was added. If a
+  formula seems to need an unprincipled constant bolted on to look right, that's usually a sign
+  the formula itself is missing a term, not that the constant belongs there permanently.
+- **Rounding direction matters, and it isn't symmetric between a minimum and a maximum.** A
+  minimum-width floor computed via `ceil()` can only ever grant a little extra room (never less
+  than what's actually needed) - safe. A maximum-width ceiling computed via `floor()` can land
+  short of the exact width needed for its own intended column count, silently capping the resize
+  handle one column short of what the Host can actually show - this codebase's own
+  `neoMaxWidthHp()` had exactly this bug (`floor()` where `ceil()` was needed) until live-testing
+  caught it ("LEN 8 results in max size allowing for 7 columns"). When a width-in-HP conversion
+  is meant to *guarantee* enough room for something, round up; when it's meant to *cap* something
+  from overshooting, round down - know which guarantee a given conversion is actually making.
+- **A value settled to sit exactly on a `floor()`/column-count boundary (e.g. after "absorb the
+  leftover space into an adjoining element" logic runs) needs a small epsilon added before the
+  next `floor()` division, or ordinary float re-derivation can tip it to the wrong side of that
+  same boundary on a later frame.** Recomputing "how many whole columns fit" via a fresh
+  subtraction one frame after it was deliberately made to land on an exact multiple is not
+  guaranteed to reproduce the identical float bit pattern - it can land a hair below the true
+  boundary, and a bare `floor()` misreads that hair as one fewer column even though nothing about
+  the actual layout changed. `neoColumnFit()`'s own `NEO_COLUMN_FIT_EPSILON_MM` (a value far
+  larger than realistic float rounding error but far smaller than any real leftover) fixes this -
+  reach for the same pattern anywhere a "settle to an exact multiple, then re-derive the same
+  count later" cycle exists.
+- **A resize-drag mechanic that shifts a fixed-size sub-component's own boundary (e.g. NEO's row
+  header snapping back to a target width at drag-start) should ONLY touch that sub-component's own
+  state, never the whole module's width as a "compensating" side effect - even if the goal is
+  "don't let anything visually jump."** An earlier version of NEO's own drag-start handler also
+  resized the whole module by the same delta specifically to prevent the visible column count
+  from jumping - this was already unnecessary (freeing less than one column's worth of space,
+  which a header's own leftover-absorption is bounded to by construction, can never actually add a
+  column) and turned out to be the real source of a separate, confusing column-count bug via its
+  own HP-rounding. When two independent invariants ("the header returns to its target size" and
+  "the visible column count doesn't change momentarily") both hold given the actual bounds
+  involved, don't add extra compensating code to enforce the second one manually - verify it
+  already falls out for free first.
 
 ## Pitfalls learned the hard way (read before writing `moduleProcess()`)
 
