@@ -255,7 +255,35 @@ inline float neoRowAreaControlsWidthMm(bool fullHeight, float rowHeaderWidthMm)
 #define NEO_ROW_CHANNEL_KNOB_X_MM    (NEO_ROW_CHANNEL_DISPLAY_X_MM + NEO_ROW_CHANNEL_DISPLAY_WIDTH_MM + NEO_FRAME_GAP_MM + NEO_ROW_SELECT_KNOB_SIZE_MM / 2.f)
 #define NEO_ROW_NAME_X_MM            (NEO_ROW_CHANNEL_KNOB_X_MM + NEO_ROW_SELECT_KNOB_SIZE_MM / 2.f + NEO_FRAME_GAP_MM)
 
-#define NEO_ROW_NAME_WIDTH_MM    16.f
+// On-panel editable channel-identity field (2026-07-21, replacing the old flat 16mm placeholder
+// now that the right-click "Channels" menu is gone - see CLAUDE.md's own note on this being
+// OrangeLine's first inline-editable ui::TextField). A small colored dot (fill =
+// channelColor[track][channel]) precedes an 8-character editable name field, same shared width
+// formula every other NEO display uses (olDisplayWidthMm() - no hand-picked field width). The dot
+// is deliberately NOT a button/menu/popup (Dieter's own explicit direction, after trying and
+// rejecting both a floating swatch menu and an in-panel picker panel idea) - it's a hidden-knob-
+// style click-drag control (see NeoRowColorDotWidget, Neo.cpp) that cycles NEO_COLOR_SWATCHES
+// directly. Diameter is half NEO_ROW_NUMBER_DISPLAY_HEIGHT_MM (Dieter's own catch, 2026-07-21:
+// the first pass at "medium" was much too large/present for a small color control). Dot-to-field
+// gap uses the standard frame-padding unit (NEO_FRAME_GAP_MM) - Dieter's own catch, 2026-07-21:
+// the display text inset (0.81mm) used at first was too narrow between two separate controls.
+//   NEO_ROW_NAME_TEXT_WIDTH_MM = olDisplayWidthMm(8, 6, 0.81) = 8*6*0.553 + 2*0.81 = 28.164
+//   NEO_ROW_NAME_WIDTH_MM = 3.05 (dot) + 1.524 (gap) + 28.164 (text) = 32.738
+// This fits comfortably inside the row header's own fixed Tw envelope (NEO_ROW_HEADER_TARGET_
+// WIDTH_MM, 162.56mm) with room to spare before the right-aligned position display - confirmed by
+// hand: today's (old 16mm name) LEFT/RIGHT paging buttons already end ~56mm before the position
+// display begins, and this grows the name field by ~17mm, leaving ~39mm of slack. NEO_DEFAULT_
+// WIDTH_HP/neoMinWidthHp()/neoMaxWidthHp() are derived from NEO_ROW_HEADER_TARGET_WIDTH_MM as one
+// opaque envelope value, not from this field's own internal breakdown, so none of them need
+// recomputing for this change.
+#define NEO_ROW_NAME_DOT_DIAMETER_MM  (NEO_ROW_NUMBER_DISPLAY_HEIGHT_MM / 2.f)
+#define NEO_ROW_NAME_DOT_GAP_MM       NEO_FRAME_GAP_MM
+// mm of vertical drag per color step (NeoRowColorDotWidget's own click-drag cycling) - first-pass
+// value, live-tune once built.
+#define NEO_ROW_NAME_DOT_DRAG_STEP_MM 4.f
+#define NEO_ROW_NAME_FONT_SIZE_MM    NEO_ROW_NUMBER_DISPLAY_FONT_SIZE_MM
+#define NEO_ROW_NAME_TEXT_WIDTH_MM   olDisplayWidthMm(8, NEO_ROW_NAME_FONT_SIZE_MM, NEO_ROW_DISPLAY_TEXT_INSET_MM)
+#define NEO_ROW_NAME_WIDTH_MM        (NEO_ROW_NAME_DOT_DIAMETER_MM + NEO_ROW_NAME_DOT_GAP_MM + NEO_ROW_NAME_TEXT_WIDTH_MM)
 #define NEO_ROW_FOLLOW_X_MM      (NEO_ROW_NAME_X_MM + NEO_ROW_NAME_WIDTH_MM + NEO_FRAME_GAP_MM)
 #define NEO_ROW_LEFT_X_MM        (NEO_ROW_FOLLOW_X_MM + NEO_ROW_TOGGLE_WIDTH_MM + NEO_FRAME_GAP_MM)
 #define NEO_ROW_RIGHT_X_MM       (NEO_ROW_LEFT_X_MM + NEO_ROW_PAGEBTN_SIZE_MM + NEO_FRAME_GAP_MM)

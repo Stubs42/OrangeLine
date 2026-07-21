@@ -67,37 +67,49 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 
 	/*
 		Channel identity - name/color (and, later, cell-editor type/config) are properties of the
-		underlying Morpheus CHANNEL, not of whichever NEO row happens to be looking at it right
-		now (confirmed 2026-07-20: a channel shouldn't have an ambiguous identity depending on
-		which row/instance is viewing it, and this data only ever changes at sequencer-setup time,
-		never while running - both point at the same place, not per-row/per-instance state).
-		Stored on the HOST itself (shared automatically across every NEO instance attached to it)
-		via the generic, opaque, slug-keyed storage every Host offers for free
+		underlying (TRACK, CHANNEL) pair, not of whichever NEO row happens to be looking at it
+		right now (a row's own identity is the combination of track and channel, not channel
+		alone - confirmed 2026-07-21, superseding the original 2026-07-20 channel-only design:
+		NEO is meant to work with any future sequencer Host, not just Morpheus, so there is no
+		assumed relationship between the same channel index across different tracks - e.g.
+		channel 3 on M-05 can be named/colored completely differently than channel 3 on TAPE;
+		track is treated as a fully opaque dimension, no special-casing MSEL to "inherit" whatever
+		M-slot it currently mirrors). This data only ever changes at sequencer-setup time, never
+		while running. Stored on the HOST itself (shared automatically across every NEO instance
+		attached to it) via the generic, opaque, slug-keyed storage every Host offers for free
 		(ExpanderBridgeInterface::writeExpanderData()/readExpanderData(), see ExpanderBridge.hpp) -
 		Morpheus (or any future NeoHostInterface implementer) never parses or understands any of
 		this, it's just a string NEO itself reads/writes under its own slug ("Neo").
 
 		Schema (NEO's own, living, private contract - update this comment whenever a field is
-		added, this IS the documentation):
+		added, this IS the documentation). Renamed the top-level key from "channels" to "tracks"
+		2026-07-21 when this became (track, channel)-keyed - deliberate breaking change, no
+		migration: NEO hasn't shipped/released yet, so an old flat "channels" blob simply has no
+		"tracks" key and every identity falls back to defaults, same as "never configured":
 
 		{
-		  "channels": [
-		    { "name": "Kick", "color": 16711680, "cellType": "gate",  "cellConfig": {} },
-		    { "name": "Lead", "color": 65280,    "cellType": "value", "cellConfig": { "default": 0.0, "min": -10, "max": 10 } },
+		  "tracks": [
+		    { "channels": [
+		        { "name": "Kick", "color": 16711680, "cellType": "gate",  "cellConfig": {} },
+		        { "name": "Lead", "color": 65280,    "cellType": "value", "cellConfig": { "default": 0.0, "min": -10, "max": 10 } },
+		        ...
+		      ]
+		    },
 		    ...
 		  ]
 		}
 
-		One entry per POLY_CHANNELS (16) - array index IS the channel index, no separate "channel"
-		key needed. "cellType"/"cellConfig" are RESERVED for the abstract cell-editor system
-		(2026-07-20 design discussion, still unspecified beyond this placeholder) - not read or
-		written by any code yet, only "name" and "color" are live today. Every read/write below
-		treats an entry as a whole JSON object and only ever touches the ONE key it cares about,
-		so a future version that adds cellType/cellConfig will never clobber name/color written by
-		this version, and vice versa.
+		Up to NEO_MAX_TRACKS (32) track entries, each holding up to POLY_CHANNELS (16) channel
+		entries - outer array index IS the track index, inner array index IS the channel index, no
+		separate "track"/"channel" keys needed. "cellType"/"cellConfig" are RESERVED for the
+		abstract cell-editor system (2026-07-20 design discussion, still unspecified beyond this
+		placeholder) - not read or written by any code yet, only "name" and "color" are live today.
+		Every read/write below treats an entry as a whole JSON object and only ever touches the ONE
+		key it cares about, so a future version that adds cellType/cellConfig will never clobber
+		name/color written by this version, and vice versa.
 	*/
-	std::string channelName[POLY_CHANNELS];
-	int channelColor[POLY_CHANNELS] = {};
+	std::string channelName[NEO_MAX_TRACKS][POLY_CHANNELS];
+	int channelColor[NEO_MAX_TRACKS][POLY_CHANNELS] = {};
 	// -1 = never refreshed yet, forces the very first refreshChannelTable() call to actually
 	// read - see its own comment for why comparing against the Host's cheap timestamp (rather
 	// than re-parsing the JSON string every tick) is the whole point of this cache.
@@ -127,13 +139,14 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 		channelTableSeenTimestampMs = ts;
 
 		// Reset to sane defaults first - covers both "never configured at all" (brand new patch)
-		// and "this channel's own entry doesn't exist/doesn't have this field yet" uniformly,
+		// and "this (track, channel) entry doesn't exist/doesn't have this field yet" uniformly,
 		// without needing a separate has-value check at every read site elsewhere.
-		for (int c = 0; c < POLY_CHANNELS; c++)
-		{
-			channelName[c] = "";
-			channelColor[c] = 0xff6600; // ORANGE, matches the old CHANNEL_COLOR_JSON default
-		}
+		for (int t = 0; t < NEO_MAX_TRACKS; t++)
+			for (int c = 0; c < POLY_CHANNELS; c++)
+			{
+				channelName[t][c] = "";
+				channelColor[t][c] = 0xff6600; // ORANGE, matches the old CHANNEL_COLOR_JSON default
+			}
 
 		std::string raw = readHostData(host);
 		if (raw.empty())
@@ -142,36 +155,46 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 		json_t *rootJ = json_loads(raw.c_str(), 0, &error);
 		if (!rootJ)
 			return;
-		json_t *channelsJ = json_object_get(rootJ, "channels");
-		if (channelsJ && json_is_array(channelsJ))
+		json_t *tracksJ = json_object_get(rootJ, "tracks");
+		if (tracksJ && json_is_array(tracksJ))
 		{
-			size_t index;
-			json_t *entryJ;
-			json_array_foreach(channelsJ, index, entryJ)
+			size_t trackIndex;
+			json_t *trackEntryJ;
+			json_array_foreach(tracksJ, trackIndex, trackEntryJ)
 			{
-				if (index >= (size_t) POLY_CHANNELS)
+				if (trackIndex >= (size_t) NEO_MAX_TRACKS)
 					break;
-				json_t *nameJ = json_object_get(entryJ, "name");
-				if (nameJ && json_is_string(nameJ))
-					channelName[index] = json_string_value(nameJ);
-				json_t *colorJ = json_object_get(entryJ, "color");
-				if (colorJ && json_is_integer(colorJ))
-					channelColor[index] = (int) json_integer_value(colorJ);
+				json_t *channelsJ = json_object_get(trackEntryJ, "channels");
+				if (!channelsJ || !json_is_array(channelsJ))
+					continue;
+				size_t index;
+				json_t *entryJ;
+				json_array_foreach(channelsJ, index, entryJ)
+				{
+					if (index >= (size_t) POLY_CHANNELS)
+						break;
+					json_t *nameJ = json_object_get(entryJ, "name");
+					if (nameJ && json_is_string(nameJ))
+						channelName[trackIndex][index] = json_string_value(nameJ);
+					json_t *colorJ = json_object_get(entryJ, "color");
+					if (colorJ && json_is_integer(colorJ))
+						channelColor[trackIndex][index] = (int) json_integer_value(colorJ);
+				}
 			}
 		}
 		json_decref(rootJ);
 	}
 
-	// Shared read-modify-write for a single channel/single field - reads the CURRENT full blob
-	// (not our own local cache, which may be stale relative to another instance's own more recent
-	// write), mutates only the one key requested on the one entry requested, and writes the whole
-	// blob back. Every other key on every entry (including ones this code doesn't know about,
-	// e.g. a future cellType/cellConfig) round-trips completely untouched, since entries are
-	// mutated in place rather than rebuilt from scratch. Takes ownership of `value`.
-	void writeChannelField(int channel, const char *key, json_t *value)
+	// Shared read-modify-write for a single (track, channel)/single field - reads the CURRENT full
+	// blob (not our own local cache, which may be stale relative to another instance's own more
+	// recent write), mutates only the one key requested on the one entry requested, and writes the
+	// whole blob back. Every other key on every entry (including ones this code doesn't know
+	// about, e.g. a future cellType/cellConfig) round-trips completely untouched, since entries
+	// are mutated in place rather than rebuilt from scratch. Takes ownership of `value`.
+	void writeChannelField(int track, int channel, const char *key, json_t *value)
 	{
 		ExpanderBridgeInterface *host = neoHostBridge();
-		if (!host || channel < 0 || channel >= POLY_CHANNELS)
+		if (!host || track < 0 || track >= NEO_MAX_TRACKS || channel < 0 || channel >= POLY_CHANNELS)
 		{
 			json_decref(value);
 			return;
@@ -182,11 +205,26 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 		json_t *rootJ = raw.empty() ? nullptr : json_loads(raw.c_str(), 0, &error);
 		if (!rootJ)
 			rootJ = json_object();
-		json_t *channelsJ = json_object_get(rootJ, "channels");
+		json_t *tracksJ = json_object_get(rootJ, "tracks");
+		if (!tracksJ || !json_is_array(tracksJ))
+		{
+			tracksJ = json_array();
+			json_object_set_new(rootJ, "tracks", tracksJ);
+		}
+		// Pad with template {"channels":[]} objects up to this track's own index - leaves every
+		// earlier track entry's own existing content completely untouched.
+		while (json_array_size(tracksJ) <= (size_t) track)
+		{
+			json_t *trackTemplateJ = json_object();
+			json_object_set_new(trackTemplateJ, "channels", json_array());
+			json_array_append_new(tracksJ, trackTemplateJ);
+		}
+		json_t *trackEntryJ = json_array_get(tracksJ, track);
+		json_t *channelsJ = json_object_get(trackEntryJ, "channels");
 		if (!channelsJ || !json_is_array(channelsJ))
 		{
 			channelsJ = json_array();
-			json_object_set_new(rootJ, "channels", channelsJ);
+			json_object_set_new(trackEntryJ, "channels", channelsJ);
 		}
 		// Pad with empty objects up to this channel's own index - leaves every earlier entry's
 		// own existing content completely untouched.
@@ -208,8 +246,8 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 		channelTableSeenTimestampMs = -1;
 	}
 
-	void setChannelName(int channel, const std::string &name) { writeChannelField(channel, "name", json_string(name.c_str())); }
-	void setChannelColor(int channel, int packedColor) { writeChannelField(channel, "color", json_integer(packedColor)); }
+	void setChannelName(int track, int channel, const std::string &name) { writeChannelField(track, channel, "name", json_string(name.c_str())); }
+	void setChannelColor(int track, int channel, int packedColor) { writeChannelField(track, channel, "color", json_integer(packedColor)); }
 
 	/*
 		Lock - lets multiple NEO instances attached to the same Host agree on a common Grid
@@ -222,9 +260,9 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 		own collision test) - it keeps retrying every tick, so it grows (or shrinks) into the
 		target the moment room frees up, never clipping columns in the meantime.
 
-		Schema addition (same top-level object "channels" lives in, see its own comment above):
+		Schema addition (same top-level object "tracks" lives in, see its own comment above):
 		{
-		  "channels": [...],
+		  "tracks": [...],
 		  "lock": {
 		    "ids": [123, 456],   // module ids of every instance currently locked in - each
 		                         // instance adds itself on lock, removes itself on unlock/removal
@@ -460,7 +498,7 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 	}
 
 	// THE one place a row's own current channel/track selection is read - every call site
-	// (moduleProcess(), NeoRowCellsWidget, NeoRowNameWidget, the new track/channel displays)
+	// (moduleProcess(), NeoRowCellsWidget, NeoRowColorDotWidget/NeoRowNameField, track/channel displays)
 	// must go through these rather than reading ROW_CHANNEL_PARAM/ROW_TRACK_PARAM directly, so
 	// the clamping rules can never drift between them (2026-07-20 track/channel knob redesign).
 	int getRowChannel(int row)
@@ -1097,7 +1135,7 @@ struct NeoRowCellsWidget : TransparentWidget
 		NeoCellEditor *editor = neoCellEditorForType((int) m->OL_state[ROW_CELLTYPE_JSON + row]);
 		int page = (int) m->OL_state[ROW_PAGE_JSON + row];
 		int loopLen = m->neoHost->getLoopLen(channel);
-		int colorPacked = m->channelColor[channel]; // channel-owned, Host-shared - see its own comment
+		int colorPacked = m->channelColor[track][channel]; // (track,channel)-owned, Host-shared - see its own comment
 		NVGcolor color = nvgRGB((colorPacked >> 16) & 0xff, (colorPacked >> 8) & 0xff, colorPacked & 0xff);
 
 		for (int i = 0; i < visibleCols; i++)
@@ -1275,19 +1313,187 @@ struct NeoRowKnobRingWidget : TransparentWidget
 	}
 };
 
+// Shared color preset list (2026-07-21) - the N predefined colors NeoRowColorDotWidget's own
+// click-drag cycles through. No menu/popup involved at all (see the widget's own comment) - kept
+// as a plain array purely so the color set lives in one place.
+static const int NEO_COLOR_SWATCHES[8] = {
+	0xff6600, 0xff0000, 0x00cc44, 0x00aaff,
+	0xffcc00, 0xcc00ff, 0xffffff, 0x888888
+};
+
 /**
-	Plain row-name label (v1) - full channel renaming via right-click is deferred (see
-	NeoChannelNameField's own comment below). Used to also draw the row's own channel number as a
-	stand-in (there was no dedicated channel display yet) - that's now redundant and removed
-	(2026-07-20) now that a real channel display+knob exists (NEO_ROW_CHANNEL_DISPLAY_X_MM,
-	NeoWidget::step()), so this currently draws nothing at all until real per-row naming exists;
-	kept as an empty placeholder widget (not deleted outright) since its box/position are already
-	wired into NeoWidget::step()'s own layout and it's the natural home for a future name.
+	Colored dot preceding each row's own editable name field (2026-07-21) - filled with
+	channelColor[track][channel] (the row's OWN current track/channel, via getRowTrack()/
+	getRowChannel(), never cached - always reflects whatever the row is showing right now).
+	Deliberately NOT a button/menu/popup of any kind (Dieter's own explicit direction, after trying
+	and rejecting both a floating swatch menu and an in-panel picker panel idea) - it behaves like
+	a hidden knob: click-and-drag vertically cycles through NEO_COLOR_SWATCHES directly, same
+	"accumulate e.mouseDelta.y, step on crossing a threshold" technique NeoRowCellsWidget's own
+	value-cell drag editing already uses (see its onDragMove() above), just discrete-stepped
+	through a fixed color list instead of a continuous value. Up = next color, matching this
+	codebase's "up = higher value" drag convention elsewhere.
 */
-struct NeoRowNameWidget : TransparentWidget
+struct NeoRowColorDotWidget : OpaqueWidget
 {
 	Module *module = nullptr;
 	int row = 0;
+	float dragAccumPx = 0.f;
+
+	void draw(const DrawArgs &args) override
+	{
+		Neo *m = module ? dynamic_cast<Neo*>(module) : nullptr;
+		int colorPacked = m ? m->channelColor[m->getRowTrack(row)][m->getRowChannel(row)] : 0xff6600;
+		NVGcolor color = nvgRGB((colorPacked >> 16) & 0xff, (colorPacked >> 8) & 0xff, colorPacked & 0xff);
+		float r = box.size.x / 2.f;
+		nvgBeginPath(args.vg);
+		nvgCircle(args.vg, r, r, r);
+		nvgFillColor(args.vg, color);
+		nvgFill(args.vg);
+		OpaqueWidget::draw(args);
+	}
+
+	void onButton(const event::Button &e) override
+	{
+		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT)
+		{
+			dragAccumPx = 0.f;
+			e.consume(this);
+		}
+		OpaqueWidget::onButton(e);
+	}
+
+	void onDragMove(const event::DragMove &e) override
+	{
+		Neo *m = module ? dynamic_cast<Neo*>(module) : nullptr;
+		if (!m)
+			return;
+		int track = m->getRowTrack(row);
+		int channel = m->getRowChannel(row);
+		int currentColor = m->channelColor[track][channel];
+		int index = 0;
+		for (int i = 0; i < 8; i++)
+			if (NEO_COLOR_SWATCHES[i] == currentColor)
+			{
+				index = i;
+				break;
+			}
+
+		// e.mouseDelta is already zoom-corrected by Rack - accumulate it directly, same technique
+		// NeoRowCellsWidget::onDragMove() uses for continuous value drags, just stepped here.
+		dragAccumPx += e.mouseDelta.y;
+		float stepPx = mm2px(NEO_ROW_NAME_DOT_DRAG_STEP_MM);
+		while (dragAccumPx <= -stepPx)
+		{
+			index = (index + 1) % 8;
+			dragAccumPx += stepPx;
+		}
+		while (dragAccumPx >= stepPx)
+		{
+			index = (index - 1 + 8) % 8;
+			dragAccumPx -= stepPx;
+		}
+		m->setChannelColor(track, channel, NEO_COLOR_SWATCHES[index]);
+	}
+};
+
+/**
+	On-panel editable channel-identity name field (2026-07-21) - OrangeLine's first inline-
+	editable text control (every prior ui::TextField use in this codebase lives inside a menu, see
+	CLAUDE.md). Bound to channelName[track][channel] for the row's OWN current track/channel
+	(never cached - resolved fresh via getRowTrack()/getRowChannel() every call, same as the color
+	dot above). ui::TextField's own draw() is opaque to us (compiled into the SDK, no readable
+	source in this checkout) - overridden completely rather than fighting an unknown default look:
+	draw() paints the background/frame via the shared olDrawDisplayFrame() (matching every other
+	NEO display), drawLayer(layer==1) paints the text itself via the shared olDrawDisplayText()
+	plus a manually-drawn cursor/selection highlight on top, using the inherited text/cursor/
+	selection members TextField's own event handlers (onSelectText/onSelectKey/onDragHover/
+	onButton, all inherited unchanged) already maintain correctly. Cursor/selection are only drawn
+	while this field actually has keyboard focus (APP->event->getSelectedWidget() == this).
+*/
+struct NeoRowNameField : ui::TextField
+{
+	Module *module = nullptr;
+	int row = 0;
+
+	void onChange(const ChangeEvent &e) override
+	{
+		TextField::onChange(e);
+		Neo *m = module ? dynamic_cast<Neo*>(module) : nullptr;
+		if (m)
+			m->setChannelName(m->getRowTrack(row), m->getRowChannel(row), text);
+	}
+
+	void step() override
+	{
+		Neo *m = module ? dynamic_cast<Neo*>(module) : nullptr;
+		if (m)
+		{
+			const std::string &liveText = m->channelName[m->getRowTrack(row)][m->getRowChannel(row)];
+			if (text != liveText)
+				text = liveText; // direct member assign, not setText() - keeps cursor/selection untouched
+		}
+		TextField::step();
+	}
+
+	void draw(const DrawArgs &args) override
+	{
+		Neo *m = module ? dynamic_cast<Neo*>(module) : nullptr;
+		float style = m ? m->OL_state[STYLE_JSON] : STYLE_ORANGE;
+		NVGcolor bg = (style == STYLE_DARK) ? OL_DISPLAY_BG_DARK : (style == STYLE_BRIGHT) ? OL_DISPLAY_BG_BRIGHT : OL_DISPLAY_BG_ORANGE;
+		NVGcolor frame = (style == STYLE_DARK) ? X_FRAME_DARK : (style == STYLE_BRIGHT) ? X_FRAME_BRIGHT : X_FRAME_ORANGE;
+		olDrawDisplayFrame(args.vg, box.size, bg, frame, mm2px(NEO_ROW_DISPLAY_RADIUS_MM), mm2px(NEO_ROW_DISPLAY_STROKE_MM));
+	}
+
+	void drawLayer(const DrawArgs &args, int layer) override
+	{
+		if (layer != 1)
+		{
+			Widget::drawLayer(args, layer);
+			return;
+		}
+		Neo *m = module ? dynamic_cast<Neo*>(module) : nullptr;
+		// Text color reflects the channel's own identity color (same value the dot shows and
+		// NeoRowCellsWidget's own step-cell rendering uses) - NOT the theme's plain ORANGE/WHITE
+		// text color every other NEO display uses (Dieter's own catch, 2026-07-21: the dot
+		// visibly changes the identity color, but the name text itself was staying theme-colored
+		// instead of following it).
+		int colorPacked = m ? m->channelColor[m->getRowTrack(row)][m->getRowChannel(row)] : 0xff6600;
+		NVGcolor textColor = nvgRGB((colorPacked >> 16) & 0xff, (colorPacked >> 8) & 0xff, colorPacked & 0xff);
+		float insetX = mm2px(NEO_ROW_DISPLAY_TEXT_INSET_MM);
+		bool focused = (APP->event->getSelectedWidget() == this);
+
+		if (focused && selection != cursor)
+		{
+			std::shared_ptr<Font> font = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
+			nvgFontFaceId(args.vg, font->handle);
+			nvgFontSize(args.vg, mm2px(NEO_ROW_NAME_FONT_SIZE_MM));
+			int selStart = std::min(cursor, selection);
+			int selEnd = std::max(cursor, selection);
+			float xStart = insetX + nvgTextBounds(args.vg, 0.f, 0.f, text.substr(0, selStart).c_str(), nullptr, nullptr);
+			float xEnd = insetX + nvgTextBounds(args.vg, 0.f, 0.f, text.substr(0, selEnd).c_str(), nullptr, nullptr);
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, xStart, mm2px(0.5f), xEnd - xStart, box.size.y - mm2px(1.f));
+			nvgFillColor(args.vg, nvgRGBA(0xff, 0xff, 0xff, 0x50));
+			nvgFill(args.vg);
+		}
+
+		olDrawDisplayText(args.vg, box.size, textColor, text, "",
+			"res/repetition-scrolling.regular.ttf", mm2px(NEO_ROW_NAME_FONT_SIZE_MM),
+			insetX, mm2px(NEO_ROW_DISPLAY_TEXT_Y_OFFSET_MM));
+
+		if (focused)
+		{
+			std::shared_ptr<Font> font = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
+			nvgFontFaceId(args.vg, font->handle);
+			nvgFontSize(args.vg, mm2px(NEO_ROW_NAME_FONT_SIZE_MM));
+			float cursorX = insetX + nvgTextBounds(args.vg, 0.f, 0.f, text.substr(0, cursor).c_str(), nullptr, nullptr);
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, cursorX, mm2px(0.5f), mm2px(0.2f), box.size.y - mm2px(1.f));
+			nvgFillColor(args.vg, textColor);
+			nvgFill(args.vg);
+		}
+		Widget::drawLayer(args, 1);
+	}
 };
 
 /**
@@ -1497,7 +1703,8 @@ struct NeoWidget : ModuleWidget
 	NeoResizeHandle *resizeHandle = nullptr;
 	NeoPanelWidget *panelWidget = nullptr;
 	NeoRowCellsWidget *rowCells[NEO_NUM_ROWS] = {};
-	NeoRowNameWidget *rowNames[NEO_NUM_ROWS] = {};
+	NeoRowColorDotWidget *rowNameDots[NEO_NUM_ROWS] = {};
+	NeoRowNameField *rowNameFields[NEO_NUM_ROWS] = {};
 	NeoRowHeaderFrameWidget *rowHeaderFrames[NEO_NUM_ROWS] = {};
 	// Track/channel select knobs + their own numeric displays (2026-07-20) - replace the old
 	// memTapeBtns entirely (see ROW_MEMTAPE_PARAM's own removal note, Neo.hpp).
@@ -1593,12 +1800,19 @@ struct NeoWidget : ModuleWidget
 			addChild(headerFrame);
 			rowHeaderFrames[r] = headerFrame;
 
-			NeoRowNameWidget *name = new NeoRowNameWidget();
-			name->module = module;
-			name->row = r;
-			name->box.size = mm2px(Vec(NEO_ROW_NAME_WIDTH_MM, 1.f));
-			addChild(name);
-			rowNames[r] = name;
+			NeoRowColorDotWidget *nameDot = new NeoRowColorDotWidget();
+			nameDot->module = module;
+			nameDot->row = r;
+			nameDot->box.size = mm2px(Vec(NEO_ROW_NAME_DOT_DIAMETER_MM, NEO_ROW_NAME_DOT_DIAMETER_MM));
+			addChild(nameDot);
+			rowNameDots[r] = nameDot;
+
+			NeoRowNameField *nameField = new NeoRowNameField();
+			nameField->module = module;
+			nameField->row = r;
+			nameField->box.size = mm2px(Vec(NEO_ROW_NAME_TEXT_WIDTH_MM, NEO_ROW_NUMBER_DISPLAY_HEIGHT_MM));
+			addChild(nameField);
+			rowNameFields[r] = nameField;
 
 			// Track select (2026-07-20) - display + knob, replacing the old MEM/TAPE toggle
 			// button entirely (see ROW_MEMTAPE_PARAM's own removal note, Neo.hpp).
@@ -1890,7 +2104,8 @@ struct NeoWidget : ModuleWidget
 			{
 				bool rowVisible = r < rowsDisplayed;
 				rowHeaderFrames[r]->visible = rowVisible;
-				rowNames[r]->visible = rowVisible;
+				rowNameDots[r]->visible = rowVisible;
+				rowNameFields[r]->visible = rowVisible;
 				trackDisplays[r]->visible = rowVisible;
 				trackKnobs[r]->visible = rowVisible;
 				trackKnobRings[r]->visible = rowVisible;
@@ -1940,12 +2155,22 @@ struct NeoWidget : ModuleWidget
 				channelKnobRings[r]->box.pos = calculateCoordinates(NEO_ROW_CHANNEL_KNOB_X_MM + NEO_GLOBAL_AREA_WIDTH_MM, centerY, 0.f).minus(channelKnobRings[r]->box.size.div(2.f));
 				channelKnobs[r]->box.pos = calculateCoordinates(NEO_ROW_CHANNEL_KNOB_X_MM + NEO_GLOBAL_AREA_WIDTH_MM, centerY, 0.f).minus(channelKnobs[r]->box.size.div(2.f));
 
-				rowNames[r]->box.pos = calculateCoordinates(NEO_ROW_NAME_X_MM + NEO_GLOBAL_AREA_WIDTH_MM, y, 0.f);
+				// Dot is a small fixed-size control, vertically centered on the row like the track/
+				// channel displays above (Dieter's own spec, 2026-07-21) - only the name field
+				// itself grows to fill leftover header width, the dot's own size/position is fixed.
+				rowNameDots[r]->box.pos = calculateCoordinates(NEO_ROW_NAME_X_MM + NEO_GLOBAL_AREA_WIDTH_MM, centerY, 0.f).minus(Vec(0.f, rowNameDots[r]->box.size.y / 2.f));
+
+				// Height matches every other NEO display at this font size (NEO_ROW_NUMBER_DISPLAY_
+				// HEIGHT_MM), NOT the full row cell height (Dieter's own catch, 2026-07-21) - a
+				// taller-than-the-font box made the text cursor render hugely tall and looked wrong;
+				// vertically centered on the row like every other fixed-height display here.
+				float nameFieldXMm = NEO_ROW_NAME_X_MM + NEO_ROW_NAME_DOT_DIAMETER_MM + NEO_ROW_NAME_DOT_GAP_MM;
 				// The name field is the one thing that actually grows to fill whatever extra
 				// width the header has beyond its own default target (Dieter's own spec,
 				// 2026-07-20) - every other control in the row keeps its own fixed size/position.
-				float nameWidthMm = NEO_ROW_NAME_WIDTH_MM + std::max(0.f, rowHeaderWidthMm - NEO_ROW_HEADER_TARGET_WIDTH_MM);
-				rowNames[r]->box.size = mm2px(Vec(nameWidthMm, cellHeightMm));
+				float nameFieldWidthMm = NEO_ROW_NAME_TEXT_WIDTH_MM + std::max(0.f, rowHeaderWidthMm - NEO_ROW_HEADER_TARGET_WIDTH_MM);
+				rowNameFields[r]->box.size = mm2px(Vec(nameFieldWidthMm, NEO_ROW_NUMBER_DISPLAY_HEIGHT_MM));
+				rowNameFields[r]->box.pos = calculateCoordinates(nameFieldXMm + NEO_GLOBAL_AREA_WIDTH_MM, centerY, 0.f).minus(Vec(0.f, rowNameFields[r]->box.size.y / 2.f));
 
 				followBtns[r]->box.pos = calculateCoordinates(NEO_ROW_FOLLOW_X_MM + NEO_GLOBAL_AREA_WIDTH_MM, centerY, 0.f).minus(followBtns[r]->box.size.div(2.f));
 				leftBtns[r]->box.pos = calculateCoordinates(NEO_ROW_LEFT_X_MM + NEO_GLOBAL_AREA_WIDTH_MM, centerY, 0.f).minus(leftBtns[r]->box.size.div(2.f));
@@ -2136,99 +2361,6 @@ struct NeoWidget : ModuleWidget
 		}
 	};
 
-	// Per-channel name/color submenu - name and color belong to the CHANNEL, not the row
-	// (confirmed explicitly, they travel with the channel wherever it's reassigned).
-	struct NeoChannelsItem : MenuItem
-	{
-		Neo *module;
-
-		struct NeoChannelNameField : ui::TextField
-		{
-			Neo *module;
-			int channel;
-			void onChange(const ChangeEvent &e) override
-			{
-				TextField::onChange(e);
-				if (module)
-					module->setChannelName(channel, text);
-			}
-		};
-
-		struct NeoChannelColorItem : MenuItem
-		{
-			Neo *module;
-			int channel;
-			int color;
-			void onAction(const event::Action &e) override
-			{
-				module->setChannelColor(channel, color);
-			}
-			void step() override
-			{
-				if (module)
-					rightText = (module->channelColor[channel] == color) ? "✔" : "";
-			}
-		};
-
-		struct NeoChannelItem : MenuItem
-		{
-			Neo *module;
-			int channel;
-
-			Menu *createChildMenu() override
-			{
-				Menu *menu = new Menu;
-
-				NeoChannelNameField *nameField = new NeoChannelNameField();
-				nameField->module = module;
-				nameField->channel = channel;
-				nameField->text = module->channelName[channel];
-				nameField->box.size = Vec(140.f, 20.f);
-				menu->addChild(nameField);
-
-				MenuLabel *colorSpacer = new MenuLabel();
-				menu->addChild(colorSpacer);
-
-				// Simple preset-swatch grid for v1 (per the plan - "a simple preset-swatch grid
-				// submenu is enough for v1, a full custom color wheel is not necessary yet").
-				static const int swatches[8] = {
-					0xff6600, 0xff0000, 0x00cc44, 0x00aaff,
-					0xffcc00, 0xcc00ff, 0xffffff, 0x888888
-				};
-				static const char *swatchNames[8] = {
-					"Orange", "Red", "Green", "Blue", "Yellow", "Purple", "White", "Grey"
-				};
-				for (int i = 0; i < 8; i++)
-				{
-					NeoChannelColorItem *item = new NeoChannelColorItem();
-					item->module = module;
-					item->channel = channel;
-					item->color = swatches[i];
-					item->text = swatchNames[i];
-					item->setSize(Vec(70, 20));
-					menu->addChild(item);
-				}
-				return menu;
-			}
-		};
-
-		Menu *createChildMenu() override
-		{
-			Menu *menu = new Menu;
-			for (int c = 0; c < POLY_CHANNELS; c++)
-			{
-				NeoChannelItem *item = new NeoChannelItem();
-				item->module = module;
-				item->channel = c;
-				item->text = string::f("Channel %d Color", c + 1);
-				item->rightText = RIGHT_ARROW;
-				item->setSize(Vec(110, 20));
-				menu->addChild(item);
-			}
-			return menu;
-		}
-	};
-
 	// Non-adjacent Connect/Disconnect - lists every module in the patch implementing
 	// Non-adjacent connection is auto-remembered (see moduleProcess()'s own comment) - no manual
 	// "Connect" selection needed, just a way to explicitly forget the remembered target and fall
@@ -2294,12 +2426,6 @@ struct NeoWidget : ModuleWidget
 		rowsItem->text = "Rows";
 		rowsItem->rightText = RIGHT_ARROW;
 		menu->addChild(rowsItem);
-
-		NeoChannelsItem *channelsItem = new NeoChannelsItem();
-		channelsItem->module = module;
-		channelsItem->text = "Channels";
-		channelsItem->rightText = RIGHT_ARROW;
-		menu->addChild(channelsItem);
 
 		if (module->neoConnectedHostId >= 0)
 		{
