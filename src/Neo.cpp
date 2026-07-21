@@ -2238,7 +2238,20 @@ struct NeoWidget : ModuleWidget
 				float headerBoundaryMm = NEO_GLOBAL_AREA_WIDTH_MM + rowHeaderWidthMm;
 				float rowAreaFrameLeftMm = NEO_GLOBAL_AREA_WIDTH_MM + NEO_FRAME_GAP_MM / 2.f;
 				float headerFrameLeftMm = rowAreaFrameLeftMm + NEO_FRAME_GAP_MM;
-				float headerFrameRightMm = headerBoundaryMm - NEO_FRAME_GAP_MM;
+				// Right edge inset from headerBoundaryMm by HALF a column gap, not a full
+				// NEO_FRAME_GAP_MM (Dieter's own catch, 2026-07-21) - the step-cell grid already
+				// insets its own first cell by half a column gap from ITS OWN origin
+				// (NeoRowCellsWidget::draw(), "inset by half the actual current gap on each side
+				// within its own pitch slot"), so a full extra frame-gap here was stacking on top
+				// of that and making the header-to-first-cell gap visibly bigger than the gap
+				// between any two cells. Using the same half-column-gap here instead makes the two
+				// add up to exactly one column gap, matching cell-to-cell spacing exactly. This
+				// only moves where the header-DATA-frame's own decorative boundary is drawn -
+				// headerBoundaryMm itself (where the grid actually starts, and every resize/
+				// column-fit calculation's own idea of "the row header's width") is untouched, so
+				// none of neoColumnFit()/neoMinWidthHp()/neoMaxWidthHp() need updating for this.
+				float columnGapMm = columnPitchMm - neoModule->getColumnWidthMm();
+				float headerFrameRightMm = headerBoundaryMm - columnGapMm / 2.f;
 				rowHeaderFrames[r]->box.pos = calculateCoordinates(headerFrameLeftMm, y, 0.f);
 				rowHeaderFrames[r]->box.size = mm2px(Vec(std::max(1.f, headerFrameRightMm - headerFrameLeftMm), cellHeightMm));
 
