@@ -1564,103 +1564,118 @@ struct NeoPanelWidget : Widget
 {
 	Module *module = nullptr;
 
+	// Draws, in order: (1) one background rectangle spanning the panel's full width, (2) a
+	// PanelBorder-style stroke reproducing Rack's own module-seam look, (3) two peer frames -
+	// a fixed-width global sidebar frame (always drawn) and a row-area frame (skipped in Full
+	// Height - see below), (4) the accent stripe + "NEO"/"ORANGE LINE" brand text.
+	//
+	// Full Height mode (FULL_HEIGHT_JSON) makes the row area a chrome-free rectangle spanning the
+	// full 0..box.size.y with no frame/border/brand text crossing it, so two instances stacked at
+	// the same HP position (different rack row) read as one seamless grid. Every element below
+	// that cares about this is driven by the SAME `top`/`bottom` pair computed once up front -
+	// they used to be computed separately per element (background, frame, border each had their
+	// own slightly different top/bottom logic), which both read as more complicated than the
+	// actual rule ("everything shares one seamless top/bottom span in Full Height, one inset span
+	// otherwise") and hid a real bug: the background's own global-area half kept its inset
+	// regardless of Full Height, leaving a one-pixel seam right where it met the row area's half
+	// (Dieter's own catch, 2026-07-21).
 	void draw(const DrawArgs &args) override
 	{
 		Neo *m = module ? dynamic_cast<Neo*>(module) : nullptr;
 		float style = m ? m->OL_state[STYLE_JSON] : STYLE_ORANGE;
 		bool fullHeight = m && m->OL_state[FULL_HEIGHT_JSON] > 0.5f;
 		NVGcolor bg = (style == STYLE_DARK) ? X_STRIP_BG_DARK : (style == STYLE_BRIGHT) ? X_STRIP_BG_BRIGHT : X_STRIP_BG_ORANGE;
-		NVGcolor frame = (style == STYLE_DARK) ? X_FRAME_DARK : (style == STYLE_BRIGHT) ? X_FRAME_BRIGHT : X_FRAME_ORANGE;
+		NVGcolor frameColor = (style == STYLE_DARK) ? X_FRAME_DARK : (style == STYLE_BRIGHT) ? X_FRAME_BRIGHT : X_FRAME_ORANGE;
 		NVGcolor text = xThemedTextColor(style);
 
-		float marginPx = mm2px(NEO_FRAME_MARGIN_MM);
 		float bgInsetPx = mm2px(NEO_BACKGROUND_INSET_MM);
+		float marginPx = mm2px(NEO_FRAME_MARGIN_MM);
 		float globalAreaEdgePx = mm2px(NEO_GLOBAL_AREA_WIDTH_MM);
 		float halfGapPx = mm2px(NEO_FRAME_GAP_MM) / 2.f;
 
-		// Rack's own SvgPanel convention never paints a module's true background flush to the
-		// panel's literal edges - the real panel content stays inset by this same margin, and
-		// Rack's own PanelBorder/rail rendering shows through the remaining sliver as the
-		// natural "seam" between two adjacent, unconnected modules. Every other OrangeLine
-		// module gets this for free since its baked SvgPanel is loaded through Rack's own
-		// panel-drawing path; NEO draws its own background directly and has to respect the same
-		// inset by hand. addXExtStrip()/addXExtStripLeft() (below) are the ONLY things allowed
-		// to paint into the LEFT/RIGHT margin, and only while actually bridgeConnected(). In
-		// Full Height mode the row area additionally drops its own TOP/BOTTOM inset entirely
-		// (see FULL_HEIGHT_JSON's own comment) - the global area's own inset never changes.
+		// Seamless in Full Height (flush to the panel's real 0..box.size.y), inset by the same
+		// margin Rack's own SvgPanel convention leaves around every other OrangeLine module's
+		// baked panel art otherwise - NEO draws its own background directly, so it has to apply
+		// that inset by hand rather than getting it for free.
+		float top = fullHeight ? 0.f : bgInsetPx;
+		float bottom = fullHeight ? box.size.y : box.size.y - bgInsetPx;
+
+		// (1) Background - ONE rectangle, full width. addXExtStrip()/addXExtStripLeft() (below)
+		// are the only things allowed to paint into the resulting left/right margin, and only
+		// while actually bridgeConnected().
 		nvgBeginPath(args.vg);
-		nvgRect(args.vg, bgInsetPx, bgInsetPx, globalAreaEdgePx - bgInsetPx, box.size.y - bgInsetPx * 2.f);
+		nvgRect(args.vg, bgInsetPx, top, box.size.x - 2.f * bgInsetPx, bottom - top);
 		nvgFillColor(args.vg, bg);
 		nvgFill(args.vg);
 
-		float rowTopPx = fullHeight ? 0.f : bgInsetPx;
-		float rowBottomPx = fullHeight ? box.size.y : box.size.y - bgInsetPx;
+		// (2) PanelBorder-style stroke, same width as the background inset so it exactly fills
+		// the gap the inset leaves. nvgStroke() centers on its own path, so each edge is drawn
+		// half a stroke-width in from the true boundary - otherwise the outer half bleeds past
+		// box.size and gets clipped away. Top/bottom are skipped ENTIRELY in Full Height (not just
+		// shortened - a shortened line that stops abruptly mid-panel at globalAreaEdgePx was the
+		// actual visible artifact Dieter caught, 2026-07-21: even after the background fix above,
+		// this partial line was still being drawn right on top of the now-seamless background).
+		// Full Height's whole point is no border/frame/brand element interrupting the panel top-
+		// to-bottom, so top/bottom simply don't exist there at all. Left/right reproduce Rack's
+		// own horizontal rack-row seam (unrelated to vertical stacking, so still drawn either way)
+		// - but with top/bottom now gone in Full Height, their own usual half-stroke inset from
+		// the very top/bottom would leave a small visible gap at each corner with nothing there to
+		// close it off (Dieter's own follow-up catch, 2026-07-21) - so in Full Height they run the
+		// TRUE full 0..box.size.y instead of the inset span Normal mode still uses.
+		float strokeHalfPx = bgInsetPx / 2.f;
+		float sideTopPx = fullHeight ? 0.f : strokeHalfPx;
+		float sideBottomPx = fullHeight ? box.size.y : box.size.y - strokeHalfPx;
 		nvgBeginPath(args.vg);
-		nvgRect(args.vg, globalAreaEdgePx, rowTopPx, box.size.x - bgInsetPx - globalAreaEdgePx, rowBottomPx - rowTopPx);
-		nvgFillColor(args.vg, bg);
-		nvgFill(args.vg);
-
-		// Reproduces Rack's own PanelBorder - a stroke right at the panel's true bounds, the
-		// same width as the background inset above, so it fills exactly the gap the inset
-		// leaves rather than a plain transparent sliver. nvgStroke() centers a straight line on
-		// its own path, so each edge is drawn inset by half the stroke width from the true
-		// boundary - otherwise half the stroke bleeds past box.size and gets clipped away,
-		// leaving the outer half of the intended border missing instead of reaching the true
-		// edge. Left/right edges always run the panel's full height (they're unrelated to
-		// vertical stacking); top/bottom edges only span the global area's own width in Full
-		// Height mode, since nothing should cross the row area there at all in that mode.
-		float borderHalfStrokePx = bgInsetPx / 2.f;
-		float topBottomRightPx = fullHeight ? globalAreaEdgePx : box.size.x;
-		auto strokeBorderEdge = [&](float x1, float y1, float x2, float y2)
+		nvgMoveTo(args.vg, strokeHalfPx, sideTopPx);
+		nvgLineTo(args.vg, strokeHalfPx, sideBottomPx); // left
+		nvgMoveTo(args.vg, box.size.x - strokeHalfPx, sideTopPx);
+		nvgLineTo(args.vg, box.size.x - strokeHalfPx, sideBottomPx); // right
+		if (!fullHeight)
 		{
-			nvgBeginPath(args.vg);
-			nvgMoveTo(args.vg, x1, y1);
-			nvgLineTo(args.vg, x2, y2);
-			nvgStrokeWidth(args.vg, bgInsetPx);
-			nvgStrokeColor(args.vg, NEO_PANEL_BORDER_COLOR);
-			nvgStroke(args.vg);
-		};
-		strokeBorderEdge(borderHalfStrokePx, borderHalfStrokePx, borderHalfStrokePx, box.size.y - borderHalfStrokePx); // left
-		strokeBorderEdge(box.size.x - borderHalfStrokePx, borderHalfStrokePx, box.size.x - borderHalfStrokePx, box.size.y - borderHalfStrokePx); // right
-		strokeBorderEdge(borderHalfStrokePx, borderHalfStrokePx, topBottomRightPx, borderHalfStrokePx); // top
-		strokeBorderEdge(borderHalfStrokePx, box.size.y - borderHalfStrokePx, topBottomRightPx, box.size.y - borderHalfStrokePx); // bottom
+			nvgMoveTo(args.vg, strokeHalfPx, strokeHalfPx);
+			nvgLineTo(args.vg, box.size.x - strokeHalfPx, strokeHalfPx); // top
+			nvgMoveTo(args.vg, strokeHalfPx, box.size.y - strokeHalfPx);
+			nvgLineTo(args.vg, box.size.x - strokeHalfPx, box.size.y - strokeHalfPx); // bottom
+		}
+		nvgStrokeWidth(args.vg, bgInsetPx);
+		nvgStrokeColor(args.vg, NEO_PANEL_BORDER_COLOR);
+		nvgStroke(args.vg);
 
-		float topPx = mm2px(NEO_FRAME_TOP_MM);
-		float bottomPx = box.size.y - mm2px(NEO_FRAME_BOTTOM_MM);
+		// (3) Two independent, fully-rounded peer frames (not a shared edge), separated by
+		// PanelDesignGuide.md's own nested-frame padding (NEO_FRAME_GAP_MM) instead of touching
+		// directly - see NeoWork.svg's own file comment for the full reasoning. Both always use
+		// the SAME fixed vertical span (NEO_FRAME_TOP_MM..PANELHEIGHT-NEO_FRAME_BOTTOM_MM) - unlike
+		// the background above, the frame's own top/bottom never changes with Full Height, since
+		// the global sidebar frame is always drawn regardless. Only the row-area frame itself is
+		// skipped entirely in Full Height (a stacked pair needs a chrome-free rectangle there, not
+		// a frame that would visibly interrupt the seam).
+		float frameTopPx = mm2px(NEO_FRAME_TOP_MM);
+		float frameBottomPx = box.size.y - mm2px(NEO_FRAME_BOTTOM_MM);
 		float radiusPx = mm2px(NEO_FRAME_RADIUS_MM);
 
-		// Two independent, fully-rounded peer frames (not a shared edge) - a fixed-width
-		// "global" sidebar frame on the left (always drawn, unaffected by Full Height) and a
-		// "row area" frame that resizes with the module on the right, separated by
-		// PanelDesignGuide.md's own nested-frame padding value (NEO_FRAME_GAP_MM) instead of
-		// touching directly. See NeoWork.svg's own file comment for the full reasoning. In Full
-		// Height mode the row area's own frame is skipped entirely (Dieter's own instruction,
-		// 2026-07-20) - a stacked pair needs a chrome-free rectangle there, not a frame that
-		// would visibly interrupt the seam.
 		nvgBeginPath(args.vg);
-		nvgRoundedRect(args.vg, marginPx, topPx, globalAreaEdgePx - halfGapPx - marginPx, bottomPx - topPx, radiusPx);
+		nvgRoundedRect(args.vg, marginPx, frameTopPx, globalAreaEdgePx - halfGapPx - marginPx, frameBottomPx - frameTopPx, radiusPx);
 		nvgStrokeWidth(args.vg, mm2px(NEO_FRAME_STROKE_MM));
-		nvgStrokeColor(args.vg, frame);
+		nvgStrokeColor(args.vg, frameColor);
 		nvgStroke(args.vg);
 
 		if (!fullHeight)
 		{
 			nvgBeginPath(args.vg);
-			nvgRoundedRect(args.vg, globalAreaEdgePx + halfGapPx, topPx, box.size.x - marginPx - globalAreaEdgePx - halfGapPx, bottomPx - topPx, radiusPx);
+			nvgRoundedRect(args.vg, globalAreaEdgePx + halfGapPx, frameTopPx, box.size.x - marginPx - globalAreaEdgePx - halfGapPx, frameBottomPx - frameTopPx, radiusPx);
 			nvgStrokeWidth(args.vg, mm2px(NEO_FRAME_STROKE_MM));
-			nvgStrokeColor(args.vg, frame);
+			nvgStrokeColor(args.vg, frameColor);
 			nvgStroke(args.vg);
 		}
 
-		// Title + "ORANGE LINE" wordmark/accent stripe. Normally centered on the full current
-		// box.size.x, recomputed every draw() call so it stays horizontally centered through any
-		// resize (a baked SVG's fixed x, correct at one width, cannot do this on its own). In
-		// Full Height mode all of this retreats to span only the global area's own content
-		// width instead - the row area becomes a pure chrome-free grid (see FULL_HEIGHT_JSON's
-		// own comment) so nothing brand-related crosses the seam when two instances are stacked.
+		// (4) Accent stripe + "NEO"/"ORANGE LINE" brand text - centered on the full current
+		// box.size.x (recomputed every draw() call so it tracks any resize; a baked SVG's fixed x
+		// can't do this on its own). In Full Height this retreats to span only the global area's
+		// own content width instead, matching the row-area frame being skipped above - nothing
+		// brand-related crosses the seam when two instances are stacked.
 		float accentX1 = marginPx;
 		float accentX2 = fullHeight ? (globalAreaEdgePx - halfGapPx) : (box.size.x - marginPx);
-		float centerX = fullHeight ? (accentX1 + accentX2) / 2.f : box.size.x / 2.f;
+		float centerX = (accentX1 + accentX2) / 2.f;
 
 		nvgBeginPath(args.vg);
 		nvgMoveTo(args.vg, accentX1, mm2px(NEO_ACCENT_Y_MM));
