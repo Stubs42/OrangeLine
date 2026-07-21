@@ -71,31 +71,49 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 // The module's initial AND minimum width, in HP - "initial width == min width" (Dieter's own
 // instruction, 2026-07-20: "fixate the algorithm"). The smallest whole-HP grid point wide enough
 // for the row header's own target width (Tw) plus NEO_MIN_VISIBLE_COLS columns at the module's
-// default row config (NEO_ROWS_DEFAULT rows, Normal/non-Full-Height) - so a freshly-placed
-// module always starts already showing at least that many columns, and can never be dragged
-// narrower than that either (NeoResizeHandle::onDragMove()'s own neoMinWidthHp() clamp, which
-// stays dynamic for OTHER row configs the user might switch to later - this constant is only
-// about the fixed default/initial state). Calculated once by hand rather than at runtime -
-// whatever whole-HP width doesn't divide the target evenly just becomes leftover that gets
-// absorbed into the header at drag-end (Neo::absorbLeftoverIntoHeader()), so rounding UP here
-// can only ever grow the header past Tw, never shrink it below - the "header width after
-// settling >= targetHeaderWidth" guarantee holds by construction, not by a runtime check.
-//   rightPaddingMm (Normal) = NEO_FRAME_GAP_MM/2 + NEO_FRAME_GAP_MM = 1.5 * 1.524 = 2.286
-//   controlsWidthMm = NEO_GLOBAL_AREA_WIDTH_MM (30.48) + NEO_ROW_HEADER_TARGET_WIDTH_MM (162.56)
-//                    + rightPaddingMm (2.286) = 195.326
-//   columnPitchMm at 8 rows, Normal height = (PANELHEIGHT - 2*NEO_FRAME_TOP_MM) / 8
-//                    = (128.5 - 15.24) / 8 = 113.26 / 8 = 14.1575
-//   minWidthMm = 195.326 + 4 * 14.1575 = 251.956
-//   minWidthHp = ceil(251.956 / 5.08) = 50 (see neoMinWidthHp() below - this hand derivation
-//                must always match what that function would compute for this same config, so the
-//                two never silently diverge)
+// default row config (NEO_ROWS_DEFAULT rows) - so a freshly-placed module always starts already
+// showing at least that many columns, and can never be dragged narrower than that either
+// (NeoResizeHandle::onDragMove()'s own neoMinWidthHpAnyMode() clamp, which stays dynamic for
+// OTHER row configs the user might switch to later - this constant is only about the fixed
+// default/initial state). Calculated once by hand rather than at runtime - whatever whole-HP
+// width doesn't divide the target evenly just becomes leftover that gets absorbed into the
+// header at drag-end (Neo::absorbLeftoverIntoHeader()), so rounding UP here can only ever grow
+// the header past Tw, never shrink it below - the "header width after settling >=
+// targetHeaderWidth" guarantee holds by construction, not by a runtime check.
+//
+// MUST be the max across BOTH Normal and Full Height (Dieter's own catch, 2026-07-21: switching
+// modes must never change the visible column count, so the floor has to cover whichever mode
+// needs more room, not just whichever one this constant happened to be derived from) - an
+// earlier version of this derivation only computed the Normal branch, and separately used a
+// stale, pre-neoRowLayout()-redesign approximation for columnPitchMm (plain rangeMm/rows, instead
+// of the real N+1-gap-unit formula) that happened to still round up to the same HP by luck rather
+// than by being correct - both mistakes are fixed below.
+//   Normal:      rightPaddingMm = NEO_FRAME_GAP_MM/2 + NEO_FRAME_GAP_MM = 1.5 * 1.524 = 2.286
+//                controlsWidthMm = NEO_GLOBAL_AREA_WIDTH_MM (30.48) + NEO_ROW_HEADER_TARGET_WIDTH_MM
+//                                 (162.56) + rightPaddingMm (2.286) = 195.326
+//                columnPitchMm at 8 rows (neoRowLayout()'s own N+1-gap-unit formula):
+//                                 cellHeightMm = ((128.5 - 2*7.620) - 9*1.524) / 8 = 12.4430
+//                                 columnPitchMm = 12.4430 + 1.524 = 13.9670
+//                minWidthMm = 195.326 + 4 * 13.9670 = 251.194
+//                minWidthHp = ceil(251.194 / 5.08) = 50
+//   Full Height: rightPaddingMm = NEO_FRAME_GAP_MM/2 + 0 = 0.762
+//                controlsWidthMm = 30.48 + 162.56 + NEO_RESIZE_RESERVED_WIDTH_MM (5.08)
+//                                 + rightPaddingMm (0.762) = 198.882
+//                columnPitchMm at 8 rows (half-edge convention, N gap-units total):
+//                                 columnPitchMm = 128.5 / 8 = 16.0625
+//                minWidthMm = 198.882 + 4 * 16.0625 = 263.132
+//                minWidthHp = ceil(263.132 / 5.08) = 52
+//   NEO_DEFAULT_WIDTH_HP = max(50, 52) = 52 (see neoMinWidthHpAnyMode() below - this hand
+//                          derivation must always match what that function would compute for this
+//                          same config, so the two never silently diverge)
 // Recompute by hand and update this constant if NEO_ROW_HEADER_TARGET_WIDTH_HP,
-// NEO_GLOBAL_AREA_WIDTH_HP, NEO_MIN_VISIBLE_COLS, NEO_ROWS_DEFAULT, neoRowAreaControlsWidthMm()'s
-// own right-padding formula, or the frame-margin constants above ever change. No extra fudge-
-// factor HP on top of this raw value anymore (removed again 2026-07-20, same day it was added -
-// Dieter's own catch, live-testing: "still too wide" - it was double-counting margin that
-// neoRowAreaControlsWidthMm()'s own right-padding term already supplies for real now).
-#define NEO_DEFAULT_WIDTH_HP 50
+// NEO_GLOBAL_AREA_WIDTH_HP, NEO_MIN_VISIBLE_COLS, NEO_ROWS_DEFAULT, NEO_RESIZE_RESERVED_WIDTH_HP,
+// neoRowAreaControlsWidthMm()'s own right-padding formula, or the frame-margin constants above
+// ever change. No extra fudge-factor HP on top of this raw value anymore (removed again
+// 2026-07-20, same day it was added - Dieter's own catch, live-testing: "still too wide" - it was
+// double-counting margin that neoRowAreaControlsWidthMm()'s own right-padding term already
+// supplies for real now).
+#define NEO_DEFAULT_WIDTH_HP 52
 
 // Reserved left-hand sidebar, full panel height, for module-wide (not per-row) controls -
 // sockets, knobs, displays, whatever NEO eventually needs that isn't tied to one specific row.
@@ -566,6 +584,29 @@ inline float neoColumnPitchMm(bool fullHeight, int rowsDisplayed)
 	float firstRowYMm, cellHeightMm, rowPitchMm;
 	neoRowLayout(fullHeight, rowsDisplayed, firstRowYMm, cellHeightMm, rowPitchMm);
 	return rowPitchMm;
+}
+
+// Worst-case minimum width across BOTH Full Height and Normal mode (2026-07-21, Dieter's own
+// catch: switching modes must never change the visible column count, so the module's own
+// minimum/default width has to guarantee NEO_MIN_VISIBLE_COLS columns in whichever mode needs
+// MORE room, not just whichever mode happens to be active right now). Full Height needs more
+// room than Normal at the same row count/header width for two independent reasons: its own
+// resize-handle strip (NEO_RESIZE_RESERVED_WIDTH_MM) that Normal doesn't reserve at all, AND its
+// own row-padding rule making each column's own pitch wider than Normal's N+1-gap-unit rule does
+// (see neoRowLayout()'s own comment). Every MINIMUM-width floor (NEO_DEFAULT_WIDTH_HP's own hand
+// derivation, the interactive drag clamp, the Lock group's own width-convergence clamp) must use
+// this, never the single-mode neoMinWidthHp(), so the module can never end up too narrow for 4
+// columns the instant Full Height is toggled. (neoMaxWidthHp() deliberately stays single-mode/
+// whichever mode is currently active - a maximum-width ceiling shrinking slightly across a mode
+// change isn't the same problem: it only ever caps how much FURTHER the module could usefully
+// grow, never forces it narrower than content already needs.)
+inline float neoMinWidthHpAnyMode(int rowsDisplayed, float rowHeaderWidthMm)
+{
+	float normalPitch = neoColumnPitchMm(false, rowsDisplayed);
+	float normalControls = neoRowAreaControlsWidthMm(false, rowHeaderWidthMm);
+	float fullHeightPitch = neoColumnPitchMm(true, rowsDisplayed);
+	float fullHeightControls = neoRowAreaControlsWidthMm(true, rowHeaderWidthMm);
+	return std::max(neoMinWidthHp(normalPitch, normalControls), neoMinWidthHp(fullHeightPitch, fullHeightControls));
 }
 
 // THE one shared column-fit computation - given the panel's current total width, how much of it
