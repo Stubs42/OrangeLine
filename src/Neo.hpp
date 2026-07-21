@@ -70,16 +70,14 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 // The module's initial AND minimum width, in HP - "initial width == min width" (Dieter's own
 // instruction, 2026-07-20: "fixate the algorithm"). The smallest whole-HP grid point wide enough
-// for the row header's own target width (Tw) plus NEO_MIN_VISIBLE_COLS columns at the module's
+// for the row header's own minimum width plus NEO_MIN_VISIBLE_COLS columns at the module's
 // default row config (NEO_ROWS_DEFAULT rows) - so a freshly-placed module always starts already
 // showing at least that many columns, and can never be dragged narrower than that either
 // (NeoResizeHandle::onDragMove()'s own neoMinWidthHpAnyMode() clamp, which stays dynamic for
 // OTHER row configs the user might switch to later - this constant is only about the fixed
 // default/initial state). Calculated once by hand rather than at runtime - whatever whole-HP
-// width doesn't divide the target evenly just becomes leftover that gets absorbed into the
-// header at drag-end (Neo::absorbLeftoverIntoHeader()), so rounding UP here can only ever grow
-// the header past Tw, never shrink it below - the "header width after settling >=
-// targetHeaderWidth" guarantee holds by construction, not by a runtime check.
+// width doesn't divide evenly just becomes leftover that the header absorbs (neoComputeLayout()),
+// so rounding UP here can only ever grow the header past its own minimum, never shrink it below.
 //
 // MUST be the max across BOTH Normal and Full Height (Dieter's own catch, 2026-07-21: switching
 // modes must never change the visible column count, so the floor has to cover whichever mode
@@ -89,7 +87,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 // of the real N+1-gap-unit formula) that happened to still round up to the same HP by luck rather
 // than by being correct - both mistakes are fixed below.
 //   Normal:      rightPaddingMm = NEO_FRAME_GAP_MM/2 + NEO_FRAME_GAP_MM = 1.5 * 1.524 = 2.286
-//                controlsWidthMm = NEO_GLOBAL_AREA_WIDTH_MM (30.48) + NEO_ROW_HEADER_TARGET_WIDTH_MM
+//                controlsWidthMm = NEO_GLOBAL_AREA_WIDTH_MM (30.48) + NEO_ROW_HEADER_MIN_WIDTH_MM
 //                                 (162.56) + rightPaddingMm (2.286) = 195.326
 //                columnPitchMm at 8 rows (neoRowLayout()'s own N+1-gap-unit formula):
 //                                 cellHeightMm = ((128.5 - 2*7.620) - 9*1.524) / 8 = 12.4430
@@ -106,7 +104,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 //   NEO_DEFAULT_WIDTH_HP = max(50, 52) = 52 (see neoMinWidthHpAnyMode() below - this hand
 //                          derivation must always match what that function would compute for this
 //                          same config, so the two never silently diverge)
-// Recompute by hand and update this constant if NEO_ROW_HEADER_TARGET_WIDTH_HP,
+// Recompute by hand and update this constant if NEO_ROW_HEADER_MIN_WIDTH_MM,
 // NEO_GLOBAL_AREA_WIDTH_HP, NEO_MIN_VISIBLE_COLS, NEO_ROWS_DEFAULT, NEO_RESIZE_RESERVED_WIDTH_HP,
 // neoRowAreaControlsWidthMm()'s own right-padding formula, or the frame-margin constants above
 // ever change. No extra fudge-factor HP on top of this raw value anymore (removed again
@@ -126,21 +124,16 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define NEO_GLOBAL_AREA_WIDTH_HP 6
 #define NEO_GLOBAL_AREA_WIDTH_MM (NEO_GLOBAL_AREA_WIDTH_HP * 5.08f)
 
-// Target width (Dieter's own "Tw") for the per-row name/toggle/page controls, starting right
-// after the global area above - about 4x its original 40mm (2026-07-20 - the row header needs
-// much more room, e.g. for a fuller Morpheus-style cell-type preview), defined as a whole HP
-// count for the same reason NEO_GLOBAL_AREA_WIDTH_HP is. This is only the DEFAULT/snap-to target
-// now, not the always-used value - the row header's own ACTUAL current width is a real
-// per-instance, persisted quantity (ROW_HEADER_WIDTH_MM_JSON, Neo::getRowHeaderWidthMm()) that
-// can grow past Tw (2026-07-20 design, worked out with Dieter): dragging the resize handle snaps
-// the header back to exactly Tw at drag-START (with the module's own total width adjusted by the
-// same delta, so the visible column count doesn't jump at that instant), then at drag-END,
-// whatever leftover space the floor-based column count couldn't use gets absorbed INTO the
-// header (grown past Tw) instead of sitting there as an ugly dead gap - keeping the step-cell
-// grid itself always exactly, tightly filled. The row NAME field is what actually grows to fill
-// that reclaimed width (NeoWidget::step()), keeping the rest of the header's own layout fixed.
-#define NEO_ROW_HEADER_TARGET_WIDTH_HP 32
-#define NEO_ROW_HEADER_TARGET_WIDTH_MM (NEO_ROW_HEADER_TARGET_WIDTH_HP * 5.08f)
+// Minimum width for the per-row name/toggle/page controls, starting right after the global area
+// above - about 4x the row header's original 40mm (2026-07-20 - it needs much more room, e.g.
+// for a fuller Morpheus-style cell-type preview). This is a pure FLOOR, never a snap-target: the
+// row header's actual current width is not stored anywhere, it's recomputed fresh every time via
+// neoComputeLayout() (below) as NEO_ROW_HEADER_MIN_WIDTH_MM + whatever leftover space the
+// floor-based column count couldn't use (2026-07-21 redesign, replacing an earlier "snap to a
+// target width at drag-start, absorb leftover past it at drag-end" model that persisted an
+// incrementally-grown header width and caused a series of lock-sync regressions - see
+// XHostImplementationGuide.md-adjacent session notes / neoComputeLayout()'s own comment).
+#define NEO_ROW_HEADER_MIN_WIDTH_MM (32 * 5.08f)
 
 // Resize handle geometry (2026-07-20, Dieter's own instruction) - Normal mode's handle is a
 // small icon confined to the header band (right upper corner, vertically centered on the same
@@ -209,9 +202,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define NEO_LOCK_ON_COLOR  nvgRGB(0x00, 0xdd, 0x44)
 
 // How much width is "spent" on either side of the step-column grid, total - the global area,
-// plus the row header's own CURRENT width (a real per-instance quantity now, see
-// NEO_ROW_HEADER_TARGET_WIDTH_MM's own comment - callers pass module->getRowHeaderWidthMm(), or
-// NEO_ROW_HEADER_TARGET_WIDTH_MM itself where no module instance exists yet), plus Full Height's
+// plus the row header's own CURRENT width (a computed-fresh-every-time value now, see
+// neoComputeLayout()'s own comment below - callers either already have a NeoLayoutResult in hand,
+// or pass NEO_ROW_HEADER_MIN_WIDTH_MM itself where no module instance/layout exists yet), plus Full Height's
 // own reserved resize-handle strip when active - all on the LEFT - plus a right-hand trailing
 // margin so the grid's own last column doesn't run flush to the panel's right edge (Dieter's own
 // catch, 2026-07-20, mirroring the same nested-frame reasoning the row-header-frame's own left
@@ -311,13 +304,14 @@ inline float neoRowAreaControlsWidthMm(bool fullHeight, float rowHeaderWidthMm)
 // the first pass at "medium" was much too large/present for a small color control). Dot-to-field
 // gap uses the standard frame-padding unit (NEO_FRAME_GAP_MM) - Dieter's own catch, 2026-07-21:
 // the display text inset (0.81mm) used at first was too narrow between two separate controls.
-// This fits comfortably inside the row header's own fixed Tw envelope (NEO_ROW_HEADER_TARGET_
-// WIDTH_MM, 162.56mm) with room to spare before the right-aligned position display. The field is a
-// FIXED width, same as every other row display (Dieter's own reversal, 2026-07-21, of an earlier
-// "grow to fill leftover header width" idea - that made padding/spacing after the field
-// inconsistent whenever the header itself had grown past its own default target; only the
-// right-aligned position display still tracks the header's own current width now). NEO_DEFAULT_
-// WIDTH_HP/neoMinWidthHp()/neoMaxWidthHp() are derived from NEO_ROW_HEADER_TARGET_WIDTH_MM as one
+// This fits comfortably inside the row header's own minimum-width envelope
+// (NEO_ROW_HEADER_MIN_WIDTH_MM, 162.56mm) with room to spare before the right-aligned position
+// display. The field is a FIXED width, same as every other row display (Dieter's own reversal,
+// 2026-07-21, of an earlier "grow to fill leftover header width" idea - that made padding/spacing
+// after the field inconsistent whenever the header's own current width - now recomputed fresh via
+// neoComputeLayout() rather than persisted/incrementally grown - exceeded this minimum; only the
+// right-aligned position display still tracks the header's own current width). NEO_DEFAULT_
+// WIDTH_HP/neoMinWidthHp()/neoMaxWidthHp() are derived from NEO_ROW_HEADER_MIN_WIDTH_MM as one
 // opaque envelope value, not from this field's own internal breakdown, so none of them need
 // recomputing for this change.
 #define NEO_ROW_NAME_DOT_DIAMETER_MM  (NEO_ROW_NUMBER_DISPLAY_HEIGHT_MM / 2.f)
@@ -338,13 +332,13 @@ inline float neoRowAreaControlsWidthMm(bool fullHeight, float rowHeaderWidthMm)
 #define NEO_ROW_NAME_TEXT_WIDTH_MM   olDisplayWidthMm(NEO_ROW_NAME_MAX_CHARS, NEO_ROW_NAME_FONT_SIZE_MM, NEO_ROW_DISPLAY_TEXT_INSET_MM)
 // NEO_ROW_NAME_WIDTH_MM/FOLLOW_X_MM/LEFT_X_MM/RIGHT_X_MM used to be static #defines here, chained
 // off the field's own BASE width - removed 2026-07-21 (Dieter's own catch: FOLLOW/LEFT/RIGHT kept
-// overlapping the name field) because the field's own ACTUAL width grows past this base value at
-// runtime whenever the header itself has grown past NEO_ROW_HEADER_TARGET_WIDTH_MM (leftover-
-// absorption, see nameFieldWidthMm's own comment in NeoWidget::step(), Neo.cpp) - a static macro
-// structurally can't know about that runtime growth, so it silently drifted out of sync with the
-// field's real edge. LEFT/RIGHT's own x-positions are now computed directly in NeoWidget::step()
-// from the field's own real current right edge every frame instead - see that function for the
-// actual math.
+// overlapping the name field) because the header's own current width - and everything to the
+// right of the fixed-width name field - moves whenever the row header's actual width (now
+// neoComputeLayout()'s own headerWidthMm, recomputed fresh, never persisted) exceeds its minimum
+// - a static macro structurally can't know about that runtime growth, so it silently drifted out
+// of sync with the field's real edge. LEFT/RIGHT's own x-positions are now computed directly in
+// NeoWidget::step() from the field's own real current right edge every frame instead - see that
+// function for the actual math.
 // NEO_ROW_TOGGLE_WIDTH_MM/HEIGHT_MM sized the old per-row FOLLOW button, removed 2026-07-21 in
 // favor of one global FOLLOW button (see NEO_FOLLOW_BUTTON_*_MM above) - kept here, unused, for
 // the same reason ROW_FOLLOW_JSON/PARAM are kept: re-introducing a per-row toggle later shouldn't
@@ -614,8 +608,9 @@ inline float neoMinWidthHpAnyMode(int rowsDisplayed, float rowHeaderWidthMm)
 // returns how many WHOLE columns fit in whatever's left over and exactly how much fractional
 // space remains beyond those whole columns. EVERY call site that needs either number must go
 // through this one function - Neo::getVisibleColumns() (live column count, used by
-// NeoRowCellsWidget's own draw()/click handling), Neo::absorbLeftoverIntoHeader() (the drag-end/
-// lock-sync settling step), and the row-cell widget's own box sizing (NeoWidget::step()).
+// NeoRowCellsWidget's own draw()/click handling), neoComputeLayout() below (the pure header-width/
+// column-fit computation every settling step goes through), and the row-cell widget's own box
+// sizing (NeoWidget::step()).
 // Before this (2026-07-20), these were three separately hand-written reimplementations of the
 // same arithmetic that could silently drift apart from each other (Dieter's own catch, live-
 // testing: dragging showed 5 columns, but the drag-end code's own separate calculation decided
@@ -628,7 +623,7 @@ inline void neoColumnFit(float widthMm, float controlsWidthMm, float columnPitch
 	float cellsWidthMm = std::max(1.f, widthMm - controlsWidthMm);
 	// Tiny epsilon before flooring (Dieter's own catch, 2026-07-20, live-testing: "still
 	// dropping a column when releasing," even after the algorithm itself was fixed) - once
-	// Neo::absorbLeftoverIntoHeader() settles cellsWidthMm to EXACTLY visibleCols*columnPitchMm
+	// neoComputeLayout() settles cellsWidthMm to EXACTLY visibleCols*columnPitchMm
 	// (by construction, see its own comment), re-deriving that same cellsWidthMm one frame later
 	// via a fresh widthMm-controlsWidthMm subtraction is not guaranteed to reproduce the exact
 	// same float bit pattern - it can land a hair BELOW the true boundary, and a bare floor()
@@ -639,6 +634,54 @@ inline void neoColumnFit(float widthMm, float controlsWidthMm, float columnPitch
 	const float NEO_COLUMN_FIT_EPSILON_MM = 0.001f;
 	outVisibleCols = std::max(1, (int) ((cellsWidthMm + NEO_COLUMN_FIT_EPSILON_MM) / columnPitchMm));
 	outLeftoverMm = cellsWidthMm - (float) outVisibleCols * columnPitchMm;
+}
+
+// 1 = recompute the header/column layout continuously, every tick, even mid-drag. Default 0
+// (deferred): a live drag freezes the displayed layout (header width, visible column count, cell
+// positions) at whatever it was BEFORE the drag started, and only recomputes once, at drag-end -
+// Dieter's own call, 2026-07-21, after live-testing showed continuous reflow during a drag makes
+// the whole grid visibly jitter/shift every frame, which "does not look nice." Kept as a define
+// (not simply deleted) so the continuous behavior can be reinstated later with one line if
+// reconsidered - flipping it does not change neoComputeLayout() itself, only how often
+// NeoWidget::step() calls it (see its own cached-layout-refresh gate).
+#define NEO_HEADER_LIVE_REFLOW 0
+
+// THE single pure function that turns "current total module width" into every derived layout
+// quantity - header width, controls width, visible column count, leftover space, cell-grid width.
+// Replaces the older incrementally-grown, persisted row-header-width model (Neo::
+// getRowHeaderWidthMm()/absorbLeftoverIntoHeader(), removed 2026-07-21): under that model the
+// header snapped to a "target width" (Tw) at drag-start and grew past it at drag-end, requiring a
+// stored per-instance width (ROW_HEADER_WIDTH_MM_JSON) that had to stay correctly synchronized
+// across locked instances - the source of a whole series of lock-sync regressions this session
+// (a follower's own blocked width corrupting the shared group target, a "stuck ceiling" after a
+// block, columns lost across a Full Height toggle). Dieter's own redesign, confirmed step by
+// step: any whole-HP module width is valid, and the header is simply NEO_ROW_HEADER_MIN_WIDTH_MM
+// plus whatever leftover space neoColumnFit() finds once the widest possible whole-column count
+// is subtracted - nothing persisted, nothing to keep in sync, recomputed fresh from
+// (totalWidthMm, fullHeight, rowsDisplayed) alone every time it's needed.
+struct NeoLayoutResult
+{
+	float headerWidthMm;
+	float controlsWidthMm; // globalArea + headerWidthMm + rightPadding + (Full Height's) reserved strip
+	int visibleCols;
+	float leftoverMm;
+	float cellsWidthMm;    // visibleCols * columnPitchMm
+};
+
+inline NeoLayoutResult neoComputeLayout(float totalWidthMm, bool fullHeight, int rowsDisplayed)
+{
+	float columnPitchMm = neoColumnPitchMm(fullHeight, rowsDisplayed);
+	float controlsWidthAtMinMm = neoRowAreaControlsWidthMm(fullHeight, NEO_ROW_HEADER_MIN_WIDTH_MM);
+	int visibleCols;
+	float leftoverMm;
+	neoColumnFit(totalWidthMm, controlsWidthAtMinMm, columnPitchMm, visibleCols, leftoverMm);
+	NeoLayoutResult r;
+	r.headerWidthMm = NEO_ROW_HEADER_MIN_WIDTH_MM + leftoverMm;
+	r.controlsWidthMm = controlsWidthAtMinMm + leftoverMm;
+	r.visibleCols = visibleCols;
+	r.leftoverMm = leftoverMm;
+	r.cellsWidthMm = (float) visibleCols * columnPitchMm;
+	return r;
 }
 
 //
@@ -663,10 +706,14 @@ enum jsonIds {
 	// block for the full mechanism and its own schema documentation.
 	LOCKED_JSON,
 
-	// The row header's own ACTUAL current width in mm - defaults to NEO_ROW_HEADER_TARGET_WIDTH_MM
-	// ("Tw"), grows past it when the resize handle's own drag-end absorbs leftover step-cell
-	// space into the header instead of leaving it as a dead gap. See
-	// NEO_ROW_HEADER_TARGET_WIDTH_MM's own comment (Neo.hpp) for the full drag-lifecycle mechanism.
+	// UNUSED as of the 2026-07-21 resize redesign - the row header's width is no longer persisted
+	// at all, it's recomputed fresh every time via neoComputeLayout() (Neo.hpp). Slot kept (not
+	// renumbered) so nothing downstream shifts - moduleInitJsonConfig() (Neo.cpp) still gives it
+	// a real jsonLabel even though OL_state here is never written: dataToJson() indexes
+	// OL_jsonLabel[] unconditionally for every slot with no null-check, so an UNLABELED slot is
+	// live, uninitialized memory, not a safe no-op - confirmed the hard way, 2026-07-21 (crashed
+	// Rack on module-browser creation the one time this slot was left unlabeled). See
+	// moduleInitJsonConfig()'s own comment for the full explanation.
 	ROW_HEADER_WIDTH_MM_JSON,
 
 	// The non-adjacent stay-connected target host id used to live here as a float

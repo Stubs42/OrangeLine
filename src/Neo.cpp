@@ -267,7 +267,15 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 		                         // instance adds itself on lock, removes itself on unlock/removal
 		    "rows": 6,
 		    "fullHeight": true,
-		    "widthHp": 32
+		    "widthHp": 32,
+		    "dragging": false   // 2026-07-21: true while ANY locked instance is actively being
+		                        // drag-resized - every locked instance (dragged or following) reads
+		                        // this to freeze its own displayed header/column layout for the
+		                        // duration (see NeoWidget::step()'s cached-layout refresh gate),
+		                        // avoiding the whole-grid jitter a continuous per-tick reflow would
+		                        // otherwise cause during a live drag. Only the dragged instance
+		                        // writes it (onDragStart()/onDragEnd()), same single-writer rule as
+		                        // widthHp.
 		  }
 		}
 	*/
@@ -277,6 +285,7 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 		int rows = NEO_ROWS_DEFAULT;
 		bool fullHeight = false;
 		int widthHp = NEO_DEFAULT_WIDTH_HP;
+		bool dragging = false;
 	};
 
 	NeoLockData readLockData()
@@ -313,6 +322,9 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 			json_t *widthJ = json_object_get(lockJ, "widthHp");
 			if (widthJ && json_is_integer(widthJ))
 				result.widthHp = (int) json_integer_value(widthJ);
+			json_t *draggingJ = json_object_get(lockJ, "dragging");
+			if (draggingJ && json_is_boolean(draggingJ))
+				result.dragging = json_is_true(draggingJ);
 		}
 		json_decref(rootJ);
 		return result;
@@ -343,6 +355,7 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 		json_object_set_new(lockJ, "rows", json_integer(data.rows));
 		json_object_set_new(lockJ, "fullHeight", json_boolean(data.fullHeight));
 		json_object_set_new(lockJ, "widthHp", json_integer(data.widthHp));
+		json_object_set_new(lockJ, "dragging", json_boolean(data.dragging));
 		json_object_set_new(rootJ, "lock", lockJ);
 
 		char *serialized = json_dumps(rootJ, JSON_COMPACT);
@@ -361,7 +374,8 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 	// not yet synced, so the first locked tick always adopts rather than misreading as an edit.
 	float neoLockLastSyncedRows = -1.f;
 	float neoLockLastSyncedFullHeight = -1.f;
-	float neoLockLastSyncedWidthHp = -1.f;
+	// neoLockLastSyncedWidthHp is gone (2026-07-21) - width sync no longer tracks "did my own
+	// width change" at all, see NeoWidget::step()'s own "Lock sync (width half)" comment for why.
 
 	// One-shot signal from NeoFullHeightItem::onAction() to NeoWidget::step() (2026-07-21) -
 	// transient, never persisted. Captures "how many columns were visible right before this
@@ -369,6 +383,14 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 	// next runs, OL_state[FULL_HEIGHT_JSON] has already changed) - -1 = nothing pending. See
 	// step()'s own comment for what it does with this.
 	int neoPendingColumnTarget = -1;
+
+	// Which row's color dot is currently being click-dragged, if any (2026-07-21) - transient,
+	// never persisted, session-only UI signal. Set by NeoRowColorDotWidget::onButton()/
+	// onDragEnd(), read by that same row's own NeoRowNameField so it can show the swatch's
+	// printable NAME in place of the channel name text for the duration of the drag (Dieter's own
+	// request - live feedback on which of the 22 Kelly colors is currently selected, without
+	// needing a separate popup/tooltip). -1 = nothing being dragged.
+	int neoColorDragRow = -1;
 
 	// Called only from the rare, one-time "am I first or joining" moment in toggleLock() - a real
 	// UI click, not a per-tick lookup, so APP->engine->getModule() here is safe (the deadlock
@@ -422,11 +444,6 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 			}
 			neoLockLastSyncedRows = (float) data.rows;
 			neoLockLastSyncedFullHeight = data.fullHeight ? 1.f : 0.f;
-			neoLockLastSyncedWidthHp = OL_state[PANEL_WIDTH_HP_JSON]; // current, NOT data.widthHp -
-			                                                          // the per-tick sync's own
-			                                                          // convergence check picks up
-			                                                          // the gap to data.widthHp
-			                                                          // from here if not yet equal
 			if (std::find(data.ids.begin(), data.ids.end(), (int64_t) id) == data.ids.end())
 				data.ids.push_back((int64_t) id);
 			writeLockData(data);
@@ -439,7 +456,6 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 			OL_setOutState(LOCKED_JSON, 0.f);
 			neoLockLastSyncedRows = -1.f;
 			neoLockLastSyncedFullHeight = -1.f;
-			neoLockLastSyncedWidthHp = -1.f;
 		}
 	}
 
@@ -501,14 +517,6 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 		return neoColumnPitchMm(fullHeight, rowsDisplayed);
 	}
 
-	// The row header's own ACTUAL current width - see NEO_ROW_HEADER_TARGET_WIDTH_MM's own
-	// comment (Neo.hpp) for the full drag-lifecycle mechanism that can grow it past its default.
-	float getRowHeaderWidthMm()
-	{
-		float w = OL_state[ROW_HEADER_WIDTH_MM_JSON];
-		return w > 0.f ? w : NEO_ROW_HEADER_TARGET_WIDTH_MM; // 0 = never set (e.g. a very old save)
-	}
-
 	// THE one place a row's own current channel/track selection is read - every call site
 	// (moduleProcess(), NeoRowCellsWidget, NeoRowColorDotWidget/NeoRowNameField, track/channel displays)
 	// must go through these rather than reading ROW_CHANNEL_PARAM/ROW_TRACK_PARAM directly, so
@@ -526,47 +534,20 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 		return clamp(raw, 0, maxTrack);
 	}
 
-	// How much width is spent before the step-column grid begins right now - the global area,
-	// the row header's own current width, plus Full Height's own reserved resize-handle strip
-	// when that's active.
-	float getControlsWidthMm()
-	{
-		return neoRowAreaControlsWidthMm(OL_state[FULL_HEIGHT_JSON] > 0.5f, getRowHeaderWidthMm());
-	}
+	// Session-only UI cache (2026-07-21 redesign) - the module's own current header width/controls
+	// width/visible column count, as a single NeoLayoutResult. Refreshed by NeoWidget::step() via
+	// neoComputeLayout() every tick EXCEPT while a drag (this instance's own, or any other locked
+	// instance's, per NeoLockData::dragging) is in progress - see step()'s own comment for why
+	// that freeze exists. Every consumer (this module's own getRowHeaderWidthMm()/
+	// getControlsWidthMm()/getVisibleColumns(), NeoRowCellsWidget's draw()/click-handling) reads
+	// from this SAME cache rather than recomputing independently, so they can never disagree
+	// about what's actually on screen during a drag. Default-initialized against
+	// NEO_DEFAULT_WIDTH_HP so a sensible value exists even before the first step() tick runs.
+	NeoLayoutResult neoCachedLayout = neoComputeLayout((float) NEO_DEFAULT_WIDTH_HP * 5.08f, false, NEO_ROWS_DEFAULT);
 
-	// How many step-columns currently fit, given the panel's own current width - "however many
-	// fit," deliberately simple (Dieter's own "kiss" instruction from the spec conversation).
-	// Goes through the one shared neoColumnFit() (Neo.hpp) - see its own comment for why this
-	// must never be reimplemented inline again at any call site.
-	int getVisibleColumns()
-	{
-		float widthMm = OL_state[PANEL_WIDTH_HP_JSON] * 5.08f;
-		int visibleCols; float leftoverMm;
-		neoColumnFit(widthMm, getControlsWidthMm(), getColumnPitchMm(), visibleCols, leftoverMm);
-		return visibleCols;
-	}
-
-	// Grows the row header to absorb whatever leftover space the floor-based column count can't
-	// use, instead of leaving it as a dead gap after the last visible column (Dieter's own spec,
-	// 2026-07-20). Uses the header's own CURRENT width as the base (not a hardcoded target), so
-	// it's idempotent - calling it again once already settled (leftover 0) is a harmless no-op,
-	// and it stays correct even if some earlier step didn't manage to reset the header to Tw
-	// first. Called both from NeoResizeHandle::onDragEnd() (the instance actually being dragged)
-	// and from the Lock group's own width-convergence success (NeoWidget::step()) - a locked
-	// instance that only followed via the lock sync, never dragged directly, still needs this
-	// same settling step once ITS OWN width actually lands somewhere new. Goes through the same
-	// shared neoColumnFit() getVisibleColumns() does, so the column count/leftover this settles
-	// on can never disagree with what was actually shown live during the drag that led here.
-	void absorbLeftoverIntoHeader()
-	{
-		bool fullHeight = OL_state[FULL_HEIGHT_JSON] > 0.5f;
-		float widthMm = OL_state[PANEL_WIDTH_HP_JSON] * 5.08f;
-		float headerWidthMm = getRowHeaderWidthMm();
-		float controlsWidthMm = neoRowAreaControlsWidthMm(fullHeight, headerWidthMm);
-		int visibleCols; float leftoverMm;
-		neoColumnFit(widthMm, controlsWidthMm, getColumnPitchMm(), visibleCols, leftoverMm);
-		OL_setOutState(ROW_HEADER_WIDTH_MM_JSON, headerWidthMm + leftoverMm);
-	}
+	float getRowHeaderWidthMm() { return neoCachedLayout.headerWidthMm; }
+	float getControlsWidthMm() { return neoCachedLayout.controlsWidthMm; }
+	int getVisibleColumns() { return neoCachedLayout.visibleCols; }
 
 	bool moduleSkipProcess() { return (idleSkipCounter != 0); }
 	void moduleInitStateTypes() {}
@@ -581,6 +562,17 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 		setJsonLabel(ROWS_DISPLAYED_JSON, "rowsDisplayed");
 		setJsonLabel(FULL_HEIGHT_JSON, "fullHeight");
 		setJsonLabel(LOCKED_JSON, "locked");
+		// ROW_HEADER_WIDTH_MM_JSON is unused (2026-07-21) - OL_state at that slot is never read
+		// or written anymore (see its own enum comment, Neo.hpp), but it still needs a real
+		// jsonLabel here: dataToJson()/dataFromJson() (OrangeLineCommon.hpp) index OL_jsonLabel[]
+		// unconditionally for every slot up to NUM_JSONS, with no null-check - an unlabeled slot
+		// is uninitialized/garbage memory, not a safe no-op, and crashes the instant a fresh
+		// instance is first serialized (confirmed live, 2026-07-21: this exact omission crashed
+		// Rack on module-browser creation). Keeping the label just means a permanently-0.0 dead
+		// field in every save - harmless, and the only safe way to leave a slot unused without
+		// deleting the enum entry outright (which every OTHER retired json field in this file
+		// does instead - see CONNECTED_HOST_ID_JSON/CHANNEL_COLOR_JSON/ROW_MEMTAPE_JSON's own
+		// comments - that's the real established precedent, not an unlabeled slot).
 		setJsonLabel(ROW_HEADER_WIDTH_MM_JSON, "rowHeaderWidthMm");
 		// CONNECTED_HOST_ID_JSON is gone - neoConnectedHostId is a real int64_t now, persisted
 		// via this module's own moduleExtraDataToJson/FromJson instead (see its own comment).
@@ -593,6 +585,11 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 			snprintf(rowCellTypeLabelBuf[r], sizeof(rowCellTypeLabelBuf[r]), "rowCellType%d", r);
 			setJsonLabel(ROW_CELLTYPE_JSON + r, rowCellTypeLabelBuf[r]);
 		}
+		// GLOBAL_FOLLOW_JSON was missing its own setJsonLabel call (found 2026-07-21 while
+		// chasing the same crash the ROW_HEADER_WIDTH_MM_JSON comment above describes) - it's
+		// actively read in moduleProcess(), so this wasn't even a "harmless unused slot" case,
+		// just a plain omission from whenever this field was added.
+		setJsonLabel(GLOBAL_FOLLOW_JSON, "globalFollow");
 
 #pragma GCC diagnostic pop
 	}
@@ -646,7 +643,6 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 		OL_state[LOCKED_JSON] = 0.f;
 		neoLockLastSyncedRows = -1.f;
 		neoLockLastSyncedFullHeight = -1.f;
-		neoLockLastSyncedWidthHp = -1.f;
 	}
 	// Symmetric with the Host's own onRemove() (Morpheus.cpp) - proactively tells the cached
 	// Host to forget this Neo instance before it's actually destroyed, using only the pointer
@@ -671,14 +667,11 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 		OL_state[ROWS_DISPLAYED_JSON] = (float) NEO_ROWS_DEFAULT;
 		OL_state[FULL_HEIGHT_JSON] = 0.f;
 		OL_state[LOCKED_JSON] = 0.f;
-		OL_state[ROW_HEADER_WIDTH_MM_JSON] = NEO_ROW_HEADER_TARGET_WIDTH_MM;
-		// NEO_DEFAULT_WIDTH_HP is whole-HP-rounded UP from the exact minimum, so it always
-		// leaves a small leftover past Tw - absorb it now (same settling pass onDragEnd() uses)
-		// so a freshly-placed module starts already correctly padded instead of showing that
-		// leftover as a visible gap on the right until the first resize drag (Dieter's own
-		// catch, 2026-07-20 - "the header size has to be adapted to show a correctly padded 4
-		// column grid at startup, this does not happen").
-		absorbLeftoverIntoHeader();
+		// The row header's width is no longer stored - neoComputeLayout() (Neo.hpp) derives it
+		// fresh from the panel width just set above, so it's already correctly padded from the
+		// very first frame with no separate settling step needed (2026-07-21 redesign - see
+		// NeoLayoutResult's own comment for why this replaced the older incremental-absorb model).
+		neoCachedLayout = neoComputeLayout((float) NEO_DEFAULT_WIDTH_HP * 5.08f, false, NEO_ROWS_DEFAULT);
 		disconnectNeoHost();
 		OL_state[GLOBAL_FOLLOW_JSON] = 1.f; // auto-follow the play cursor, on by default
 		for (int r = 0; r < NEO_NUM_ROWS; r++)
@@ -842,6 +835,12 @@ struct NeoResizeHandle : OpaqueWidget
 	Neo *module = nullptr;
 	Vec dragPos;
 	Rect originalBox;
+	// True for the exact duration of a live drag gesture (2026-07-21) - lets NeoWidget::step()'s
+	// own cached-layout refresh gate freeze the displayed header width/visible column count for
+	// the duration, rather than recomputing (and visibly jittering) every frame. Mirrored
+	// group-wide via NeoLockData::dragging so every OTHER locked instance freezes its own display
+	// too, not just this one (see onDragStart()/onDragEnd()).
+	bool isDragging = false;
 
 	// box.size/pos are set fresh every NeoWidget::step() (mode-dependent - see its own comment),
 	// so no initial value is needed here beyond a harmless placeholder before the first step().
@@ -851,24 +850,26 @@ struct NeoResizeHandle : OpaqueWidget
 	{
 		if (e.button != GLFW_MOUSE_BUTTON_LEFT)
 			return;
+		isDragging = true;
 		dragPos = APP->scene->rack->getMousePos();
 		ModuleWidget *mw = getAncestorOfType<ModuleWidget>();
 		assert(mw);
 		originalBox = mw->box;
 
-		// Snap the row header back to exactly its target width (Tw) - a flat state reset, and
-		// nothing else. The module's own width is deliberately left untouched (Dieter's own
-		// correction, 2026-07-20, after an earlier, much more complicated version of this also
-		// resized the module by a rounded delta "so the column count doesn't jump" - that turned
-		// out to be the actual SOURCE of a real column-count bug, not a fix for one): whatever
-		// the header had grown to absorb is by construction always LESS than one column pitch
-		// (Neo::absorbLeftoverIntoHeader() only ever grows the header by a leftover remainder,
-		// never a whole extra pitch), so shrinking the header back down can never free up enough
-		// room for one more column - the same columns keep showing, just left-aligned against
-		// the now-narrower header, with that same leftover reappearing as a plain visible gap on
-		// the right until onDragEnd()'s own absorb pass consumes it again.
-		if (module)
-			module->OL_setOutState(ROW_HEADER_WIDTH_MM_JSON, NEO_ROW_HEADER_TARGET_WIDTH_MM);
+		// Nothing to snap anymore (2026-07-21 redesign) - the row header is no longer a stored
+		// value, it's recomputed fresh via neoComputeLayout() the next time NeoWidget::step() is
+		// allowed to refresh its cache (the tick after this drag ends). Just tell every other
+		// locked instance to freeze its own display for the duration too, same reason this
+		// instance does (see NeoLockData::dragging's own comment).
+		if (module && module->OL_state[LOCKED_JSON] > 0.5f)
+		{
+			Neo::NeoLockData lockData = module->readLockData();
+			if (!lockData.dragging)
+			{
+				lockData.dragging = true;
+				module->writeLockData(lockData);
+			}
+		}
 	}
 
 	void onDragMove(const DragMoveEvent &e) override
@@ -881,19 +882,36 @@ struct NeoResizeHandle : OpaqueWidget
 
 		Rect newBox = originalBox;
 		Rect oldBox = mw->box;
-		float columnPitchMm = module ? module->getColumnPitchMm() : neoColumnPitchMm(false, NEO_ROWS_DEFAULT);
-		float controlsWidthMm = module ? module->getControlsWidthMm() : neoRowAreaControlsWidthMm(false, NEO_ROW_HEADER_TARGET_WIDTH_MM);
+		bool fullHeight = module && module->OL_state[FULL_HEIGHT_JSON] > 0.5f;
 		int rowsDisplayedForClamp = module ? clamp((int) module->OL_state[ROWS_DISPLAYED_JSON], NEO_ROWS_MIN, NEO_ROWS_MAX) : NEO_ROWS_DEFAULT;
-		float rowHeaderWidthMmForClamp = module ? module->getRowHeaderWidthMm() : NEO_ROW_HEADER_TARGET_WIDTH_MM;
+		float columnPitchMm = neoColumnPitchMm(fullHeight, rowsDisplayedForClamp);
+		// Always measured against the header's own MINIMUM width, never a "current" one (there is
+		// no such stored value anymore) - the true floor/ceiling this module can ever reach is the
+		// same regardless of wherever the header happens to currently sit (2026-07-21 redesign).
+		float controlsWidthAtMinMm = neoRowAreaControlsWidthMm(fullHeight, NEO_ROW_HEADER_MIN_WIDTH_MM);
 		// Both-modes worst case (2026-07-21) - never let a drag go narrower than what Full Height
 		// alone would need for NEO_MIN_VISIBLE_COLS columns, even while dragging in Normal mode -
 		// see neoMinWidthHpAnyMode()'s own comment.
-		float minWidth = neoMinWidthHpAnyMode(rowsDisplayedForClamp, rowHeaderWidthMmForClamp) * RACK_GRID_WIDTH;
-		float maxWidth = neoMaxWidthHp(module ? module->neoHost : nullptr, columnPitchMm, controlsWidthMm) * RACK_GRID_WIDTH;
+		float minWidth = neoMinWidthHpAnyMode(rowsDisplayedForClamp, NEO_ROW_HEADER_MIN_WIDTH_MM) * RACK_GRID_WIDTH;
+		float maxWidth = neoMaxWidthHp(module ? module->neoHost : nullptr, columnPitchMm, controlsWidthAtMinMm) * RACK_GRID_WIDTH;
+		// The 4-column guarantee always wins over the "don't show columns beyond the Host's real
+		// content" cap (2026-07-21 fix) - a connected Host whose longest channel is shorter than
+		// NEO_MIN_VISIBLE_COLS steps would otherwise make maxWidth < minWidth, and Rack's own
+		// clamp() returns `a` (the min) whenever `b < a` - meaning EVERY drag frame, regardless of
+		// mouse position, snapped straight to the same fixed minWidth, making resize appear
+		// completely unresponsive the moment a Host with short content was connected (confirmed
+		// live, 2026-07-21 - nothing to do with locking, purely connected-vs-not).
+		maxWidth = std::max(maxWidth, minWidth);
 		newBox.size.x += deltaX;
 		newBox.size.x = clamp(newBox.size.x, minWidth, maxWidth);
 		newBox.size.x = std::round(newBox.size.x / RACK_GRID_WIDTH) * RACK_GRID_WIDTH;
 
+		// No search (2026-07-21, Dieter's own KISS simplification): try this one width, and if
+		// Rack's own collision test blocks it, just stay at the previous frame's width - no
+		// decrement-and-retry loop. A live drag only ever moves the target by a small amount each
+		// frame (matching natural mouse movement), so the fits/doesn't-fit boundary is always
+		// found this way, one step at a time - a search was only ever needed to jump straight to a
+		// potentially-far-away target in one step, which a live drag never does.
 		mw->box = newBox;
 		if (!APP->scene->rack->requestModulePos(mw, newBox.pos))
 			mw->box = oldBox;
@@ -902,38 +920,38 @@ struct NeoResizeHandle : OpaqueWidget
 		{
 			float hp = std::round(mw->box.size.x / RACK_GRID_WIDTH);
 			module->OL_setOutState(PANEL_WIDTH_HP_JSON, hp);
+
+			// KISS rule (2026-07-21, Dieter's own instruction after the lock-sync width fight
+			// bug): ONLY the instance actively being resized ever writes the group's shared
+			// lockData.widthHp - every other locked instance only ever READS it and tries to
+			// match it (see NeoWidget::step()'s own "Lock sync (width half)" block, which no
+			// longer writes at all). This IS that one write, live during the drag, so every
+			// other locked instance picks up the new target on its very next tick.
+			if (module->OL_state[LOCKED_JSON] > 0.5f)
+			{
+				Neo::NeoLockData lockData = module->readLockData();
+				if (lockData.widthHp != (int) hp)
+				{
+					lockData.widthHp = (int) hp;
+					module->writeLockData(lockData);
+				}
+			}
 		}
 	}
 
-	// The header stayed at exactly its target width (Tw) throughout the drag (onDragMove never
-	// touches it), so this is the one moment that width actually changes - see
-	// Neo::absorbLeftoverIntoHeader()'s own comment for the full reasoning.
 	void onDragEnd(const DragEndEvent &e) override
 	{
-		if (!module)
-			return;
-		module->absorbLeftoverIntoHeader();
-
-		// A locked follower never gets its own onDragStart/onDragEnd - it only tracks this
-		// drag live via NeoWidget::step()'s own lock-width-sync, which deliberately just pins
-		// its header at Tw the whole time instead of absorbing on every intermediate tick (see
-		// that block's own comment). This is therefore the one real "the drag is truly over"
-		// event for the WHOLE group - finalize every other locked instance's header here too,
-		// not just this one's own. A single, one-shot getModule() lookup triggered by a real
-		// mouse-release, same already-established-safe pattern as toggleLock()/
-		// pruneStaleLockIds() above - not a per-tick moduleProcess()/onRemove() call, so none of
-		// CLAUDE.md's Pitfalls deadlock concerns about getModule() apply here.
-		if (module->OL_state[LOCKED_JSON] > 0.5f)
+		isDragging = false;
+		// Un-freeze the group too - the very next NeoWidget::step() tick (this instance's and
+		// every other locked instance's) will recompute its own cached layout fresh via
+		// neoComputeLayout(), settling the header/visible-column count for the new width.
+		if (module && module->OL_state[LOCKED_JSON] > 0.5f)
 		{
 			Neo::NeoLockData lockData = module->readLockData();
-			for (int64_t lockedId : lockData.ids)
+			if (lockData.dragging)
 			{
-				if (lockedId == (int64_t) module->id)
-					continue;
-				Module *m = APP->engine->getModule(lockedId);
-				Neo *other = m ? dynamic_cast<Neo*>(m) : nullptr;
-				if (other)
-					other->absorbLeftoverIntoHeader();
+				lockData.dragging = false;
+				module->writeLockData(lockData);
 			}
 		}
 	}
@@ -1331,13 +1349,74 @@ struct NeoRowKnobRingWidget : TransparentWidget
 	}
 };
 
-// Shared color preset list (2026-07-21) - the N predefined colors NeoRowColorDotWidget's own
+// Shared color preset list (2026-07-21) - the predefined colors NeoRowColorDotWidget's own
 // click-drag cycles through. No menu/popup involved at all (see the widget's own comment) - kept
-// as a plain array purely so the color set lives in one place.
-static const int NEO_COLOR_SWATCHES[8] = {
-	0xff6600, 0xff0000, 0x00cc44, 0x00aaff,
-	0xffcc00, 0xcc00ff, 0xffffff, 0x888888
+// as a plain array purely so the color set lives in one place. All 22 of Kelly's "Colors of
+// Maximum Contrast" - the established, purpose-built answer for "N colors that stay visually
+// distinguishable from each other," still used in cartography/dataviz today. Full credit to their
+// original author:
+//
+//   Kenneth L. Kelly, "Twenty-two colors of maximum contrast," Color Engineering, vol. 3, no. 6,
+//   1965, pp. 26-27.
+//
+// The `name` field below is NOT Kelly's own official name - it's a common, recognizable SYNONYM
+// chosen to fit within NEO_ROW_NAME_MAX_CHARS (8), so it never needs truncating in the row's name
+// field while its color dot is being dragged (NeoRowNameField::drawLayer(), gated by
+// Neo::neoColorDragRow). Kelly's own official name is kept as a trailing comment on each entry
+// for documentation/reference, and tabulated here for a quick side-by-side:
+//
+//   hex      Kelly's official name       short name used here
+//   F2F3F4   White                       White
+//   222222   Black                       Black
+//   F3C300   Vivid Yellow                Yellow
+//   875692   Strong Purple               Purple
+//   F38400   Vivid Orange                Orange
+//   A1CAF1   Very Light Blue             Sky Blue
+//   BE0032   Vivid Red                   Red
+//   C2B280   Grayish Yellow (Buff)       Tan
+//   848482   Medium Gray                 Gray
+//   008856   Vivid Green                 Green
+//   E68FAC   Strong Purplish Pink        Orchid
+//   0067A5   Strong Blue                 Blue
+//   F99379   Strong Yellowish Pink       Salmon
+//   604E97   Strong Violet               Violet
+//   F6A600   Vivid Orange Yellow         Amber
+//   B3446C   Strong Purplish Red         Berry
+//   DCD300   Vivid Greenish Yellow       Citron
+//   882D17   Strong Reddish Brown        Rust
+//   8DB600   Vivid Yellowish Green       Lime
+//   654522   Deep Yellowish Brown        Khaki
+//   E25822   Vivid Reddish Orange        Coral
+//   2B3D26   Dark Olive Green            Olive
+//
+// The scissor clip in that same drawLayer() is kept regardless of this fit, as cheap insurance
+// against any future name change.
+struct NeoColorSwatch { int color; const char *name; };
+static const NeoColorSwatch NEO_COLOR_SWATCHES[] = {
+	{ 0xF2F3F4, "White" },    // Kelly: White
+	{ 0x222222, "Black" },    // Kelly: Black
+	{ 0xF3C300, "Yellow" },   // Kelly: Vivid Yellow
+	{ 0x875692, "Purple" },   // Kelly: Strong Purple
+	{ 0xF38400, "Orange" },   // Kelly: Vivid Orange
+	{ 0xA1CAF1, "Sky Blue" }, // Kelly: Very Light Blue
+	{ 0xBE0032, "Red" },      // Kelly: Vivid Red
+	{ 0xC2B280, "Tan" },      // Kelly: Grayish Yellow (Buff)
+	{ 0x848482, "Gray" },     // Kelly: Medium Gray
+	{ 0x008856, "Green" },    // Kelly: Vivid Green
+	{ 0xE68FAC, "Orchid" },   // Kelly: Strong Purplish Pink
+	{ 0x0067A5, "Blue" },     // Kelly: Strong Blue
+	{ 0xF99379, "Salmon" },   // Kelly: Strong Yellowish Pink
+	{ 0x604E97, "Violet" },   // Kelly: Strong Violet
+	{ 0xF6A600, "Amber" },    // Kelly: Vivid Orange Yellow
+	{ 0xB3446C, "Berry" },    // Kelly: Strong Purplish Red
+	{ 0xDCD300, "Citron" },   // Kelly: Vivid Greenish Yellow
+	{ 0x882D17, "Rust" },     // Kelly: Strong Reddish Brown
+	{ 0x8DB600, "Lime" },     // Kelly: Vivid Yellowish Green
+	{ 0x654522, "Khaki" },    // Kelly: Deep Yellowish Brown
+	{ 0xE25822, "Coral" },    // Kelly: Vivid Reddish Orange
+	{ 0x2B3D26, "Olive" },    // Kelly: Dark Olive Green
 };
+static const int NEO_NUM_COLOR_SWATCHES = sizeof(NEO_COLOR_SWATCHES) / sizeof(NEO_COLOR_SWATCHES[0]);
 
 /**
 	Colored dot preceding each row's own editable name field (2026-07-21) - filled with
@@ -1375,6 +1454,12 @@ struct NeoRowColorDotWidget : OpaqueWidget
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT)
 		{
 			dragAccumPx = 0.f;
+			// Tell this row's own NeoRowNameField to show the swatch name instead of the channel
+			// name for the duration of the drag (2026-07-21, Dieter's own request) - cleared in
+			// onDragEnd() below.
+			Neo *m = module ? dynamic_cast<Neo*>(module) : nullptr;
+			if (m)
+				m->neoColorDragRow = row;
 			e.consume(this);
 		}
 		OpaqueWidget::onButton(e);
@@ -1389,8 +1474,8 @@ struct NeoRowColorDotWidget : OpaqueWidget
 		int channel = m->getRowChannel(row);
 		int currentColor = m->channelColor[track][channel];
 		int index = 0;
-		for (int i = 0; i < 8; i++)
-			if (NEO_COLOR_SWATCHES[i] == currentColor)
+		for (int i = 0; i < NEO_NUM_COLOR_SWATCHES; i++)
+			if (NEO_COLOR_SWATCHES[i].color == currentColor)
 			{
 				index = i;
 				break;
@@ -1402,15 +1487,23 @@ struct NeoRowColorDotWidget : OpaqueWidget
 		float stepPx = mm2px(NEO_ROW_NAME_DOT_DRAG_STEP_MM);
 		while (dragAccumPx <= -stepPx)
 		{
-			index = (index + 1) % 8;
+			index = (index + 1) % NEO_NUM_COLOR_SWATCHES;
 			dragAccumPx += stepPx;
 		}
 		while (dragAccumPx >= stepPx)
 		{
-			index = (index - 1 + 8) % 8;
+			index = (index - 1 + NEO_NUM_COLOR_SWATCHES) % NEO_NUM_COLOR_SWATCHES;
 			dragAccumPx -= stepPx;
 		}
-		m->setChannelColor(track, channel, NEO_COLOR_SWATCHES[index]);
+		m->setChannelColor(track, channel, NEO_COLOR_SWATCHES[index].color);
+	}
+
+	void onDragEnd(const event::DragEnd &e) override
+	{
+		Neo *m = module ? dynamic_cast<Neo*>(module) : nullptr;
+		if (m && m->neoColorDragRow == row)
+			m->neoColorDragRow = -1;
+		OpaqueWidget::onDragEnd(e);
 	}
 };
 
@@ -1455,7 +1548,22 @@ struct NeoRowNameField : ui::TextField
 
 	void step() override
 	{
-		Neo *m = module ? dynamic_cast<Neo*>(module) : nullptr;
+		// Skip the resync entirely while THIS field is the one being typed into (2026-07-21,
+		// real bug found live) - m->channelName[] is only refreshed by refreshChannelTable() on
+		// the DSP thread (moduleProcess()), a separate thread from this UI-side step(). Right
+		// after a keystroke, the very next step() call can still see a stale, one-character-
+		// shorter liveText (the DSP thread hasn't caught up yet), which used to unconditionally
+		// reset text back to that stale value and clamp cursor DOWN to its shorter length. Once
+		// the DSP thread caught up a moment later, text corrected itself again - but cursor never
+		// grew back (std::min() only ever shrinks), so it stayed stuck one short of the true end
+		// forever after - symptom: appending a character at the end of the field left the cursor
+		// sitting BEFORE the just-typed character instead of advancing past it. This resync's
+		// real job is picking up an edit made by ANOTHER NEO instance (or a fresh (track,channel)
+		// pair) - it should never fight this same field's own in-flight local edit. Same
+		// focus check drawLayer() already uses for the same reason (this IS the authoritative
+		// source of truth while focused, nothing external should override it).
+		bool focused = (APP->event->getSelectedWidget() == this);
+		Neo *m = (!focused && module) ? dynamic_cast<Neo*>(module) : nullptr;
 		if (m)
 		{
 			const std::string &liveText = m->channelName[m->getRowTrack(row)][m->getRowChannel(row)];
@@ -1498,7 +1606,24 @@ struct NeoRowNameField : ui::TextField
 		int colorPacked = m ? m->channelColor[m->getRowTrack(row)][m->getRowChannel(row)] : 0xff6600;
 		NVGcolor textColor = nvgRGB((colorPacked >> 16) & 0xff, (colorPacked >> 8) & 0xff, colorPacked & 0xff);
 		float insetX = mm2px(NEO_ROW_DISPLAY_TEXT_INSET_MM);
-		bool focused = (APP->event->getSelectedWidget() == this);
+
+		// While this row's own color dot is being dragged, show the swatch's printable Kelly-color
+		// name instead of the channel name - live feedback on which of the 22 is currently
+		// selected (Dieter's own request, 2026-07-21). Cursor/selection are suppressed for the
+		// same duration - they reflect real text-editing focus, which isn't relevant here.
+		bool showingColorName = (m && m->neoColorDragRow == row);
+		bool focused = !showingColorName && (APP->event->getSelectedWidget() == this);
+		std::string displayText = text;
+		if (showingColorName)
+		{
+			displayText = "?";
+			for (int i = 0; i < NEO_NUM_COLOR_SWATCHES; i++)
+				if (NEO_COLOR_SWATCHES[i].color == colorPacked)
+				{
+					displayText = NEO_COLOR_SWATCHES[i].name;
+					break;
+				}
+		}
 
 		if (focused && selection != cursor)
 		{
@@ -1515,9 +1640,18 @@ struct NeoRowNameField : ui::TextField
 			nvgFill(args.vg);
 		}
 
-		olDrawDisplayText(args.vg, box.size, textColor, text, "",
+		// Scissor-clipped to this field's own box while showing a color name (2026-07-21) - several
+		// Kelly names ("Greenish Yellow", "Yellowish Brown", etc.) are longer than the field's
+		// fixed 8-character width, and olDrawDisplayText() doesn't clip on its own - an unclipped
+		// long name would bleed into the LEFT/RIGHT paging buttons right next to it. The normal
+		// channel-name case never needs this (already capped at NEO_ROW_NAME_MAX_CHARS).
+		if (showingColorName)
+			nvgScissor(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+		olDrawDisplayText(args.vg, box.size, textColor, displayText, "",
 			"res/repetition-scrolling.regular.ttf", mm2px(NEO_ROW_NAME_FONT_SIZE_MM),
 			insetX, mm2px(NEO_ROW_DISPLAY_TEXT_Y_OFFSET_MM));
+		if (showingColorName)
+			nvgResetScissor(args.vg);
 
 		if (focused)
 		{
@@ -2077,7 +2211,6 @@ struct NeoWidget : ModuleWidget
 					neoModule->OL_setOutState(LOCKED_JSON, 0.f);
 					neoModule->neoLockLastSyncedRows = -1.f;
 					neoModule->neoLockLastSyncedFullHeight = -1.f;
-					neoModule->neoLockLastSyncedWidthHp = -1.f;
 					locked = false;
 				}
 				else
@@ -2119,8 +2252,11 @@ struct NeoWidget : ModuleWidget
 			neoRowLayout(fullHeight, rowsDisplayed, firstRowYMm, cellHeightMm, rowPitchMm);
 			float columnPitchMm = rowPitchMm; // square cells + matching horizontal/vertical padding (2026-07-20) -
 			                                   // the per-column footprint always equals the row pitch exactly.
-			float rowHeaderWidthMm = neoModule->getRowHeaderWidthMm();
-			float controlsWidthMm = neoRowAreaControlsWidthMm(fullHeight, rowHeaderWidthMm);
+			// "Needed width for N columns" always uses the header's own MINIMUM width - there is no
+			// "current" header value to reference anymore (2026-07-21 redesign, see
+			// NeoLayoutResult's own comment, Neo.hpp) - the tightest possible total width for N
+			// columns is always header-at-minimum plus exactly N columns' worth of pitch.
+			float controlsWidthAtMinMm = neoRowAreaControlsWidthMm(fullHeight, NEO_ROW_HEADER_MIN_WIDTH_MM);
 
 			// KISS (Dieter's own instruction, 2026-07-20): NEO never auto-resizes itself just
 			// because Grid Rows/Full Height changed the cell pitch - it simply shows as many
@@ -2136,13 +2272,20 @@ struct NeoWidget : ModuleWidget
 			// switching modes... module should automatically widen to the right if possible").
 			// neoPendingColumnTarget is the one-shot signal NeoFullHeightItem::onAction() left
 			// behind (see its own comment) - consumed here, the only place with real box/
-			// requestModulePos() access.
+			// requestModulePos() access. One try, no search (confirmed with Dieter, 2026-07-21:
+			// no search anywhere, ever, including this one-shot jump) - if the exact needed width
+			// is blocked, the module just stays at its current width; Full Height still toggles,
+			// just without preserving the exact prior column count in that rare case.
 			if (neoModule->neoPendingColumnTarget >= 0)
 			{
 				int desiredCols = neoModule->neoPendingColumnTarget;
-				float neededWidthMm = controlsWidthMm + (float) desiredCols * columnPitchMm;
-				float minHp = neoMinWidthHp(columnPitchMm, controlsWidthMm);
-				float maxHp = neoMaxWidthHp(neoModule->neoHost, columnPitchMm, controlsWidthMm);
+				float neededWidthMm = controlsWidthAtMinMm + (float) desiredCols * columnPitchMm;
+				float minHp = neoMinWidthHp(columnPitchMm, controlsWidthAtMinMm);
+				float maxHp = neoMaxWidthHp(neoModule->neoHost, columnPitchMm, controlsWidthAtMinMm);
+				// The 4-column guarantee always wins over the content-length cap - see
+				// NeoResizeHandle::onDragMove()'s own comment for why this max/min ordering isn't
+				// automatic once a real (possibly short-content) Host is connected.
+				maxHp = std::max(maxHp, minHp);
 				int neededHp = (int) clamp(std::ceil(mm2px(neededWidthMm) / RACK_GRID_WIDTH), minHp, maxHp);
 
 				if (locked && lockDataValid)
@@ -2167,10 +2310,8 @@ struct NeoWidget : ModuleWidget
 				else
 				{
 					// Unlocked - resize directly, same collision-checked pattern the drag handle/
-					// lock convergence both already use. Deliberately NOT cleared when blocked - a
-					// failed attempt retries again next tick (same "grab space the moment it frees
-					// up" behavior as the locked case above) until it succeeds or another toggle
-					// replaces this target.
+					// lock convergence both already use. One shot, cleared either way - a blocked
+					// attempt just leaves the module at its current width, no retry loop.
 					int currentHp = (int) std::round(neoModule->OL_state[PANEL_WIDTH_HP_JSON]);
 					if (neededHp > currentHp)
 					{
@@ -2179,15 +2320,11 @@ struct NeoWidget : ModuleWidget
 						newBox.size.x = (float) neededHp * RACK_GRID_WIDTH;
 						box = newBox;
 						if (APP->scene->rack->requestModulePos(this, newBox.pos))
-						{
 							neoModule->OL_setOutState(PANEL_WIDTH_HP_JSON, (float) neededHp);
-							neoModule->neoPendingColumnTarget = -1;
-						}
 						else
-							box = oldBox; // blocked - retry next tick, don't clear the pending target
+							box = oldBox; // blocked - stay at the current width
 					}
-					else
-						neoModule->neoPendingColumnTarget = -1; // already wide enough
+					neoModule->neoPendingColumnTarget = -1;
 				}
 			}
 
@@ -2196,82 +2333,92 @@ struct NeoWidget : ModuleWidget
 			// width as far as free space allows, remembering the target and retrying every tick
 			// so it grows (or shrinks) into it the moment room frees up, rather than failing the
 			// lock outright.
+			//
+			// KISS rule (2026-07-21, Dieter's own instruction, after a real bug where this block's
+			// old "propagate my own width if it changed" logic could write a follower's own
+			// incidental/blocked width back as the group's new target, fighting a manual drag on a
+			// completely different instance): this block is now READ-ONLY with respect to
+			// lockData.widthHp - it only ever reads the target and tries to match it, never writes
+			// it. The ONLY writers of lockData.widthHp are the instance actually being resized
+			// (NeoResizeHandle::onDragMove(), live during a manual drag) and the instance that just
+			// toggled Full Height (NeoFullHeightItem::onAction()'s neoPendingColumnTarget handling,
+			// above). Every other locked instance - a pure follower - just keeps retrying to grow
+			// or shrink toward whatever the target currently is, same as before; if blocked, its own
+			// column count just stays reduced for now and it grabs the space automatically the
+			// moment room frees up (Dieter's own spec: "wait means they will grab space until they
+			// get the locked HP automatically if they can").
+			//
+			// Growing steps ONE HP at a time toward the target, not a single all-or-nothing jump
+			// straight to it (2026-07-21, Dieter's own catch: with two locked instances and one
+			// blocked by a neighbor several HP away, moving that neighbor only partway did nothing
+			// at all - the follower stayed put until the ENTIRE remaining gap opened up in one go,
+			// instead of grabbing whatever became free immediately, "it should always try to
+			// resize itself even if it's one hp it can get"). Still no search - exactly one
+			// candidate width is tried per tick, same principle as everywhere else in this file;
+			// the candidate is just "one HP closer" instead of "the whole target," so it advances
+			// one step per tick as room frees up, converging over a few frames instead of needing
+			// the full gap free all at once. Shrinking is different - it can never be blocked by a
+			// neighbor (a smaller footprint can only ever reduce overlap, never introduce a new
+			// collision), so it still jumps straight to the target in one tick, no reason to
+			// animate it out over several frames.
 			if (locked && lockDataValid)
 			{
 				int myWidthHp = (int) std::round(neoModule->OL_state[PANEL_WIDTH_HP_JSON]);
-				bool lockNeedsWrite = false;
-				if (myWidthHp != (int) std::round(neoModule->neoLockLastSyncedWidthHp))
-				{
-					// My own physical width changed since I last confirmed it - either a manual
-					// drag, or the row-count reconciliation above just moved me as a side effect
-					// of adopting a new row count. Either way this IS my new confirmed state;
-					// propagate it as the group's target if it doesn't already match.
-					if (myWidthHp != lockData.widthHp)
-					{
-						lockData.widthHp = myWidthHp;
-						lockNeedsWrite = true;
-					}
-					neoModule->neoLockLastSyncedWidthHp = (float) myWidthHp;
-				}
 				if (myWidthHp != lockData.widthHp)
 				{
-					// Still (or newly) diverged from the group's target - the header stays
-					// pinned at its own target width (Tw) for as long as I'm still chasing the
-					// group's width, exactly like the actively-dragged instance's own header
-					// during a live drag (Dieter's own spec, 2026-07-20: "while dragging the
-					// header has to be targetWidth and this does not change"). This instance
-					// never gets its own onDragStart/onDragEnd (it only follows via this lock
-					// sync, never dragged directly) - the ONE place its header ever gets the
-					// "fill the leftover gap" treatment is when the actually-dragged instance's
-					// own onDragEnd() finalizes the whole locked group at once
-					// (NeoResizeHandle::onDragEnd() below), never here mid-chase - doing it here
-					// on every successful convergence step instead grows the header a little on
-					// every intermediate tick of a live drag (each one based on whatever the
-					// previous tick already grew it to, since nothing ever resets it back down in
-					// between) instead of staying flat at Tw until the drag truly ends.
-					if (rowHeaderWidthMm != NEO_ROW_HEADER_TARGET_WIDTH_MM)
-					{
-						neoModule->OL_setOutState(ROW_HEADER_WIDTH_MM_JSON, NEO_ROW_HEADER_TARGET_WIDTH_MM);
-						rowHeaderWidthMm = NEO_ROW_HEADER_TARGET_WIDTH_MM;
-						controlsWidthMm = neoRowAreaControlsWidthMm(fullHeight, rowHeaderWidthMm);
-					}
+					// Both-modes worst case (2026-07-21) - see neoMinWidthHpAnyMode()'s own
+					// comment. Measured against the header's own MINIMUM width, same reasoning as
+					// the drag handle's own clamp above - there is no "current" header value.
+					float minWidthPx = neoMinWidthHpAnyMode(rowsDisplayed, NEO_ROW_HEADER_MIN_WIDTH_MM) * RACK_GRID_WIDTH;
+					float maxWidthPx = neoMaxWidthHp(neoModule->neoHost, columnPitchMm, controlsWidthAtMinMm) * RACK_GRID_WIDTH;
+					// The 4-column guarantee always wins over the content-length cap - see
+					// NeoResizeHandle::onDragMove()'s own comment for why this max/min ordering
+					// isn't automatic once a real (possibly short-content) Host is connected.
+					maxWidthPx = std::max(maxWidthPx, minWidthPx);
+					int minWidthHp = (int) std::round(minWidthPx / RACK_GRID_WIDTH);
+					int maxWidthHp = (int) std::round(maxWidthPx / RACK_GRID_WIDTH);
+					int clampedTargetHp = clamp(lockData.widthHp, minWidthHp, maxWidthHp);
+					int stepHp = (clampedTargetHp <= myWidthHp) ? clampedTargetHp : myWidthHp + 1;
 
-					// Both-modes worst case (2026-07-21) - see neoMinWidthHpAnyMode()'s own comment.
-					float minWidthPx = neoMinWidthHpAnyMode(rowsDisplayed, rowHeaderWidthMm) * RACK_GRID_WIDTH;
-					float maxWidthPx = neoMaxWidthHp(neoModule->neoHost, columnPitchMm, controlsWidthMm) * RACK_GRID_WIDTH;
-					float targetWidthPx = clamp((float) lockData.widthHp * RACK_GRID_WIDTH, minWidthPx, maxWidthPx);
-					if (targetWidthPx != box.size.x)
+					if (stepHp != myWidthHp)
 					{
+						float stepWidthPx = (float) stepHp * RACK_GRID_WIDTH;
 						Rect oldBox = box;
 						Rect newBox = box;
-						newBox.size.x = targetWidthPx;
+						newBox.size.x = stepWidthPx;
 						box = newBox;
 						if (APP->scene->rack->requestModulePos(this, newBox.pos))
-						{
-							int newHp = (int) std::round(box.size.x / RACK_GRID_WIDTH);
-							neoModule->OL_setOutState(PANEL_WIDTH_HP_JSON, (float) newHp);
-							neoModule->neoLockLastSyncedWidthHp = (float) newHp;
-						}
+							neoModule->OL_setOutState(PANEL_WIDTH_HP_JSON, (float) stepHp);
 						else
-							box = oldBox; // still blocked - keep current width, retry next tick
+							box = oldBox; // even one more HP is blocked - stay put, retry next tick
 					}
 				}
-				if (lockNeedsWrite)
-					neoModule->writeLockData(lockData);
 			}
 
 			float widthMm = neoModule->OL_state[PANEL_WIDTH_HP_JSON] * 5.08f; // may have just changed above
+
+			// Refresh the cached layout (header width/controls width/visible columns) unless a
+			// drag - this instance's own, or any other locked instance's, via
+			// NeoLockData::dragging - is actively in progress (2026-07-21 redesign, replacing the
+			// old per-tick "close the header gap" repair entirely: there's nothing left to repair,
+			// since the header is never a stored value that can fall out of sync in the first
+			// place - it's simply whatever neoComputeLayout() says for the current width,
+			// recomputed here). Freezing during a live drag is what actually prevents the whole
+			// grid visibly jittering every frame (Dieter's own catch, 2026-07-21, live-testing) -
+			// NEO_HEADER_LIVE_REFLOW (Neo.hpp) flips this back to continuous-every-tick if ever
+			// reconsidered.
+			bool groupDragging = locked && lockDataValid && lockData.dragging;
+			if (NEO_HEADER_LIVE_REFLOW || !(resizeHandle->isDragging || groupDragging))
+				neoModule->neoCachedLayout = neoComputeLayout(widthMm, fullHeight, rowsDisplayed);
+
 			box.size.x = mm2px(widthMm);
-			// Goes through the same shared neoColumnFit() (Neo.hpp) that Neo::getVisibleColumns()/
-			// Neo::absorbLeftoverIntoHeader() use, and sizes the widget to EXACTLY visibleCols
-			// worth of pitch (not the raw, possibly-fractional widthMm-controlsWidthMm) - so this
-			// widget's own box can never show a sliver of dead trailing space beyond the last
-			// column draw()/click-handling actually treats as real (Dieter's own catch,
-			// 2026-07-20: these used to be separate reimplementations of the same arithmetic that
-			// could silently disagree - "ugly and has to be resolved... by better coding").
-			int visibleColsThisFrame; float leftoverMmThisFrame;
-			neoColumnFit(widthMm, controlsWidthMm, columnPitchMm, visibleColsThisFrame, leftoverMmThisFrame);
-			float cellsWidthMm = (float) visibleColsThisFrame * columnPitchMm;
+			// Read from the cache (not a fresh recompute) so this widget's own positioning always
+			// agrees with what NeoRowCellsWidget's own draw()/click-handling sees via
+			// Neo::getRowHeaderWidthMm()/getControlsWidthMm()/getVisibleColumns() - all of these
+			// read the exact same neoCachedLayout, so they can never disagree about what's shown.
+			NeoLayoutResult layout = neoModule->neoCachedLayout;
+			float rowHeaderWidthMm = layout.headerWidthMm;
+			float cellsWidthMm = layout.cellsWidthMm;
 
 			for (int r = 0; r < NEO_NUM_ROWS; r++)
 			{
@@ -2457,7 +2604,26 @@ struct NeoWidget : ModuleWidget
 			int count;
 			void onAction(const event::Action &e) override
 			{
-				module->OL_setOutState(ROWS_DISPLAYED_JSON, float(count));
+				// Reducing row count makes each cell (and thus each column) BIGGER, which can
+				// retroactively drop below the 4-column guarantee at the module's CURRENT width
+				// even where a higher row count was fine (2026-07-21, Dieter's own catch). Search
+				// UPWARD from the requested count toward the current (higher) one for the lowest
+				// row count that still satisfies NEO_MIN_VISIBLE_COLS at the current width - never
+				// deny the change outright (Dieter's own words: "you reduce because you want to
+				// see cells better... find the lowest is the most comfortable"). Guaranteed to
+				// terminate by NEO_ROWS_MAX (== NEO_ROWS_DEFAULT, the row count
+				// NEO_DEFAULT_WIDTH_HP/neoMinWidthHpAnyMode()'s own floor was derived against - the
+				// easiest case, smallest possible cells).
+				float totalWidthMm = module->OL_state[PANEL_WIDTH_HP_JSON] * 5.08f;
+				bool fullHeight = module->OL_state[FULL_HEIGHT_JSON] > 0.5f;
+				int actualCount = count;
+				for (; actualCount < NEO_ROWS_MAX; actualCount++)
+				{
+					NeoLayoutResult layout = neoComputeLayout(totalWidthMm, fullHeight, actualCount);
+					if (layout.visibleCols >= NEO_MIN_VISIBLE_COLS)
+						break;
+				}
+				module->OL_setOutState(ROWS_DISPLAYED_JSON, (float) actualCount);
 			}
 			void step() override
 			{
@@ -2495,16 +2661,12 @@ struct NeoWidget : ModuleWidget
 			// switching modes").
 			module->neoPendingColumnTarget = module->getVisibleColumns();
 			module->OL_setOutState(FULL_HEIGHT_JSON, module->OL_state[FULL_HEIGHT_JSON] > 0.5f ? 0.f : 1.f);
-			// neoRowAreaControlsWidthMm()'s own right-padding term differs between Full Height and
-			// Normal mode, so the header's own stored width (correctly absorbed for whichever mode
-			// was active before) is stale the instant this flips - most visible switching FULL
-			// HEIGHT -> Normal, since Normal is the only one that actually draws a header frame to
-			// show a mismatched gap against (Dieter's own catch, 2026-07-21: "closing the gap...
-			// happens when i click and release without drag" - i.e. only the resize handle's own
-			// onDragEnd() was re-running this, never the toggle itself). absorbLeftoverIntoHeader()
-			// is already idempotent (a harmless no-op once settled), so just call it here directly
-			// instead of requiring a manual no-op drag on the resize handle afterward.
-			module->absorbLeftoverIntoHeader();
+			// Nothing else needed here (2026-07-21 redesign) - neoRowAreaControlsWidthMm()'s own
+			// right-padding term differs between Full Height and Normal mode, but the header is no
+			// longer a stored value that can go stale across the flip: NeoWidget::step() recomputes
+			// neoModule->neoCachedLayout from neoComputeLayout() every tick (unless a drag is in
+			// progress, which a plain menu click never coincides with), so the very next tick after
+			// this click already reflects the new mode correctly with no explicit call needed here.
 		}
 		void step() override
 		{
