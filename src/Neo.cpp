@@ -1418,6 +1418,18 @@ struct NeoRowNameField : ui::TextField
 	void onChange(const ChangeEvent &e) override
 	{
 		TextField::onChange(e);
+		// Hard length cap (Dieter's own catch, 2026-07-21: nothing was stopping the user from
+		// typing arbitrarily far past the field's own drawn width). Clamping cursor/selection
+		// here too is required, not optional - leaving either pointing past the now-shorter
+		// text's end is exactly what caused a real crash (std::string::substr(pos) throws
+		// std::out_of_range if pos > size(), and drawLayer() below measures cursor position via
+		// text.substr(0, cursor)).
+		if ((int) text.size() > NEO_ROW_NAME_MAX_CHARS)
+		{
+			text = text.substr(0, NEO_ROW_NAME_MAX_CHARS);
+			cursor = std::min(cursor, (int) text.size());
+			selection = std::min(selection, (int) text.size());
+		}
 		Neo *m = module ? dynamic_cast<Neo*>(module) : nullptr;
 		if (m)
 			m->setChannelName(m->getRowTrack(row), m->getRowChannel(row), text);
@@ -1430,7 +1442,15 @@ struct NeoRowNameField : ui::TextField
 		{
 			const std::string &liveText = m->channelName[m->getRowTrack(row)][m->getRowChannel(row)];
 			if (text != liveText)
-				text = liveText; // direct member assign, not setText() - keeps cursor/selection untouched
+			{
+				text = liveText; // direct member assign, not setText() - keeps cursor/selection as-is...
+				// ...except cursor/selection MUST still be clamped to the new (possibly shorter -
+				// e.g. a fresh (track,channel) pair, or another instance's shorter edit) text's
+				// own length right here - the same out-of-bounds substr() crash as above, just
+				// triggered by a remote/cross-instance resync instead of local typing.
+				cursor = std::min(cursor, (int) text.size());
+				selection = std::min(selection, (int) text.size());
+			}
 		}
 		TextField::step();
 	}
@@ -2156,8 +2176,7 @@ struct NeoWidget : ModuleWidget
 				channelKnobs[r]->box.pos = calculateCoordinates(NEO_ROW_CHANNEL_KNOB_X_MM + NEO_GLOBAL_AREA_WIDTH_MM, centerY, 0.f).minus(channelKnobs[r]->box.size.div(2.f));
 
 				// Dot is a small fixed-size control, vertically centered on the row like the track/
-				// channel displays above (Dieter's own spec, 2026-07-21) - only the name field
-				// itself grows to fill leftover header width, the dot's own size/position is fixed.
+				// channel displays above (Dieter's own spec, 2026-07-21).
 				rowNameDots[r]->box.pos = calculateCoordinates(NEO_ROW_NAME_X_MM + NEO_GLOBAL_AREA_WIDTH_MM, centerY, 0.f).minus(Vec(0.f, rowNameDots[r]->box.size.y / 2.f));
 
 				// Height matches every other NEO display at this font size (NEO_ROW_NUMBER_DISPLAY_
@@ -2165,16 +2184,39 @@ struct NeoWidget : ModuleWidget
 				// taller-than-the-font box made the text cursor render hugely tall and looked wrong;
 				// vertically centered on the row like every other fixed-height display here.
 				float nameFieldXMm = NEO_ROW_NAME_X_MM + NEO_ROW_NAME_DOT_DIAMETER_MM + NEO_ROW_NAME_DOT_GAP_MM;
-				// The name field is the one thing that actually grows to fill whatever extra
-				// width the header has beyond its own default target (Dieter's own spec,
-				// 2026-07-20) - every other control in the row keeps its own fixed size/position.
-				float nameFieldWidthMm = NEO_ROW_NAME_TEXT_WIDTH_MM + std::max(0.f, rowHeaderWidthMm - NEO_ROW_HEADER_TARGET_WIDTH_MM);
+				// Fixed width, same as every other row display - no longer grows to absorb leftover
+				// header width (Dieter's own reversal, 2026-07-21, of the original 2026-07-20 spec):
+				// that growth made padding/spacing after the field inconsistent whenever the header
+				// itself had grown past its own default target, which is confusing more than useful.
+				// Only the right-aligned controls (position display) still track the header's own
+				// current width - everything else in the row, name field included, stays fixed.
+				float nameFieldWidthMm = NEO_ROW_NAME_TEXT_WIDTH_MM;
 				rowNameFields[r]->box.size = mm2px(Vec(nameFieldWidthMm, NEO_ROW_NUMBER_DISPLAY_HEIGHT_MM));
 				rowNameFields[r]->box.pos = calculateCoordinates(nameFieldXMm + NEO_GLOBAL_AREA_WIDTH_MM, centerY, 0.f).minus(Vec(0.f, rowNameFields[r]->box.size.y / 2.f));
 
-				followBtns[r]->box.pos = calculateCoordinates(NEO_ROW_FOLLOW_X_MM + NEO_GLOBAL_AREA_WIDTH_MM, centerY, 0.f).minus(followBtns[r]->box.size.div(2.f));
-				leftBtns[r]->box.pos = calculateCoordinates(NEO_ROW_LEFT_X_MM + NEO_GLOBAL_AREA_WIDTH_MM, centerY, 0.f).minus(leftBtns[r]->box.size.div(2.f));
-				rightBtns[r]->box.pos = calculateCoordinates(NEO_ROW_RIGHT_X_MM + NEO_GLOBAL_AREA_WIDTH_MM, centerY, 0.f).minus(rightBtns[r]->box.size.div(2.f));
+				// FOLLOW/LEFT/RIGHT positions derived from the name field's own actual current
+				// right edge (nameFieldXMm + nameFieldWidthMm) rather than a separately-maintained
+				// static offset, so they can never drift out of sync with the field's real edge.
+				//
+				// A real bug (Dieter's own catch via screenshot, 2026-07-21):
+				// calculateCoordinates(...).minus(box.size.
+				// div(2)) treats the X passed in as the button's own CENTER, but the *Mm values
+				// below were computed as a LEFT edge (previous element's right edge + one gap)
+				// with no correction for that - silently shifting every one of these three buttons
+				// left by half its own width (3mm for the 6mm-wide FOLLOW button alone), eating
+				// most of the intended gap. Fixed by explicitly computing each button's own LEFT
+				// edge first (previous left edge + previous width + gap, chained), then converting
+				// to a center by adding back that SAME button's own half-width only at the point
+				// where it's fed into the center-based positioning call - never skip that step.
+				float followLeftMm = nameFieldXMm + nameFieldWidthMm + NEO_FRAME_GAP_MM;
+				float followCenterMm = followLeftMm + NEO_ROW_TOGGLE_WIDTH_MM / 2.f;
+				followBtns[r]->box.pos = calculateCoordinates(followCenterMm + NEO_GLOBAL_AREA_WIDTH_MM, centerY, 0.f).minus(followBtns[r]->box.size.div(2.f));
+				float leftLeftMm = followLeftMm + NEO_ROW_TOGGLE_WIDTH_MM + NEO_FRAME_GAP_MM;
+				float leftCenterMm = leftLeftMm + NEO_ROW_PAGEBTN_SIZE_MM / 2.f;
+				leftBtns[r]->box.pos = calculateCoordinates(leftCenterMm + NEO_GLOBAL_AREA_WIDTH_MM, centerY, 0.f).minus(leftBtns[r]->box.size.div(2.f));
+				float rightLeftMm = leftLeftMm + NEO_ROW_PAGEBTN_SIZE_MM + NEO_FRAME_GAP_MM;
+				float rightCenterMm = rightLeftMm + NEO_ROW_PAGEBTN_SIZE_MM / 2.f;
+				rightBtns[r]->box.pos = calculateCoordinates(rightCenterMm + NEO_GLOBAL_AREA_WIDTH_MM, centerY, 0.f).minus(rightBtns[r]->box.size.div(2.f));
 
 				// Right-aligned against the header's own actual current right edge (headerFrameRightMm,
 				// already computed above) minus its own width and a small margin - unlike every

@@ -577,21 +577,55 @@ struct OLLabelButton : OpaqueWidget
 #define OL_DISPLAY_BG_DARK   nvgRGB(0x17, 0x17, 0x17)
 #define OL_DISPLAY_BG_BRIGHT nvgRGB(0x15, 0x15, 0x2b)
 
-// Approximate per-character advance width for res/repetition-scrolling.regular.ttf (the one
-// house font every OrangeLine digital display/button already uses), as a fraction of font size -
-// derived from a live-measured/tuned reference point (originally NEO's own, 2026-07-20): a 4-char
-// display settled at 14.9mm wide for a 6mm font with 0.81mm insets on each side, i.e.
-// (14.9 - 2*0.81) / 4 / 6 = 0.553.
-#define OL_DISPLAY_CHAR_WIDTH_RATIO 0.553f
+// Per-character glyph width AND inter-character spacing for res/repetition-scrolling.regular.ttf
+// (the one house font every OrangeLine digital display/button already uses), each as a fraction
+// of font size. Re-derived 2026-07-21 from real Inkscape measurements (Dieter's own data, not a
+// guess): outer text widths of 1.7 / 3.648 / 5.595 / 7.542mm for 1/2/3/4 characters, AND 194.487mm
+// for 100 characters, all at a 10pt font size. Solving width(N) = N*charWidth + (N-1)*spacing:
+// N=1 pins charWidth exactly (a single character has no spacing term at all) = 1.7mm. spacing
+// solved from the N=100 point rather than the small-N ones - Dieter's own catch: fitting spacing
+// from 2-4 characters bakes in whatever rounding those small, already-rounded measurements carry,
+// and that error then multiplies by (N-1) at any larger N (a 100-character field makes a
+// 99x-amplified error impossible to miss, which is exactly why that data point was worth getting -
+// it constrains spacing far more precisely than any of the short samples can). spacing =
+// (194.487 - 100*1.7) / 99 = 0.24734mm at 10pt (not the small-N-implied ~0.248 - a real, if small,
+// difference once multiplied out at length). Both re-verified against ALL five measured points
+// (1/2/3/4/100 chars) with this single consistent (charWidth, spacing) pair - matches every one to
+// within 0.001mm. Converted to a fraction of font size using the REAL pt->mm factor (1pt =
+// 25.4/72mm = 0.352778mm, so 10pt = 3.52778mm - NOT "10mm", a first pass here mistakenly treated pt
+// and mm as interchangeable and came out ~2.7x too small until caught): 1.7/3.52778 = 0.48189,
+// 0.24734/3.52778 = 0.07011. Supersedes the older single-ratio model (a plain numChars*ratio with
+// no separate spacing term, 0.553) - that model conflated per-glyph width and inter-character
+// spacing into one number, a genuinely different (and less accurate, especially at higher
+// character counts) shape than the real relationship, not just a mis-tuned constant.
+#define OL_DISPLAY_CHAR_WIDTH_RATIO   0.48189f
+#define OL_DISPLAY_CHAR_SPACING_RATIO 0.07011f
+// Small flat correction (2026-07-21, Dieter's own instruction: "just add another 0.25 to the
+// total width as correction for now") - the ratios above are fit against Inkscape's own text
+// measurement, not NanoVG/fontstash's actual rendering in Rack; live-testing showed NanoVG renders
+// this font very slightly wider, which eats asymmetrically into the right-side inset (the left
+// side is pinned exactly at insetMm by construction, so any underestimate only ever shows up on
+// the right). A pragmatic empirical patch for now, not a re-derived root-cause fix - revisit if a
+// real Rack-measured (not Inkscape-measured) reference point ever becomes available.
+#define OL_DISPLAY_WIDTH_CORRECTION_MM 0.25f
 
 // A display field's own width, derived from its character count and font size rather than a
 // hand-picked constant per field (Dieter's own instruction, originally for NEO, 2026-07-20: "the
 // display width of those displays should be a result of a common function f(#chars, fontsize),
 // not a field specific define") - moved here 2026-07-21 so any future module's own fixed-width
-// digital display can reuse it too, not just NEO's.
-inline float olDisplayWidthMm(int numChars, float fontSizeMm, float insetMm)
+// digital display can reuse it too, not just NEO's. The DEFAULT result (nudgeMm = 0) must stay the
+// single, generically-correct answer for a given (numChars, fontSizeMm) - a caller that finds it
+// off for its own specific layout must NOT work around that by lying about numChars or reimplementing
+// the formula locally (Dieter's own catch, 2026-07-21, after exactly that happened - a module
+// passed numChars-1 to shrink an 8-character field that measured about one character too wide).
+// `nudgeMm` is the one sanctioned escape hatch for a genuine per-field layout adjustment - an
+// explicit, visible correction on top of the real character count, not a substitute for it.
+inline float olDisplayWidthMm(int numChars, float fontSizeMm, float insetMm, float nudgeMm = 0.f)
 {
-	return (float) numChars * fontSizeMm * OL_DISPLAY_CHAR_WIDTH_RATIO + 2.f * insetMm;
+	float spacingCount = (numChars > 0) ? (float) (numChars - 1) : 0.f;
+	float charsWidth = (float) numChars * fontSizeMm * OL_DISPLAY_CHAR_WIDTH_RATIO;
+	float spacingWidth = spacingCount * fontSizeMm * OL_DISPLAY_CHAR_SPACING_RATIO;
+	return charsWidth + spacingWidth + 2.f * insetMm + OL_DISPLAY_WIDTH_CORRECTION_MM + nudgeMm;
 }
 
 /**

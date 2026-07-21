@@ -267,12 +267,12 @@ inline float neoRowAreaControlsWidthMm(bool fullHeight, float rowHeaderWidthMm)
 // the first pass at "medium" was much too large/present for a small color control). Dot-to-field
 // gap uses the standard frame-padding unit (NEO_FRAME_GAP_MM) - Dieter's own catch, 2026-07-21:
 // the display text inset (0.81mm) used at first was too narrow between two separate controls.
-//   NEO_ROW_NAME_TEXT_WIDTH_MM = olDisplayWidthMm(8, 6, 0.81) = 8*6*0.553 + 2*0.81 = 28.164
-//   NEO_ROW_NAME_WIDTH_MM = 3.05 (dot) + 1.524 (gap) + 28.164 (text) = 32.738
 // This fits comfortably inside the row header's own fixed Tw envelope (NEO_ROW_HEADER_TARGET_
-// WIDTH_MM, 162.56mm) with room to spare before the right-aligned position display - confirmed by
-// hand: today's (old 16mm name) LEFT/RIGHT paging buttons already end ~56mm before the position
-// display begins, and this grows the name field by ~17mm, leaving ~39mm of slack. NEO_DEFAULT_
+// WIDTH_MM, 162.56mm) with room to spare before the right-aligned position display. The field is a
+// FIXED width, same as every other row display (Dieter's own reversal, 2026-07-21, of an earlier
+// "grow to fill leftover header width" idea - that made padding/spacing after the field
+// inconsistent whenever the header itself had grown past its own default target; only the
+// right-aligned position display still tracks the header's own current width now). NEO_DEFAULT_
 // WIDTH_HP/neoMinWidthHp()/neoMaxWidthHp() are derived from NEO_ROW_HEADER_TARGET_WIDTH_MM as one
 // opaque envelope value, not from this field's own internal breakdown, so none of them need
 // recomputing for this change.
@@ -282,11 +282,25 @@ inline float neoRowAreaControlsWidthMm(bool fullHeight, float rowHeaderWidthMm)
 // value, live-tune once built.
 #define NEO_ROW_NAME_DOT_DRAG_STEP_MM 4.f
 #define NEO_ROW_NAME_FONT_SIZE_MM    NEO_ROW_NUMBER_DISPLAY_FONT_SIZE_MM
-#define NEO_ROW_NAME_TEXT_WIDTH_MM   olDisplayWidthMm(8, NEO_ROW_NAME_FONT_SIZE_MM, NEO_ROW_DISPLAY_TEXT_INSET_MM)
-#define NEO_ROW_NAME_WIDTH_MM        (NEO_ROW_NAME_DOT_DIAMETER_MM + NEO_ROW_NAME_DOT_GAP_MM + NEO_ROW_NAME_TEXT_WIDTH_MM)
-#define NEO_ROW_FOLLOW_X_MM      (NEO_ROW_NAME_X_MM + NEO_ROW_NAME_WIDTH_MM + NEO_FRAME_GAP_MM)
-#define NEO_ROW_LEFT_X_MM        (NEO_ROW_FOLLOW_X_MM + NEO_ROW_TOGGLE_WIDTH_MM + NEO_FRAME_GAP_MM)
-#define NEO_ROW_RIGHT_X_MM       (NEO_ROW_LEFT_X_MM + NEO_ROW_PAGEBTN_SIZE_MM + NEO_FRAME_GAP_MM)
+// Hard cap on typed name length (Dieter's own catch, 2026-07-21: without an enforced limit the
+// user could keep typing arbitrarily far past the field's own drawn width) - single source of
+// truth for both the width formula below and NeoRowNameField's own input-length enforcement
+// (Neo.cpp), so they can never silently drift apart.
+#define NEO_ROW_NAME_MAX_CHARS 8
+// Plain, standard display sizing - the same olDisplayWidthMm() call with the same padding every
+// other NEO display uses, no per-field nudge (Dieter's own correction, 2026-07-21: this is an
+// ordinary display field, it shouldn't need one at all - an earlier pass here added a nudgeMm
+// correction, which was itself the wrong move, not just the wrong shape of fix).
+#define NEO_ROW_NAME_TEXT_WIDTH_MM   olDisplayWidthMm(NEO_ROW_NAME_MAX_CHARS, NEO_ROW_NAME_FONT_SIZE_MM, NEO_ROW_DISPLAY_TEXT_INSET_MM)
+// NEO_ROW_NAME_WIDTH_MM/FOLLOW_X_MM/LEFT_X_MM/RIGHT_X_MM used to be static #defines here, chained
+// off the field's own BASE width - removed 2026-07-21 (Dieter's own catch: FOLLOW/LEFT/RIGHT kept
+// overlapping the name field) because the field's own ACTUAL width grows past this base value at
+// runtime whenever the header itself has grown past NEO_ROW_HEADER_TARGET_WIDTH_MM (leftover-
+// absorption, see nameFieldWidthMm's own comment in NeoWidget::step(), Neo.cpp) - a static macro
+// structurally can't know about that runtime growth, so it silently drifted out of sync with the
+// field's real edge. FOLLOW/LEFT/RIGHT's own x-positions are now computed directly in
+// NeoWidget::step() from the field's own real current right edge every frame instead - see that
+// function for the actual math.
 #define NEO_ROW_TOGGLE_WIDTH_MM  6.f  // FOLLOW toggle button
 #define NEO_ROW_TOGGLE_HEIGHT_MM 4.f
 #define NEO_ROW_PAGEBTN_SIZE_MM  4.f  // LEFT/RIGHT paging buttons (square)
