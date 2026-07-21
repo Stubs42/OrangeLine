@@ -568,6 +568,83 @@ struct OLLabelButton : OpaqueWidget
 	}
 };
 
+// Shared "digital display" background colors (2026-07-21, lifted out of NEO's own
+// NEO_ROW_DISPLAY_BG_* - see CLAUDE.md's "Code-drawn digital displays and knob rings" section)
+// - a genuinely darker, distinct color from the plain panel/strip background, for a true LCD-
+// style readout cell. Frame stroke color still comes from each family's own theme lookup
+// (X_FRAME_ORANGE/DARK/BRIGHT, XShared.hpp) since that part was already shared.
+#define OL_DISPLAY_BG_ORANGE nvgRGB(0x10, 0x06, 0x00)
+#define OL_DISPLAY_BG_DARK   nvgRGB(0x17, 0x17, 0x17)
+#define OL_DISPLAY_BG_BRIGHT nvgRGB(0x15, 0x15, 0x2b)
+
+// Approximate per-character advance width for res/repetition-scrolling.regular.ttf (the one
+// house font every OrangeLine digital display/button already uses), as a fraction of font size -
+// derived from a live-measured/tuned reference point (originally NEO's own, 2026-07-20): a 4-char
+// display settled at 14.9mm wide for a 6mm font with 0.81mm insets on each side, i.e.
+// (14.9 - 2*0.81) / 4 / 6 = 0.553.
+#define OL_DISPLAY_CHAR_WIDTH_RATIO 0.553f
+
+// A display field's own width, derived from its character count and font size rather than a
+// hand-picked constant per field (Dieter's own instruction, originally for NEO, 2026-07-20: "the
+// display width of those displays should be a result of a common function f(#chars, fontsize),
+// not a field specific define") - moved here 2026-07-21 so any future module's own fixed-width
+// digital display can reuse it too, not just NEO's.
+inline float olDisplayWidthMm(int numChars, float fontSizeMm, float insetMm)
+{
+	return (float) numChars * fontSizeMm * OL_DISPLAY_CHAR_WIDTH_RATIO + 2.f * insetMm;
+}
+
+/**
+	Shared drawing for a code-drawn "digital display" cell's own background + frame (2026-07-21,
+	lifted out of NEO's own NeoRowTextDisplayWidget - see CLAUDE.md's "Code-drawn digital displays
+	and knob rings" section). Deliberately separate from olDrawDisplayText() below rather than one
+	combined call: a display's background/frame is decoration (drawn every frame, not dimmable),
+	while its text is real content (drawn from drawLayer(layer==1) so it participates in Rack's
+	own "lights off" dim simulation like every other OrangeLine display) - the same draw()/
+	drawLayer() split NeoRowHeaderFrameWidget and every other frame widget in this codebase
+	already uses, matching the reasoning in the "Self-drawn widget backgrounds" section above.
+*/
+inline void olDrawDisplayFrame(NVGcontext *vg, Vec size, NVGcolor bg, NVGcolor frameColor, float cornerRadiusPx, float strokeWidthPx)
+{
+	nvgBeginPath(vg);
+	nvgRoundedRect(vg, 0.f, 0.f, size.x, size.y, cornerRadiusPx);
+	nvgFillColor(vg, bg);
+	nvgFill(vg);
+	nvgStrokeWidth(vg, strokeWidthPx);
+	nvgStrokeColor(vg, frameColor);
+	nvgStroke(vg);
+}
+
+/**
+	Shared drawing for a code-drawn "digital display" cell's own text - one line (line2 empty) or
+	two lines stacked top/bottom-half (both non-empty), each centered vertically within its own
+	half the same way a single line centers within the whole box. Call from drawLayer(layer==1),
+	AFTER olDrawDisplayFrame() has already drawn the background/frame from plain draw() - see its
+	own comment for why these are two separate functions.
+*/
+inline void olDrawDisplayText(NVGcontext *vg, Vec size, NVGcolor textColor, const std::string &line1, const std::string &line2,
+	const char *fontPath, float fontSize, float textInsetXPx, float textYOffsetPx, float line2YNudgePx = 0.f)
+{
+	if (line1.empty() && line2.empty())
+		return;
+
+	std::shared_ptr<Font> font = APP->window->loadFont(asset::plugin(pluginInstance, fontPath));
+	nvgFontFaceId(vg, font->handle);
+	nvgFontSize(vg, fontSize);
+	nvgFillColor(vg, textColor);
+	nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+
+	if (!line2.empty())
+	{
+		float halfHeight = size.y / 2.f;
+		if (!line1.empty())
+			nvgText(vg, textInsetXPx, halfHeight / 2.f + textYOffsetPx, line1.c_str(), nullptr);
+		nvgText(vg, textInsetXPx, halfHeight + halfHeight / 2.f + textYOffsetPx + line2YNudgePx, line2.c_str(), nullptr);
+	}
+	else
+		nvgText(vg, textInsetXPx, size.y / 2.f + textYOffsetPx, line1.c_str(), nullptr);
+}
+
 /**
 	Self-drawn interactive grid of NUM_CC_COLS x NUM_CC_ROWS cells, one per MIDI CC (cell
 	[row][col] = CC row*NUM_CC_COLS+col). Click a cell to toggle it on/off (writes directly

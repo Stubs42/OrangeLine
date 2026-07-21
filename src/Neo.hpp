@@ -206,23 +206,6 @@ inline float neoRowAreaControlsWidthMm(bool fullHeight, float rowHeaderWidthMm)
 // live Param's own range/ParamQuantity when the connected Host changes.
 #define NEO_MAX_TRACKS 32
 
-// Approximate per-character advance width for res/repetition-scrolling.regular.ttf, as a
-// fraction of font size - derived from Dieter's own live-measured/tuned reference point
-// (2026-07-20): the 4-char track display settled at 14.9mm wide for a 6mm font with 0.81mm
-// insets on each side, i.e. (14.9 - 2*0.81) / 4 / 6 = 0.553.
-#define NEO_DISPLAY_CHAR_WIDTH_RATIO 0.553f
-
-// A display field's own width, derived from its character count and font size rather than a
-// hand-picked constant per field (Dieter's own instruction, 2026-07-20: "the display width of
-// those displays should be a result of a common function f(#chars, fontsize), not a field
-// specific define") - every one of NEO's own row displays (track/channel/position) computes its
-// own width through this one function instead of an independent literal that needs separate
-// live-tuning and can drift out of proportion with the others.
-inline float neoDisplayWidthMm(int numChars, float fontSizeMm, float insetMm)
-{
-	return (float) numChars * fontSizeMm * NEO_DISPLAY_CHAR_WIDTH_RATIO + 2.f * insetMm;
-}
-
 // Per-row control x-offsets, measured from the global area's own right edge (added to
 // NEO_GLOBAL_AREA_WIDTH_MM at each use site) - and their own widget sizes.
 // Track/channel select knobs + their own numeric displays (2026-07-20 addition) - sequentially
@@ -253,8 +236,8 @@ inline float neoDisplayWidthMm(int numChars, float fontSizeMm, float insetMm)
 // to the global area edge, is (NEO_FRAME_GAP_MM / 2 + NEO_FRAME_GAP_MM) = 1.5x the gap - add one
 // more full gap for the display's own inset: 2.5x total.
 #define NEO_ROW_TRACK_DISPLAY_X_MM      (2.5f * NEO_FRAME_GAP_MM)
-#define NEO_ROW_TRACK_DISPLAY_WIDTH_MM  neoDisplayWidthMm(4, NEO_ROW_NUMBER_DISPLAY_FONT_SIZE_MM, NEO_ROW_DISPLAY_TEXT_INSET_MM)
-#define NEO_ROW_CHANNEL_DISPLAY_WIDTH_MM neoDisplayWidthMm(2, NEO_ROW_NUMBER_DISPLAY_FONT_SIZE_MM, NEO_ROW_DISPLAY_TEXT_INSET_MM)
+#define NEO_ROW_TRACK_DISPLAY_WIDTH_MM  olDisplayWidthMm(4, NEO_ROW_NUMBER_DISPLAY_FONT_SIZE_MM, NEO_ROW_DISPLAY_TEXT_INSET_MM)
+#define NEO_ROW_CHANNEL_DISPLAY_WIDTH_MM olDisplayWidthMm(2, NEO_ROW_NUMBER_DISPLAY_FONT_SIZE_MM, NEO_ROW_DISPLAY_TEXT_INSET_MM)
 #define NEO_ROW_NUMBER_DISPLAY_HEIGHT_MM 6.1f
 // Text sits 0.25mm below the box's own vertical center (Dieter's own correction, 2026-07-20) -
 // shared by every one of NEO's row displays, not just track/channel.
@@ -289,7 +272,7 @@ inline float neoDisplayWidthMm(int numChars, float fontSizeMm, float insetMm)
 // right-edge-derived formula. Width sized for the longer of the two lines now ("sss/SSS",
 // 7 characters, space-padded per-field like "%3d/%3d" rather than zero-padded, monospace font so
 // this reads as right-aligned within each field) - a first estimate, not yet visually confirmed.
-#define NEO_ROW_POSITION_DISPLAY_WIDTH_MM neoDisplayWidthMm(7, NEO_ROW_POSITION_DISPLAY_FONT_SIZE_MM, NEO_ROW_DISPLAY_TEXT_INSET_MM)
+#define NEO_ROW_POSITION_DISPLAY_WIDTH_MM olDisplayWidthMm(7, NEO_ROW_POSITION_DISPLAY_FONT_SIZE_MM, NEO_ROW_DISPLAY_TEXT_INSET_MM)
 // Experiment, 2026-07-20 (Dieter's own request, "just to see how it looks"): height matched to
 // the knob ring's own diameter instead of the near-zero-padding text-height ratio every other
 // display uses - not yet a confirmed final choice.
@@ -302,18 +285,13 @@ inline float neoDisplayWidthMm(int numChars, float fontSizeMm, float insetMm)
 
 // Display background + frame (2026-07-20, Dieter's own follow-up spec, exact values from
 // res/DisplaysWithKnobsInFrame.svg) - shared by every one of NEO's own row displays (track/
-// channel/position). Matches the codebase's established "X_DISPLAY_BG_*" convention (see
-// CLAUDE.md's own "Self-drawn widget backgrounds" section and tools/bake_panel_theme.py's
-// THEME_DISPLAYFILL_COLOR) rather than the plain panel/strip background - a genuinely different,
-// darker per-theme color, since these are true "digital display" cells, not a knob-ring cover or
-// similar. Frame stroke uses the same theme lookup (X_FRAME_ORANGE/DARK/BRIGHT, XShared.hpp)
-// every other framed element in NEO already uses. Corner radius/stroke width both reuse existing
-// established constants (NEO_FRAME_MARGIN_MM/NEO_FRAME_STROKE_MM) rather than new ones - the
-// reference SVG's own measured radius (0.762mm) and stroke (0.3mm) turned out to already exactly
-// match those.
-#define NEO_ROW_DISPLAY_BG_ORANGE nvgRGB(0x10, 0x06, 0x00)
-#define NEO_ROW_DISPLAY_BG_DARK   nvgRGB(0x17, 0x17, 0x17)
-#define NEO_ROW_DISPLAY_BG_BRIGHT nvgRGB(0x15, 0x15, 0x2b)
+// channel/position). Background color moved to OrangeLine.hpp's own OL_DISPLAY_BG_* (2026-07-21
+// extraction, see CLAUDE.md's "Code-drawn digital displays and knob rings" section) since it's a
+// genuinely reusable convention, not NEO-specific. Frame stroke uses the same theme lookup
+// (X_FRAME_ORANGE/DARK/BRIGHT, XShared.hpp) every other framed element in NEO already uses.
+// Corner radius/stroke width both reuse existing established constants (NEO_FRAME_MARGIN_MM/
+// NEO_FRAME_STROKE_MM) rather than new ones - the reference SVG's own measured radius (0.762mm)
+// and stroke (0.3mm) turned out to already exactly match those.
 #define NEO_ROW_DISPLAY_STROKE_MM NEO_FRAME_STROKE_MM
 #define NEO_ROW_DISPLAY_RADIUS_MM NEO_FRAME_MARGIN_MM
 #define NEO_ROW_DISPLAY_TEXT_INSET_MM 0.81f // left inset of the text within its own display background

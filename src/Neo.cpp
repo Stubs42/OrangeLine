@@ -1191,14 +1191,16 @@ struct NeoRowCellsWidget : TransparentWidget
 };
 
 /**
-	OrangeLine-style small digital-look text display (2026-07-20) - same font asset as
-	OrangeLine.hpp's own NumberWidget (res/repetition-scrolling.regular.ttf) and the same
-	theme-aware ORANGE/WHITE fill, but takes a live getText() callback instead of NumberWidget's
-	own persistent float-pointer + printf-format-string shape: every one of NEO's own new
-	displays (track name, channel number, page/position) is cheap to recompute fresh from the
-	module's real state every draw() call, so there's no need for NumberWidget's own cached
-	buffer/pointer indirection, and getText() can return arbitrary text (not just a formatted
-	number) which the track display genuinely needs ("TAPE"/"MSEL"/"M-01".."M-16").
+	OrangeLine-style small digital-look text display - a thin NEO-specific wrapper around
+	OrangeLine.hpp's shared olDrawDisplayFrame()/olDrawDisplayText() (2026-07-21 extraction, see
+	CLAUDE.md's "Code-drawn digital displays and knob rings" section) - this struct's own job is
+	just resolving NEO's theme (OL_state[STYLE_JSON]) into concrete colors and calling getText()/
+	getText2() to get the actual content; the drawing itself is shared, common code now, not
+	duplicated per module. Takes a live getText() callback (returning arbitrary text, not just a
+	formatted number) rather than OrangeLine.hpp's own NumberWidget's persistent float-pointer +
+	printf-format-string shape, since NEO's own displays (track name, channel number, page/
+	position) are cheap to recompute fresh from the module's real state every draw() call and
+	track needs non-numeric content ("TAPE"/"MSEL"/"M-01".."M-16").
 */
 struct NeoRowTextDisplayWidget : TransparentWidget
 {
@@ -1212,24 +1214,13 @@ struct NeoRowTextDisplayWidget : TransparentWidget
 	std::function<std::string(Neo*)> getText2;
 	float fontSize = 1.f; // set by the caller right after construction
 
-	// Display background + frame (2026-07-20, Dieter's own follow-up spec after seeing the first
-	// text-only pass live) - always drawn (plain draw(), not layer-1-gated like the text itself),
-	// same reasoning as NeoRowHeaderFrameWidget's own frame: a background/frame is decoration,
-	// not dimmable content.
 	void draw(const DrawArgs &args) override
 	{
 		Neo *m = module ? dynamic_cast<Neo*>(module) : nullptr;
 		float style = m ? m->OL_state[STYLE_JSON] : STYLE_ORANGE;
-		NVGcolor bg = (style == STYLE_DARK) ? NEO_ROW_DISPLAY_BG_DARK : (style == STYLE_BRIGHT) ? NEO_ROW_DISPLAY_BG_BRIGHT : NEO_ROW_DISPLAY_BG_ORANGE;
+		NVGcolor bg = (style == STYLE_DARK) ? OL_DISPLAY_BG_DARK : (style == STYLE_BRIGHT) ? OL_DISPLAY_BG_BRIGHT : OL_DISPLAY_BG_ORANGE;
 		NVGcolor frame = (style == STYLE_DARK) ? X_FRAME_DARK : (style == STYLE_BRIGHT) ? X_FRAME_BRIGHT : X_FRAME_ORANGE;
-
-		nvgBeginPath(args.vg);
-		nvgRoundedRect(args.vg, 0.f, 0.f, box.size.x, box.size.y, mm2px(NEO_ROW_DISPLAY_RADIUS_MM));
-		nvgFillColor(args.vg, bg);
-		nvgFill(args.vg);
-		nvgStrokeWidth(args.vg, mm2px(NEO_ROW_DISPLAY_STROKE_MM));
-		nvgStrokeColor(args.vg, frame);
-		nvgStroke(args.vg);
+		olDrawDisplayFrame(args.vg, box.size, bg, frame, mm2px(NEO_ROW_DISPLAY_RADIUS_MM), mm2px(NEO_ROW_DISPLAY_STROKE_MM));
 		TransparentWidget::draw(args);
 	}
 
@@ -1243,28 +1234,13 @@ struct NeoRowTextDisplayWidget : TransparentWidget
 		Neo *m = module ? dynamic_cast<Neo*>(module) : nullptr;
 		if (m && getText)
 		{
-			std::shared_ptr<Font> font = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
-			nvgFontFaceId(args.vg, font->handle);
-			nvgFontSize(args.vg, fontSize);
-			nvgFillColor(args.vg, (m->OL_state[STYLE_JSON] == STYLE_ORANGE) ? ORANGE : WHITE);
-			nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-			float insetX = mm2px(NEO_ROW_DISPLAY_TEXT_INSET_MM);
-			float yOffset = mm2px(NEO_ROW_DISPLAY_TEXT_Y_OFFSET_MM);
-			if (getText2)
-			{
-				// Two lines - each centered within its own half of the box, same convention the
-				// single line uses for the whole box.
-				float halfHeight = box.size.y / 2.f;
-				std::string text1 = getText(m);
-				std::string text2 = getText2(m);
-				nvgText(args.vg, insetX, halfHeight / 2.f + yOffset, text1.c_str(), nullptr);
-				nvgText(args.vg, insetX, halfHeight + halfHeight / 2.f + yOffset + mm2px(NEO_ROW_DISPLAY_LINE2_Y_NUDGE_MM), text2.c_str(), nullptr);
-			}
-			else
-			{
-				std::string text = getText(m);
-				nvgText(args.vg, insetX, box.size.y / 2.f + yOffset, text.c_str(), nullptr);
-			}
+			NVGcolor textColor = (m->OL_state[STYLE_JSON] == STYLE_ORANGE) ? ORANGE : WHITE;
+			std::string line1 = getText(m);
+			std::string line2 = getText2 ? getText2(m) : std::string();
+			olDrawDisplayText(args.vg, box.size, textColor, line1, line2,
+				"res/repetition-scrolling.regular.ttf", fontSize,
+				mm2px(NEO_ROW_DISPLAY_TEXT_INSET_MM), mm2px(NEO_ROW_DISPLAY_TEXT_Y_OFFSET_MM),
+				mm2px(NEO_ROW_DISPLAY_LINE2_Y_NUDGE_MM));
 		}
 		Widget::drawLayer(args, 1);
 	}
