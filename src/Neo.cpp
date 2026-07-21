@@ -44,7 +44,6 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 	// implements all three interfaces on one instance).
 	Module *neoHostModule = nullptr;
 
-	dsp::SchmittTrigger followTrigger[NEO_NUM_ROWS];
 	dsp::SchmittTrigger leftTrigger[NEO_NUM_ROWS];
 	dsp::SchmittTrigger rightTrigger[NEO_NUM_ROWS];
 
@@ -383,11 +382,12 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 		data.ids = alive;
 	}
 
-	// Right-click-free - a real panel widget (the LOCK/FREE button, OLLabelButton) toggles this. Handles both "I'm the
-	// first to lock in" (my own current config becomes the group's) and "joining an existing
-	// group" (adopt its rows/fullHeight immediately; width converges gradually via the per-tick
-	// sync in NeoWidget::step(), so a blocked instance still locks in successfully at whatever
-	// width it can currently manage rather than failing the lock outright).
+	// Right-click-free - a real panel widget (the LOCK/UNLOCK button, OLLabelButton) toggles this.
+	// Handles both "I'm the first to lock in" (my own current config becomes the group's) and
+	// "joining an existing group" (adopt its rows/fullHeight immediately; width converges
+	// gradually via the per-tick sync in NeoWidget::step(), so a blocked instance still locks in
+	// successfully at whatever width it can currently manage rather than failing the lock
+	// outright).
 	void toggleLock()
 	{
 		bool wasLocked = OL_state[LOCKED_JSON] > 0.5f;
@@ -435,6 +435,11 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 			neoLockLastSyncedWidthHp = -1.f;
 		}
 	}
+
+	// Global FOLLOW (2026-07-21) - one toggle for every row at once, applies regardless of Host
+	// connection state (unlike LOCK, which needs a Host to mean anything). See moduleProcess()'s
+	// own row loop for where this is actually read.
+	void toggleGlobalFollow() { OL_state[GLOBAL_FOLLOW_JSON] = (OL_state[GLOBAL_FOLLOW_JSON] > 0.5f) ? 0.f : 1.f; }
 
 	// Called from onRemove()/invalidateBridgeCache() below - proactively drops this instance's
 	// own id from the shared list using the ALREADY-CACHED host pointer (no getModule() lookup,
@@ -668,11 +673,12 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 		// column grid at startup, this does not happen").
 		absorbLeftoverIntoHeader();
 		disconnectNeoHost();
+		OL_state[GLOBAL_FOLLOW_JSON] = 1.f; // auto-follow the play cursor, on by default
 		for (int r = 0; r < NEO_NUM_ROWS; r++)
 		{
 			// Row r's default track/channel (row r shows channel r, track TAPE) come from
 			// ROW_TRACK_PARAM/ROW_CHANNEL_PARAM's own configParam() defaults now, not OL_state.
-			OL_state[ROW_FOLLOW_JSON + r] = 1.f;        // auto-follow the play cursor
+			// ROW_FOLLOW_JSON is unused (see moduleProcess()'s own note) - no default needed here.
 			OL_state[ROW_PAGE_JSON + r] = 0.f;
 			OL_state[ROW_CELLTYPE_JSON + r] = 1.f;      // Value (more generally useful default)
 		}
@@ -731,13 +737,13 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 			refreshChannelTable();
 
 		int visibleCols = getVisibleColumns();
+		// One global FOLLOW applies to every row (2026-07-21) - per-row FOLLOW is deferred for now
+		// (the old ROW_FOLLOW_JSON/PARAM per-row toggle is unused dead infrastructure, kept only so
+		// re-introducing it later doesn't need to renumber every Param after it - see Neo.hpp).
+		bool follow = OL_state[GLOBAL_FOLLOW_JSON] > 0.5f;
 
 		for (int r = 0; r < NEO_NUM_ROWS; r++)
 		{
-			if (followTrigger[r].process(params[ROW_FOLLOW_PARAM + r].getValue()))
-				OL_state[ROW_FOLLOW_JSON + r] = (OL_state[ROW_FOLLOW_JSON + r] > 0.5f) ? 0.f : 1.f;
-
-			bool follow = OL_state[ROW_FOLLOW_JSON + r] > 0.5f;
 			if (neoHost)
 			{
 				int channel = getRowChannel(r);
@@ -1517,7 +1523,7 @@ struct NeoRowNameField : ui::TextField
 };
 
 /**
-	Frame around one row's own "header data" (name/MEM-TAPE/FOLLOW/paging) - 2026-07-20, Dieter's
+	Frame around one row's own "header data" (name/track/channel/paging) - 2026-07-20, Dieter's
 	own spec: own outer height matches the current cell height, left corners match the outer
 	content frame's own radius, right corners get a smaller radius emphasizing that this frame
 	leads into the step-cell grid rather than standing apart from it. Stroke-only (no fill), so
@@ -1685,9 +1691,10 @@ struct NeoPanelWidget : Widget
 };
 
 /**
-	Small square/pill toggle button shared by all four per-row Params (MEM/TAPE, FOLLOW, LEFT,
-	RIGHT) - file-scope (not a constructor-local type) so NeoWidget can hold typed arrays of
-	these and reposition them every step() as the row layout changes (Grid Rows / Full Height).
+	Small square/pill toggle button shared by the per-row LEFT/RIGHT paging Params (FOLLOW moved
+	to a single global button, 2026-07-21 - see NeoWidget's own globalFollowButton) - file-scope
+	(not a constructor-local type) so NeoWidget can hold typed arrays of these and reposition them
+	every step() as the row layout changes (Grid Rows / Full Height).
 */
 struct NeoRowButton : ParamWidget
 {
@@ -1737,7 +1744,6 @@ struct NeoWidget : ModuleWidget
 	// Right-aligned page/position display (2026-07-20) - see NEO_ROW_POSITION_DISPLAY_WIDTH_MM's
 	// own comment (Neo.hpp).
 	NeoRowTextDisplayWidget *positionDisplays[NEO_NUM_ROWS] = {};
-	NeoRowButton *followBtns[NEO_NUM_ROWS] = {};
 	NeoRowButton *leftBtns[NEO_NUM_ROWS] = {};
 	NeoRowButton *rightBtns[NEO_NUM_ROWS] = {};
 	// Seam-bridging strips, reused verbatim from XShared.hpp (XExtStripWidget is already fully
@@ -1749,6 +1755,8 @@ struct NeoWidget : ModuleWidget
 	XExtStripWidget *extStripRight = nullptr;
 	XExtStripWidget *extStripLeft = nullptr;
 	OLLabelButton *lockButton = nullptr;
+	OLLabelButton *globalFollowButton = nullptr;
+	OLLabelButton *unbindButton = nullptr;
 
 	NeoWidget(Neo *module)
 	{
@@ -1796,8 +1804,12 @@ struct NeoWidget : ModuleWidget
 			return xThemedTextColor(module->OL_state[STYLE_JSON]);
 		};
 		lockButton->getLabel = [module]() {
+			// "FREE" is now reserved for the UNBIND button's own Host-disconnect action below -
+			// this button's own "locked" label is "UNLOCK" instead (Dieter's own terminology
+			// catch, 2026-07-21: the two buttons must never share a label for two unrelated
+			// actions).
 			bool locked = module && module->OL_state[LOCKED_JSON] > 0.5f;
-			return std::string(locked ? "FREE" : "LOCK");
+			return std::string(locked ? "UNLOCK" : "LOCK");
 		};
 		lockButton->onClick = [module]() {
 			if (module)
@@ -1806,6 +1818,62 @@ struct NeoWidget : ModuleWidget
 		lockButton->box.pos = mm2px(Vec(NEO_LOCK_BUTTON_X_MM, NEO_LOCK_BUTTON_Y_MM));
 		lockButton->box.size = mm2px(Vec(NEO_LOCK_BUTTON_WIDTH_MM, NEO_LOCK_BUTTON_HEIGHT_MM));
 		addChild(lockButton);
+
+		// Global FOLLOW (2026-07-21) - applies to every row at once, replacing the deferred
+		// per-row toggle (see moduleProcess()'s own comment). Same button shape as LOCK/UNLOCK,
+		// stacked directly below it. Static label, two-state color only (no grey/disconnected
+		// state - Dieter's own spec: "off color is default text color... green if enabled").
+		globalFollowButton = new OLLabelButton();
+		globalFollowButton->fontSize = mm2px(Vec(NEO_GLOBAL_AREA_BUTTON_FONT_SIZE_MM, 0.f)).x;
+		globalFollowButton->cornerRadiusPx = mm2px(NEO_ROW_DISPLAY_RADIUS_MM);
+		globalFollowButton->strokeWidthPx = mm2px(NEO_FRAME_STROKE_MM);
+		globalFollowButton->textYNudgePx = mm2px(0.2f);
+		globalFollowButton->getFillColor = [module]() {
+			float style = module ? module->OL_state[STYLE_JSON] : STYLE_ORANGE;
+			return (style == STYLE_DARK) ? X_BUTTON_FILL_DARK : (style == STYLE_BRIGHT) ? X_BUTTON_FILL_BRIGHT : X_BUTTON_FILL_ORANGE;
+		};
+		globalFollowButton->getAccentColor = [module]() {
+			if (!module)
+				return xThemedTextColor(STYLE_ORANGE);
+			bool on = module->OL_state[GLOBAL_FOLLOW_JSON] > 0.5f;
+			return on ? NEO_LOCK_ON_COLOR : xThemedTextColor(module->OL_state[STYLE_JSON]);
+		};
+		globalFollowButton->getLabel = []() { return std::string("FOLLOW"); };
+		globalFollowButton->onClick = [module]() {
+			if (module)
+				module->toggleGlobalFollow();
+		};
+		globalFollowButton->box.pos = mm2px(Vec(NEO_FOLLOW_BUTTON_X_MM, NEO_FOLLOW_BUTTON_Y_MM));
+		globalFollowButton->box.size = mm2px(Vec(NEO_FOLLOW_BUTTON_WIDTH_MM, NEO_FOLLOW_BUTTON_HEIGHT_MM));
+		addChild(globalFollowButton);
+
+		// Global UNBIND (2026-07-21) - a placeholder for now (Dieter's own words: "we do not yet
+		// know whether we will keep this button"). Calls the same disconnectNeoHost() the
+		// right-click "Disconnect" menu item already uses - that menu item is deliberately left in
+		// place alongside this, not replaced. Anchored to the bottom of the global frame rather
+		// than stacked with LOCK/FOLLOW at the top.
+		unbindButton = new OLLabelButton();
+		unbindButton->fontSize = mm2px(Vec(NEO_GLOBAL_AREA_BUTTON_FONT_SIZE_MM, 0.f)).x;
+		unbindButton->cornerRadiusPx = mm2px(NEO_ROW_DISPLAY_RADIUS_MM);
+		unbindButton->strokeWidthPx = mm2px(NEO_FRAME_STROKE_MM);
+		unbindButton->textYNudgePx = mm2px(0.2f);
+		unbindButton->getFillColor = [module]() {
+			float style = module ? module->OL_state[STYLE_JSON] : STYLE_ORANGE;
+			return (style == STYLE_DARK) ? X_BUTTON_FILL_DARK : (style == STYLE_BRIGHT) ? X_BUTTON_FILL_BRIGHT : X_BUTTON_FILL_ORANGE;
+		};
+		unbindButton->getAccentColor = [module]() {
+			if (!module || !module->neoHost)
+				return X_COLOR_INACTIVE_GREY;
+			return xThemedTextColor(module->OL_state[STYLE_JSON]);
+		};
+		unbindButton->getLabel = []() { return std::string("FREE"); };
+		unbindButton->onClick = [module]() {
+			if (module)
+				module->disconnectNeoHost();
+		};
+		unbindButton->box.pos = mm2px(Vec(NEO_UNBIND_BUTTON_X_MM, NEO_UNBIND_BUTTON_Y_MM));
+		unbindButton->box.size = mm2px(Vec(NEO_UNBIND_BUTTON_WIDTH_MM, NEO_UNBIND_BUTTON_HEIGHT_MM));
+		addChild(unbindButton);
 
 		// All real geometry (position, size, visibility) for every one of these is set fresh
 		// every step() below, driven by the current Grid Rows count / Full Height state - it can
@@ -1927,12 +1995,8 @@ struct NeoWidget : ModuleWidget
 			addChild(positionDisplay);
 			positionDisplays[r] = positionDisplay;
 
-			NeoRowButton *followBtn = createParam<NeoRowButton>(Vec(), module, ROW_FOLLOW_PARAM + r);
-			followBtn->box.size = mm2px(Vec(NEO_ROW_TOGGLE_WIDTH_MM, NEO_ROW_TOGGLE_HEIGHT_MM));
-			followBtn->onColor = nvgRGB(0x00, 0xdd, 0x44);
-			addParam(followBtn);
-			followBtns[r] = followBtn;
-
+			// Per-row FOLLOW button removed 2026-07-21 (Dieter's own call, deferred in favor of
+			// the single global FOLLOW button in the global area - see moduleProcess()'s comment).
 			NeoRowButton *leftBtn = createParam<NeoRowButton>(Vec(), module, ROW_LEFT_PARAM + r);
 			leftBtn->box.size = mm2px(Vec(NEO_ROW_PAGEBTN_SIZE_MM, NEO_ROW_PAGEBTN_SIZE_MM));
 			addParam(leftBtn);
@@ -2133,7 +2197,6 @@ struct NeoWidget : ModuleWidget
 				channelKnobs[r]->visible = rowVisible;
 				channelKnobRings[r]->visible = rowVisible;
 				positionDisplays[r]->visible = rowVisible;
-				followBtns[r]->visible = rowVisible;
 				leftBtns[r]->visible = rowVisible;
 				rightBtns[r]->visible = rowVisible;
 				rowCells[r]->visible = rowVisible;
@@ -2194,24 +2257,22 @@ struct NeoWidget : ModuleWidget
 				rowNameFields[r]->box.size = mm2px(Vec(nameFieldWidthMm, NEO_ROW_NUMBER_DISPLAY_HEIGHT_MM));
 				rowNameFields[r]->box.pos = calculateCoordinates(nameFieldXMm + NEO_GLOBAL_AREA_WIDTH_MM, centerY, 0.f).minus(Vec(0.f, rowNameFields[r]->box.size.y / 2.f));
 
-				// FOLLOW/LEFT/RIGHT positions derived from the name field's own actual current
-				// right edge (nameFieldXMm + nameFieldWidthMm) rather than a separately-maintained
-				// static offset, so they can never drift out of sync with the field's real edge.
+				// LEFT/RIGHT positions derived from the name field's own actual current right edge
+				// (nameFieldXMm + nameFieldWidthMm) rather than a separately-maintained static
+				// offset, so they can never drift out of sync with the field's real edge. FOLLOW no
+				// longer sits between them - it moved to the global area (2026-07-21, see
+				// moduleProcess()'s own comment) - LEFT now starts directly after the name field.
 				//
 				// A real bug (Dieter's own catch via screenshot, 2026-07-21):
-				// calculateCoordinates(...).minus(box.size.
-				// div(2)) treats the X passed in as the button's own CENTER, but the *Mm values
-				// below were computed as a LEFT edge (previous element's right edge + one gap)
-				// with no correction for that - silently shifting every one of these three buttons
-				// left by half its own width (3mm for the 6mm-wide FOLLOW button alone), eating
-				// most of the intended gap. Fixed by explicitly computing each button's own LEFT
-				// edge first (previous left edge + previous width + gap, chained), then converting
-				// to a center by adding back that SAME button's own half-width only at the point
-				// where it's fed into the center-based positioning call - never skip that step.
-				float followLeftMm = nameFieldXMm + nameFieldWidthMm + NEO_FRAME_GAP_MM;
-				float followCenterMm = followLeftMm + NEO_ROW_TOGGLE_WIDTH_MM / 2.f;
-				followBtns[r]->box.pos = calculateCoordinates(followCenterMm + NEO_GLOBAL_AREA_WIDTH_MM, centerY, 0.f).minus(followBtns[r]->box.size.div(2.f));
-				float leftLeftMm = followLeftMm + NEO_ROW_TOGGLE_WIDTH_MM + NEO_FRAME_GAP_MM;
+				// calculateCoordinates(...).minus(box.size.div(2)) treats the X passed in as the
+				// button's own CENTER, but the *Mm values below were computed as a LEFT edge
+				// (previous element's right edge + one gap) with no correction for that - silently
+				// shifting each button left by half its own width, eating most of the intended gap.
+				// Fixed by explicitly computing each button's own LEFT edge first (previous left
+				// edge + previous width + gap, chained), then converting to a center by adding back
+				// that SAME button's own half-width only at the point where it's fed into the
+				// centering call - never skip that step.
+				float leftLeftMm = nameFieldXMm + nameFieldWidthMm + NEO_FRAME_GAP_MM;
 				float leftCenterMm = leftLeftMm + NEO_ROW_PAGEBTN_SIZE_MM / 2.f;
 				leftBtns[r]->box.pos = calculateCoordinates(leftCenterMm + NEO_GLOBAL_AREA_WIDTH_MM, centerY, 0.f).minus(leftBtns[r]->box.size.div(2.f));
 				float rightLeftMm = leftLeftMm + NEO_ROW_PAGEBTN_SIZE_MM + NEO_FRAME_GAP_MM;

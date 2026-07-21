@@ -156,6 +156,32 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define NEO_LOCK_BUTTON_Y_MM      (NEO_FRAME_TOP_MM + NEO_FRAME_GAP_MM)
 #define NEO_LOCK_BUTTON_WIDTH_MM  (NEO_GLOBAL_AREA_WIDTH_MM - 1.5f * NEO_FRAME_GAP_MM - NEO_LOCK_BUTTON_X_MM)
 #define NEO_LOCK_BUTTON_HEIGHT_MM 5.f
+
+// Global FOLLOW button (2026-07-21) - directly below LOCK/UNLOCK, same X/width/height, one frame-
+// gap below it (same "nested element gets one frame-gap from its own containing frame" rule the
+// LOCK button itself already uses). Applies to every row at once - per-row FOLLOW is deferred for
+// now (Dieter's own call, 2026-07-21; the per-row toggle button is removed, see Neo.cpp). Static
+// "FOLLOW" label (not a toggling word like LOCK/UNLOCK), off = the theme's own plain text color,
+// on = NEO_LOCK_ON_COLOR (green) - same accent green already established for "this is active" in
+// this global area, reused rather than inventing a second green.
+#define NEO_FOLLOW_BUTTON_X_MM      NEO_LOCK_BUTTON_X_MM
+#define NEO_FOLLOW_BUTTON_Y_MM      (NEO_LOCK_BUTTON_Y_MM + NEO_LOCK_BUTTON_HEIGHT_MM + NEO_FRAME_GAP_MM)
+#define NEO_FOLLOW_BUTTON_WIDTH_MM  NEO_LOCK_BUTTON_WIDTH_MM
+#define NEO_FOLLOW_BUTTON_HEIGHT_MM NEO_LOCK_BUTTON_HEIGHT_MM
+
+// Global UNBIND button (2026-07-21) - a placeholder for now ("we do not yet know whether we will
+// keep this button", Dieter's own words) that just calls the existing disconnectNeoHost() the
+// right-click "Disconnect" menu item already uses - that menu item stays too, deliberately not
+// replaced, until it's settled whether this button sticks around. Anchored to the BOTTOM of the
+// global frame instead of stacking with LOCK/FOLLOW at the top - same one-frame-gap inset from the
+// frame's own edge, mirrored from the top (NEO_LOCK_BUTTON_Y_MM's own "FRAME_TOP + GAP" shape).
+// Text reads "FREE" (X-family's own established term for a Host-disconnect action, see CLAUDE.md's
+// "Unbind" -> "Free" rename - LOCK/UNLOCK was deliberately renamed off "FREE" specifically so the
+// two buttons never share a label for two unrelated actions).
+#define NEO_UNBIND_BUTTON_X_MM      NEO_LOCK_BUTTON_X_MM
+#define NEO_UNBIND_BUTTON_WIDTH_MM  NEO_LOCK_BUTTON_WIDTH_MM
+#define NEO_UNBIND_BUTTON_HEIGHT_MM NEO_LOCK_BUTTON_HEIGHT_MM
+#define NEO_UNBIND_BUTTON_Y_MM      (PANELHEIGHT - NEO_FRAME_BOTTOM_MM - NEO_FRAME_GAP_MM - NEO_UNBIND_BUTTON_HEIGHT_MM)
 // Shared by EVERY button in the global area, not just the lock button (Dieter's own instruction,
 // 2026-07-20: "all of those buttons in the global area will have the same fontsize, so one
 // fontsize for all") - named generically for that reason, not after any one specific button.
@@ -298,9 +324,13 @@ inline float neoRowAreaControlsWidthMm(bool fullHeight, float rowHeaderWidthMm)
 // runtime whenever the header itself has grown past NEO_ROW_HEADER_TARGET_WIDTH_MM (leftover-
 // absorption, see nameFieldWidthMm's own comment in NeoWidget::step(), Neo.cpp) - a static macro
 // structurally can't know about that runtime growth, so it silently drifted out of sync with the
-// field's real edge. FOLLOW/LEFT/RIGHT's own x-positions are now computed directly in
-// NeoWidget::step() from the field's own real current right edge every frame instead - see that
-// function for the actual math.
+// field's real edge. LEFT/RIGHT's own x-positions are now computed directly in NeoWidget::step()
+// from the field's own real current right edge every frame instead - see that function for the
+// actual math.
+// NEO_ROW_TOGGLE_WIDTH_MM/HEIGHT_MM sized the old per-row FOLLOW button, removed 2026-07-21 in
+// favor of one global FOLLOW button (see NEO_FOLLOW_BUTTON_*_MM above) - kept here, unused, for
+// the same reason ROW_FOLLOW_JSON/PARAM are kept: re-introducing a per-row toggle later shouldn't
+// need to re-derive its size from scratch.
 #define NEO_ROW_TOGGLE_WIDTH_MM  6.f  // FOLLOW toggle button
 #define NEO_ROW_TOGGLE_HEIGHT_MM 4.f
 #define NEO_ROW_PAGEBTN_SIZE_MM  4.f  // LEFT/RIGHT paging buttons (square)
@@ -636,6 +666,11 @@ enum jsonIds {
 	// own data (a step is just a raw float either way, see NeoShared.hpp's own comment).
 	ROW_CELLTYPE_JSON,
 	ROW_CELLTYPE_JSON_LAST = ROW_CELLTYPE_JSON + NEO_NUM_ROWS - 1,
+
+	// Global FOLLOW (2026-07-21) - one toggle for every row at once, replacing the deferred
+	// per-row ROW_FOLLOW_JSON/PARAM above (left in place, unused, rather than renumbering every
+	// Param after it - see Neo.cpp's own moduleProcess() for where this is actually read).
+	GLOBAL_FOLLOW_JSON,
 
 	NUM_JSONS
 };
