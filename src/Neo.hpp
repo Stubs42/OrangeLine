@@ -368,6 +368,50 @@ inline float neoRowAreaControlsWidthMm(bool fullHeight, float rowHeaderWidthMm)
 #define NEO_ROW_CELLTYPE_MAX_CHARS 8
 #define NEO_ROW_CELLTYPE_DISPLAY_WIDTH_MM olDisplayWidthMm(NEO_ROW_CELLTYPE_MAX_CHARS, NEO_ROW_NAME_FONT_SIZE_MM, NEO_ROW_DISPLAY_TEXT_INSET_MM)
 
+// Header-widget pool (2026-07-22 "multi-value cell editor" extension) - a fixed, always-existing
+// set of 4 generic knob+display+ring triples in the row header (Range Min, Range Max, Secondary
+// Track, Secondary Channel), whichever cell editor is currently selected for a row just relabels/
+// shows-hides these same pre-built widgets (NeoCellEditor::configureHeaderWidgets(), Neo.cpp) -
+// same "always exists, toggle ->visible" convention as trackKnobs[]/channelKnobs[]/cellTypeKnobs[].
+// Option C layout (Dieter's own choice, confirmed against a live visual mockup comparing it to one
+// wide row of full-size knobs): TWO STACKED ROWS of SMALL knob+display pairs - Range Min/Max on
+// top, Secondary Track/Channel below - rather than one long horizontal chain of 4 full-size pairs.
+#define NEO_ROW_RANGE_DISPLAY_MAX_CHARS 6
+#define NEO_ROW_RANGE_DISPLAY_WIDTH_MM olDisplayWidthMm(NEO_ROW_RANGE_DISPLAY_MAX_CHARS, NEO_POOL_TINY_FONT_SIZE_MM, NEO_ROW_DISPLAY_TEXT_INSET_MM)
+// ROW_RANGE_MIN_PARAM/ROW_RANGE_MAX_PARAM's own fixed configParam() ceiling - same reasoning as
+// NEO_MAX_TRACKS: a real Param needs a fixed range at configParam() time, but the actually-
+// meaningful range is only known once connected (the live source's own current
+// NeoChannelProperties.rangeMin/rangeMax). A generous fixed ceiling here, with the real,
+// shrink-only EFFECTIVE range computed at read time (NeoValueCellEditorBase::
+// computeEffectiveRange(), Neo.cpp) by clamping the raw knob value inside whatever the live
+// source currently reports - never the other way around.
+#define NEO_ROW_RANGE_PARAM_MIN_LIMIT -10.f
+#define NEO_ROW_RANGE_PARAM_MAX_LIMIT  10.f
+
+// "Tiny" pool-widget sizing (Option C) - uses Trimpot (Rack's own smaller standard knob - already
+// the idiomatic "compact/secondary control" choice in VCV modules generally), NOT a scaled-down
+// RoundSmallBlackKnob: this codebase's own established pitfall (CLAUDE.md, "Self-drawn widget
+// backgrounds", point 4) - a widget that loads a fixed-size SVG asset must be sized to that
+// asset's OWN natural size and never scaled to fit a differently-sized panel cell, or its stroke
+// widths distort. NEO_POOL_TINY_KNOB_RING_SIZE_MM is sized AROUND Trimpot's own natural size the
+// same way NEO_ROW_SELECT_KNOB_SIZE_MM is sized around the full knobs' own natural size - both
+// values below are first-pass PLACEHOLDERS, not yet measured against Trimpot's real on-screen
+// size, flagged exactly like every other "first-pass, live-tune once built" constant already
+// added this session - measure and correct once actually placed in Rack.
+#define NEO_POOL_TINY_KNOB_RING_SIZE_MM   5.5f   // PLACEHOLDER - measure Trimpot's real size before trusting this
+#define NEO_POOL_TINY_FONT_SIZE_MM        3.5f   // PLACEHOLDER
+#define NEO_POOL_ROW_GAP_MM (NEO_FRAME_GAP_MM / 2.f) // vertical gap between the two stacked pool rows
+#define NEO_POOL_TRACK_DISPLAY_MAX_CHARS 4
+#define NEO_POOL_TRACK_DISPLAY_WIDTH_MM olDisplayWidthMm(NEO_POOL_TRACK_DISPLAY_MAX_CHARS, NEO_POOL_TINY_FONT_SIZE_MM, NEO_ROW_DISPLAY_TEXT_INSET_MM)
+#define NEO_POOL_CHANNEL_DISPLAY_MAX_CHARS 2
+#define NEO_POOL_CHANNEL_DISPLAY_WIDTH_MM olDisplayWidthMm(NEO_POOL_CHANNEL_DISPLAY_MAX_CHARS, NEO_POOL_TINY_FONT_SIZE_MM, NEO_ROW_DISPLAY_TEXT_INSET_MM)
+// Header floor: NEO_ROW_HEADER_MIN_WIDTH_MM/NEO_DEFAULT_WIDTH_HP deliberately NOT changed yet -
+// Option C's real footprint depends on Trimpot's actual measured size, unknown until built. Build
+// the pool with the placeholder constants above, measure the real resulting width live in Rack,
+// THEN do the same hand-derivation NEO_DEFAULT_WIDTH_HP's own comment already documents
+// (recompute neoRowAreaControlsWidthMm() for both modes, ceil() each to HP, take the max) - do not
+// skip this step once the real numbers are in.
+
 // NEO_ROW_NAME_WIDTH_MM/FOLLOW_X_MM/LEFT_X_MM/RIGHT_X_MM used to be static #defines here, chained
 // off the field's own BASE width - removed 2026-07-21 (Dieter's own catch: FOLLOW/LEFT/RIGHT kept
 // overlapping the name field) because the header's own current width - and everything to the
@@ -517,6 +561,12 @@ inline float neoRowAreaControlsWidthMm(bool fullHeight, float rowHeaderWidthMm)
 // point on."
 #define NEO_MORPHEUS_CELL_LOW_COLOR  nvgRGB(164, 32, 32)
 #define NEO_MORPHEUS_CELL_HIGH_COLOR nvgRGB(32, 164, 32)
+
+// NeoPitchGateCellEditor (Neo.cpp) own layout - share of the cell's own height reserved for the
+// bottom gate strip; the rest (minus one NEO_CELL_RECOMMENDED_PADDING_MM gap between the two
+// zones) goes to the pitch-value bar above it. Same "share of cellHeightPx" shape as
+// NEO_FALLBACK_DISPLAY_HEIGHT_RATIO - first-pass value, not yet visually tuned live.
+#define NEO_PITCHGATE_GATE_STRIP_HEIGHT_RATIO 0.22f
 
 // Fallback cell (NeoFallbackCellEditor/"Knob") own layout/style constants - pulled out of
 // NeoRowCellsWidget's own drawCell() (2026-07-22, Dieter's own instruction: "pull that into
@@ -997,6 +1047,23 @@ enum ParamIds {
 	ROW_LEFT_PARAM_LAST = ROW_LEFT_PARAM + NEO_NUM_ROWS - 1,
 	ROW_RIGHT_PARAM, // manual page-forward, same condition
 	ROW_RIGHT_PARAM_LAST = ROW_RIGHT_PARAM + NEO_NUM_ROWS - 1,
+
+	// Multi-value cell editor infrastructure (2026-07-22) - generic per-ROW real Params, NOT
+	// per-cell-type, same reasoning ROW_CELLTYPE_PARAM itself already established: only one cell
+	// type is ever active on a row at once, so a per-cell-type copy of these would be redundant
+	// and could disagree. Real Params -> no jsonIds mirror needed (same precedent as
+	// ROW_TRACK_PARAM/ROW_CHANNEL_PARAM/ROW_CELLTYPE_PARAM - Rack's own base Module persistence
+	// already covers these). Not synced across a LOCK group either - confirmed by checking
+	// Neo::NeoLockData: ROW_TRACK_PARAM/ROW_CHANNEL_PARAM/ROW_CELLTYPE_PARAM aren't lock-synced
+	// today, so these per-row settings shouldn't be either, for consistency.
+	ROW_RANGE_MIN_PARAM,     // user-configured effective-range floor (NeoValueCellEditorBase subclasses only)
+	ROW_RANGE_MIN_PARAM_LAST = ROW_RANGE_MIN_PARAM + NEO_NUM_ROWS - 1,
+	ROW_RANGE_MAX_PARAM,     // user-configured effective-range ceiling, same scope as above
+	ROW_RANGE_MAX_PARAM_LAST = ROW_RANGE_MAX_PARAM + NEO_NUM_ROWS - 1,
+	ROW_SECONDARY_TRACK_PARAM,   // a compound editor's own second (track,channel) binding - track half
+	ROW_SECONDARY_TRACK_PARAM_LAST = ROW_SECONDARY_TRACK_PARAM + NEO_NUM_ROWS - 1,
+	ROW_SECONDARY_CHANNEL_PARAM, // ...channel half
+	ROW_SECONDARY_CHANNEL_PARAM_LAST = ROW_SECONDARY_CHANNEL_PARAM + NEO_NUM_ROWS - 1,
 
 	NUM_PARAMS
 };

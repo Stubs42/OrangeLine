@@ -649,6 +649,18 @@ inline void olDrawDisplayFrame(NVGcontext *vg, Vec size, NVGcolor bg, NVGcolor f
 	nvgStroke(vg);
 }
 
+// Horizontal alignment for olDrawDisplayText() (2026-07-22, replacing an earlier plain
+// rightAlign bool the same day - Dieter's own instruction: "we will exchange the right align
+// bool with an alignment which default ALIGN_LEFT but also allows for ALIGN_RIGHT and
+// ALIGN_CENTER"). OL_DISPLAY_ALIGN_LEFT is the default (matches every existing caller's
+// behavior unchanged).
+enum OLDisplayAlign
+{
+	OL_DISPLAY_ALIGN_LEFT,
+	OL_DISPLAY_ALIGN_RIGHT,
+	OL_DISPLAY_ALIGN_CENTER
+};
+
 /**
 	Shared drawing for a code-drawn "digital display" cell's own text - one line (line2 empty) or
 	two lines stacked top/bottom-half (both non-empty), each centered vertically within its own
@@ -661,9 +673,18 @@ inline void olDrawDisplayFrame(NVGcontext *vg, Vec size, NVGcolor bg, NVGcolor f
 	(e.g. NEO's own position display graying out its page/pages line when zero columns are visible
 	to page through at all) without affecting the other line's own normal color. A single-line
 	caller just passes the same color for both.
+
+	align (2026-07-22, default OL_DISPLAY_ALIGN_LEFT - every existing caller unaffected) - a
+	numeric readout whose field is sized for its own maximum character budget (e.g. NEO's Range
+	Min/Max, "-9.999") but whose actual formatted text is shorter for most values ("5", "0.000")
+	reads wrong left-aligned - it hugs the left edge with a ragged, inconsistent right margin,
+	unlike a real digital/calculator display (Dieter's own instruction: "it should be displayed
+	right aligned if it is a number"). RIGHT measures textInsetXPx from the right edge instead of
+	the left; CENTER ignores textInsetXPx entirely and anchors on the box's own horizontal center
+	(same reasoning a centered label never needs a left-edge inset).
 */
 inline void olDrawDisplayText(NVGcontext *vg, Vec size, NVGcolor line1Color, NVGcolor line2Color, const std::string &line1, const std::string &line2,
-	const char *fontPath, float fontSize, float textInsetXPx, float textYOffsetPx, float line2YNudgePx = 0.f)
+	const char *fontPath, float fontSize, float textInsetXPx, float textYOffsetPx, float line2YNudgePx = 0.f, OLDisplayAlign align = OL_DISPLAY_ALIGN_LEFT)
 {
 	if (line1.empty() && line2.empty())
 		return;
@@ -671,7 +692,26 @@ inline void olDrawDisplayText(NVGcontext *vg, Vec size, NVGcolor line1Color, NVG
 	std::shared_ptr<Font> font = APP->window->loadFont(asset::plugin(pluginInstance, fontPath));
 	nvgFontFaceId(vg, font->handle);
 	nvgFontSize(vg, fontSize);
-	nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+
+	int nvgAlign;
+	float textXPx;
+	switch (align)
+	{
+		case OL_DISPLAY_ALIGN_RIGHT:
+			nvgAlign = NVG_ALIGN_RIGHT;
+			textXPx = size.x - textInsetXPx;
+			break;
+		case OL_DISPLAY_ALIGN_CENTER:
+			nvgAlign = NVG_ALIGN_CENTER;
+			textXPx = size.x / 2.f;
+			break;
+		case OL_DISPLAY_ALIGN_LEFT:
+		default:
+			nvgAlign = NVG_ALIGN_LEFT;
+			textXPx = textInsetXPx;
+			break;
+	}
+	nvgTextAlign(vg, nvgAlign | NVG_ALIGN_MIDDLE);
 
 	if (!line2.empty())
 	{
@@ -679,15 +719,15 @@ inline void olDrawDisplayText(NVGcontext *vg, Vec size, NVGcolor line1Color, NVG
 		if (!line1.empty())
 		{
 			nvgFillColor(vg, line1Color);
-			nvgText(vg, textInsetXPx, halfHeight / 2.f + textYOffsetPx, line1.c_str(), nullptr);
+			nvgText(vg, textXPx, halfHeight / 2.f + textYOffsetPx, line1.c_str(), nullptr);
 		}
 		nvgFillColor(vg, line2Color);
-		nvgText(vg, textInsetXPx, halfHeight + halfHeight / 2.f + textYOffsetPx + line2YNudgePx, line2.c_str(), nullptr);
+		nvgText(vg, textXPx, halfHeight + halfHeight / 2.f + textYOffsetPx + line2YNudgePx, line2.c_str(), nullptr);
 	}
 	else
 	{
 		nvgFillColor(vg, line1Color);
-		nvgText(vg, textInsetXPx, size.y / 2.f + textYOffsetPx, line1.c_str(), nullptr);
+		nvgText(vg, textXPx, size.y / 2.f + textYOffsetPx, line1.c_str(), nullptr);
 	}
 }
 

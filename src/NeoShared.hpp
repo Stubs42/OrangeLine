@@ -103,6 +103,31 @@ struct NeoHostInterface
 	// - a stored memory track has no cursor of its own, nothing is "playing" it.
 	virtual int getPlayCursor(int channel) = 0;
 
+	// Whether this track accepts writes at all (2026-07-22) - default true (every track is
+	// writable unless a Host says otherwise), so an existing implementer needs ZERO changes to
+	// keep compiling/working exactly as today; only a Host that actually adds a derived/read-only
+	// track (e.g. a per-channel gate-probability threshold - a real value NEO could usefully read
+	// but never write) needs to override this for that specific track id. NEO checks this before
+	// EVER attempting an edit on a row whose primary track is this one (NeoRowCellsWidget's own
+	// onButton()/onDoubleClick()) - confirmed explicitly that a read-only track still stays fully
+	// selectable as a row's own primary track ("let the user do what he wants... as long as it
+	// does not break anything"), it just blocks the edit gesture itself from ever engaging, not
+	// merely the eventual write.
+	virtual bool getTrackWritable(int trackId) { (void) trackId; return true; }
+
+	// Resolve a specific NAMED track, if this Host happens to expose one under that name
+	// (2026-07-22) - e.g. a cell editor asking "does this Host have a GTP track, and if so which
+	// trackId is it, for reading alongside whatever channel my own row is already showing." This
+	// is a genuinely different shape than the per-row secondary (track,channel) binding elsewhere
+	// in NEO: that one is a user-facing knob selection of an independent (track,channel) pair;
+	// this one is a cell editor resolving one more TRACK for the SAME channel its row already
+	// selects, not user-selectable at all. Default -1 ("no such track") - a Host with no
+	// specially-named tracks needs zero changes. Deliberately name-based (not a fixed enum of
+	// "known special track roles") so this interface stays free of any particular Host's own
+	// naming/semantics, same reasoning every other part of NeoHostInterface already stays generic
+	// rather than Morpheus-specific.
+	virtual int findTrackByName(const std::string &name) { (void) name; return -1; }
+
 	// Generic channel-properties-style query (2026-07-22) - the first piece of a general
 	// "properties" API every NeoHostInterface implementer answers, not something Morpheus-specific:
 	// the goal is a good, general interface any sequencer NEO edits has to obey, keyed by a list of
