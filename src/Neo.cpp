@@ -958,35 +958,28 @@ struct NeoResizeHandle : OpaqueWidget
 
 	void draw(const DrawArgs &args) override
 	{
-		bool fullHeight = module && module->OL_state[FULL_HEIGHT_JSON] > 0.5f;
-		if (fullHeight)
-		{
-			// Full-height grip strip - same look as before, just now confined to its own
-			// dedicated reserved column instead of overlapping the grid.
-			for (float x = 5.f; x <= 10.f; x += 5.f)
-			{
-				nvgBeginPath(args.vg);
-				nvgMoveTo(args.vg, x + 0.5f, 5.5f);
-				nvgLineTo(args.vg, x + 0.5f, box.size.y - 4.5f);
-				nvgStrokeWidth(args.vg, 1.f);
-				nvgStrokeColor(args.vg, nvgRGBAf(0.5f, 0.5f, 0.5f, 0.5f));
-				nvgStroke(args.vg);
-			}
-		}
-		else
-		{
-			// Small header-corner resize glyph - standard diagonal-lines resize affordance,
-			// anchored to the icon's own bottom-right corner.
-			for (float d = 0.32f; d <= 0.82f; d += 0.25f)
-			{
-				nvgBeginPath(args.vg);
-				nvgMoveTo(args.vg, box.size.x * d, box.size.y);
-				nvgLineTo(args.vg, box.size.x, box.size.y * d);
-				nvgStrokeWidth(args.vg, 1.f);
-				nvgStrokeColor(args.vg, nvgRGBAf(0.5f, 0.5f, 0.5f, 0.6f));
-				nvgStroke(args.vg);
-			}
-		}
+		// One glyph, same small corner-icon box, for both Normal and Full Height mode now
+		// (2026-07-22) - the dedicated full-height grip-strip look was removed: it lived inside
+		// its own reserved 1 HP column (still reserved in the width math, see
+		// NEO_RESIZE_RESERVED_WIDTH_MM's own comment), but its faint semi-transparent lines
+		// against the panel edge/Ext-strip clutter there turned out to be effectively invisible in
+		// practice (Dieter's own catch, live-testing) - not worth a second, mode-specific glyph.
+		//
+		// Also deliberately NOT the old diagonal-corner-resize lines anymore - those visually imply
+		// a two-axis (width AND height) resize, which NEO never actually does (width-only). Two
+		// short vertical grip lines read as "drag me left/right" without that implication - the
+		// same shape the old full-height strip used, just scaled down to this small icon box
+		// instead of spanning the full panel height.
+		float x1 = box.size.x * 0.35f;
+		float x2 = box.size.x * 0.65f;
+		nvgBeginPath(args.vg);
+		nvgMoveTo(args.vg, x1, box.size.y * 0.15f);
+		nvgLineTo(args.vg, x1, box.size.y * 0.85f);
+		nvgMoveTo(args.vg, x2, box.size.y * 0.15f);
+		nvgLineTo(args.vg, x2, box.size.y * 0.85f);
+		nvgStrokeWidth(args.vg, 1.f);
+		nvgStrokeColor(args.vg, nvgRGBAf(0.5f, 0.5f, 0.5f, 0.6f));
+		nvgStroke(args.vg);
 	}
 };
 
@@ -2553,24 +2546,23 @@ struct NeoWidget : ModuleWidget
 			panelWidget->box.size = box.size;
 		if (resizeHandle)
 		{
-			// Normal mode: a small icon confined to the header band, right upper corner,
-			// vertically centered on the same y the title text uses - entirely above the grid
-			// content, so it needs no reserved width. Full Height: the dedicated full-height 1HP
-			// strip at the right edge that neoRowAreaControlsWidthMm() already reserved room for
-			// in the grid's own width above (Dieter's own instruction, 2026-07-20).
-			bool fullHeightForHandle = neoModule && neoModule->OL_state[FULL_HEIGHT_JSON] > 0.5f;
-			if (fullHeightForHandle)
-			{
-				resizeHandle->box.size = Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT);
-				resizeHandle->box.pos = Vec(box.size.x - resizeHandle->box.size.x, 0.f);
-			}
-			else
-			{
-				float iconPx = mm2px(NEO_RESIZE_ICON_SIZE_MM);
-				float marginPx = mm2px(NEO_FRAME_MARGIN_MM);
-				resizeHandle->box.size = Vec(iconPx, iconPx);
-				resizeHandle->box.pos = Vec(box.size.x - marginPx - iconPx, mm2px(NEO_TITLE_CENTER_Y_MM) - iconPx / 2.f);
-			}
+			// Same small icon, same corner position, in BOTH Normal and Full Height mode now
+			// (2026-07-22) - the small icon alone is sufficient (Dieter's own call, live-testing:
+			// the dedicated full-height grip-strip look turned out effectively invisible in
+			// practice - see NeoResizeHandle::draw()'s own comment). NEO_TITLE_CENTER_Y_MM is still
+			// the right anchor even in Full Height mode - the title text itself still renders
+			// there too (just confined to the global area's own width, not the full panel), so this
+			// keeps the icon vertically aligned with it exactly as Normal mode already does.
+			//
+			// NEO_RESIZE_RESERVED_WIDTH_MM (Neo.hpp) is UNCHANGED and still reserved in the column-
+			// fit math for Full Height mode - only the drawn glyph and its own box moved, not the
+			// width budget it used to visually justify. Live-testing confirmed this reservation was
+			// already invisible/harmless before this change (no visible dead gap), so it's left
+			// alone rather than risk re-deriving NEO_DEFAULT_WIDTH_HP for a purely cosmetic fix.
+			float iconPx = mm2px(NEO_RESIZE_ICON_SIZE_MM);
+			float marginPx = mm2px(NEO_FRAME_MARGIN_MM);
+			resizeHandle->box.size = Vec(iconPx, iconPx);
+			resizeHandle->box.pos = Vec(box.size.x - marginPx - iconPx, mm2px(NEO_TITLE_CENTER_Y_MM) - iconPx / 2.f);
 		}
 		ModuleWidget::step();
 	}

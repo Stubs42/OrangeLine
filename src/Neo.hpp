@@ -135,13 +135,14 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 // XHostImplementationGuide.md-adjacent session notes / neoComputeLayout()'s own comment).
 #define NEO_ROW_HEADER_MIN_WIDTH_MM (32 * 5.08f)
 
-// Resize handle geometry (2026-07-20, Dieter's own instruction) - Normal mode's handle is a
-// small icon confined to the header band (right upper corner, vertically centered on the same
-// y as the title text), entirely above the grid content, so it needs no reserved width at all.
-// Full Height's own grid has no header band to hide the handle in (it spans the full panel
-// height, chrome-free) - so it gets a dedicated, full-height 1HP-wide strip at the right edge
-// instead, and that width has to come OUT of the grid's own usable width or the handle would
-// visually cut across the (otherwise seamless) cells.
+// Resize handle geometry - the same small icon (right upper corner, vertically centered on the
+// same y as the title text) is used in BOTH Normal and Full Height mode as of 2026-07-22 (see
+// NeoResizeHandle::draw()'s own comment - the earlier Full-Height-specific full-height grip-strip
+// look turned out effectively invisible in practice). NEO_RESIZE_RESERVED_WIDTH_MM below is still
+// reserved out of Full Height's own grid width regardless - originally so the OLD full-height
+// strip wouldn't visually cut across the (otherwise seamless) cells; kept unchanged since
+// live-testing confirmed the reservation itself was already invisible/harmless, and removing it
+// would mean re-deriving NEO_DEFAULT_WIDTH_HP for a purely cosmetic change.
 #define NEO_RESIZE_ICON_SIZE_MM     5.f
 #define NEO_RESIZE_RESERVED_WIDTH_HP 1
 #define NEO_RESIZE_RESERVED_WIDTH_MM (NEO_RESIZE_RESERVED_WIDTH_HP * 5.08f)
@@ -470,19 +471,21 @@ inline float neoMinWidthHp(float columnWidthMm, float controlsWidthMm)
 }
 
 // Computed maximum resizable width, in HP - controls width + enough columns to show the
-// connected Host's own longest CURRENTLY CONFIGURED channel content all at once, since no
-// visible column beyond that could ever show anything real regardless of how much wider NEO
-// gets. Deliberately the live per-channel getLoopLen() max across every one of the Host's
-// POLY_CHANNELS channels, not the fixed structural getMaxLoopLen() ceiling (Dieter's own catch,
-// 2026-07-20 - "should not extend the maximum size of a channel," meaning the actual live LEN of
-// all 16 channels, not the theoretical 128-step capacity) - ALL channels, not just the ones this
-// particular NEO instance happens to have its own rows currently showing, since any row could be
-// repointed to any channel at any time via its own channel selector. Rounded UP to the next
-// whole HP (Dieter's own catch, 2026-07-20, live-testing: "LEN 8 results in max size allowing
-// for 7 columns") - the exact mm needed for maxSteps columns almost never lands on a whole-HP
-// grid line, and rounding DOWN (the original, wrong assumption here - "so the snap can never
-// overshoot") can land the clamp a hair short of the width maxSteps columns actually need,
-// which getVisibleColumns()'s own floor() then reads as one fewer column than the Host can
+// connected Host's own STRUCTURAL step-count ceiling (getMaxLoopLen(), e.g. Morpheus's fixed 128),
+// simplified 2026-07-22 (Dieter's own call: "the user should decide, if columns are unused it's
+// his decision") - this deliberately REVERSES an earlier 2026-07-20 catch that capped at the live
+// per-channel getLoopLen() max instead (how much of that 128 a channel's content actually
+// currently uses), specifically to stop NEO from ever showing a wider grid than any channel could
+// possibly use. That reasoning no longer applies: the max is now purely the Host's own fixed
+// capacity, and a user resizing wider than their current content need is a valid, deliberate
+// choice, not something the module should second-guess or prevent - some trailing columns simply
+// showing nothing yet (beyond the current LEN) is fine.
+//
+// Rounded UP to the next whole HP (Dieter's own catch, 2026-07-20, live-testing: "LEN 8 results in
+// max size allowing for 7 columns") - the exact mm needed for maxSteps columns almost never lands
+// on a whole-HP grid line, and rounding DOWN (the original, wrong assumption here - "so the snap
+// can never overshoot") can land the clamp a hair short of the width maxSteps columns actually
+// need, which getVisibleColumns()'s own floor() then reads as one fewer column than the Host can
 // really show. ceil() can only ever grant a hair MORE room than exactly maxSteps*columnWidthMm -
 // less than one further column's worth by construction, so it can never manufacture a column
 // that isn't real either, matching the same reasoning neoColumnFit()'s own epsilon uses.
@@ -492,13 +495,7 @@ inline float neoMinWidthHp(float columnWidthMm, float controlsWidthMm)
 // own true ceiling takes over on the very next tick).
 inline float neoMaxWidthHp(NeoHostInterface *host, float columnWidthMm, float controlsWidthMm)
 {
-	int maxSteps = 100000;
-	if (host)
-	{
-		maxSteps = 1;
-		for (int c = 0; c < POLY_CHANNELS; c++)
-			maxSteps = std::max(maxSteps, host->getLoopLen(c));
-	}
+	int maxSteps = host ? host->getMaxLoopLen() : 100000;
 	float maxWidthMm = controlsWidthMm + (float) maxSteps * columnWidthMm;
 	float maxWidthPx = mm2px(Vec(maxWidthMm, 0.f)).x;
 	return std::ceil(maxWidthPx / RACK_GRID_WIDTH);
