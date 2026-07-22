@@ -586,6 +586,16 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 		return clamp((int) std::round(getStateParam(ROW_CELLTYPE_PARAM + row)), 0, maxType);
 	}
 
+	// This row's own (track,channel)-owned identity color, unpacked into an NVGcolor (2026-07-22) -
+	// the same conversion NeoRowCellsWidget/NeoRowNameField each used to do inline, now shared so
+	// the row-header frame/display/knob-ring widgets can use it too (Dieter's own request: "the
+	// frame color of the row header and all its content could reflect the row color").
+	NVGcolor getRowColor(int row)
+	{
+		int colorPacked = channelColor[getRowTrack(row)][getRowChannel(row)];
+		return nvgRGB((colorPacked >> 16) & 0xff, (colorPacked >> 8) & 0xff, colorPacked & 0xff);
+	}
+
 	// Session-only UI cache (2026-07-21 redesign) - the module's own current header width/controls
 	// width/visible column count, as a single NeoLayoutResult. Refreshed by NeoWidget::step() via
 	// neoComputeLayout() every tick EXCEPT while a drag (this instance's own, or any other locked
@@ -1561,6 +1571,7 @@ struct NeoRowCellsWidget : TransparentWidget
 struct NeoRowTextDisplayWidget : TransparentWidget
 {
 	Module *module = nullptr;
+	int row = 0;
 	std::function<std::string(Neo*)> getText;
 	// Optional second stacked line (2026-07-20 experiment, Dieter's own request - a step toward
 	// the "pack two rows of controls into one taller cell" idea noted for later) - unset (default)
@@ -1575,7 +1586,9 @@ struct NeoRowTextDisplayWidget : TransparentWidget
 		Neo *m = module ? dynamic_cast<Neo*>(module) : nullptr;
 		float style = m ? m->OL_state[STYLE_JSON] : STYLE_ORANGE;
 		NVGcolor bg = (style == STYLE_DARK) ? OL_DISPLAY_BG_DARK : (style == STYLE_BRIGHT) ? OL_DISPLAY_BG_BRIGHT : OL_DISPLAY_BG_ORANGE;
-		NVGcolor frame = (style == STYLE_DARK) ? X_FRAME_DARK : (style == STYLE_BRIGHT) ? X_FRAME_BRIGHT : X_FRAME_ORANGE;
+		// Frame reflects the row's own identity color (2026-07-22, Dieter's own request/test),
+		// replacing the plain themed frame color every OTHER framed element still uses.
+		NVGcolor frame = (NEO_ROW_COLOR_FRAME && m) ? m->getRowColor(row) : ((style == STYLE_DARK) ? X_FRAME_DARK : (style == STYLE_BRIGHT) ? X_FRAME_BRIGHT : X_FRAME_ORANGE);
 		olDrawDisplayFrame(args.vg, box.size, bg, frame, mm2px(NEO_ROW_DISPLAY_RADIUS_MM), mm2px(NEO_ROW_DISPLAY_STROKE_MM));
 		TransparentWidget::draw(args);
 	}
@@ -1590,7 +1603,10 @@ struct NeoRowTextDisplayWidget : TransparentWidget
 		Neo *m = module ? dynamic_cast<Neo*>(module) : nullptr;
 		if (m && getText)
 		{
-			NVGcolor textColor = (m->OL_state[STYLE_JSON] == STYLE_ORANGE) ? ORANGE : WHITE;
+			// Reflects the row's own identity color when NEO_ROW_COLOR_TEXT is on (2026-07-22,
+			// Dieter's own request/test), same treatment NeoRowNameField's own text already gets
+			// unconditionally - plain theme ORANGE/WHITE otherwise (pre-2026-07-22 behavior).
+			NVGcolor textColor = NEO_ROW_COLOR_TEXT ? m->getRowColor(row) : ((m->OL_state[STYLE_JSON] == STYLE_ORANGE) ? ORANGE : WHITE);
 			std::string line1 = getText(m);
 			std::string line2 = getText2 ? getText2(m) : std::string();
 			olDrawDisplayText(args.vg, box.size, textColor, line1, line2,
@@ -1614,12 +1630,15 @@ struct NeoRowTextDisplayWidget : TransparentWidget
 struct NeoRowKnobRingWidget : TransparentWidget
 {
 	Module *module = nullptr;
+	int row = 0;
 
 	void draw(const DrawArgs &args) override
 	{
 		Neo *m = module ? dynamic_cast<Neo*>(module) : nullptr;
 		float style = m ? m->OL_state[STYLE_JSON] : STYLE_ORANGE;
-		NVGcolor frame = (style == STYLE_DARK) ? X_FRAME_DARK : (style == STYLE_BRIGHT) ? X_FRAME_BRIGHT : X_FRAME_ORANGE;
+		// Reflects the row's own identity color (2026-07-22, Dieter's own request/test), same as
+		// NeoRowTextDisplayWidget's own frame.
+		NVGcolor frame = (NEO_ROW_COLOR_FRAME && m) ? m->getRowColor(row) : ((style == STYLE_DARK) ? X_FRAME_DARK : (style == STYLE_BRIGHT) ? X_FRAME_BRIGHT : X_FRAME_ORANGE);
 		float r = box.size.x / 2.f;
 
 		nvgBeginPath(args.vg);
@@ -1868,7 +1887,9 @@ struct NeoRowNameField : ui::TextField
 		Neo *m = module ? dynamic_cast<Neo*>(module) : nullptr;
 		float style = m ? m->OL_state[STYLE_JSON] : STYLE_ORANGE;
 		NVGcolor bg = (style == STYLE_DARK) ? OL_DISPLAY_BG_DARK : (style == STYLE_BRIGHT) ? OL_DISPLAY_BG_BRIGHT : OL_DISPLAY_BG_ORANGE;
-		NVGcolor frame = (style == STYLE_DARK) ? X_FRAME_DARK : (style == STYLE_BRIGHT) ? X_FRAME_BRIGHT : X_FRAME_ORANGE;
+		// Reflects the row's own identity color (2026-07-22, Dieter's own request/test), same as
+		// every other row-header display/frame.
+		NVGcolor frame = (NEO_ROW_COLOR_FRAME && m) ? m->getRowColor(row) : ((style == STYLE_DARK) ? X_FRAME_DARK : (style == STYLE_BRIGHT) ? X_FRAME_BRIGHT : X_FRAME_ORANGE);
 		olDrawDisplayFrame(args.vg, box.size, bg, frame, mm2px(NEO_ROW_DISPLAY_RADIUS_MM), mm2px(NEO_ROW_DISPLAY_STROKE_MM));
 	}
 
@@ -1961,12 +1982,16 @@ struct NeoRowNameField : ui::TextField
 struct NeoRowHeaderFrameWidget : TransparentWidget
 {
 	Module *module = nullptr;
+	int row = 0;
 
 	void draw(const DrawArgs &args) override
 	{
 		Neo *m = module ? dynamic_cast<Neo*>(module) : nullptr;
 		float style = m ? m->OL_state[STYLE_JSON] : STYLE_ORANGE;
-		NVGcolor frame = (style == STYLE_DARK) ? X_FRAME_DARK : (style == STYLE_BRIGHT) ? X_FRAME_BRIGHT : X_FRAME_ORANGE;
+		// Reflects the row's own identity color (2026-07-22, Dieter's own request/test) - "the
+		// frame color of the row header and all its content could reflect the row color" - same
+		// treatment as NeoRowTextDisplayWidget/NeoRowKnobRingWidget/NeoRowNameField's own frames.
+		NVGcolor frame = (NEO_ROW_COLOR_FRAME && m) ? m->getRowColor(row) : ((style == STYLE_DARK) ? X_FRAME_DARK : (style == STYLE_BRIGHT) ? X_FRAME_BRIGHT : X_FRAME_ORANGE);
 
 		nvgBeginPath(args.vg);
 		nvgRoundedRectVarying(args.vg, 0.f, 0.f, box.size.x, box.size.y,
@@ -2365,6 +2390,7 @@ struct NeoWidget : ModuleWidget
 		{
 			NeoRowHeaderFrameWidget *headerFrame = new NeoRowHeaderFrameWidget();
 			headerFrame->module = module;
+			headerFrame->row = r;
 			addChild(headerFrame);
 			rowHeaderFrames[r] = headerFrame;
 
@@ -2386,6 +2412,7 @@ struct NeoWidget : ModuleWidget
 			// button entirely (see ROW_MEMTAPE_PARAM's own removal note, Neo.hpp).
 			NeoRowTextDisplayWidget *trackDisplay = new NeoRowTextDisplayWidget();
 			trackDisplay->module = module;
+			trackDisplay->row = r;
 			trackDisplay->fontSize = mm2px(Vec(NEO_ROW_NUMBER_DISPLAY_FONT_SIZE_MM, 0.f)).x;
 			trackDisplay->box.size = mm2px(Vec(NEO_ROW_TRACK_DISPLAY_WIDTH_MM, NEO_ROW_NUMBER_DISPLAY_HEIGHT_MM));
 			trackDisplay->getText = [r](Neo *m) {
@@ -2396,6 +2423,7 @@ struct NeoWidget : ModuleWidget
 
 			NeoRowKnobRingWidget *trackKnobRing = new NeoRowKnobRingWidget();
 			trackKnobRing->module = module;
+			trackKnobRing->row = r;
 			trackKnobRing->box.size = mm2px(Vec(NEO_ROW_SELECT_KNOB_SIZE_MM, NEO_ROW_SELECT_KNOB_SIZE_MM));
 			addChild(trackKnobRing);
 			trackKnobRings[r] = trackKnobRing;
@@ -2409,6 +2437,7 @@ struct NeoWidget : ModuleWidget
 			// replacing MEM/TAPE - a separate menu would be redundant and could disagree).
 			NeoRowTextDisplayWidget *channelDisplay = new NeoRowTextDisplayWidget();
 			channelDisplay->module = module;
+			channelDisplay->row = r;
 			channelDisplay->fontSize = mm2px(Vec(NEO_ROW_NUMBER_DISPLAY_FONT_SIZE_MM, 0.f)).x;
 			channelDisplay->box.size = mm2px(Vec(NEO_ROW_CHANNEL_DISPLAY_WIDTH_MM, NEO_ROW_NUMBER_DISPLAY_HEIGHT_MM));
 			channelDisplay->getText = [r](Neo *m) {
@@ -2424,6 +2453,7 @@ struct NeoWidget : ModuleWidget
 
 			NeoRowKnobRingWidget *channelKnobRing = new NeoRowKnobRingWidget();
 			channelKnobRing->module = module;
+			channelKnobRing->row = r;
 			channelKnobRing->box.size = mm2px(Vec(NEO_ROW_SELECT_KNOB_SIZE_MM, NEO_ROW_SELECT_KNOB_SIZE_MM));
 			addChild(channelKnobRing);
 			channelKnobRings[r] = channelKnobRing;
@@ -2437,6 +2467,7 @@ struct NeoWidget : ModuleWidget
 			// entirely (same reasoning as the channel knob replacing its own predecessor menu).
 			NeoRowTextDisplayWidget *cellTypeDisplay = new NeoRowTextDisplayWidget();
 			cellTypeDisplay->module = module;
+			cellTypeDisplay->row = r;
 			cellTypeDisplay->fontSize = mm2px(Vec(NEO_ROW_NAME_FONT_SIZE_MM, 0.f)).x;
 			cellTypeDisplay->box.size = mm2px(Vec(NEO_ROW_CELLTYPE_DISPLAY_WIDTH_MM, NEO_ROW_NUMBER_DISPLAY_HEIGHT_MM));
 			cellTypeDisplay->getText = [r](Neo *m) {
@@ -2447,6 +2478,7 @@ struct NeoWidget : ModuleWidget
 
 			NeoRowKnobRingWidget *cellTypeKnobRing = new NeoRowKnobRingWidget();
 			cellTypeKnobRing->module = module;
+			cellTypeKnobRing->row = r;
 			cellTypeKnobRing->box.size = mm2px(Vec(NEO_ROW_SELECT_KNOB_SIZE_MM, NEO_ROW_SELECT_KNOB_SIZE_MM));
 			addChild(cellTypeKnobRing);
 			cellTypeKnobRings[r] = cellTypeKnobRing;
@@ -2464,6 +2496,7 @@ struct NeoWidget : ModuleWidget
 			// "current step pos" - not yet visually confirmed).
 			NeoRowTextDisplayWidget *positionDisplay = new NeoRowTextDisplayWidget();
 			positionDisplay->module = module;
+			positionDisplay->row = r;
 			positionDisplay->fontSize = mm2px(Vec(NEO_ROW_POSITION_DISPLAY_FONT_SIZE_MM, 0.f)).x;
 			positionDisplay->box.size = mm2px(Vec(NEO_ROW_POSITION_DISPLAY_WIDTH_MM, NEO_ROW_POSITION_DISPLAY_HEIGHT_MM));
 			positionDisplay->getText = [r](Neo *m) {

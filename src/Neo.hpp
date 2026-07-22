@@ -395,6 +395,18 @@ inline float neoRowAreaControlsWidthMm(bool fullHeight, float rowHeaderWidthMm)
 #define NEO_ROW_DISPLAY_RADIUS_MM NEO_FRAME_MARGIN_MM
 #define NEO_ROW_DISPLAY_TEXT_INSET_MM 0.81f // left inset of the text within its own display background
 
+// Row-color-following test (2026-07-22) - two INDEPENDENT toggles, Dieter's own request after
+// coloring just the frame alone looked "ugly" with the track/channel/celltype/position displays'
+// own text still theme-orange: "lets try to follow the color the same way the name display is
+// following the color. make 2 defines for enable text coloring and enable frame coloring." 1 =
+// follow the row's own identity color (Neo::getRowColor()); 0 = plain theme color (pre-2026-07-22
+// behavior). Flip either independently here to compare combinations live, rather than hunting
+// through every widget's own draw()/drawLayer(). Does NOT affect NeoRowNameField's own text -
+// that one already unconditionally follows the row color (2026-07-21, confirmed working)
+// regardless of this flag.
+#define NEO_ROW_COLOR_FRAME 1
+#define NEO_ROW_COLOR_TEXT  1
+
 // Knob ring (2026-07-20, Dieter's own follow-up spec, exact values from the same reference SVG) -
 // a themed circle drawn around each track/channel knob, same stroke/color convention as the
 // display frame above. Diameter is NEO_ROW_SELECT_KNOB_SIZE_MM (already the reference SVG's own
