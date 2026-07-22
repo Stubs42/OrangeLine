@@ -95,20 +95,21 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 // has, so the floor has to cover whichever mode's own controlsWidthMm is larger. rightPaddingMm
 // is now the SAME value in both modes (2026-07-22 simplification, see
 // neoRowAreaControlsWidthMm()'s own comment) - NEO_CELL_RECOMMENDED_PADDING_MM/2 = 0.762/2 =
-// 0.381.
+// 0.381. NEO_ROW_HEADER_MIN_WIDTH_MM enlarged from 32HP to 38HP the same day (Dieter's own
+// instruction, "enlarge the row header in width by 6HP to make some space") - recomputed below.
 //   Normal:      controlsWidthMm = NEO_GLOBAL_AREA_WIDTH_MM (30.48) + NEO_ROW_HEADER_MIN_WIDTH_MM
-//                                 (162.56) + rightPaddingMm (0.381) = 193.421
-//                minWidthHp = ceil(193.421 / 5.08) = 39
-//   Full Height: controlsWidthMm = 30.48 + 162.56 + NEO_RESIZE_RESERVED_WIDTH_MM (5.08)
-//                                 + rightPaddingMm (0.381) = 198.501
-//                minWidthHp = ceil(198.501 / 5.08) = 40
-//   NEO_DEFAULT_WIDTH_HP = max(39, 40) = 40 (see neoMinWidthHpAnyMode() below - this hand
+//                                 (193.04) + rightPaddingMm (0.381) = 223.901
+//                minWidthHp = ceil(223.901 / 5.08) = 45
+//   Full Height: controlsWidthMm = 30.48 + 193.04 + NEO_RESIZE_RESERVED_WIDTH_MM (5.08)
+//                                 + rightPaddingMm (0.381) = 228.981
+//                minWidthHp = ceil(228.981 / 5.08) = 46
+//   NEO_DEFAULT_WIDTH_HP = max(45, 46) = 46 (see neoMinWidthHpAnyMode() below - this hand
 //                          derivation must always match what that function would compute for this
 //                          same config, so the two never silently diverge)
 // Recompute by hand and update this constant if NEO_ROW_HEADER_MIN_WIDTH_MM,
 // NEO_GLOBAL_AREA_WIDTH_HP, NEO_RESIZE_RESERVED_WIDTH_HP, neoRowAreaControlsWidthMm()'s own
 // right-padding formula, or the frame-margin constants above ever change.
-#define NEO_DEFAULT_WIDTH_HP 40
+#define NEO_DEFAULT_WIDTH_HP 46
 
 // Reserved left-hand sidebar, full panel height, for module-wide (not per-row) controls -
 // sockets, knobs, displays, whatever NEO eventually needs that isn't tied to one specific row.
@@ -123,14 +124,16 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 // Minimum width for the per-row name/toggle/page controls, starting right after the global area
 // above - about 4x the row header's original 40mm (2026-07-20 - it needs much more room, e.g.
-// for a fuller Morpheus-style cell-type preview). This is a pure FLOOR, never a snap-target: the
-// row header's actual current width is not stored anywhere, it's recomputed fresh every time via
+// for a fuller Morpheus-style cell-type preview), enlarged a further 6HP on top of that
+// (2026-07-22, Dieter's own instruction: "enlarge the row header in width by 6HP to make some
+// space" - was 32HP, now 38HP). This is a pure FLOOR, never a snap-target: the row header's
+// actual current width is not stored anywhere, it's recomputed fresh every time via
 // neoComputeLayout() (below) as NEO_ROW_HEADER_MIN_WIDTH_MM + whatever leftover space the
 // floor-based column count couldn't use (2026-07-21 redesign, replacing an earlier "snap to a
 // target width at drag-start, absorb leftover past it at drag-end" model that persisted an
 // incrementally-grown header width and caused a series of lock-sync regressions - see
 // XHostImplementationGuide.md-adjacent session notes / neoComputeLayout()'s own comment).
-#define NEO_ROW_HEADER_MIN_WIDTH_MM (32 * 5.08f)
+#define NEO_ROW_HEADER_MIN_WIDTH_MM (38 * 5.08f)
 
 // Resize handle geometry - the same small icon (right upper corner, vertically centered on the
 // same y as the title text) is used in BOTH Normal and Full Height mode as of 2026-07-22 (see
@@ -450,20 +453,20 @@ inline float neoRowAreaControlsWidthMm(bool fullHeight, float rowHeaderWidthMm)
 // width), which always equals the row-gap neoRowLayout() computes, so horizontal spacing matches
 // vertical spacing exactly (Dieter's own instruction, 2026-07-20 - "buttons should have the same
 // padding horizontally [as rows do vertically]"). NEO_CELL_BG_COLOR_* is an always-visible
-// per-cell backdrop drawn for every column regardless of gate/value content, so individual cell
-// boundaries read clearly even at rest - explicitly "for better visual support during future
-// testing," not necessarily the final look. No separate row-background fill behind it anymore
-// (removed 2026-07-20, Dieter's own instruction - it read as a solid black box behind each row);
-// the gaps between cells and any space past the last visible column just show the row area's
-// own panel background straight through. Per-theme, not a single fixed gray (2026-07-22, Dieter's
-// own instruction: "the cell editors have to use different colors for different parts of their
-// rendering which is not defined by row color. cell background color is always one of those" -
-// i.e. every cell editor shares this one backdrop, and it must follow the active theme like every
-// other non-row-colored fixed color does, same reasoning as NEO_HEAD_FRAME_COLOR_ORANGE/BRIGHT/
-// DARK just below) - three independent constants, all starting at the same first-pass gray.
-#define NEO_CELL_BG_COLOR_ORANGE nvgRGB(0x30, 0x30, 0x30)
-#define NEO_CELL_BG_COLOR_BRIGHT nvgRGB(0x30, 0x30, 0x30)
-#define NEO_CELL_BG_COLOR_DARK   nvgRGB(0x30, 0x30, 0x30)
+// per-cell backdrop drawn for every column regardless of gate/value content. Per-theme, not a
+// single fixed gray (2026-07-22, Dieter's own instruction: "the cell editors have to use different
+// colors for different parts of their rendering which is not defined by row color. cell background
+// color is always one of those" - i.e. every cell editor shares this one backdrop, and it must
+// follow the active theme like every other non-row-colored fixed color does). Now aliases
+// X_STRIP_BG_ORANGE/DARK/BRIGHT directly (2026-07-22 follow-up, Dieter's own instruction: "the
+// default background color of the cells should match the background color of the theme") - the
+// same plain panel/strip background NeoPanelWidget's own fill already uses, so an empty cell now
+// blends into the panel at rest instead of standing out as its own separate gray box (the earlier
+// "boundaries read clearly even at rest" reasoning for a distinct gray no longer applies now that
+// each cell editor's own frame/content already provides that separation).
+#define NEO_CELL_BG_COLOR_ORANGE X_STRIP_BG_ORANGE
+#define NEO_CELL_BG_COLOR_BRIGHT X_STRIP_BG_BRIGHT
+#define NEO_CELL_BG_COLOR_DARK   X_STRIP_BG_DARK
 
 // Default head-position marker (2026-07-22) - NeoCellEditor::drawHeadFrame()'s own default body
 // draws this small frame; NEO calls drawHeadFrame() directly whenever a visible cell is the
@@ -480,8 +483,19 @@ inline float neoRowAreaControlsWidthMm(bool fullHeight, float rowHeaderWidthMm)
 #define NEO_HEAD_FRAME_COLOR_ORANGE nvgRGB(0xff, 0xff, 0xff)
 #define NEO_HEAD_FRAME_COLOR_BRIGHT nvgRGB(0xff, 0xff, 0xff)
 #define NEO_HEAD_FRAME_COLOR_DARK   nvgRGB(0xff, 0xff, 0xff)
-#define NEO_HEAD_FRAME_STROKE_MM 0.4f
-#define NEO_HEAD_FRAME_INSET_MM  0.5f
+// Tuned 2026-07-22 (Dieter's own instruction) - the default head frame was sitting close enough
+// to a conforming cell editor's own frame (inset NEO_CELL_RECOMMENDED_PADDING_MM, 0.762mm) that
+// the two visibly touched/overlapped once a real framed editor (NeoFallbackCellEditor/"Knob") was
+// actually tested live. Both inset and stroke width are now NEO_FRAME_GAP_MM/5 (the standard
+// frame-padding unit divided by 5, ~0.3048mm, not the ~0.25mm Dieter estimated from memory -
+// checked against the actual constant per his own request to "adapt for the exact number") -
+// equal to each other by design, so the head frame reads as a clean, evenly-weighted ring. This
+// leaves the head frame spanning roughly 0.15-0.46mm from the cell's own raw edge, comfortably
+// clear of a conforming editor's own frame (which starts around 0.61mm), with a real visible gap
+// between the two instead of the previous overlap (old inset/stroke 0.5/0.4mm spanned 0.3-0.7mm,
+// crossing into the editor's own frame at 0.61mm).
+#define NEO_HEAD_FRAME_STROKE_MM (NEO_FRAME_GAP_MM / 5.f)
+#define NEO_HEAD_FRAME_INSET_MM  (NEO_FRAME_GAP_MM / 5.f)
 
 // Morpheus-style cell (NeoMorpheusStyleCellEditor, cellType 2) - replicates MorpheusDisplayWidget's
 // own value-to-color technique (Morpheus.cpp) at NEO's own per-cell scale: a step's raw bipolar
@@ -514,6 +528,19 @@ inline float neoRowAreaControlsWidthMm(bool fullHeight, float rowHeaderWidthMm)
 // reconciling the two exactly (Dieter's own call).
 #define NEO_ROW_HEADER_LEFT_RADIUS_MM  (NEO_FRAME_RADIUS_MM - NEO_FRAME_GAP_MM)
 #define NEO_ROW_HEADER_RIGHT_RADIUS_MM (NEO_ROW_HEADER_LEFT_RADIUS_MM * 0.8f)
+
+// Head-position frame's own corner radius (2026-07-22, Dieter's own catch: "the radius has to add
+// for additional size to sneek gently around the radius of the inner cells frame" - using
+// NEO_ROW_HEADER_RIGHT_RADIUS_MM directly, unchanged, was wrong once actually seen live, since the
+// head frame sits OUTSIDE a conforming cell editor's own frame, not flush against it). Same
+// "Nested frames" corner-radius rule as NEO_ROW_HEADER_LEFT_RADIUS_MM just above, applied in the
+// opposite direction: going from an INNER radius out to an OUTER one (rather than outer to inner)
+// means ADDING the gap between the two rings to the inner radius, not just reusing it unchanged -
+// otherwise the outer ring's corner cuts in tighter than the inner ring's, instead of sweeping
+// smoothly around it at a constant width. The gap between the two rings' own insets is
+// NEO_CELL_RECOMMENDED_PADDING_MM (the conforming cell frame's own inset) minus
+// NEO_HEAD_FRAME_INSET_MM (the head frame's own, smaller inset).
+#define NEO_HEAD_FRAME_RADIUS_MM (NEO_ROW_HEADER_RIGHT_RADIUS_MM + (NEO_CELL_RECOMMENDED_PADDING_MM - NEO_HEAD_FRAME_INSET_MM))
 #define NEO_ACCENT_Y_MM       124.71525f
 #define NEO_TITLE_CENTER_Y_MM 3.810f
 #define NEO_TITLE_BASELINE_Y_MM 5.873f // see NeoWork.svg's own text-title for how this was measured

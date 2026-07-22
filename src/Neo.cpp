@@ -1172,8 +1172,14 @@ struct NeoCellEditor
 		(void) color; // default frame's own color follows the theme, not the row - see this method's own comment
 		NVGcolor frameColor = (style == STYLE_DARK) ? NEO_HEAD_FRAME_COLOR_DARK : (style == STYLE_BRIGHT) ? NEO_HEAD_FRAME_COLOR_BRIGHT : NEO_HEAD_FRAME_COLOR_ORANGE;
 		float insetPx = mm2px(NEO_HEAD_FRAME_INSET_MM);
+		// Rounded, not sharp (2026-07-22, Dieter's own instruction) - radius is
+		// NEO_HEAD_FRAME_RADIUS_MM, NOT the same NEO_ROW_HEADER_RIGHT_RADIUS_MM a conforming cell
+		// editor's own frame uses directly: the head frame sits OUTSIDE that inner frame, so its
+		// own radius needs the gap between the two rings added on top, or its corner cuts in
+		// tighter than the inner frame's instead of sweeping smoothly around it (see
+		// NEO_HEAD_FRAME_RADIUS_MM's own comment, Neo.hpp, for the exact "Nested frames" reasoning).
 		nvgBeginPath(args.vg);
-		nvgRect(args.vg, x + insetPx, insetPx, cellWidthPx - 2.f * insetPx, cellHeightPx - 2.f * insetPx);
+		nvgRoundedRect(args.vg, x + insetPx, insetPx, cellWidthPx - 2.f * insetPx, cellHeightPx - 2.f * insetPx, mm2px(NEO_HEAD_FRAME_RADIUS_MM));
 		nvgStrokeWidth(args.vg, mm2px(NEO_HEAD_FRAME_STROKE_MM));
 		nvgStrokeColor(args.vg, frameColor);
 		nvgStroke(args.vg);
