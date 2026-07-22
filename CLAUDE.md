@@ -267,6 +267,17 @@ scratch, and apply the same proportions:
   addable/removable widget specifically so it stays optional per-knob - Dieter's own instruction
   when first adding it: only the knobs that explicitly ask for one get it, it is not a blanket
   retrofit onto every existing knob in the codebase.
+- **Two CONCENTRIC drawn rounded-rect/circle rings (e.g. a per-cell content frame plus a
+  head-position marker drawn around it) must NOT reuse the same corner radius just because they're
+  meant to look related.** The established "Nested frames" rule (`inner_radius = outer_radius -
+  padding`, used e.g. by `NEO_ROW_HEADER_LEFT_RADIUS_MM`) only covers going from a known OUTER
+  radius down to an inner one; going the other direction - deriving an OUTER ring's radius from an
+  already-known INNER one - needs the gap between the two rings ADDED to the inner radius instead,
+  or the outer ring's corner cuts in tighter than the inner ring's rather than sweeping smoothly
+  around it at a constant visual width. First got this backwards building NEO's head-position
+  frame (2026-07-22): initially reused the inner cell-frame's own radius directly on the outer
+  head-frame ring, which looked visibly wrong the moment both rings were live at once - fixed by a
+  dedicated `NEO_HEAD_FRAME_RADIUS_MM = innerRadius + (innerRingInset - outerRingInset)`.
 - **The minimum spacing between ANY two of these drawn objects (a display and its knob, a knob
   and the next display, a nested frame and its own containing frame) is exactly one frame-padding
   unit (`NEO_FRAME_GAP_MM`/1.524mm in NEO's own case) - never less.** This is a hard floor, not a
