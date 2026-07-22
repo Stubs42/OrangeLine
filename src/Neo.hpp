@@ -507,6 +507,80 @@ inline float neoRowAreaControlsWidthMm(bool fullHeight, float rowHeaderWidthMm)
 #define NEO_MORPHEUS_CELL_LOW_COLOR  nvgRGB(164, 32, 32)
 #define NEO_MORPHEUS_CELL_HIGH_COLOR nvgRGB(32, 164, 32)
 
+// Fallback cell (NeoFallbackCellEditor/"Knob") own layout/style constants - pulled out of
+// NeoRowCellsWidget's own drawCell() (2026-07-22, Dieter's own instruction: "pull that into
+// constants as always, there will always be some fine tuning necessary later on"), matching this
+// codebase's own "config #defines belong in <Name>.hpp, never in <Name>.cpp" convention (CLAUDE.md).
+//
+// ABSOLUTE POSITION/SIZE CONVENTION (2026-07-22, Dieter's own instruction - "let's define a
+// convention here to reduce misunderstanding"), applies to every CURRENT and FUTURE constant in
+// this section that represents a raw offset or size (not a plain ratio of something that already
+// scales, like NEO_FALLBACK_DISPLAY_HEIGHT_RATIO above):
+//   - Origin is the CELL's own CENTER, not its top-left corner - (0,0) = cellWidthPx/2,
+//     cellHeightPx/2. Positive X = right, positive Y = down (same direction NanoVG's own Y axis
+//     already uses).
+//   - Every such constant is authored as an ABSOLUTE mm value, tuned BY EYE while looking at
+//     NEO_ROWS_MAX (8) displayed rows specifically - the smallest, most cramped cell size Normal
+//     mode ever produces, so it's the natural "hardest case" reference to tune against.
+//   - At any OTHER row count (fewer rows -> bigger cells), the same constant is multiplied by
+//     NEO_FALLBACK_REFERENCE_SCALE(cellHeightPx) below before use, so it scales UP proportionally
+//     with the cell rather than staying visually tiny in a much bigger cell (or, conversely,
+//     staying fixed-size regardless of how little room an 8-row cell actually has).
+// This does NOT apply to NEO_CELL_RECOMMENDED_PADDING_MM/NEO_FRAME_GAP_MM themselves - those are a
+// separate, already-established, genuinely fixed-mm convention shared across every cell editor
+// and the row header, not something this section redefines.
+#define NEO_FALLBACK_REFERENCE_CELL_HEIGHT_MM ((PANELHEIGHT - NEO_FRAME_TOP_MM - NEO_FRAME_BOTTOM_MM) / (float) NEO_ROWS_MAX)
+#define NEO_FALLBACK_REFERENCE_SCALE(cellHeightPx) ((cellHeightPx) / mm2px(NEO_FALLBACK_REFERENCE_CELL_HEIGHT_MM))
+//
+// Vertical stack, top to bottom, every gap exactly NEO_CELL_RECOMMENDED_PADDING_MM (2026-07-22,
+// Dieter's own spec): frame's own top inner edge, one gap, the knob (sized to fill whatever's
+// left, not scaled down), one gap, the display strip, one gap, frame's own bottom inner edge.
+// NEO_FALLBACK_DISPLAY_HEIGHT_RATIO is the display strip's own share of the full cell height;
+// the knob's diameter is simply whatever remains after that and the three padding gaps.
+#define NEO_FALLBACK_DISPLAY_HEIGHT_RATIO    0.28f
+#define NEO_FALLBACK_DISPLAY_FONT_SIZE_RATIO 0.825f // of the display strip's own height - 0.75 was the original, 0.9 tried and found too big, settled halfway back
+// Knob body fill - deliberately theme-INDEPENDENT (mirrors every real Rack knob/SvgKnob's own
+// fixed dark/black physical-control look elsewhere in this codebase, not a themed surface like a
+// digital display's own background) - see CLAUDE.md's project_neo_module memory note for why this
+// was deliberately left out of the per-theme NEO_CELL_BG_COLOR_*/NEO_HEAD_FRAME_COLOR_* treatment.
+#define NEO_FALLBACK_KNOB_BODY_COLOR nvgRGB(0x20, 0x20, 0x20)
+// Ratios of the knob's own DRAWN radius (already fully proportional by construction, so these
+// don't need the absolute-mm/reference-scale treatment above) - ring stroke, pointer stroke, and
+// the pointer's own start/end radii (2026-07-22: the pointer is a segment floating between two
+// radii from the knob's own center, not always anchored at the exact center - start=0 keeps
+// today's look, a positive start pulls the pointer's own near end away from dead-center).
+#define NEO_FALLBACK_KNOB_RING_STROKE_RATIO      0.12f
+#define NEO_FALLBACK_KNOB_POINTER_STROKE_RATIO   0.15f
+#define NEO_FALLBACK_KNOB_POINTER_START_RATIO    0.f
+#define NEO_FALLBACK_KNOB_POINTER_END_RATIO      0.8f
+// Floor under both the ring and pointer stroke widths above, in raw px (not mm - a sub-1px stroke
+// would simply vanish at typical zoom, regardless of how small the knob itself has scaled down).
+#define NEO_FALLBACK_KNOB_MIN_STROKE_PX 1.f
+// Knob size/position fine-tuning (2026-07-22, Dieter's own follow-up: "give constants to move and
+// size it too") - layered ON TOP of the stack-derived slot above, not a replacement for it: the
+// slot's own center (cy) and diameter (knobDiameterPx) still come from the padding-stack math, so
+// gaps/alignment with the frame and display strip stay correct; these three just additionally
+// scale/nudge what's actually DRAWN within that same slot. NEO_FALLBACK_KNOB_SIZE_RATIO (1 = fill
+// the whole slot, matching today's look) shrinks/grows the drawn circle (and, since the pointer's
+// own length/stroke are themselves ratios of the knob's radius, everything scales together) while
+// keeping it centered on the SAME slot center - never touches the slot's own reserved space, so
+// the surrounding gaps to the frame/display never change even if this knob visually shrinks. The
+// X/Y nudges follow the ABSOLUTE POSITION/SIZE CONVENTION above - plain mm offsets from the cell's
+// own center, tuned by eye at 8 rows, scaled by NEO_FALLBACK_REFERENCE_SCALE() at other row
+// counts - same "small residual tunable nudge" pattern as OLLabelButton's own textYNudgePx (see
+// CLAUDE.md) - a formula gets you close, this is for whatever correction still looks needed after.
+#define NEO_FALLBACK_KNOB_SIZE_RATIO 1.f
+#define NEO_FALLBACK_KNOB_X_NUDGE_MM 0.f
+#define NEO_FALLBACK_KNOB_Y_NUDGE_MM 0.f
+
+// Drag sensitivity (2026-07-22, Dieter's own catch: "the react a bit too hard on the mouse...
+// too little mouse move between min and max") - NeoFallbackCellEditor::dragValue() originally
+// mapped exactly cellHeightPx of vertical travel to the full rangeMin..rangeMax span; this
+// multiplies that required travel distance, so LARGER = LESS sensitive (more mouse movement
+// needed to cover the same range), same "divide by this" role NEO_ROW_NAME_DOT_DRAG_STEP_MM
+// plays for the color dot's own drag-cycling. First-pass value, not yet visually/feel-tuned live.
+#define NEO_FALLBACK_DRAG_SENSITIVITY_RATIO 3.f
+
 // NEO_MIN_VISIBLE_COLS is gone (2026-07-22, Dieter's own KISS simplification) - NEO no longer
 // guarantees any minimum visible column count at all; see NEO_DEFAULT_WIDTH_HP's own comment for
 // why (a future collapse/expand mechanism, not a column-count floor, is what reclaims columns

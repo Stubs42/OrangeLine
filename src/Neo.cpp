@@ -1335,35 +1335,63 @@ struct NeoFallbackCellEditor : NeoCellEditor
 		nvgStrokeColor(args.vg, color);
 		nvgStroke(args.vg);
 
-		// Knob occupies the upper portion of the cell, the numeric readout the lower strip -
-		// diameter simply scales with whatever cell size is currently available.
-		float displayHeightPx = cellHeightPx * 0.28f;
-		float knobAreaHeightPx = cellHeightPx - displayHeightPx;
-		float knobDiameterPx = std::min(cellWidthPx, knobAreaHeightPx) * 0.7f;
-		float knobRadiusPx = knobDiameterPx / 2.f;
-		float cx = x + cellWidthPx / 2.f;
-		float cy = knobAreaHeightPx / 2.f;
+		// Explicit top-to-bottom stack, every gap exactly one padPx (2026-07-22, Dieter's own
+		// spec, refining the previous pass: "make the knob bigger so that from top to bottom we
+		// have frame, framePadding, knob, framepadding, display, framepadding[, frame]") - frame's
+		// own top inner edge, then padPx, then the knob (now sized to fill whatever's left, not
+		// scaled down to 70% of its available space), then padPx, then the display strip, then
+		// padPx, then the frame's own bottom inner edge. displayHeightPx's own size is unchanged;
+		// knobDiameterPx is simply whatever height remains once every other fixed element in the
+		// stack (3 gaps + the display strip) is subtracted from the frame's own inner height.
+		float displayHeightPx = cellHeightPx * NEO_FALLBACK_DISPLAY_HEIGHT_RATIO;
+		float frameInnerHeightPx = cellHeightPx - 2.f * padPx;
+		float knobDiameterPx = std::min(cellWidthPx, frameInnerHeightPx - 3.f * padPx - displayHeightPx);
+		float knobRadiusPx = knobDiameterPx / 2.f; // the SLOT's own radius - gaps/alignment are derived from this, never from the drawn (possibly scaled) radius below
+		// Nudges are absolute mm, tuned at NEO_ROWS_MAX (8) rows, scaled proportionally at any
+		// other row count (see the ABSOLUTE POSITION/SIZE CONVENTION comment, Neo.hpp).
+		float nudgeScale = NEO_FALLBACK_REFERENCE_SCALE(cellHeightPx);
+		float cx = x + cellWidthPx / 2.f + mm2px(NEO_FALLBACK_KNOB_X_NUDGE_MM) * nudgeScale;
+		float cy = padPx + padPx + knobRadiusPx + mm2px(NEO_FALLBACK_KNOB_Y_NUDGE_MM) * nudgeScale; // frame's own top inner edge + one padPx gap + halfway into the slot + fine-tune nudge
+		float displayAreaTopPx = (padPx + padPx + knobDiameterPx) + padPx; // knob's own SLOT bottom edge + one padPx gap - unaffected by size/nudge above
+
+		// What's actually DRAWN - scaled by NEO_FALLBACK_KNOB_SIZE_RATIO, but still centered on the
+		// same (cx, cy) slot center, so shrinking/growing this never touches the reserved padding
+		// gaps above/below (those come from knobRadiusPx, the slot's own unscaled radius).
+		float drawnRadiusPx = knobRadiusPx * NEO_FALLBACK_KNOB_SIZE_RATIO;
 
 		nvgBeginPath(args.vg);
-		nvgCircle(args.vg, cx, cy, knobRadiusPx);
-		nvgFillColor(args.vg, nvgRGB(0x20, 0x20, 0x20));
+		nvgCircle(args.vg, cx, cy, drawnRadiusPx);
+		nvgFillColor(args.vg, NEO_FALLBACK_KNOB_BODY_COLOR);
 		nvgFill(args.vg);
-		nvgStrokeWidth(args.vg, std::max(1.f, knobRadiusPx * 0.12f));
+		nvgStrokeWidth(args.vg, std::max(NEO_FALLBACK_KNOB_MIN_STROKE_PX, drawnRadiusPx * NEO_FALLBACK_KNOB_RING_STROKE_RATIO));
 		nvgStrokeColor(args.vg, color);
 		nvgStroke(args.vg);
 
 		// Pointer - standard hardware-knob sweep, 270 degrees total (-135..+135 from straight up),
 		// clockwise, matching Rack's own SvgKnob convention. NanoVG's own angle convention has 0
-		// pointing along +X, increasing clockwise (Y axis points down) - offsetting by -0.75*PI
-		// (i.e. starting up and to the left) and sweeping 1.5*PI total reproduces that.
+		// pointing along +X (east), increasing clockwise (Y axis points down), so "straight up" is
+		// actually raw angle -0.5*PI, not 0 - offsetting the whole sweep by a FURTHER -0.5*PI on
+		// top of the "-0.75*PI start, 1.5*PI total sweep" shape (i.e. -1.25*PI, not -0.75*PI) is
+		// what actually reproduces "-135..+135 from straight up." Real bug fixed 2026-07-22
+		// (Dieter's own catch: "the pointer doesn't draw correctly, its logical bottom currently
+		// is the left side of the knob, should be the bottom") - the old -0.75*PI offset was
+		// missing that extra -0.5*PI entirely, so the whole sweep was rotated 90 degrees off: the
+		// t=0.5 (center-of-range) position rendered pointing EAST instead of straight UP.
 		float t = (rangeMax > rangeMin) ? clamp((value - rangeMin) / (rangeMax - rangeMin), 0.f, 1.f) : 0.5f;
-		float angle = (-0.75f * (float) M_PI) + t * (1.5f * (float) M_PI);
-		float pointerLenPx = knobRadiusPx * 0.8f;
+		float angle = (-1.25f * (float) M_PI) + t * (1.5f * (float) M_PI);
+		// Pointer is a segment floating between two radii from the knob's own center (2026-07-22,
+		// Dieter's own spec) - START defaults to 0 (today's look, anchored at dead-center), END
+		// defaults to the old fixed 0.8 "length" ratio - either can move independently now.
+		float pointerStartPx = drawnRadiusPx * NEO_FALLBACK_KNOB_POINTER_START_RATIO;
+		float pointerEndPx = drawnRadiusPx * NEO_FALLBACK_KNOB_POINTER_END_RATIO;
+		float cosAngle = std::cos(angle);
+		float sinAngle = std::sin(angle);
 		nvgBeginPath(args.vg);
-		nvgMoveTo(args.vg, cx, cy);
-		nvgLineTo(args.vg, cx + std::cos(angle) * pointerLenPx, cy + std::sin(angle) * pointerLenPx);
-		nvgStrokeWidth(args.vg, std::max(1.f, knobRadiusPx * 0.15f));
+		nvgMoveTo(args.vg, cx + cosAngle * pointerStartPx, cy + sinAngle * pointerStartPx);
+		nvgLineTo(args.vg, cx + cosAngle * pointerEndPx, cy + sinAngle * pointerEndPx);
+		nvgStrokeWidth(args.vg, std::max(NEO_FALLBACK_KNOB_MIN_STROKE_PX, drawnRadiusPx * NEO_FALLBACK_KNOB_POINTER_STROKE_RATIO));
 		nvgStrokeColor(args.vg, color);
+		nvgLineCap(args.vg, NVG_ROUND); // rounded caps (2026-07-22, Dieter's own request)
 		nvgStroke(args.vg);
 
 		// Numeric readout beneath the knob.
@@ -1372,10 +1400,10 @@ struct NeoFallbackCellEditor : NeoCellEditor
 		{
 			std::string text = formatValue(value);
 			nvgFontFaceId(args.vg, font->handle);
-			nvgFontSize(args.vg, displayHeightPx * 0.75f);
+			nvgFontSize(args.vg, displayHeightPx * NEO_FALLBACK_DISPLAY_FONT_SIZE_RATIO);
 			nvgFillColor(args.vg, color);
 			nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-			nvgText(args.vg, cx, knobAreaHeightPx + displayHeightPx / 2.f, text.c_str(), nullptr);
+			nvgText(args.vg, cx, displayAreaTopPx + displayHeightPx / 2.f, text.c_str(), nullptr);
 		}
 	}
 
@@ -1383,7 +1411,10 @@ struct NeoFallbackCellEditor : NeoCellEditor
 
 	float dragValue(float startValue, float deltaY, float cellHeightPx, float rangeMin, float rangeMax) override
 	{
-		float sensitivity = (rangeMax - rangeMin) / cellHeightPx;
+		// NEO_FALLBACK_DRAG_SENSITIVITY_RATIO scales how much vertical travel is needed to cover
+		// the full range - larger = less sensitive (Dieter's own catch, 2026-07-22: "too little
+		// mouse move between min and max").
+		float sensitivity = (rangeMax - rangeMin) / (cellHeightPx * NEO_FALLBACK_DRAG_SENSITIVITY_RATIO);
 		return clamp(startValue - deltaY * sensitivity, rangeMin, rangeMax);
 	}
 };
