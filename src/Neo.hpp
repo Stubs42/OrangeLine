@@ -417,6 +417,18 @@ inline float neoRowAreaControlsWidthMm(bool fullHeight, float rowHeaderWidthMm)
 // own panel background straight through.
 #define NEO_CELL_BG_COLOR nvgRGB(0x30, 0x30, 0x30)
 
+// Default head-position marker (2026-07-22) - NeoCellEditor::drawHeadFrame()'s own default body
+// draws this small frame; NEO calls drawHeadFrame() directly whenever a visible cell is the
+// channel's current play cursor, no separate query beforehand (Dieter's own correction of an
+// earlier isHeadAware()-query design he called out as not good: "the cell editor class should
+// already have a method to draw frame for active head position... a cell editor which does not
+// want this can override this method with its own"). None of the current concrete editors
+// override drawHeadFrame() yet - every one of them gets this default. First-pass color/sizing,
+// not yet visually confirmed.
+#define NEO_HEAD_FRAME_COLOR nvgRGB(0xff, 0xff, 0xff)
+#define NEO_HEAD_FRAME_STROKE_MM 0.4f
+#define NEO_HEAD_FRAME_INSET_MM  0.5f
+
 // Morpheus-style cell (NeoMorpheusStyleCellEditor, cellType 2) - replicates MorpheusDisplayWidget's
 // own value-to-color technique (Morpheus.cpp) at NEO's own per-cell scale: a step's raw bipolar
 // voltage lerps the cell's fill between these two colors, rather than an on/off square or a bar

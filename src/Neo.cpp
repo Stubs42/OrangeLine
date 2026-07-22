@@ -1102,6 +1102,25 @@ struct NeoCellEditor
 	// (starting with NeoFallbackCellEditor below) can be.
 	virtual void drawCell(const Widget::DrawArgs &args, float x, float cellWidthPx, float cellHeightPx, float value, NVGcolor color, float rangeMin, float rangeMax) = 0;
 
+	// Draws the current-play-head marker for this cell (2026-07-22) - called by NeoRowCellsWidget
+	// directly whenever this visible cell's own step matches the channel's live play cursor, no
+	// separate "am I head-aware" query beforehand (Dieter's own correction - an earlier
+	// isHeadAware() bool + an isHead flag threaded through drawCell() was "not a good design").
+	// The override itself IS the opt-out: default draws NEO's own generic small frame (see
+	// NEO_HEAD_FRAME_COLOR's own comment, Neo.hpp); a concrete editor that wants to visualize the
+	// head position some other way (inside its own drawCell(), or not at all) just overrides this
+	// with its own body instead.
+	virtual void drawHeadFrame(const Widget::DrawArgs &args, float x, float cellWidthPx, float cellHeightPx, NVGcolor color)
+	{
+		(void) color; // default frame is a fixed, theme-independent color - see NEO_HEAD_FRAME_COLOR's own comment
+		float insetPx = mm2px(NEO_HEAD_FRAME_INSET_MM);
+		nvgBeginPath(args.vg);
+		nvgRect(args.vg, x + insetPx, insetPx, cellWidthPx - 2.f * insetPx, cellHeightPx - 2.f * insetPx);
+		nvgStrokeWidth(args.vg, mm2px(NEO_HEAD_FRAME_STROKE_MM));
+		nvgStrokeColor(args.vg, NEO_HEAD_FRAME_COLOR);
+		nvgStroke(args.vg);
+	}
+
 	// What a double-click on a cell resets it to (NeoRowCellsWidget::onDoubleClick()).
 	virtual float defaultValue(float rangeMin, float rangeMax) { (void) rangeMin; (void) rangeMax; return 0.f; }
 
@@ -1422,6 +1441,7 @@ struct NeoRowCellsWidget : TransparentWidget
 		NVGcolor color = nvgRGB((colorPacked >> 16) & 0xff, (colorPacked >> 8) & 0xff, colorPacked & 0xff);
 		float rangeMin = m->rowProperties[row].rangeMin;
 		float rangeMax = m->rowProperties[row].rangeMax;
+		int cursor = m->neoHost->getPlayCursor(channel);
 
 		for (int i = 0; i < visibleCols; i++)
 		{
@@ -1431,6 +1451,13 @@ struct NeoRowCellsWidget : TransparentWidget
 			float value = m->neoHost->getTrackStep(track, channel, step);
 			float x = gapPx / 2.f + (float) i * pitchPx;
 			editor->drawCell(args, x, cellWidthPx, box.size.y, value, color, rangeMin, rangeMax);
+
+			// Head-position marker (2026-07-22) - called directly whenever this cell's own step
+			// is the channel's current play cursor, drawn on top of whatever drawCell() just
+			// rendered. No query beforehand (see NeoCellEditor::drawHeadFrame()'s own comment for
+			// why) - the editor's own override, if any, decides what (if anything) happens here.
+			if (step == cursor)
+				editor->drawHeadFrame(args, x, cellWidthPx, box.size.y, color);
 		}
 	}
 
