@@ -1524,6 +1524,16 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, NeoHostInterface, Exp
 	int getLoopLen(int channel) override { return (int) getChannelLoopLength(channel); }
 	int getMaxLoopLen() override { return MAX_LOOP_LEN; }
 	int getPlayCursor(int channel) override { return (int) getStateJson(HEAD_JSON + channel); }
+	// See NeoHostInterface::getChannelRange()'s own comment (NeoShared.hpp) for the full
+	// reasoning - scaleOnOutput is module-wide, not per-track/channel, so the dimensions list is
+	// deliberately ignored entirely here; every query gets the same answer regardless of which
+	// track/channel (or anything else) it names.
+	void getChannelRange(const std::vector<NeoDimensionCoord> &dimensions, float &outMin, float &outMax) override
+	{
+		(void) dimensions;
+		if (scaleOnOutput) { outMin = 0.f; outMax = 10.f; }
+		else { outMin = -10.f; outMax = 10.f; }
+	}
 	float getNeoStyle() override { return OL_state[STYLE_JSON]; }
 };
 

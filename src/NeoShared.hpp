@@ -40,6 +40,21 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 	XExpanderInterface/XOExpanderInterface implementation for that (a real, physically sensible
 	rack layout like `Morpheus | NEO | XO8` must keep working).
 */
+// One named coordinate along one axis of a Host's own property space - name identifies WHICH
+// dimension ("track", "channel", ...), value is the coordinate along it, always a float (matching
+// "everything in Rack is just a float" - e.g. Morpheus's own track id 0..17, or a channel index
+// 0..15). A property query key is a LIST of these, not a single hardcoded "channel" argument
+// (2026-07-22, Dieter's own correction) - this is deliberately built for the future SOURCE model
+// from day one, where a query key is genuinely a set of named dimension coordinates (song, track,
+// channel, parameter, ... - see SourceDataModel.md), not just "channel." Morpheus offers exactly
+// two dimensions today ("track", "channel") - the same two NEO's own row header already selects
+// via its track/channel knobs - but a Host is free to define however many make sense for it.
+struct NeoDimensionCoord
+{
+	std::string name;
+	float value;
+};
+
 struct NeoHostInterface
 {
 	virtual ~NeoHostInterface() {}
@@ -87,6 +102,23 @@ struct NeoHostInterface
 	// regardless of which track a row is currently viewing (Dieter's own instruction, 2026-07-20)
 	// - a stored memory track has no cursor of its own, nothing is "playing" it.
 	virtual int getPlayCursor(int channel) = 0;
+
+	// Generic channel-properties-style query (2026-07-22) - the first piece of a general
+	// "properties" API every NeoHostInterface implementer answers, not something Morpheus-specific:
+	// the goal is a good, general interface any sequencer NEO edits has to obey, keyed by a list of
+	// named dimension coordinates (see NeoDimensionCoord's own comment) rather than a hardcoded
+	// "channel" argument, so it already matches the future SOURCE model's own N-dimensional
+	// addressing. Each Host reports whatever it actually knows for the dimensions it's given, with
+	// NEO falling back to a sensible default (-10..10) for anything left unanswered. Morpheus's own
+	// concrete answer today: its right-click "Scale on Output" setting is module-wide (not
+	// per-channel/track) and changes what range the tape's own stored values actually occupy -
+	// 0..10V when on, -10..10V when off - so Morpheus's own implementation ignores the dimensions
+	// list entirely and returns that one module-wide range regardless of what's asked. Queried
+	// fresh by NEO for every row, every moduleProcess() tick (cheap for any Host to answer, no
+	// caching needed on either side) - deliberately NOT yet consumed by the (still-POC, unspecified)
+	// cell editors themselves; this is infrastructure only for now, actual range-aware cell editing
+	// is later work.
+	virtual void getChannelRange(const std::vector<NeoDimensionCoord> &dimensions, float &outMin, float &outMax) = 0;
 
 	// Write - same addressing as the read side above. No engagement/exclusivity concept at all;
 	// concurrent writers (a real cable, a second Expander, etc.) resolve via plain last-write-

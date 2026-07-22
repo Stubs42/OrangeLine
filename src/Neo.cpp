@@ -31,6 +31,29 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 // control offsets/sizes, content-frame margins, neoMinWidthHp()/neoMaxWidthHp()) now live in
 // Neo.hpp - see its own "NEO layout constants" section, the single source of truth for all of it.
 
+// A row's own current channel properties, assembled by NEO itself (2026-07-22) - part Host-
+// reported (rangeMin/rangeMax, via NeoHostInterface::getChannelRange()), part NEO's own already-
+// known context (hostSlug - NEO is already connected by the time this is ever populated, so
+// neoHostModule->model->slug is trivially available, no new Host-interface plumbing needed for
+// it). Deliberately extensible - a future property joins this same struct, not a new parallel
+// array. Used by NeoCellEditor::isCompatible() (below, past the Neo module struct itself) to
+// decide which cell types make sense to offer for a given row's own current data - defined here,
+// ahead of the Neo module struct, since Neo's own per-row cache (rowProperties) needs the type
+// too.
+struct NeoChannelProperties
+{
+	float rangeMin = -10.f;
+	float rangeMax = 10.f;
+	std::string hostSlug;
+};
+
+// Forward declarations - the real NeoCellEditor/neoCellEditorRegistry() definitions live well
+// past the Neo module struct itself (they're written in terms of NeoRowCellsWidget's own needs),
+// but Neo::getRowCellType() (below) needs to clamp against the registry's own current size, so it
+// needs at least this much visible before the class body's own "complete class context" reparse.
+struct NeoCellEditor;
+inline std::vector<NeoCellEditor*>& neoCellEditorRegistry();
+
 struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterface, ExpanderBridgeInterface
 {
 #include "OrangeLineCommon.hpp"
@@ -46,6 +69,13 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 
 	dsp::SchmittTrigger leftTrigger[NEO_NUM_ROWS];
 	dsp::SchmittTrigger rightTrigger[NEO_NUM_ROWS];
+
+	// Per-row cached channel properties (2026-07-22) - queried/assembled fresh every
+	// moduleProcess() tick (see its own row loop), so any cell editor built later always has
+	// up-to-date properties to check compatibility against without needing its own caching. See
+	// NeoChannelProperties' own comment for what's in it and where each field comes from
+	// (infrastructure only for now, not yet consumed by any cell editor's actual draw/edit math).
+	NeoChannelProperties rowProperties[NEO_NUM_ROWS];
 
 	// Persistent per-instance label buffers - setJsonLabel() stores the raw char* handed to it
 	// rather than copying the string, so a temporary std::string's c_str() would dangle the
@@ -545,6 +575,16 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 		int maxTrack = neoHost ? std::max(0, neoHost->getTrackCount() - 1) : 0;
 		return clamp(raw, 0, maxTrack);
 	}
+	// Same clamping role as the two above, for the on-panel cell-editor-selection knob
+	// (2026-07-22) - clamps into neoCellEditorRegistry()'s own current size rather than assuming
+	// the raw knob value is always in range (mirrors neoCellEditorForType()'s own clamp, further
+	// down in this file - kept here too since every OTHER row-selection value already goes through
+	// its own get*() accessor rather than being read as a raw param value at each call site).
+	int getRowCellType(int row)
+	{
+		int maxType = (int) neoCellEditorRegistry().size() - 1;
+		return clamp((int) std::round(getStateParam(ROW_CELLTYPE_PARAM + row)), 0, maxType);
+	}
 
 	// Session-only UI cache (2026-07-21 redesign) - the module's own current header width/controls
 	// width/visible column count, as a single NeoLayoutResult. Refreshed by NeoWidget::step() via
@@ -617,6 +657,14 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 			paramQuantities[ROW_TRACK_PARAM + r]->snapEnabled = true;
 			configParam(ROW_CHANNEL_PARAM + r, 0.f, (float) (POLY_CHANNELS - 1), (float) (r % POLY_CHANNELS), string::f("Row %d Channel", r + 1));
 			paramQuantities[ROW_CHANNEL_PARAM + r]->snapEnabled = true;
+			// Range is the registry's own current size (2026-07-22) - not a fixed ceiling like
+			// NEO_MAX_TRACKS, since the registry only grows by adding a new NeoCellEditor subclass
+			// in source, never at runtime. Default 1.f (Value) - same "more generally useful
+			// default" reasoning the old OL_state default used, now expressed as this real Param's
+			// own configParam() default instead (see moduleReset()'s own comment for why nothing
+			// sets it there anymore).
+			configParam(ROW_CELLTYPE_PARAM + r, 0.f, (float) (neoCellEditorRegistry().size() - 1), 1.f, string::f("Row %d Cell Type", r + 1));
+			paramQuantities[ROW_CELLTYPE_PARAM + r]->snapEnabled = true;
 			configParam(ROW_FOLLOW_PARAM + r, 0.f, 1.f, 0.f, string::f("Row %d Follow", r + 1));
 			configParam(ROW_LEFT_PARAM + r, 0.f, 1.f, 0.f, string::f("Row %d Page Back", r + 1));
 			configParam(ROW_RIGHT_PARAM + r, 0.f, 1.f, 0.f, string::f("Row %d Page Forward", r + 1));
@@ -689,10 +737,12 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 		for (int r = 0; r < NEO_NUM_ROWS; r++)
 		{
 			// Row r's default track/channel (row r shows channel r, track TAPE) come from
-			// ROW_TRACK_PARAM/ROW_CHANNEL_PARAM's own configParam() defaults now, not OL_state.
+			// ROW_TRACK_PARAM/ROW_CHANNEL_PARAM's own configParam() defaults now, not OL_state -
+			// same is true of cell type now (ROW_CELLTYPE_PARAM's own configParam() default, 1.f/
+			// Value, since 2026-07-22 - ROW_CELLTYPE_JSON itself is unused, see its own comment).
 			// ROW_FOLLOW_JSON is unused (see moduleProcess()'s own note) - no default needed here.
 			OL_state[ROW_PAGE_JSON + r] = 0.f;
-			OL_state[ROW_CELLTYPE_JSON + r] = 1.f;      // Value (more generally useful default)
+			rowProperties[r] = NeoChannelProperties(); // overwritten fresh every moduleProcess() tick once connected
 		}
 		// Channel name/color are Host-shared, not this instance's own state (see their own
 		// member comment) - resetting THIS NEO must never wipe out data every other NEO instance
@@ -759,6 +809,20 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 			if (neoHost)
 			{
 				int channel = getRowChannel(r);
+				// Live channel properties (2026-07-22, infrastructure only - see
+				// NeoChannelProperties' own comment). Range is keyed by this row's own current
+				// (track, channel) selection, expressed as a list of named dimension coordinates
+				// rather than a bare channel index - matches the future SOURCE model's own
+				// N-dimensional addressing from day one. hostSlug comes from NEO's own already-
+				// cached neoHostModule, not a Host query. Queried/assembled fresh every tick, never
+				// persisted (rowProperties is a plain runtime member, not OL_state) - the Host is
+				// the live source of truth, not NEO's own saved patch.
+				std::vector<NeoDimensionCoord> dims = {
+					{ "track", (float) getRowTrack(r) },
+					{ "channel", (float) channel },
+				};
+				neoHost->getChannelRange(dims, rowProperties[r].rangeMin, rowProperties[r].rangeMax);
+				rowProperties[r].hostSlug = neoHostModule && neoHostModule->model ? neoHostModule->model->slug : "";
 				if (follow)
 				{
 					// visibleCols can genuinely be 0 now (2026-07-22, no minimum column count
@@ -785,6 +849,7 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 			{
 				leftTrigger[r].process(params[ROW_LEFT_PARAM + r].getValue());
 				rightTrigger[r].process(params[ROW_RIGHT_PARAM + r].getValue());
+				rowProperties[r] = NeoChannelProperties(); // no Host to ask - NEO's own defaults, refreshed every tick, never stale once reconnected
 			}
 		}
 	}
@@ -1000,38 +1065,58 @@ struct NeoResizeHandle : OpaqueWidget
 };
 
 /*
-	Abstract cell editor - one "kind" of step-cell display/interaction. NEO's own JSON schema
-	(Neo module's own comment, near channelName[]/channelColor[]) already reserves "cellType"/
-	"cellConfig" for this; ROW_CELLTYPE_JSON (0=Gate, 1=Value) is the concrete per-row selector
-	for now. Each concrete editor owns everything about how ONE step's raw float value is drawn
-	and edited - NeoRowCellsWidget itself no longer knows what "gate" or "value" even mean, it
-	just asks whichever editor the row's own cellType selects to draw/drag/reset each visible
-	cell. Adding a future kind (Pitch, Curve, ... - see the plan) means writing one new
-	NeoCellEditor subclass and registering it in neoCellEditorForType() - nothing else in
-	NeoRowCellsWidget needs to change (2026-07-20 infrastructure, Dieter's own request).
+	Abstract cell editor - one "kind" of step-cell display/interaction. ROW_CELLTYPE_PARAM (the
+	on-panel cell-editor-selection knob, Neo::getRowCellType()) is the concrete per-row selector.
+	Each concrete editor owns everything about how ONE step's raw float value is drawn and edited -
+	NeoRowCellsWidget itself no longer knows what "gate" or "value" even mean, it just asks
+	whichever editor the row's own cellType selects to draw/drag/reset each visible cell. Adding a
+	future kind (Pitch, Curve, ... - see the plan) means writing one new NeoCellEditor subclass and
+	registering it in neoCellEditorRegistry() - nothing else in NeoRowCellsWidget needs to change
+	(2026-07-20 infrastructure, Dieter's own request).
 */
 struct NeoCellEditor
 {
 	virtual ~NeoCellEditor() {}
 
+	// Short, user-facing name shown in the celltype selection UI (2026-07-22) - every editor is a
+	// normal, directly selectable choice (including NeoFallbackCellEditor below - it's not merely
+	// a hidden safety net, it's also just a perfectly ordinary choice a user can pick deliberately
+	// for a Value-type channel).
+	virtual std::string name() = 0;
+
+	// Whether this editor makes sense to offer for a row with these current channel properties
+	// (2026-07-22) - default true (compatible with anything); a specific editor overrides to
+	// restrict itself (e.g. against rangeMin/rangeMax, or even hostSlug for a genuinely
+	// Host-specific kind). Used to FILTER which cell types are ever offered as a choice in the
+	// celltype selection UI - an incompatible editor is never shown as an option, not just
+	// disabled. None of the current (still-POC) editors override this yet - infrastructure only
+	// for now, see NeoChannelProperties' own comment.
+	virtual bool isCompatible(const NeoChannelProperties &props) { (void) props; return true; }
+
 	// Draws ONE cell's own content at local (x, 0, cellWidthPx, cellHeightPx) - the shared
 	// per-cell backdrop behind every cell is already drawn generically by the caller; this only
-	// draws the value itself on top of it.
-	virtual void drawCell(const Widget::DrawArgs &args, float x, float cellWidthPx, float cellHeightPx, float value, NVGcolor color) = 0;
+	// draws the value itself on top of it. rangeMin/rangeMax (2026-07-22) are this row's own
+	// current NeoChannelProperties range - most existing (still-POC) editors ignore them and keep
+	// their own hardcoded -10..10 assumption for now (not yet reworked, see this struct's own file
+	// comment), but the interface carries them so any editor that DOES want to be range-aware
+	// (starting with NeoFallbackCellEditor below) can be.
+	virtual void drawCell(const Widget::DrawArgs &args, float x, float cellWidthPx, float cellHeightPx, float value, NVGcolor color, float rangeMin, float rangeMax) = 0;
 
 	// What a double-click on a cell resets it to (NeoRowCellsWidget::onDoubleClick()).
-	virtual float defaultValue() { return 0.f; }
+	virtual float defaultValue(float rangeMin, float rangeMax) { (void) rangeMin; (void) rangeMax; return 0.f; }
 
 	// Turns a drag gesture (the value the drag started from, the accumulated vertical pixel
 	// delta since, and the cell's own current pixel height) into a new value - lets a future
 	// editor define its own sensitivity/range/quantization independently of the others.
-	virtual float dragValue(float startValue, float deltaY, float cellHeightPx) = 0;
+	virtual float dragValue(float startValue, float deltaY, float cellHeightPx, float rangeMin, float rangeMax) = 0;
 };
 
 struct NeoGateCellEditor : NeoCellEditor
 {
-	void drawCell(const Widget::DrawArgs &args, float x, float cellWidthPx, float cellHeightPx, float value, NVGcolor color) override
+	std::string name() override { return "Gate"; }
+	void drawCell(const Widget::DrawArgs &args, float x, float cellWidthPx, float cellHeightPx, float value, NVGcolor color, float rangeMin, float rangeMax) override
 	{
+		(void) rangeMin; (void) rangeMax;
 		bool on = value > 5.f; // plain 5V threshold on a real Host voltage - see CLAUDE.md's
 		                       // pitfall on X8-style dual-convention issues, doesn't apply here
 		                       // since this always reads a real Host value directly, never a raw
@@ -1043,9 +1128,10 @@ struct NeoGateCellEditor : NeoCellEditor
 		nvgFillColor(args.vg, color);
 		nvgFill(args.vg);
 	}
-	float defaultValue() override { return 0.f; } // off
-	float dragValue(float startValue, float deltaY, float cellHeightPx) override
+	float defaultValue(float rangeMin, float rangeMax) override { (void) rangeMin; (void) rangeMax; return 0.f; } // off
+	float dragValue(float startValue, float deltaY, float cellHeightPx, float rangeMin, float rangeMax) override
 	{
+		(void) rangeMin; (void) rangeMax;
 		float sensitivity = 20.f / cellHeightPx; // full cell height ~= 20V of travel
 		return clamp(startValue - deltaY * sensitivity, -10.f, 10.f);
 	}
@@ -1053,8 +1139,10 @@ struct NeoGateCellEditor : NeoCellEditor
 
 struct NeoValueCellEditor : NeoCellEditor
 {
-	void drawCell(const Widget::DrawArgs &args, float x, float cellWidthPx, float cellHeightPx, float value, NVGcolor color) override
+	std::string name() override { return "Value"; }
+	void drawCell(const Widget::DrawArgs &args, float x, float cellWidthPx, float cellHeightPx, float value, NVGcolor color, float rangeMin, float rangeMax) override
 	{
+		(void) rangeMin; (void) rangeMax;
 		float t = clamp((value + 10.f) / 20.f, 0.f, 1.f); // -10..+10V -> 0..1
 		float barHeight = t * cellHeightPx;
 		nvgBeginPath(args.vg);
@@ -1062,9 +1150,10 @@ struct NeoValueCellEditor : NeoCellEditor
 		nvgFillColor(args.vg, color);
 		nvgFill(args.vg);
 	}
-	float defaultValue() override { return 0.f; } // center
-	float dragValue(float startValue, float deltaY, float cellHeightPx) override
+	float defaultValue(float rangeMin, float rangeMax) override { (void) rangeMin; (void) rangeMax; return 0.f; } // center
+	float dragValue(float startValue, float deltaY, float cellHeightPx, float rangeMin, float rangeMax) override
 	{
+		(void) rangeMin; (void) rangeMax;
 		float sensitivity = 20.f / cellHeightPx;
 		return clamp(startValue - deltaY * sensitivity, -10.f, 10.f);
 	}
@@ -1078,8 +1167,10 @@ struct NeoValueCellEditor : NeoCellEditor
 // 2026-07-20).
 struct NeoMorpheusStyleCellEditor : NeoCellEditor
 {
-	void drawCell(const Widget::DrawArgs &args, float x, float cellWidthPx, float cellHeightPx, float value, NVGcolor color) override
+	std::string name() override { return "Morpheus"; }
+	void drawCell(const Widget::DrawArgs &args, float x, float cellWidthPx, float cellHeightPx, float value, NVGcolor color, float rangeMin, float rangeMax) override
 	{
+		(void) rangeMin; (void) rangeMax;
 		float t = clamp((value + 10.f) / 20.f, 0.f, 1.f); // -10..+10V -> 0..1, same as Morpheus's own display
 		NVGcolor fill = nvgLerpRGBA(NEO_MORPHEUS_CELL_LOW_COLOR, NEO_MORPHEUS_CELL_HIGH_COLOR, t);
 		nvgBeginPath(args.vg);
@@ -1087,32 +1178,173 @@ struct NeoMorpheusStyleCellEditor : NeoCellEditor
 		nvgFillColor(args.vg, fill);
 		nvgFill(args.vg);
 	}
-	float defaultValue() override { return 0.f; } // center
-	float dragValue(float startValue, float deltaY, float cellHeightPx) override
+	float defaultValue(float rangeMin, float rangeMax) override { (void) rangeMin; (void) rangeMax; return 0.f; } // center
+	float dragValue(float startValue, float deltaY, float cellHeightPx, float rangeMin, float rangeMax) override
 	{
+		(void) rangeMin; (void) rangeMax;
 		float sensitivity = 20.f / cellHeightPx;
 		return clamp(startValue - deltaY * sensitivity, -10.f, 10.f);
 	}
 };
 
-// The one place a cellType number maps to its own editor - the entire registry a future cell
-// type needs to join. Static instances since editors are stateless (pure functions of whatever
-// cell they're currently asked to draw/edit), so there's never a need for more than one of each.
-inline NeoCellEditor* neoCellEditorForType(int cellType)
+// Guaranteed-compatible fallback (2026-07-22) - used whenever NO registered editor's own
+// isCompatible() agrees with a row's current channel properties (e.g. its selected cellType
+// editor no longer applies after switching track/channel to something with different
+// properties). Deliberately its OWN, separate editor rather than reusing NeoValueCellEditor -
+// Value is a normal, real user-facing choice that stays free to specialize/restrict its own
+// isCompatible() later; the fallback's entire purpose is the guarantee itself, so isCompatible()
+// here must never be overridden to return anything but true. That said, it's ALSO a completely
+// ordinary, directly selectable choice in its own right (Dieter's own call - "of course the
+// fallback editor also has a name and is always selectable"), not merely a hidden safety net - it
+// lives in neoCellEditorRegistry() like every other editor, name() "Knob," selectable for any
+// Value-type channel same as Gate/Value/Morpheus are.
+//
+// This is also the first cell editor actually being specified properly rather than left as
+// throwaway POC math (Dieter's own call, 2026-07-22) - since its whole job is "works for
+// literally anything," it's the first editor that genuinely NEEDS to read rangeMin/rangeMax
+// rather than assume a fixed -10..10. Drawn as a knob + numeric readout, scaled to whatever cell
+// size is currently available (Dieter's own spec: "if we can make our knob scalable we can
+// always scale it to the available cell size") - not a real interactive ParamWidget (cells are
+// drawn on one shared per-row canvas, NeoRowCellsWidget, not individual child widgets), but using
+// the same visual language as NEO's own real track/channel knobs (filled body + themed ring) so
+// it still reads as "a knob," plus a themed frame in the row's own color around the whole cell.
+struct NeoFallbackCellEditor : NeoCellEditor
+{
+	std::string name() override { return "Knob"; }
+	bool isCompatible(const NeoChannelProperties &props) override { (void) props; return true; }
+
+	// Fixed 6-character budget - 3 decimals normally ("-9.999"), dropping to 2 whenever the
+	// integer part needs 2 digits ("-10.00", still 6 chars) - Dieter's own spec, 2026-07-22.
+	static std::string formatValue(float value)
+	{
+		char buf[16];
+		if (std::abs(value) >= 10.f)
+			snprintf(buf, sizeof(buf), "%.2f", value);
+		else
+			snprintf(buf, sizeof(buf), "%.3f", value);
+		return std::string(buf);
+	}
+
+	void drawCell(const Widget::DrawArgs &args, float x, float cellWidthPx, float cellHeightPx, float value, NVGcolor color, float rangeMin, float rangeMax) override
+	{
+		// Themed frame around the whole cell, in the row's own color (Dieter's own request) -
+		// drawn first so the knob/text sit on top of it.
+		nvgBeginPath(args.vg);
+		nvgRoundedRect(args.vg, x + 1.f, 1.f, cellWidthPx - 2.f, cellHeightPx - 2.f, mm2px(NEO_FRAME_MARGIN_MM));
+		nvgStrokeWidth(args.vg, mm2px(NEO_FRAME_STROKE_MM));
+		nvgStrokeColor(args.vg, color);
+		nvgStroke(args.vg);
+
+		// Knob occupies the upper portion of the cell, the numeric readout the lower strip -
+		// diameter simply scales with whatever cell size is currently available.
+		float displayHeightPx = cellHeightPx * 0.28f;
+		float knobAreaHeightPx = cellHeightPx - displayHeightPx;
+		float knobDiameterPx = std::min(cellWidthPx, knobAreaHeightPx) * 0.7f;
+		float knobRadiusPx = knobDiameterPx / 2.f;
+		float cx = x + cellWidthPx / 2.f;
+		float cy = knobAreaHeightPx / 2.f;
+
+		nvgBeginPath(args.vg);
+		nvgCircle(args.vg, cx, cy, knobRadiusPx);
+		nvgFillColor(args.vg, nvgRGB(0x20, 0x20, 0x20));
+		nvgFill(args.vg);
+		nvgStrokeWidth(args.vg, std::max(1.f, knobRadiusPx * 0.12f));
+		nvgStrokeColor(args.vg, color);
+		nvgStroke(args.vg);
+
+		// Pointer - standard hardware-knob sweep, 270 degrees total (-135..+135 from straight up),
+		// clockwise, matching Rack's own SvgKnob convention. NanoVG's own angle convention has 0
+		// pointing along +X, increasing clockwise (Y axis points down) - offsetting by -0.75*PI
+		// (i.e. starting up and to the left) and sweeping 1.5*PI total reproduces that.
+		float t = (rangeMax > rangeMin) ? clamp((value - rangeMin) / (rangeMax - rangeMin), 0.f, 1.f) : 0.5f;
+		float angle = (-0.75f * (float) M_PI) + t * (1.5f * (float) M_PI);
+		float pointerLenPx = knobRadiusPx * 0.8f;
+		nvgBeginPath(args.vg);
+		nvgMoveTo(args.vg, cx, cy);
+		nvgLineTo(args.vg, cx + std::cos(angle) * pointerLenPx, cy + std::sin(angle) * pointerLenPx);
+		nvgStrokeWidth(args.vg, std::max(1.f, knobRadiusPx * 0.15f));
+		nvgStrokeColor(args.vg, color);
+		nvgStroke(args.vg);
+
+		// Numeric readout beneath the knob.
+		std::shared_ptr<Font> font = APP->window->loadFont(asset::plugin(pluginInstance, "res/repetition-scrolling.regular.ttf"));
+		if (font && font->handle >= 0)
+		{
+			std::string text = formatValue(value);
+			nvgFontFaceId(args.vg, font->handle);
+			nvgFontSize(args.vg, displayHeightPx * 0.75f);
+			nvgFillColor(args.vg, color);
+			nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+			nvgText(args.vg, cx, knobAreaHeightPx + displayHeightPx / 2.f, text.c_str(), nullptr);
+		}
+	}
+
+	float defaultValue(float rangeMin, float rangeMax) override { return (rangeMin + rangeMax) / 2.f; } // range's own midpoint
+
+	float dragValue(float startValue, float deltaY, float cellHeightPx, float rangeMin, float rangeMax) override
+	{
+		float sensitivity = (rangeMax - rangeMin) / cellHeightPx;
+		return clamp(startValue - deltaY * sensitivity, rangeMin, rangeMax);
+	}
+};
+
+// The single shared NeoFallbackCellEditor instance (2026-07-22) - its own dedicated accessor so
+// neoCellEditorRegistry() (where it's a normal, directly selectable entry) and
+// neoCellEditorForRow()'s own fallback path (below) always reference the exact same instance,
+// never two separate ones.
+inline NeoFallbackCellEditor& neoFallbackCellEditor()
+{
+	static NeoFallbackCellEditor fallback;
+	return fallback;
+}
+
+// The full list of implemented cell editors NEO currently knows about (2026-07-22) - the entire
+// registry a future cell type needs to join, by adding itself here. Static instances since
+// editors are stateless (pure functions of whatever cell they're currently asked to draw/edit),
+// so there's never a need for more than one of each. A genuinely iterable list (not just a
+// lookup-by-index function) specifically so a future celltype-selection UI can walk it and filter
+// down to only the editors whose isCompatible() actually agrees with a row's current
+// NeoChannelProperties - order matters, since ROW_CELLTYPE_PARAM's own raw value is a plain index
+// into this same list (0=Gate, 1=Value, 2=MorpheusStyle, 3=Knob/fallback for now). NeoFallbackCellEditor IS a
+// normal member of this list (Dieter's own call - it's a completely ordinary, directly selectable
+// choice, not merely a hidden safety net) - it just ALSO happens to be what neoCellEditorForRow()
+// falls back to when nothing else agrees.
+inline std::vector<NeoCellEditor*>& neoCellEditorRegistry()
 {
 	static NeoGateCellEditor gate;
 	static NeoValueCellEditor value;
 	static NeoMorpheusStyleCellEditor morpheusStyle;
-	if (cellType <= 0)
-		return &gate;
-	if (cellType == 1)
-		return &value;
-	return &morpheusStyle;
+	static std::vector<NeoCellEditor*> registry = { &gate, &value, &morpheusStyle, &neoFallbackCellEditor() };
+	return registry;
+}
+
+// THE one place a cellType number maps to its own editor - clamps into neoCellEditorRegistry()'s
+// own list rather than assuming the index is always in range, so a stale saved cellType (e.g.
+// from before some editor was ever removed) degrades to the nearest valid entry instead of
+// crashing.
+inline NeoCellEditor* neoCellEditorForType(int cellType)
+{
+	std::vector<NeoCellEditor*> &registry = neoCellEditorRegistry();
+	int index = clamp(cellType, 0, (int) registry.size() - 1);
+	return registry[index];
+}
+
+// THE resolver every real call site should use instead of neoCellEditorForType() directly
+// (2026-07-22) - resolves a row's own selected cellType, but falls back to the guaranteed-
+// compatible NeoFallbackCellEditor if that selection's own isCompatible() no longer agrees with
+// the row's current channel properties (e.g. after switching track/channel to something with
+// different properties than whatever the selection was originally made for).
+inline NeoCellEditor* neoCellEditorForRow(int cellType, const NeoChannelProperties &props)
+{
+	NeoCellEditor *selected = neoCellEditorForType(cellType);
+	if (selected->isCompatible(props))
+		return selected;
+	return &neoFallbackCellEditor();
 }
 
 /**
 	Draws (and handles single-cell drag/double-click-edit for) one row's currently-visible step
-	cells, entirely through whichever NeoCellEditor the row's own ROW_CELLTYPE_JSON selects - see
+	cells, entirely through whichever NeoCellEditor the row's own ROW_CELLTYPE_PARAM selects - see
 	its own comment for the full abstraction. One widget per row rather than one child widget per
 	cell, since the visible column count changes with the resizable panel width - simpler to just
 	recompute what's visible each draw() call than to create/destroy child widgets on every
@@ -1183,11 +1415,13 @@ struct NeoRowCellsWidget : TransparentWidget
 
 		int channel = m->getRowChannel(row);
 		int track = m->getRowTrack(row);
-		NeoCellEditor *editor = neoCellEditorForType((int) m->OL_state[ROW_CELLTYPE_JSON + row]);
+		NeoCellEditor *editor = neoCellEditorForRow(m->getRowCellType(row), m->rowProperties[row]);
 		int page = (int) m->OL_state[ROW_PAGE_JSON + row];
 		int loopLen = m->neoHost->getLoopLen(channel);
 		int colorPacked = m->channelColor[track][channel]; // (track,channel)-owned, Host-shared - see its own comment
 		NVGcolor color = nvgRGB((colorPacked >> 16) & 0xff, (colorPacked >> 8) & 0xff, colorPacked & 0xff);
+		float rangeMin = m->rowProperties[row].rangeMin;
+		float rangeMax = m->rowProperties[row].rangeMax;
 
 		for (int i = 0; i < visibleCols; i++)
 		{
@@ -1196,7 +1430,7 @@ struct NeoRowCellsWidget : TransparentWidget
 				break;
 			float value = m->neoHost->getTrackStep(track, channel, step);
 			float x = gapPx / 2.f + (float) i * pitchPx;
-			editor->drawCell(args, x, cellWidthPx, box.size.y, value, color);
+			editor->drawCell(args, x, cellWidthPx, box.size.y, value, color, rangeMin, rangeMax);
 		}
 	}
 
@@ -1251,8 +1485,8 @@ struct NeoRowCellsWidget : TransparentWidget
 
 		// e.mouseDelta is already zoom-corrected by Rack - accumulate it directly rather than
 		// re-deriving from absolute position, simplest correct approach for a continuous drag.
-		NeoCellEditor *editor = neoCellEditorForType((int) m->OL_state[ROW_CELLTYPE_JSON + row]);
-		float newValue = editor->dragValue(dragStartValue, e.mouseDelta.y, box.size.y);
+		NeoCellEditor *editor = neoCellEditorForRow(m->getRowCellType(row), m->rowProperties[row]);
+		float newValue = editor->dragValue(dragStartValue, e.mouseDelta.y, box.size.y, m->rowProperties[row].rangeMin, m->rowProperties[row].rangeMax);
 		dragStartValue = newValue;
 
 		m->neoHost->setTrackStep(track, channel, step, newValue);
@@ -1277,7 +1511,8 @@ struct NeoRowCellsWidget : TransparentWidget
 			int track = m->getRowTrack(row);
 			int page = (int) m->OL_state[ROW_PAGE_JSON + row];
 			int step = page * visibleCols + dragStep;
-			float resetValue = neoCellEditorForType((int) m->OL_state[ROW_CELLTYPE_JSON + row])->defaultValue();
+			NeoCellEditor *editor = neoCellEditorForRow(m->getRowCellType(row), m->rowProperties[row]);
+			float resetValue = editor->defaultValue(m->rowProperties[row].rangeMin, m->rowProperties[row].rangeMax);
 			m->neoHost->setTrackStep(track, channel, step, resetValue);
 		}
 		TransparentWidget::onDoubleClick(e);
@@ -1922,6 +2157,11 @@ struct NeoWidget : ModuleWidget
 	NeoRowTextDisplayWidget *channelDisplays[NEO_NUM_ROWS] = {};
 	ParamWidget *channelKnobs[NEO_NUM_ROWS] = {};
 	NeoRowKnobRingWidget *channelKnobRings[NEO_NUM_ROWS] = {};
+	// Cell-editor-selection display + knob (2026-07-22) - same shape as track/channel above,
+	// replacing the old right-click-only "Rows -> Row N -> Cell Type" submenu entirely.
+	NeoRowTextDisplayWidget *cellTypeDisplays[NEO_NUM_ROWS] = {};
+	ParamWidget *cellTypeKnobs[NEO_NUM_ROWS] = {};
+	NeoRowKnobRingWidget *cellTypeKnobRings[NEO_NUM_ROWS] = {};
 	// Right-aligned page/position display (2026-07-20) - see NEO_ROW_POSITION_DISPLAY_WIDTH_MM's
 	// own comment (Neo.hpp).
 	NeoRowTextDisplayWidget *positionDisplays[NEO_NUM_ROWS] = {};
@@ -2164,6 +2404,29 @@ struct NeoWidget : ModuleWidget
 			ParamWidget *channelKnob = createParam<RoundSmallBlackKnob>(Vec(), module, ROW_CHANNEL_PARAM + r);
 			addParam(channelKnob);
 			channelKnobs[r] = channelKnob;
+
+			// Cell-editor selection (2026-07-22) - display + knob, same shape as track/channel
+			// above, replacing the old right-click-only "Rows -> Row N -> Cell Type" submenu
+			// entirely (same reasoning as the channel knob replacing its own predecessor menu).
+			NeoRowTextDisplayWidget *cellTypeDisplay = new NeoRowTextDisplayWidget();
+			cellTypeDisplay->module = module;
+			cellTypeDisplay->fontSize = mm2px(Vec(NEO_ROW_NAME_FONT_SIZE_MM, 0.f)).x;
+			cellTypeDisplay->box.size = mm2px(Vec(NEO_ROW_CELLTYPE_DISPLAY_WIDTH_MM, NEO_ROW_NUMBER_DISPLAY_HEIGHT_MM));
+			cellTypeDisplay->getText = [r](Neo *m) {
+				return neoCellEditorForType(m->getRowCellType(r))->name();
+			};
+			addChild(cellTypeDisplay);
+			cellTypeDisplays[r] = cellTypeDisplay;
+
+			NeoRowKnobRingWidget *cellTypeKnobRing = new NeoRowKnobRingWidget();
+			cellTypeKnobRing->module = module;
+			cellTypeKnobRing->box.size = mm2px(Vec(NEO_ROW_SELECT_KNOB_SIZE_MM, NEO_ROW_SELECT_KNOB_SIZE_MM));
+			addChild(cellTypeKnobRing);
+			cellTypeKnobRings[r] = cellTypeKnobRing;
+
+			ParamWidget *cellTypeKnob = createParam<RoundSmallBlackKnob>(Vec(), module, ROW_CELLTYPE_PARAM + r);
+			addParam(cellTypeKnob);
+			cellTypeKnobs[r] = cellTypeKnob;
 
 			// Page/position display (2026-07-20) - two stacked lines, right-aligned against the
 			// header's own actual current right edge (set in step(), unlike every left-anchored
@@ -2444,6 +2707,9 @@ struct NeoWidget : ModuleWidget
 				channelDisplays[r]->visible = rowVisible;
 				channelKnobs[r]->visible = rowVisible;
 				channelKnobRings[r]->visible = rowVisible;
+				cellTypeDisplays[r]->visible = rowVisible;
+				cellTypeKnobs[r]->visible = rowVisible;
+				cellTypeKnobRings[r]->visible = rowVisible;
 				positionDisplays[r]->visible = rowVisible;
 				leftBtns[r]->visible = rowVisible;
 				rightBtns[r]->visible = rowVisible;
@@ -2533,34 +2799,53 @@ struct NeoWidget : ModuleWidget
 				rowNameFields[r]->box.size = mm2px(Vec(nameFieldWidthMm, NEO_ROW_NUMBER_DISPLAY_HEIGHT_MM));
 				rowNameFields[r]->box.pos = calculateCoordinates(nameFieldXMm + NEO_GLOBAL_AREA_WIDTH_MM, centerY, 0.f).minus(Vec(0.f, rowNameFields[r]->box.size.y / 2.f));
 
-				// LEFT/RIGHT positions derived from the name field's own actual current right edge
-				// (nameFieldXMm + nameFieldWidthMm) rather than a separately-maintained static
-				// offset, so they can never drift out of sync with the field's real edge. FOLLOW no
-				// longer sits between them - it moved to the global area (2026-07-21, see
-				// moduleProcess()'s own comment) - LEFT now starts directly after the name field.
-				//
-				// A real bug (Dieter's own catch via screenshot, 2026-07-21):
-				// calculateCoordinates(...).minus(box.size.div(2)) treats the X passed in as the
-				// button's own CENTER, but the *Mm values below were computed as a LEFT edge
-				// (previous element's right edge + one gap) with no correction for that - silently
-				// shifting each button left by half its own width, eating most of the intended gap.
-				// Fixed by explicitly computing each button's own LEFT edge first (previous left
-				// edge + previous width + gap, chained), then converting to a center by adding back
-				// that SAME button's own half-width only at the point where it's fed into the
-				// centering call - never skip that step.
-				float leftLeftMm = nameFieldXMm + nameFieldWidthMm + NEO_FRAME_GAP_MM;
-				float leftCenterMm = leftLeftMm + NEO_ROW_PAGEBTN_SIZE_MM / 2.f;
-				leftBtns[r]->box.pos = calculateCoordinates(leftCenterMm + NEO_GLOBAL_AREA_WIDTH_MM, centerY, 0.f).minus(leftBtns[r]->box.size.div(2.f));
-				float rightLeftMm = leftLeftMm + NEO_ROW_PAGEBTN_SIZE_MM + NEO_FRAME_GAP_MM;
-				float rightCenterMm = rightLeftMm + NEO_ROW_PAGEBTN_SIZE_MM / 2.f;
-				rightBtns[r]->box.pos = calculateCoordinates(rightCenterMm + NEO_GLOBAL_AREA_WIDTH_MM, centerY, 0.f).minus(rightBtns[r]->box.size.div(2.f));
+				// Cell-editor-selection knob + display (2026-07-22) - knob first, display to its
+				// right (Dieter's own follow-up correction - swapped from the initial display-then-
+				// knob order, which had matched track/channel's own display-then-knob layout but
+				// wasn't what he wanted for this control). Chained directly off the name field's own
+				// actual current right edge, same "previous element's right edge + one gap"
+				// convention as everything else in this left-anchored chain (see the LEFT/RIGHT
+				// comment below for why this matters: a raw *Mm value here is a LEFT edge, only
+				// converted to a CENTER right where it's fed into a centering call). This is the
+				// exact slot LEFT/RIGHT used to occupy before moving to sit beside the position
+				// display instead (Dieter's own instruction, 2026-07-22 - "move the placeholder for
+				// next/prev paging right aligned left to the position display").
+				float cellTypeKnobXMm = nameFieldXMm + nameFieldWidthMm + NEO_FRAME_GAP_MM + NEO_ROW_SELECT_KNOB_SIZE_MM / 2.f;
+				cellTypeKnobRings[r]->box.pos = calculateCoordinates(cellTypeKnobXMm + NEO_GLOBAL_AREA_WIDTH_MM, centerY, 0.f).minus(cellTypeKnobRings[r]->box.size.div(2.f));
+				cellTypeKnobs[r]->box.pos = calculateCoordinates(cellTypeKnobXMm + NEO_GLOBAL_AREA_WIDTH_MM, centerY, 0.f).minus(cellTypeKnobs[r]->box.size.div(2.f));
+				float cellTypeDisplayXMm = cellTypeKnobXMm + NEO_ROW_SELECT_KNOB_SIZE_MM / 2.f + NEO_FRAME_GAP_MM;
+				cellTypeDisplays[r]->box.pos = calculateCoordinates(cellTypeDisplayXMm + NEO_GLOBAL_AREA_WIDTH_MM, centerY, 0.f).minus(Vec(0.f, cellTypeDisplays[r]->box.size.y / 2.f));
 
 				// Right-aligned against the header's own actual current right edge (headerFrameRightMm,
 				// already computed above) minus its own width and a small margin - unlike every
 				// other row control, this one's x genuinely depends on the header's current
-				// (possibly grown-past-Tw) width, not a fixed left-edge offset.
+				// (possibly grown-past-Tw) width, not a fixed left-edge offset. Computed BEFORE
+				// LEFT/RIGHT below now (2026-07-22 reorder) since they're positioned relative to it.
 				float positionDisplayXMm = headerFrameRightMm - NEO_ROW_POSITION_DISPLAY_WIDTH_MM - NEO_ROW_POSITION_DISPLAY_MARGIN_MM;
 				positionDisplays[r]->box.pos = calculateCoordinates(positionDisplayXMm, centerY, 0.f).minus(Vec(0.f, positionDisplays[r]->box.size.y / 2.f));
+
+				// LEFT/RIGHT moved (2026-07-22, Dieter's own instruction) from right after the name
+				// field - which the new cell-editor-selection display/knob above now occupies - to
+				// sit right-aligned immediately to the left of the position display instead: RIGHT
+				// sits one frame-gap left of the position display's own left edge, LEFT sits one
+				// frame-gap left of RIGHT's own left edge. positionDisplayXMm is already an ABSOLUTE
+				// mm coordinate (derived from headerFrameRightMm, which already includes
+				// NEO_GLOBAL_AREA_WIDTH_MM) - unlike the left-anchored chain above, no
+				// "+ NEO_GLOBAL_AREA_WIDTH_MM" is needed when consuming it here.
+				//
+				// A real bug (Dieter's own catch via screenshot, 2026-07-21, still applies here):
+				// calculateCoordinates(...).minus(box.size.div(2)) treats the X passed in as the
+				// button's own CENTER, but a LEFT-edge value fed in directly (with no correction)
+				// silently shifts each button left by half its own width, eating most of the
+				// intended gap. Fixed by explicitly computing each button's own LEFT edge first,
+				// then converting to a center by adding back that SAME button's own half-width only
+				// at the point where it's fed into the centering call - never skip that step.
+				float rightLeftMm = positionDisplayXMm - NEO_FRAME_GAP_MM - NEO_ROW_PAGEBTN_SIZE_MM;
+				float rightCenterMm = rightLeftMm + NEO_ROW_PAGEBTN_SIZE_MM / 2.f;
+				rightBtns[r]->box.pos = calculateCoordinates(rightCenterMm, centerY, 0.f).minus(rightBtns[r]->box.size.div(2.f));
+				float leftLeftMm = rightLeftMm - NEO_FRAME_GAP_MM - NEO_ROW_PAGEBTN_SIZE_MM;
+				float leftCenterMm = leftLeftMm + NEO_ROW_PAGEBTN_SIZE_MM / 2.f;
+				leftBtns[r]->box.pos = calculateCoordinates(leftCenterMm, centerY, 0.f).minus(leftBtns[r]->box.size.div(2.f));
 
 				rowCells[r]->box.pos = calculateCoordinates(headerBoundaryMm, y, 0.f);
 				rowCells[r]->box.size = mm2px(Vec(cellsWidthMm, cellHeightMm));
@@ -2618,8 +2903,10 @@ struct NeoWidget : ModuleWidget
 	};
 
 	// How many of the 16 row-slots are actually shown at once (NEO_ROWS_MIN..NEO_ROWS_MAX) -
-	// named "Grid Rows" specifically to avoid colliding with NeoRowsItem's own "Rows" menu below
-	// (per-row channel assignment - a completely different setting).
+	// named "Grid Rows" to avoid colliding with the per-row cell-editor-selection knob's own
+	// naming ("Cell Type"). The old right-click-only "Rows -> Row N -> Cell Type" submenu
+	// (NeoRowsItem) that used to sit alongside this item is gone (2026-07-22) - fully replaced by
+	// the on-panel ROW_CELLTYPE_PARAM knob + display in the row header itself.
 	struct NeoGridRowsItem : MenuItem
 	{
 		Neo *module;
@@ -2663,75 +2950,6 @@ struct NeoWidget : ModuleWidget
 	// NeoFullHeightItem removed 2026-07-22 (Dieter's own instruction) - "Full Height" moved from
 	// this right-click menu item to a global-area button (see NeoWidget's own fullHeightButton,
 	// and Neo::toggleFullHeight() for the same logic this item's own onAction() used to run).
-
-	// Per-row "Cell Type" submenu - two-level, "Rows" -> "Row N" -> the cell-type choices, same
-	// setSize()-required pattern as CLAUDE.md's documented "Channels" submenu convention. Used to
-	// also hold a "which channel" choice here (NeoRowChannelItem) - removed 2026-07-20, replaced
-	// entirely by the new on-panel ROW_CHANNEL_PARAM knob (a separate right-click menu for the
-	// exact same setting would be redundant and could disagree with the knob).
-	struct NeoRowsItem : MenuItem
-	{
-		Neo *module;
-
-		struct NeoRowItem : MenuItem
-		{
-			Neo *module;
-			int row;
-
-			struct NeoRowCellTypeItem : MenuItem
-			{
-				Neo *module;
-				int row;
-				int cellType;
-				void onAction(const event::Action &e) override
-				{
-					module->OL_setOutState(ROW_CELLTYPE_JSON + row, float(cellType));
-				}
-				void step() override
-				{
-					if (module)
-						rightText = (module->OL_state[ROW_CELLTYPE_JSON + row] == cellType) ? "✔" : "";
-				}
-			};
-
-			Menu *createChildMenu() override
-			{
-				Menu *menu = new Menu;
-
-				MenuLabel *typeLabel = new MenuLabel();
-				typeLabel->text = "Cell Type";
-				menu->addChild(typeLabel);
-				const char *typeNames[3] = { "Gate", "Value", "Morpheus" };
-				for (int t = 0; t < 3; t++)
-				{
-					NeoRowCellTypeItem *item = new NeoRowCellTypeItem();
-					item->module = module;
-					item->row = row;
-					item->cellType = t;
-					item->text = typeNames[t];
-					item->setSize(Vec(90, 20));
-					menu->addChild(item);
-				}
-				return menu;
-			}
-		};
-
-		Menu *createChildMenu() override
-		{
-			Menu *menu = new Menu;
-			for (int r = 0; r < NEO_NUM_ROWS; r++)
-			{
-				NeoRowItem *item = new NeoRowItem();
-				item->module = module;
-				item->row = r;
-				item->text = string::f("Row %d", r + 1);
-				item->rightText = RIGHT_ARROW;
-				item->setSize(Vec(90, 20));
-				menu->addChild(item);
-			}
-			return menu;
-		}
-	};
 
 	// Non-adjacent Connect/Disconnect - lists every module in the patch implementing
 	// Non-adjacent connection is auto-remembered (see moduleProcess()'s own comment) - no manual
@@ -2785,15 +3003,9 @@ struct NeoWidget : ModuleWidget
 		gridRowsItem->rightText = RIGHT_ARROW;
 		menu->addChild(gridRowsItem);
 		// "Full Height" menu item removed 2026-07-22 - now a global-area button (fullHeightButton).
-
-		spacerLabel = new MenuLabel();
-		menu->addChild(spacerLabel);
-
-		NeoRowsItem *rowsItem = new NeoRowsItem();
-		rowsItem->module = module;
-		rowsItem->text = "Rows";
-		rowsItem->rightText = RIGHT_ARROW;
-		menu->addChild(rowsItem);
+		// "Rows" (per-row Cell Type submenu) removed the same day - now the on-panel
+		// ROW_CELLTYPE_PARAM knob + display in the row header itself (see NeoWidget's own
+		// cellTypeKnobs/cellTypeDisplays).
 
 		if (module->neoConnectedHostId >= 0)
 		{

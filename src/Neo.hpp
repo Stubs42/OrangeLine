@@ -335,6 +335,16 @@ inline float neoRowAreaControlsWidthMm(bool fullHeight, float rowHeaderWidthMm)
 // ordinary display field, it shouldn't need one at all - an earlier pass here added a nudgeMm
 // correction, which was itself the wrong move, not just the wrong shape of fix).
 #define NEO_ROW_NAME_TEXT_WIDTH_MM   olDisplayWidthMm(NEO_ROW_NAME_MAX_CHARS, NEO_ROW_NAME_FONT_SIZE_MM, NEO_ROW_DISPLAY_TEXT_INSET_MM)
+
+// On-panel cell-editor-selection display (2026-07-22) - shows the row's currently selected
+// NeoCellEditor's own name() ("Gate"/"Value"/"Morpheus"/"Knob"), 8-character budget same as the
+// name field above (Dieter's own spec: "an 8char display field for the cell editor selection"),
+// same shared width formula/font size as every other NEO display - no per-field nudge. Sits right
+// after the name field, in the space LEFT/RIGHT paging used to occupy before they moved to sit
+// beside the position display (see NeoWidget::step()'s own comment for the reordering).
+#define NEO_ROW_CELLTYPE_MAX_CHARS 8
+#define NEO_ROW_CELLTYPE_DISPLAY_WIDTH_MM olDisplayWidthMm(NEO_ROW_CELLTYPE_MAX_CHARS, NEO_ROW_NAME_FONT_SIZE_MM, NEO_ROW_DISPLAY_TEXT_INSET_MM)
+
 // NEO_ROW_NAME_WIDTH_MM/FOLLOW_X_MM/LEFT_X_MM/RIGHT_X_MM used to be static #defines here, chained
 // off the field's own BASE width - removed 2026-07-21 (Dieter's own catch: FOLLOW/LEFT/RIGHT kept
 // overlapping the name field) because the header's own current width - and everything to the
@@ -744,9 +754,13 @@ enum jsonIds {
 	ROW_PAGE_JSON,
 	ROW_PAGE_JSON_LAST = ROW_PAGE_JSON + NEO_NUM_ROWS - 1,
 
-	// Per-row cell display/editor type (0 = Gate, 1 = Value in v1 - Pitch/Curve are follow-up
-	// work, see the plan) - user-configurable via right-click, not auto-detected from Morpheus's
-	// own data (a step is just a raw float either way, see NeoShared.hpp's own comment).
+	// UNUSED as of the 2026-07-22 on-panel celltype knob (ROW_CELLTYPE_PARAM, ParamIds below) -
+	// same "slot kept, not renumbered, still needs a real jsonLabel" precedent as
+	// ROW_HEADER_WIDTH_MM_JSON above (an unlabeled slot is live uninitialized memory, not a safe
+	// no-op - moduleInitJsonConfig() still calls setJsonLabel() for every row here). Used to be the
+	// right-click-menu-only selector (0 = Gate, 1 = Value, 2 = Morpheus) before the real knob
+	// replaced it entirely, same reasoning as ROW_TRACK_PARAM/ROW_CHANNEL_PARAM superseding their
+	// own predecessor JSON fields.
 	ROW_CELLTYPE_JSON,
 	ROW_CELLTYPE_JSON_LAST = ROW_CELLTYPE_JSON + NEO_NUM_ROWS - 1,
 
@@ -777,6 +791,16 @@ enum ParamIds {
 	ROW_TRACK_PARAM_LAST = ROW_TRACK_PARAM + NEO_NUM_ROWS - 1,
 	ROW_CHANNEL_PARAM, // which of the Host's own channels (1..16 for Morpheus)
 	ROW_CHANNEL_PARAM_LAST = ROW_CHANNEL_PARAM + NEO_NUM_ROWS - 1,
+	// Per-row cell editor selection (2026-07-22) - a real on-panel knob replacing the old
+	// right-click-only "Rows -> Row N -> Cell Type" submenu entirely (same reasoning as
+	// ROW_TRACK_PARAM/ROW_CHANNEL_PARAM replacing their own predecessors: a separate menu for the
+	// exact same setting would be redundant and could disagree with the knob). Range is
+	// neoCellEditorRegistry()'s own current size, not a fixed ceiling like NEO_MAX_TRACKS - the
+	// registry only ever grows by adding a new NeoCellEditor subclass in source, never at runtime,
+	// so there's no "beyond what's currently registered" case to guard against the way a Host's
+	// live track count needs guarding for ROW_TRACK_PARAM.
+	ROW_CELLTYPE_PARAM,
+	ROW_CELLTYPE_PARAM_LAST = ROW_CELLTYPE_PARAM + NEO_NUM_ROWS - 1,
 	ROW_FOLLOW_PARAM,
 	ROW_FOLLOW_PARAM_LAST = ROW_FOLLOW_PARAM + NEO_NUM_ROWS - 1,
 	ROW_LEFT_PARAM,  // manual page-back, active only while that row's FOLLOW is off
