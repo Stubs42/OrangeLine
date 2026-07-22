@@ -54,6 +54,14 @@ struct NeoChannelProperties
 struct NeoCellEditor;
 inline std::vector<NeoCellEditor*>& neoCellEditorRegistry();
 
+// Same forward-declaration reasoning as above - NEO_ROW_COLOR_MODES (the real list) lives well
+// past the Neo module struct (it's written in terms of NeoRowColorDotWidget's own click-to-cycle
+// need), but Neo::rowColorHeaderFrameMode()/rowColorDisplayFrameEnabled()/rowColorTextEnabled()
+// (below) need to read it.
+inline int neoRowColorHeaderFrameMode(int mode);
+inline bool neoRowColorDisplayFrameEnabled(int mode);
+inline bool neoRowColorTextEnabled(int mode);
+
 struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterface, ExpanderBridgeInterface
 {
 #include "OrangeLineCommon.hpp"
@@ -298,7 +306,7 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 		    "rows": 6,
 		    "fullHeight": true,
 		    "widthHp": 32,
-		    "dragging": false   // 2026-07-21: true while ANY locked instance is actively being
+		    "dragging": false,  // 2026-07-21: true while ANY locked instance is actively being
 		                        // drag-resized - every locked instance (dragged or following) reads
 		                        // this to freeze its own displayed header/column layout for the
 		                        // duration (see NeoWidget::step()'s cached-layout refresh gate),
@@ -306,6 +314,11 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 		                        // otherwise cause during a live drag. Only the dragged instance
 		                        // writes it (onDragStart()/onDragEnd()), same single-writer rule as
 		                        // widthHp.
+		    "colorMode": 11     // 2026-07-22: row-header coloring mode (index into Neo.cpp's own
+		                        // NEO_ROW_COLOR_MODES) - "and of course the locked NEOs have to
+		                        // follow" (Dieter's own instruction) - synced exactly like
+		                        // rows/fullHeight above, via the same locally-changed-vs-adopt
+		                        // pattern in NeoWidget::step().
 		  }
 		}
 	*/
@@ -316,6 +329,9 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 		bool fullHeight = false;
 		int widthHp = NEO_DEFAULT_WIDTH_HP;
 		bool dragging = false;
+		// Default (11) must match moduleReset()'s own OL_state[ROW_COLOR_MODE_JSON] default - see
+		// its own comment for why this is a hand-picked literal, not a forward reference.
+		int colorMode = 11;
 	};
 
 	NeoLockData readLockData()
@@ -355,6 +371,9 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 			json_t *draggingJ = json_object_get(lockJ, "dragging");
 			if (draggingJ && json_is_boolean(draggingJ))
 				result.dragging = json_is_true(draggingJ);
+			json_t *colorModeJ = json_object_get(lockJ, "colorMode");
+			if (colorModeJ && json_is_integer(colorModeJ))
+				result.colorMode = (int) json_integer_value(colorModeJ);
 		}
 		json_decref(rootJ);
 		return result;
@@ -386,6 +405,7 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 		json_object_set_new(lockJ, "fullHeight", json_boolean(data.fullHeight));
 		json_object_set_new(lockJ, "widthHp", json_integer(data.widthHp));
 		json_object_set_new(lockJ, "dragging", json_boolean(data.dragging));
+		json_object_set_new(lockJ, "colorMode", json_integer(data.colorMode));
 		json_object_set_new(rootJ, "lock", lockJ);
 
 		char *serialized = json_dumps(rootJ, JSON_COMPACT);
@@ -404,6 +424,9 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 	// not yet synced, so the first locked tick always adopts rather than misreading as an edit.
 	float neoLockLastSyncedRows = -1.f;
 	float neoLockLastSyncedFullHeight = -1.f;
+	// Same role, for ROW_COLOR_MODE_JSON (2026-07-22) - "and of course the locked NEOs have to
+	// follow" (Dieter's own instruction).
+	float neoLockLastSyncedColorMode = -1.f;
 	// neoLockLastSyncedWidthHp is gone (2026-07-21) - width sync no longer tracks "did my own
 	// width change" at all, see NeoWidget::step()'s own "Lock sync (width half)" comment for why.
 
@@ -464,16 +487,19 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 				data.rows = clamp((int) OL_state[ROWS_DISPLAYED_JSON], NEO_ROWS_MIN, NEO_ROWS_MAX);
 				data.fullHeight = OL_state[FULL_HEIGHT_JSON] > 0.5f;
 				data.widthHp = (int) std::round(OL_state[PANEL_WIDTH_HP_JSON]);
+				data.colorMode = (int) OL_state[ROW_COLOR_MODE_JSON];
 			}
 			else
 			{
-				// Joining an existing group - adopt its rows/fullHeight now; width is left to
-				// the per-tick convergence in NeoWidget::step().
+				// Joining an existing group - adopt its rows/fullHeight/colorMode now; width is
+				// left to the per-tick convergence in NeoWidget::step().
 				OL_setOutState(ROWS_DISPLAYED_JSON, (float) data.rows);
 				OL_setOutState(FULL_HEIGHT_JSON, data.fullHeight ? 1.f : 0.f);
+				OL_setOutState(ROW_COLOR_MODE_JSON, (float) data.colorMode);
 			}
 			neoLockLastSyncedRows = (float) data.rows;
 			neoLockLastSyncedFullHeight = data.fullHeight ? 1.f : 0.f;
+			neoLockLastSyncedColorMode = (float) data.colorMode;
 			if (std::find(data.ids.begin(), data.ids.end(), (int64_t) id) == data.ids.end())
 				data.ids.push_back((int64_t) id);
 			writeLockData(data);
@@ -486,6 +512,7 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 			OL_setOutState(LOCKED_JSON, 0.f);
 			neoLockLastSyncedRows = -1.f;
 			neoLockLastSyncedFullHeight = -1.f;
+			neoLockLastSyncedColorMode = -1.f;
 		}
 	}
 
@@ -549,9 +576,11 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 		return neoColumnWidthMm(fullHeight, rowsDisplayed);
 	}
 
-	// The actual per-column footprint (cell + gap) - horizontal padding matches vertical padding
-	// (Dieter's own instruction, 2026-07-20), so this always equals the current row pitch. Every
-	// width-BUDGET computation uses this, never getColumnWidthMm() (that one's for drawing).
+	// The actual per-column footprint - NEO reserves zero inter-cell gap of its own (2026-07-22
+	// KISS simplification, see neoColumnPitchMm()'s own comment, Neo.hpp), so this now always
+	// equals getColumnWidthMm() exactly. Every width-BUDGET computation still uses this rather
+	// than getColumnWidthMm() directly, for the same "go through the semantically correct
+	// accessor" reasoning neoColumnPitchMm() itself explains.
 	float getColumnPitchMm()
 	{
 		bool fullHeight = OL_state[FULL_HEIGHT_JSON] > 0.5f;
@@ -595,6 +624,13 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 		int colorPacked = channelColor[getRowTrack(row)][getRowChannel(row)];
 		return nvgRGB((colorPacked >> 16) & 0xff, (colorPacked >> 8) & 0xff, colorPacked & 0xff);
 	}
+
+	// Whether/how the row header currently follows the row's own identity color, per the
+	// user-selected ROW_COLOR_MODE_JSON (2026-07-22) - see NEO_ROW_COLOR_MODES (Neo.cpp) for the
+	// actual 3-axis list a click on any row's own color dot cycles through.
+	int rowColorHeaderFrameMode() { return neoRowColorHeaderFrameMode((int) OL_state[ROW_COLOR_MODE_JSON]); }
+	bool rowColorDisplayFrameEnabled() { return neoRowColorDisplayFrameEnabled((int) OL_state[ROW_COLOR_MODE_JSON]); }
+	bool rowColorTextEnabled() { return neoRowColorTextEnabled((int) OL_state[ROW_COLOR_MODE_JSON]); }
 
 	// Session-only UI cache (2026-07-21 redesign) - the module's own current header width/controls
 	// width/visible column count, as a single NeoLayoutResult. Refreshed by NeoWidget::step() via
@@ -652,6 +688,7 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 		// actively read in moduleProcess(), so this wasn't even a "harmless unused slot" case,
 		// just a plain omission from whenever this field was added.
 		setJsonLabel(GLOBAL_FOLLOW_JSON, "globalFollow");
+		setJsonLabel(ROW_COLOR_MODE_JSON, "rowColorMode");
 
 #pragma GCC diagnostic pop
 	}
@@ -713,6 +750,7 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 		OL_state[LOCKED_JSON] = 0.f;
 		neoLockLastSyncedRows = -1.f;
 		neoLockLastSyncedFullHeight = -1.f;
+		neoLockLastSyncedColorMode = -1.f;
 	}
 	// Symmetric with the Host's own onRemove() (Morpheus.cpp) - proactively tells the cached
 	// Host to forget this Neo instance before it's actually destroyed, using only the pointer
@@ -744,6 +782,14 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 		neoCachedLayout = neoComputeLayout((float) NEO_DEFAULT_WIDTH_HP * 5.08f, false, NEO_ROWS_DEFAULT);
 		disconnectNeoHost();
 		OL_state[GLOBAL_FOLLOW_JSON] = 1.f; // auto-follow the play cursor, on by default
+		// Default to NEO_ROW_COLOR_MODES's own LAST entry ("Row/Row/Row" - header frame, display
+		// frames, AND text all follow the row color) - the combination already confirmed looking
+		// good live, 2026-07-22. Hand-picked literal (11), not a forward-referenced
+		// NEO_NUM_ROW_COLOR_MODES-1 - that array is defined well after this struct (see
+		// NeoRowColorDotWidget's own comment) - recompute by hand and update this if the list's own
+		// entry count ever changes, same "derived constant must be recomputed by hand" convention
+		// as NEO_DEFAULT_WIDTH_HP.
+		OL_state[ROW_COLOR_MODE_JSON] = 11.f;
 		for (int r = 0; r < NEO_NUM_ROWS; r++)
 		{
 			// Row r's default track/channel (row r shows channel r, track TAPE) come from
@@ -1154,8 +1200,12 @@ struct NeoGateCellEditor : NeoCellEditor
 		                       // 0..1 knob
 		if (!on)
 			return;
+		// Recommended half-frame-padding inset (2026-07-22, see NEO_CELL_RECOMMENDED_PADDING_MM's
+		// own comment, Neo.hpp) - NEO itself no longer reserves any gap between cells, so this is
+		// what keeps adjacent cells reading as visually separate.
+		float padPx = mm2px(NEO_CELL_RECOMMENDED_PADDING_MM);
 		nvgBeginPath(args.vg);
-		nvgRect(args.vg, x, 0.f, cellWidthPx, cellHeightPx);
+		nvgRect(args.vg, x + padPx, padPx, cellWidthPx - 2.f * padPx, cellHeightPx - 2.f * padPx);
 		nvgFillColor(args.vg, color);
 		nvgFill(args.vg);
 	}
@@ -1175,9 +1225,14 @@ struct NeoValueCellEditor : NeoCellEditor
 	{
 		(void) rangeMin; (void) rangeMax;
 		float t = clamp((value + 10.f) / 20.f, 0.f, 1.f); // -10..+10V -> 0..1
-		float barHeight = t * cellHeightPx;
+		// Recommended half-frame-padding inset (2026-07-22, see NEO_CELL_RECOMMENDED_PADDING_MM's
+		// own comment, Neo.hpp) on all sides - the bar's own available vertical travel shrinks by
+		// the top+bottom margin, and it stays grounded against the padded (not raw) bottom edge.
+		float padPx = mm2px(NEO_CELL_RECOMMENDED_PADDING_MM);
+		float availableHeightPx = cellHeightPx - 2.f * padPx;
+		float barHeight = t * availableHeightPx;
 		nvgBeginPath(args.vg);
-		nvgRect(args.vg, x, cellHeightPx - barHeight, cellWidthPx, barHeight);
+		nvgRect(args.vg, x + padPx, cellHeightPx - padPx - barHeight, cellWidthPx - 2.f * padPx, barHeight);
 		nvgFillColor(args.vg, color);
 		nvgFill(args.vg);
 	}
@@ -1204,8 +1259,11 @@ struct NeoMorpheusStyleCellEditor : NeoCellEditor
 		(void) rangeMin; (void) rangeMax;
 		float t = clamp((value + 10.f) / 20.f, 0.f, 1.f); // -10..+10V -> 0..1, same as Morpheus's own display
 		NVGcolor fill = nvgLerpRGBA(NEO_MORPHEUS_CELL_LOW_COLOR, NEO_MORPHEUS_CELL_HIGH_COLOR, t);
+		// Recommended half-frame-padding inset (2026-07-22, see NEO_CELL_RECOMMENDED_PADDING_MM's
+		// own comment, Neo.hpp).
+		float padPx = mm2px(NEO_CELL_RECOMMENDED_PADDING_MM);
 		nvgBeginPath(args.vg);
-		nvgRect(args.vg, x, 0.f, cellWidthPx, cellHeightPx);
+		nvgRect(args.vg, x + padPx, padPx, cellWidthPx - 2.f * padPx, cellHeightPx - 2.f * padPx);
 		nvgFillColor(args.vg, fill);
 		nvgFill(args.vg);
 	}
@@ -1259,9 +1317,14 @@ struct NeoFallbackCellEditor : NeoCellEditor
 	void drawCell(const Widget::DrawArgs &args, float x, float cellWidthPx, float cellHeightPx, float value, NVGcolor color, float rangeMin, float rangeMax) override
 	{
 		// Themed frame around the whole cell, in the row's own color (Dieter's own request) -
-		// drawn first so the knob/text sit on top of it.
+		// drawn first so the knob/text sit on top of it. Inset by the recommended half-frame-
+		// padding (2026-07-22, replacing an earlier hardcoded 1px - see
+		// NEO_CELL_RECOMMENDED_PADDING_MM's own comment, Neo.hpp) - same margin every other
+		// concrete editor now leaves, so adjacent cells still read as visually separate now that
+		// NEO itself reserves zero gap between them.
+		float padPx = mm2px(NEO_CELL_RECOMMENDED_PADDING_MM);
 		nvgBeginPath(args.vg);
-		nvgRoundedRect(args.vg, x + 1.f, 1.f, cellWidthPx - 2.f, cellHeightPx - 2.f, mm2px(NEO_FRAME_MARGIN_MM));
+		nvgRoundedRect(args.vg, x + padPx, padPx, cellWidthPx - 2.f * padPx, cellHeightPx - 2.f * padPx, mm2px(NEO_FRAME_MARGIN_MM));
 		nvgStrokeWidth(args.vg, mm2px(NEO_FRAME_STROKE_MM));
 		nvgStrokeColor(args.vg, color);
 		nvgStroke(args.vg);
@@ -1420,13 +1483,13 @@ struct NeoRowCellsWidget : TransparentWidget
 		// whole columns fit (visibleCols, already floored) does. This widget's own box.size.y is
 		// ALREADY exactly one cell's height with no gap baked in - the inter-row gap is external,
 		// from how NeoWidget::step() spaces consecutive row-cells widgets apart - so a cell fills
-		// its own full height with zero vertical inset. Horizontally it gets the matching
-		// treatment (Dieter's own instruction, 2026-07-20 - horizontal padding must equal
-		// vertical padding): inset by half the actual current gap on each side within its own
-		// pitch slot, the same half-gap-edge convention neoRowLayout() already uses for rows.
+		// its own full height with zero vertical inset. Horizontally, cellWidthPx now EQUALS
+		// pitchPx (2026-07-22 KISS simplification - see neoColumnPitchMm()'s own comment, Neo.hpp)
+		// - NEO no longer reserves any inter-cell gap of its own at all; cells sit packed
+		// perfectly edge-to-edge, and whatever visual breathing room shows between two of them is
+		// entirely up to each NeoCellEditor's own drawCell() (see NEO_CELL_RECOMMENDED_PADDING_MM).
 		float cellWidthPx = mm2px(m->getColumnWidthMm());
 		float pitchPx = mm2px(m->getColumnPitchMm());
-		float gapPx = pitchPx - cellWidthPx;
 		int visibleCols = m->getVisibleColumns();
 		float style = m->OL_state[STYLE_JSON];
 
@@ -1438,7 +1501,7 @@ struct NeoRowCellsWidget : TransparentWidget
 		NVGcolor cellBg = (style == STYLE_DARK) ? NEO_CELL_BG_COLOR_DARK : (style == STYLE_BRIGHT) ? NEO_CELL_BG_COLOR_BRIGHT : NEO_CELL_BG_COLOR_ORANGE;
 		for (int i = 0; i < visibleCols; i++)
 		{
-			float x = gapPx / 2.f + (float) i * pitchPx;
+			float x = (float) i * pitchPx;
 			nvgBeginPath(args.vg);
 			nvgRect(args.vg, x, 0.f, cellWidthPx, box.size.y);
 			nvgFillColor(args.vg, cellBg);
@@ -1465,7 +1528,7 @@ struct NeoRowCellsWidget : TransparentWidget
 			if (step >= loopLen)
 				break;
 			float value = m->neoHost->getTrackStep(track, channel, step);
-			float x = gapPx / 2.f + (float) i * pitchPx;
+			float x = (float) i * pitchPx;
 			editor->drawCell(args, x, cellWidthPx, box.size.y, value, color, rangeMin, rangeMax);
 
 			// Head-position marker (2026-07-22) - called directly whenever this cell's own step
@@ -1600,7 +1663,7 @@ struct NeoRowTextDisplayWidget : TransparentWidget
 		NVGcolor bg = (style == STYLE_DARK) ? OL_DISPLAY_BG_DARK : (style == STYLE_BRIGHT) ? OL_DISPLAY_BG_BRIGHT : OL_DISPLAY_BG_ORANGE;
 		// Frame reflects the row's own identity color (2026-07-22, Dieter's own request/test),
 		// replacing the plain themed frame color every OTHER framed element still uses.
-		NVGcolor frame = (NEO_ROW_COLOR_FRAME && m) ? m->getRowColor(row) : ((style == STYLE_DARK) ? X_FRAME_DARK : (style == STYLE_BRIGHT) ? X_FRAME_BRIGHT : X_FRAME_ORANGE);
+		NVGcolor frame = (m && m->rowColorDisplayFrameEnabled()) ? m->getRowColor(row) : ((style == STYLE_DARK) ? X_FRAME_DARK : (style == STYLE_BRIGHT) ? X_FRAME_BRIGHT : X_FRAME_ORANGE);
 		olDrawDisplayFrame(args.vg, box.size, bg, frame, mm2px(NEO_ROW_DISPLAY_RADIUS_MM), mm2px(NEO_ROW_DISPLAY_STROKE_MM));
 		TransparentWidget::draw(args);
 	}
@@ -1615,10 +1678,10 @@ struct NeoRowTextDisplayWidget : TransparentWidget
 		Neo *m = module ? dynamic_cast<Neo*>(module) : nullptr;
 		if (m && getText)
 		{
-			// Reflects the row's own identity color when NEO_ROW_COLOR_TEXT is on (2026-07-22,
-			// Dieter's own request/test), same treatment NeoRowNameField's own text already gets
-			// unconditionally - plain theme ORANGE/WHITE otherwise (pre-2026-07-22 behavior).
-			NVGcolor textColor = NEO_ROW_COLOR_TEXT ? m->getRowColor(row) : ((m->OL_state[STYLE_JSON] == STYLE_ORANGE) ? ORANGE : WHITE);
+			// Reflects the row's own identity color when the current ROW_COLOR_MODE_JSON's own
+			// text axis is on (2026-07-22), same treatment NeoRowNameField's own text already gets
+			// unconditionally - plain theme ORANGE/WHITE otherwise.
+			NVGcolor textColor = m->rowColorTextEnabled() ? m->getRowColor(row) : ((m->OL_state[STYLE_JSON] == STYLE_ORANGE) ? ORANGE : WHITE);
 			NVGcolor line1Color = (getText1Muted && getText1Muted(m)) ? NEO_ROW_MUTED_TEXT_COLOR : textColor;
 			std::string line1 = getText(m);
 			std::string line2 = getText2 ? getText2(m) : std::string();
@@ -1651,7 +1714,7 @@ struct NeoRowKnobRingWidget : TransparentWidget
 		float style = m ? m->OL_state[STYLE_JSON] : STYLE_ORANGE;
 		// Reflects the row's own identity color (2026-07-22, Dieter's own request/test), same as
 		// NeoRowTextDisplayWidget's own frame.
-		NVGcolor frame = (NEO_ROW_COLOR_FRAME && m) ? m->getRowColor(row) : ((style == STYLE_DARK) ? X_FRAME_DARK : (style == STYLE_BRIGHT) ? X_FRAME_BRIGHT : X_FRAME_ORANGE);
+		NVGcolor frame = (m && m->rowColorDisplayFrameEnabled()) ? m->getRowColor(row) : ((style == STYLE_DARK) ? X_FRAME_DARK : (style == STYLE_BRIGHT) ? X_FRAME_BRIGHT : X_FRAME_ORANGE);
 		float r = box.size.x / 2.f;
 
 		nvgBeginPath(args.vg);
@@ -1732,6 +1795,65 @@ static const NeoColorSwatch NEO_COLOR_SWATCHES[] = {
 };
 static const int NEO_NUM_COLOR_SWATCHES = sizeof(NEO_COLOR_SWATCHES) / sizeof(NEO_COLOR_SWATCHES[0]);
 
+// The row-header coloring modes a click (not drag) on any row's own color dot cycles through
+// (2026-07-22, Dieter's own request - "we have a number of possible combinations how we color our
+// row header... use a click event to step through those different display modes, so not having
+// them defined fix via a define but variable on user choice"). Three INDEPENDENT axes, confirmed
+// with Dieter directly (initial guess of a flat 4-way frame/text toggle was wrong - the outer
+// per-row header frame is its own separate axis with a third NONE choice, since unlike a display's
+// own frame or its text, the header frame is pure decoration that can reasonably be turned off
+// entirely):
+//   - headerFrame: NEO_HEADER_FRAME_NONE/THEME/ROW - NeoRowHeaderFrameWidget's own outer frame only.
+//   - displayFrameRow: false=theme, true=row - every OTHER framed sub-widget in the header (the
+//     track/channel/celltype/position displays' own frames, the knob rings, the name field's own
+//     frame) - grouped together since they're all the same "themed stroke around a sub-control"
+//     decoration, distinct from the header's own outer frame.
+//   - textRow: false=theme, true=row - the track/channel/celltype/position displays' own text
+//     color. Does NOT include NeoRowNameField's own text, which already unconditionally follows
+//     the row color regardless of this mode (2026-07-21, confirmed working, predates this system).
+// 3 x 2 x 2 = 12 combinations total, ROW_COLOR_MODE_JSON (Neo.hpp) is a plain index into this
+// list, same "genuinely iterable, order-matters list a stored index selects from" shape as
+// NEO_COLOR_SWATCHES just above and neoCellEditorRegistry() further down.
+#define NEO_HEADER_FRAME_NONE  0
+#define NEO_HEADER_FRAME_THEME 1
+#define NEO_HEADER_FRAME_ROW   2
+struct NeoRowColorMode { int headerFrame; bool displayFrameRow; bool textRow; const char *name; };
+static const NeoRowColorMode NEO_ROW_COLOR_MODES[] = {
+	{ NEO_HEADER_FRAME_NONE,  false, false, "None/Theme/Theme" },
+	{ NEO_HEADER_FRAME_NONE,  false, true,  "None/Theme/Row"   },
+	{ NEO_HEADER_FRAME_NONE,  true,  false, "None/Row/Theme"   },
+	{ NEO_HEADER_FRAME_NONE,  true,  true,  "None/Row/Row"     },
+	{ NEO_HEADER_FRAME_THEME, false, false, "Theme/Theme/Theme"},
+	{ NEO_HEADER_FRAME_THEME, false, true,  "Theme/Theme/Row"  },
+	{ NEO_HEADER_FRAME_THEME, true,  false, "Theme/Row/Theme"  },
+	{ NEO_HEADER_FRAME_THEME, true,  true,  "Theme/Row/Row"    },
+	{ NEO_HEADER_FRAME_ROW,   false, false, "Row/Theme/Theme"  },
+	{ NEO_HEADER_FRAME_ROW,   false, true,  "Row/Theme/Row"    },
+	{ NEO_HEADER_FRAME_ROW,   true,  false, "Row/Row/Theme"    },
+	{ NEO_HEADER_FRAME_ROW,   true,  true,  "Row/Row/Row"      }, // the combination confirmed looking good, 2026-07-22
+};
+static const int NEO_NUM_ROW_COLOR_MODES = sizeof(NEO_ROW_COLOR_MODES) / sizeof(NEO_ROW_COLOR_MODES[0]);
+
+// Definitions of the three functions forward-declared above (before struct Neo) - clamps into
+// NEO_ROW_COLOR_MODES the same way neoCellEditorForType() clamps into its own registry, so a
+// stale saved mode index (e.g. from before some mode was ever removed) degrades to the nearest
+// valid entry instead of reading out of bounds.
+inline int neoRowColorHeaderFrameMode(int mode)
+{
+	int index = clamp(mode, 0, NEO_NUM_ROW_COLOR_MODES - 1);
+	return NEO_ROW_COLOR_MODES[index].headerFrame;
+}
+inline bool neoRowColorDisplayFrameEnabled(int mode)
+{
+	int index = clamp(mode, 0, NEO_NUM_ROW_COLOR_MODES - 1);
+	return NEO_ROW_COLOR_MODES[index].displayFrameRow;
+}
+inline bool neoRowColorTextEnabled(int mode)
+{
+	int index = clamp(mode, 0, NEO_NUM_ROW_COLOR_MODES - 1);
+	return NEO_ROW_COLOR_MODES[index].textRow;
+}
+
 /**
 	Colored dot preceding each row's own editable name field (2026-07-21) - filled with
 	channelColor[track][channel] (the row's OWN current track/channel, via getRowTrack()/
@@ -1749,6 +1871,12 @@ struct NeoRowColorDotWidget : OpaqueWidget
 	Module *module = nullptr;
 	int row = 0;
 	float dragAccumPx = 0.f;
+	// Total accumulated absolute mouse movement (both axes) since the current press started
+	// (2026-07-22) - distinguishes a plain CLICK (below NEO_ROW_NAME_DOT_CLICK_THRESHOLD_PX) from
+	// an actual color-cycling drag, so the same control can do double duty: drag changes THIS
+	// row's own color, click steps the module-wide ROW_COLOR_MODE_JSON (Dieter's own request:
+	// "give it a click action executed when clicked and not dragged").
+	float dragTotalMovementPx = 0.f;
 
 	void draw(const DrawArgs &args) override
 	{
@@ -1768,6 +1896,7 @@ struct NeoRowColorDotWidget : OpaqueWidget
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT)
 		{
 			dragAccumPx = 0.f;
+			dragTotalMovementPx = 0.f;
 			// Tell this row's own NeoRowNameField to show the swatch name instead of the channel
 			// name for the duration of the drag (2026-07-21, Dieter's own request) - cleared in
 			// onDragEnd() below.
@@ -1795,6 +1924,8 @@ struct NeoRowColorDotWidget : OpaqueWidget
 				break;
 			}
 
+		dragTotalMovementPx += std::abs(e.mouseDelta.x) + std::abs(e.mouseDelta.y);
+
 		// e.mouseDelta is already zoom-corrected by Rack - accumulate it directly, same technique
 		// NeoRowCellsWidget::onDragMove() uses for continuous value drags, just stepped here.
 		dragAccumPx += e.mouseDelta.y;
@@ -1817,6 +1948,16 @@ struct NeoRowColorDotWidget : OpaqueWidget
 		Neo *m = module ? dynamic_cast<Neo*>(module) : nullptr;
 		if (m && m->neoColorDragRow == row)
 			m->neoColorDragRow = -1;
+		// Below the click threshold - this was a plain click, not a drag, so nothing above
+		// actually changed this row's own color. Step the module-wide row-header coloring mode
+		// instead (2026-07-22, Dieter's own request) - any row's dot works, the mode itself is
+		// shared across the whole module, not per-row.
+		if (m && dragTotalMovementPx < NEO_ROW_NAME_DOT_CLICK_THRESHOLD_PX)
+		{
+			int mode = (int) m->OL_state[ROW_COLOR_MODE_JSON];
+			mode = (mode + 1) % NEO_NUM_ROW_COLOR_MODES;
+			m->OL_setOutState(ROW_COLOR_MODE_JSON, (float) mode);
+		}
 		OpaqueWidget::onDragEnd(e);
 	}
 };
@@ -1902,7 +2043,7 @@ struct NeoRowNameField : ui::TextField
 		NVGcolor bg = (style == STYLE_DARK) ? OL_DISPLAY_BG_DARK : (style == STYLE_BRIGHT) ? OL_DISPLAY_BG_BRIGHT : OL_DISPLAY_BG_ORANGE;
 		// Reflects the row's own identity color (2026-07-22, Dieter's own request/test), same as
 		// every other row-header display/frame.
-		NVGcolor frame = (NEO_ROW_COLOR_FRAME && m) ? m->getRowColor(row) : ((style == STYLE_DARK) ? X_FRAME_DARK : (style == STYLE_BRIGHT) ? X_FRAME_BRIGHT : X_FRAME_ORANGE);
+		NVGcolor frame = (m && m->rowColorDisplayFrameEnabled()) ? m->getRowColor(row) : ((style == STYLE_DARK) ? X_FRAME_DARK : (style == STYLE_BRIGHT) ? X_FRAME_BRIGHT : X_FRAME_ORANGE);
 		olDrawDisplayFrame(args.vg, box.size, bg, frame, mm2px(NEO_ROW_DISPLAY_RADIUS_MM), mm2px(NEO_ROW_DISPLAY_STROKE_MM));
 	}
 
@@ -2000,11 +2141,15 @@ struct NeoRowHeaderFrameWidget : TransparentWidget
 	void draw(const DrawArgs &args) override
 	{
 		Neo *m = module ? dynamic_cast<Neo*>(module) : nullptr;
+		// This is its own separate axis (2026-07-22, Dieter's own correction after the flat
+		// row-color-frame test) - the header's own outer frame is pure decoration, so it gets a
+		// third NONE choice (no stroke drawn at all) that no other framed sub-widget in the row
+		// gets (see NEO_ROW_COLOR_MODES's own comment for the full 3-axis reasoning).
+		int headerFrameMode = m ? m->rowColorHeaderFrameMode() : NEO_HEADER_FRAME_THEME;
+		if (headerFrameMode == NEO_HEADER_FRAME_NONE)
+			return;
 		float style = m ? m->OL_state[STYLE_JSON] : STYLE_ORANGE;
-		// Reflects the row's own identity color (2026-07-22, Dieter's own request/test) - "the
-		// frame color of the row header and all its content could reflect the row color" - same
-		// treatment as NeoRowTextDisplayWidget/NeoRowKnobRingWidget/NeoRowNameField's own frames.
-		NVGcolor frame = (NEO_ROW_COLOR_FRAME && m) ? m->getRowColor(row) : ((style == STYLE_DARK) ? X_FRAME_DARK : (style == STYLE_BRIGHT) ? X_FRAME_BRIGHT : X_FRAME_ORANGE);
+		NVGcolor frame = (headerFrameMode == NEO_HEADER_FRAME_ROW && m) ? m->getRowColor(row) : ((style == STYLE_DARK) ? X_FRAME_DARK : (style == STYLE_BRIGHT) ? X_FRAME_BRIGHT : X_FRAME_ORANGE);
 
 		nvgBeginPath(args.vg);
 		nvgRoundedRectVarying(args.vg, 0.f, 0.f, box.size.x, box.size.y,
@@ -2614,6 +2759,7 @@ struct NeoWidget : ModuleWidget
 					neoModule->OL_setOutState(LOCKED_JSON, 0.f);
 					neoModule->neoLockLastSyncedRows = -1.f;
 					neoModule->neoLockLastSyncedFullHeight = -1.f;
+					neoModule->neoLockLastSyncedColorMode = -1.f;
 					locked = false;
 				}
 				else
@@ -2621,8 +2767,15 @@ struct NeoWidget : ModuleWidget
 					lockDataValid = true;
 					float myRows = neoModule->OL_state[ROWS_DISPLAYED_JSON];
 					bool myFullHeight = neoModule->OL_state[FULL_HEIGHT_JSON] > 0.5f;
+					float myColorMode = neoModule->OL_state[ROW_COLOR_MODE_JSON];
 					bool rowsLocallyChanged = (myRows != neoModule->neoLockLastSyncedRows) ||
 						(myFullHeight != (neoModule->neoLockLastSyncedFullHeight > 0.5f));
+					// Row-header coloring mode (2026-07-22, "and of course the locked NEOs have to
+					// follow") - same locally-changed-vs-adopt pattern as rows/fullHeight above,
+					// but tracked as its own independent condition rather than folded into
+					// rowsLocallyChanged - a color-mode click and a Grid Rows menu change are
+					// unrelated user actions that just happen to share the same sync mechanism.
+					bool colorModeLocallyChanged = (myColorMode != neoModule->neoLockLastSyncedColorMode);
 					bool lockNeedsWrite = false;
 					if (rowsLocallyChanged)
 					{
@@ -2644,6 +2797,17 @@ struct NeoWidget : ModuleWidget
 						neoModule->neoLockLastSyncedRows = (float) lockData.rows;
 						neoModule->neoLockLastSyncedFullHeight = lockData.fullHeight ? 1.f : 0.f;
 					}
+					if (colorModeLocallyChanged)
+					{
+						lockData.colorMode = (int) myColorMode;
+						lockNeedsWrite = true;
+						neoModule->neoLockLastSyncedColorMode = myColorMode;
+					}
+					else if ((int) myColorMode != lockData.colorMode)
+					{
+						neoModule->OL_setOutState(ROW_COLOR_MODE_JSON, (float) lockData.colorMode);
+						neoModule->neoLockLastSyncedColorMode = (float) lockData.colorMode;
+					}
 					if (lockNeedsWrite)
 						neoModule->writeLockData(lockData);
 				}
@@ -2653,8 +2817,12 @@ struct NeoWidget : ModuleWidget
 			bool fullHeight = neoModule->OL_state[FULL_HEIGHT_JSON] > 0.5f;
 			float firstRowYMm, cellHeightMm, rowPitchMm;
 			neoRowLayout(fullHeight, rowsDisplayed, firstRowYMm, cellHeightMm, rowPitchMm);
-			float columnPitchMm = rowPitchMm; // square cells + matching horizontal/vertical padding (2026-07-20) -
-			                                   // the per-column footprint always equals the row pitch exactly.
+			// Same value as rowPitchMm now, but written as cellHeightMm directly for clarity
+			// (2026-07-22 KISS simplification - see neoColumnPitchMm()'s own comment, Neo.hpp):
+			// NEO no longer reserves any inter-cell OR inter-row gap of its own anywhere, so
+			// rowPitchMm/cellHeightMm/columnPitchMm are now all exactly the same number by
+			// construction (neoRowLayout() itself sets outRowPitchMm = outCellHeightMm directly).
+			float columnPitchMm = cellHeightMm;
 			// "Needed width for N columns" always uses the header's own MINIMUM width - there is no
 			// "current" header value to reference anymore (2026-07-21 redesign, see
 			// NeoLayoutResult's own comment, Neo.hpp) - the tightest possible total width for N
@@ -2837,22 +3005,25 @@ struct NeoWidget : ModuleWidget
 				// decorative boundary.
 				if (fullHeight)
 					headerFrameLeftMm -= (NEO_FRAME_GAP_MM + NEO_FRAME_STROKE_MM);
-				// Right edge inset from headerBoundaryMm by HALF a column gap, not a full
-				// NEO_FRAME_GAP_MM (Dieter's own catch, 2026-07-21) - the step-cell grid already
-				// insets its own first cell by half a column gap from ITS OWN origin
-				// (NeoRowCellsWidget::draw(), "inset by half the actual current gap on each side
-				// within its own pitch slot"), so a full extra frame-gap here was stacking on top
-				// of that and making the header-to-first-cell gap visibly bigger than the gap
-				// between any two cells. Using the same half-column-gap here instead makes the two
-				// add up to exactly one column gap, matching cell-to-cell spacing exactly. This
-				// only moves where the header-DATA-frame's own decorative boundary is drawn -
-				// headerBoundaryMm itself (where the grid actually starts, and every resize/
-				// column-fit calculation's own idea of "the row header's width") is untouched, so
-				// none of neoColumnFit()/neoMinWidthHp()/neoMaxWidthHp() need updating for this.
-				float columnGapMm = columnPitchMm - neoModule->getColumnWidthMm();
-				float headerFrameRightMm = headerBoundaryMm - columnGapMm / 2.f;
-				rowHeaderFrames[r]->box.pos = calculateCoordinates(headerFrameLeftMm, y, 0.f);
-				rowHeaderFrames[r]->box.size = mm2px(Vec(std::max(1.f, headerFrameRightMm - headerFrameLeftMm), cellHeightMm));
+				// Right edge sits exactly at headerBoundaryMm now (2026-07-22 KISS simplification -
+				// NEO no longer reserves any inter-cell gap of its own at all, see
+				// neoColumnPitchMm()'s own comment, Neo.hpp - columnPitchMm now always equals
+				// getColumnWidthMm(), so there's no half-column-gap left to inset by). The header-
+				// to-first-cell spacing is now whatever the first cell's own NeoCellEditor chooses
+				// to leave (see NEO_CELL_RECOMMENDED_PADDING_MM), same as cell-to-cell spacing -
+				// consistent by construction, not by matching two independently-computed insets.
+				float headerFrameRightMm = headerBoundaryMm;
+				// Vertically inset by the SAME recommended half-frame-padding a conforming
+				// NeoCellEditor's own drawCell() leaves (2026-07-22, Dieter's own instruction:
+				// "the row headers have to keep their vertical padding and displayed centered to
+				// the row... the cell editor will if he conforms to recommended self padding...
+				// have a visible boundary matching the headers") - inset symmetrically top/bottom
+				// so the header frame stays centered on the row (same centerY every control inside
+				// it already uses) while its own top/bottom edges line up with a self-padded cell's
+				// own frame, rather than the header frame spanning the full row height edge-to-edge.
+				float headerFramePadMm = NEO_CELL_RECOMMENDED_PADDING_MM;
+				rowHeaderFrames[r]->box.pos = calculateCoordinates(headerFrameLeftMm, y + headerFramePadMm, 0.f);
+				rowHeaderFrames[r]->box.size = mm2px(Vec(std::max(1.f, headerFrameRightMm - headerFrameLeftMm), std::max(1.f, cellHeightMm - 2.f * headerFramePadMm)));
 
 				// Track/channel displays are vertically centered on the row (Dieter's own
 				// follow-up spec, 2026-07-20) - X stays a plain left edge, only Y shifts up by
@@ -2932,7 +3103,17 @@ struct NeoWidget : ModuleWidget
 				float leftCenterMm = leftLeftMm + NEO_ROW_PAGEBTN_SIZE_MM / 2.f;
 				leftBtns[r]->box.pos = calculateCoordinates(leftCenterMm, centerY, 0.f).minus(leftBtns[r]->box.size.div(2.f));
 
-				rowCells[r]->box.pos = calculateCoordinates(headerBoundaryMm, y, 0.f);
+				// Drawn position shifts right by HALF the recommended cell padding (2026-07-22,
+				// Dieter's own catch: the grid's own start was sitting exactly on the header
+				// frame's own frame-line, since headerFrameRightMm/headerBoundaryMm are now equal -
+				// see that comment above) - the OTHER half comes from the first cell's own
+				// NeoCellEditor honoring NEO_CELL_RECOMMENDED_PADDING_MM in its own drawCell(),
+				// same as it already does between any two cells. This only nudges where the grid
+				// widget is DRAWN, deliberately not touching headerBoundaryMm/cellsWidthMm
+				// themselves - those stay the authoritative values every column-fit/min-max-width
+				// computation depends on, same "decorative-only, doesn't feed back into layout
+				// math" precedent this exact spot already used before the padding removal.
+				rowCells[r]->box.pos = calculateCoordinates(headerBoundaryMm + NEO_CELL_RECOMMENDED_PADDING_MM / 2.f, y, 0.f);
 				rowCells[r]->box.size = mm2px(Vec(cellsWidthMm, cellHeightMm));
 			}
 			// addXExtStrip() positions the right strip against the panel width it's given at
