@@ -382,6 +382,15 @@ inline float neoRowAreaControlsWidthMm(bool fullHeight, float rowHeaderWidthMm)
 // plain half-height centering would otherwise put it.
 #define NEO_ROW_DISPLAY_LINE2_Y_NUDGE_MM -0.2f
 
+// Muted "not applicable" text color (2026-07-22) - the position display's own page/pages line
+// (line1) uses this instead of its usual row/theme color when zero columns are visible at all
+// (Dieter's own instruction: "if no columns is visible we do not have a mean of a page... it
+// should just show a grey -/-" - replacing the previous divide-by-zero-avoiding freeze at
+// whatever numPages happened to be before hitting zero columns). A neutral grey, theme- and
+// row-color-independent by design - it's specifically meant to read as "this reading doesn't
+// apply right now," same spirit as a disabled UI control staying grey regardless of theme.
+#define NEO_ROW_MUTED_TEXT_COLOR nvgRGB(0x80, 0x80, 0x80)
+
 // Display background + frame (2026-07-20, Dieter's own follow-up spec, exact values from
 // res/DisplaysWithKnobsInFrame.svg) - shared by every one of NEO's own row displays (track/
 // channel/position). Background color moved to OrangeLine.hpp's own OL_DISPLAY_BG_* (2026-07-21
@@ -420,14 +429,21 @@ inline float neoRowAreaControlsWidthMm(bool fullHeight, float rowHeaderWidthMm)
 // fixed value - it's derived every draw() call from the actual current gap (pitch minus cell
 // width), which always equals the row-gap neoRowLayout() computes, so horizontal spacing matches
 // vertical spacing exactly (Dieter's own instruction, 2026-07-20 - "buttons should have the same
-// padding horizontally [as rows do vertically]"). NEO_CELL_BG_COLOR is an always-visible per-cell
-// backdrop drawn for every column regardless of gate/value content, so individual cell
+// padding horizontally [as rows do vertically]"). NEO_CELL_BG_COLOR_* is an always-visible
+// per-cell backdrop drawn for every column regardless of gate/value content, so individual cell
 // boundaries read clearly even at rest - explicitly "for better visual support during future
 // testing," not necessarily the final look. No separate row-background fill behind it anymore
 // (removed 2026-07-20, Dieter's own instruction - it read as a solid black box behind each row);
 // the gaps between cells and any space past the last visible column just show the row area's
-// own panel background straight through.
-#define NEO_CELL_BG_COLOR nvgRGB(0x30, 0x30, 0x30)
+// own panel background straight through. Per-theme, not a single fixed gray (2026-07-22, Dieter's
+// own instruction: "the cell editors have to use different colors for different parts of their
+// rendering which is not defined by row color. cell background color is always one of those" -
+// i.e. every cell editor shares this one backdrop, and it must follow the active theme like every
+// other non-row-colored fixed color does, same reasoning as NEO_HEAD_FRAME_COLOR_ORANGE/BRIGHT/
+// DARK just below) - three independent constants, all starting at the same first-pass gray.
+#define NEO_CELL_BG_COLOR_ORANGE nvgRGB(0x30, 0x30, 0x30)
+#define NEO_CELL_BG_COLOR_BRIGHT nvgRGB(0x30, 0x30, 0x30)
+#define NEO_CELL_BG_COLOR_DARK   nvgRGB(0x30, 0x30, 0x30)
 
 // Default head-position marker (2026-07-22) - NeoCellEditor::drawHeadFrame()'s own default body
 // draws this small frame; NEO calls drawHeadFrame() directly whenever a visible cell is the
@@ -435,9 +451,15 @@ inline float neoRowAreaControlsWidthMm(bool fullHeight, float rowHeaderWidthMm)
 // earlier isHeadAware()-query design he called out as not good: "the cell editor class should
 // already have a method to draw frame for active head position... a cell editor which does not
 // want this can override this method with its own"). None of the current concrete editors
-// override drawHeadFrame() yet - every one of them gets this default. First-pass color/sizing,
-// not yet visually confirmed.
-#define NEO_HEAD_FRAME_COLOR nvgRGB(0xff, 0xff, 0xff)
+// override drawHeadFrame() yet - every one of them gets this default. Per-theme, not a single
+// fixed color (Dieter's own follow-up: "all fixed colors not defined by the row color should use
+// a correct color for the active theme... we have to define a color for each theme which is used
+// for NEOs position cursor frame") - three independent constants, same "kept separate so either
+// can get its own distinct color later" precedent as NEO_FULLHEIGHT_ON_COLOR/OFF_COLOR, even
+// though all three start at the same first-pass white (not yet visually tuned per theme).
+#define NEO_HEAD_FRAME_COLOR_ORANGE nvgRGB(0xff, 0xff, 0xff)
+#define NEO_HEAD_FRAME_COLOR_BRIGHT nvgRGB(0xff, 0xff, 0xff)
+#define NEO_HEAD_FRAME_COLOR_DARK   nvgRGB(0xff, 0xff, 0xff)
 #define NEO_HEAD_FRAME_STROKE_MM 0.4f
 #define NEO_HEAD_FRAME_INSET_MM  0.5f
 

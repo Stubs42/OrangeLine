@@ -1116,18 +1116,20 @@ struct NeoCellEditor
 	// directly whenever this visible cell's own step matches the channel's live play cursor, no
 	// separate "am I head-aware" query beforehand (Dieter's own correction - an earlier
 	// isHeadAware() bool + an isHead flag threaded through drawCell() was "not a good design").
-	// The override itself IS the opt-out: default draws NEO's own generic small frame (see
-	// NEO_HEAD_FRAME_COLOR's own comment, Neo.hpp); a concrete editor that wants to visualize the
-	// head position some other way (inside its own drawCell(), or not at all) just overrides this
-	// with its own body instead.
-	virtual void drawHeadFrame(const Widget::DrawArgs &args, float x, float cellWidthPx, float cellHeightPx, NVGcolor color)
+	// The override itself IS the opt-out: default draws NEO's own generic small frame, colored per
+	// the module's current theme (see NEO_HEAD_FRAME_COLOR_ORANGE/BRIGHT/DARK's own comment,
+	// Neo.hpp - a fixed color not defined by the row color still has to follow the active theme);
+	// a concrete editor that wants to visualize the head position some other way (inside its own
+	// drawCell(), or not at all) just overrides this with its own body instead.
+	virtual void drawHeadFrame(const Widget::DrawArgs &args, float x, float cellWidthPx, float cellHeightPx, NVGcolor color, float style)
 	{
-		(void) color; // default frame is a fixed, theme-independent color - see NEO_HEAD_FRAME_COLOR's own comment
+		(void) color; // default frame's own color follows the theme, not the row - see this method's own comment
+		NVGcolor frameColor = (style == STYLE_DARK) ? NEO_HEAD_FRAME_COLOR_DARK : (style == STYLE_BRIGHT) ? NEO_HEAD_FRAME_COLOR_BRIGHT : NEO_HEAD_FRAME_COLOR_ORANGE;
 		float insetPx = mm2px(NEO_HEAD_FRAME_INSET_MM);
 		nvgBeginPath(args.vg);
 		nvgRect(args.vg, x + insetPx, insetPx, cellWidthPx - 2.f * insetPx, cellHeightPx - 2.f * insetPx);
 		nvgStrokeWidth(args.vg, mm2px(NEO_HEAD_FRAME_STROKE_MM));
-		nvgStrokeColor(args.vg, NEO_HEAD_FRAME_COLOR);
+		nvgStrokeColor(args.vg, frameColor);
 		nvgStroke(args.vg);
 	}
 
@@ -1426,16 +1428,20 @@ struct NeoRowCellsWidget : TransparentWidget
 		float pitchPx = mm2px(m->getColumnPitchMm());
 		float gapPx = pitchPx - cellWidthPx;
 		int visibleCols = m->getVisibleColumns();
+		float style = m->OL_state[STYLE_JSON];
 
 		// Always-visible per-cell backdrop - drawn for every visible column regardless of
 		// content, so individual cell boundaries read clearly even at rest (Dieter's own
-		// instruction, 2026-07-20, for visual support while testing).
+		// instruction, 2026-07-20, for visual support while testing). Per-theme, not row-colored
+		// (2026-07-22, Dieter's own instruction - "cell background color is always" one of the
+		// parts of a cell editor's own rendering that follows the active theme, not the row).
+		NVGcolor cellBg = (style == STYLE_DARK) ? NEO_CELL_BG_COLOR_DARK : (style == STYLE_BRIGHT) ? NEO_CELL_BG_COLOR_BRIGHT : NEO_CELL_BG_COLOR_ORANGE;
 		for (int i = 0; i < visibleCols; i++)
 		{
 			float x = gapPx / 2.f + (float) i * pitchPx;
 			nvgBeginPath(args.vg);
 			nvgRect(args.vg, x, 0.f, cellWidthPx, box.size.y);
-			nvgFillColor(args.vg, NEO_CELL_BG_COLOR);
+			nvgFillColor(args.vg, cellBg);
 			nvgFill(args.vg);
 		}
 
@@ -1467,7 +1473,7 @@ struct NeoRowCellsWidget : TransparentWidget
 			// rendered. No query beforehand (see NeoCellEditor::drawHeadFrame()'s own comment for
 			// why) - the editor's own override, if any, decides what (if anything) happens here.
 			if (step == cursor)
-				editor->drawHeadFrame(args, x, cellWidthPx, box.size.y, color);
+				editor->drawHeadFrame(args, x, cellWidthPx, box.size.y, color, style);
 		}
 	}
 
@@ -1580,6 +1586,12 @@ struct NeoRowTextDisplayWidget : TransparentWidget
 	// center within the whole box.
 	std::function<std::string(Neo*)> getText2;
 	float fontSize = 1.f; // set by the caller right after construction
+	// Optional: forces line1's own color to NEO_ROW_MUTED_TEXT_COLOR instead of the usual row/
+	// theme color when it returns true (2026-07-22) - unset (default) for every display except
+	// the position display, which uses it to grey out its page/pages line when there are zero
+	// visible columns to page through at all (see its own getText1Muted, Neo.hpp's
+	// NEO_ROW_MUTED_TEXT_COLOR comment for the full reasoning).
+	std::function<bool(Neo*)> getText1Muted;
 
 	void draw(const DrawArgs &args) override
 	{
@@ -1607,9 +1619,10 @@ struct NeoRowTextDisplayWidget : TransparentWidget
 			// Dieter's own request/test), same treatment NeoRowNameField's own text already gets
 			// unconditionally - plain theme ORANGE/WHITE otherwise (pre-2026-07-22 behavior).
 			NVGcolor textColor = NEO_ROW_COLOR_TEXT ? m->getRowColor(row) : ((m->OL_state[STYLE_JSON] == STYLE_ORANGE) ? ORANGE : WHITE);
+			NVGcolor line1Color = (getText1Muted && getText1Muted(m)) ? NEO_ROW_MUTED_TEXT_COLOR : textColor;
 			std::string line1 = getText(m);
 			std::string line2 = getText2 ? getText2(m) : std::string();
-			olDrawDisplayText(args.vg, box.size, textColor, line1, line2,
+			olDrawDisplayText(args.vg, box.size, line1Color, textColor, line1, line2,
 				"res/repetition-scrolling.regular.ttf", fontSize,
 				mm2px(NEO_ROW_DISPLAY_TEXT_INSET_MM), mm2px(NEO_ROW_DISPLAY_TEXT_Y_OFFSET_MM),
 				mm2px(NEO_ROW_DISPLAY_LINE2_Y_NUDGE_MM));
@@ -1950,7 +1963,7 @@ struct NeoRowNameField : ui::TextField
 		// channel-name case never needs this (already capped at NEO_ROW_NAME_MAX_CHARS).
 		if (showingColorName)
 			nvgScissor(args.vg, 0.f, 0.f, box.size.x, box.size.y);
-		olDrawDisplayText(args.vg, box.size, textColor, displayText, "",
+		olDrawDisplayText(args.vg, box.size, textColor, textColor, displayText, "",
 			"res/repetition-scrolling.regular.ttf", mm2px(NEO_ROW_NAME_FONT_SIZE_MM),
 			insetX, mm2px(NEO_ROW_DISPLAY_TEXT_Y_OFFSET_MM));
 		if (showingColorName)
@@ -2502,14 +2515,23 @@ struct NeoWidget : ModuleWidget
 			positionDisplay->getText = [r](Neo *m) {
 				if (!m->neoHost)
 					return std::string("HELLO");
-				int channel = m->getRowChannel(r);
 				int visibleCols = m->getVisibleColumns();
+				// Zero visible columns (2026-07-22, no minimum column count guarantee anymore)
+				// means there's no such thing as "a page" at all - show a muted "-/-" instead of
+				// freezing at whatever numPages the display last had before hitting zero columns
+				// (Dieter's own correction: "if no columns is visible we do not have a mean of a
+				// page... it should just show a grey -/-" - getText1Muted below drives the actual
+				// grey color, this just supplies the text).
+				if (visibleCols <= 0)
+				{
+					char buf[20];
+					snprintf(buf, sizeof(buf), "%7s", "-/-"); // same right-align-in-7-chars convention as the normal case below
+					return std::string(buf);
+				}
+				int channel = m->getRowChannel(r);
 				int page = (int) m->OL_state[ROW_PAGE_JSON + r];
 				int loopLen = std::max(1, m->neoHost->getLoopLen(channel));
-				// visibleCols can genuinely be 0 now (2026-07-22, no minimum column count
-				// guarantee anymore) - nothing to page through, so just show 1 page rather than
-				// dividing by zero.
-				int numPages = (visibleCols > 0) ? std::max(1, (loopLen + visibleCols - 1) / visibleCols) : 1;
+				int numPages = std::max(1, (loopLen + visibleCols - 1) / visibleCols);
 				// Right-align the WHOLE "page/pages" string within a 7-char field using spaces,
 				// not each number padded individually (Dieter's own correction, 2026-07-20 -
 				// "____1/1" and "__12/64", 7 chars total either way).
@@ -2518,6 +2540,9 @@ struct NeoWidget : ModuleWidget
 				char buf[20];
 				snprintf(buf, sizeof(buf), "%7s", inner);
 				return std::string(buf);
+			};
+			positionDisplay->getText1Muted = [](Neo *m) {
+				return m->neoHost && m->getVisibleColumns() <= 0;
 			};
 			positionDisplay->getText2 = [r](Neo *m) {
 				if (!m->neoHost)

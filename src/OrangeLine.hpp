@@ -655,8 +655,14 @@ inline void olDrawDisplayFrame(NVGcontext *vg, Vec size, NVGcolor bg, NVGcolor f
 	half the same way a single line centers within the whole box. Call from drawLayer(layer==1),
 	AFTER olDrawDisplayFrame() has already drawn the background/frame from plain draw() - see its
 	own comment for why these are two separate functions.
+
+	line1Color/line2Color are independent (2026-07-22 - previously one shared textColor for both
+	lines) specifically so a caller can mute just ONE line to a neutral "not applicable" color
+	(e.g. NEO's own position display graying out its page/pages line when zero columns are visible
+	to page through at all) without affecting the other line's own normal color. A single-line
+	caller just passes the same color for both.
 */
-inline void olDrawDisplayText(NVGcontext *vg, Vec size, NVGcolor textColor, const std::string &line1, const std::string &line2,
+inline void olDrawDisplayText(NVGcontext *vg, Vec size, NVGcolor line1Color, NVGcolor line2Color, const std::string &line1, const std::string &line2,
 	const char *fontPath, float fontSize, float textInsetXPx, float textYOffsetPx, float line2YNudgePx = 0.f)
 {
 	if (line1.empty() && line2.empty())
@@ -665,18 +671,24 @@ inline void olDrawDisplayText(NVGcontext *vg, Vec size, NVGcolor textColor, cons
 	std::shared_ptr<Font> font = APP->window->loadFont(asset::plugin(pluginInstance, fontPath));
 	nvgFontFaceId(vg, font->handle);
 	nvgFontSize(vg, fontSize);
-	nvgFillColor(vg, textColor);
 	nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
 
 	if (!line2.empty())
 	{
 		float halfHeight = size.y / 2.f;
 		if (!line1.empty())
+		{
+			nvgFillColor(vg, line1Color);
 			nvgText(vg, textInsetXPx, halfHeight / 2.f + textYOffsetPx, line1.c_str(), nullptr);
+		}
+		nvgFillColor(vg, line2Color);
 		nvgText(vg, textInsetXPx, halfHeight + halfHeight / 2.f + textYOffsetPx + line2YNudgePx, line2.c_str(), nullptr);
 	}
 	else
+	{
+		nvgFillColor(vg, line1Color);
 		nvgText(vg, textInsetXPx, size.y / 2.f + textYOffsetPx, line1.c_str(), nullptr);
+	}
 }
 
 /**
