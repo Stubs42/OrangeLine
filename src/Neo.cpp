@@ -377,12 +377,12 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 	// neoLockLastSyncedWidthHp is gone (2026-07-21) - width sync no longer tracks "did my own
 	// width change" at all, see NeoWidget::step()'s own "Lock sync (width half)" comment for why.
 
-	// One-shot signal from NeoFullHeightItem::onAction() to NeoWidget::step() (2026-07-21) -
-	// transient, never persisted. Captures "how many columns were visible right before this
-	// click flipped Full Height" at the only moment that's still knowable (by the time step()
-	// next runs, OL_state[FULL_HEIGHT_JSON] has already changed) - -1 = nothing pending. See
-	// step()'s own comment for what it does with this.
-	int neoPendingColumnTarget = -1;
+	// neoPendingColumnTarget ("preserve column count across a Full Height toggle") is gone
+	// (2026-07-22, Dieter's own KISS simplification) - it was the mechanism auto-resizing the
+	// module whenever Normal and Full Height needed different widths for the same column count,
+	// which directly violated the stronger rule Dieter set: the panel's own width must NEVER
+	// change except from an actual user drag (or a locked instance converging toward one). See
+	// NEO_DEFAULT_WIDTH_HP's own comment (Neo.hpp) for what replaced the guarantee this served.
 
 	// Which row's color dot is currently being click-dragged, if any (2026-07-21) - transient,
 	// never persisted, session-only UI signal. Set by NeoRowColorDotWidget::onButton()/
@@ -463,6 +463,18 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 	// connection state (unlike LOCK, which needs a Host to mean anything). See moduleProcess()'s
 	// own row loop for where this is actually read.
 	void toggleGlobalFollow() { OL_state[GLOBAL_FOLLOW_JSON] = (OL_state[GLOBAL_FOLLOW_JSON] > 0.5f) ? 0.f : 1.f; }
+
+	// Full Height toggle (2026-07-22) - moved here from the right-click "Full Height" menu item.
+	// Just flips the state now - no longer captures/preserves a column-count target (2026-07-22
+	// KISS simplification, see neoPendingColumnTarget's own removal comment above): the panel's
+	// own width never changes here at all, whatever column count the new mode's own available
+	// width naturally produces is simply accepted. neoCachedLayout recomputes fresh from
+	// neoComputeLayout() on the very next NeoWidget::step() tick regardless, so nothing else needs
+	// doing here.
+	void toggleFullHeight()
+	{
+		OL_setOutState(FULL_HEIGHT_JSON, OL_state[FULL_HEIGHT_JSON] > 0.5f ? 0.f : 1.f);
+	}
 
 	// Called from onRemove()/invalidateBridgeCache() below - proactively drops this instance's
 	// own id from the shared list using the ALREADY-CACHED host pointer (no getModule() lookup,
@@ -749,13 +761,20 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 				int channel = getRowChannel(r);
 				if (follow)
 				{
-					int cursor = neoHost->getPlayCursor(channel);
-					OL_state[ROW_PAGE_JSON + r] = (float) (cursor / visibleCols);
+					// visibleCols can genuinely be 0 now (2026-07-22, no minimum column count
+					// guarantee anymore) - paging is meaningless with nothing visible to page
+					// through, so just leave ROW_PAGE_JSON wherever it already was rather than
+					// dividing by zero.
+					if (visibleCols > 0)
+					{
+						int cursor = neoHost->getPlayCursor(channel);
+						OL_state[ROW_PAGE_JSON + r] = (float) (cursor / visibleCols);
+					}
 				}
 				else
 				{
 					int loopLen = std::max(1, neoHost->getLoopLen(channel));
-					int maxPage = (loopLen - 1) / visibleCols;
+					int maxPage = (visibleCols > 0) ? (loopLen - 1) / visibleCols : 0;
 					if (leftTrigger[r].process(params[ROW_LEFT_PARAM + r].getValue()))
 						OL_state[ROW_PAGE_JSON + r] = std::max(0.f, OL_state[ROW_PAGE_JSON + r] - 1.f);
 					if (rightTrigger[r].process(params[ROW_RIGHT_PARAM + r].getValue()))
@@ -889,18 +908,15 @@ struct NeoResizeHandle : OpaqueWidget
 		// no such stored value anymore) - the true floor/ceiling this module can ever reach is the
 		// same regardless of wherever the header happens to currently sit (2026-07-21 redesign).
 		float controlsWidthAtMinMm = neoRowAreaControlsWidthMm(fullHeight, NEO_ROW_HEADER_MIN_WIDTH_MM);
-		// Both-modes worst case (2026-07-21) - never let a drag go narrower than what Full Height
-		// alone would need for NEO_MIN_VISIBLE_COLS columns, even while dragging in Normal mode -
-		// see neoMinWidthHpAnyMode()'s own comment.
-		float minWidth = neoMinWidthHpAnyMode(rowsDisplayedForClamp, NEO_ROW_HEADER_MIN_WIDTH_MM) * RACK_GRID_WIDTH;
+		// Both-modes worst case - never let a drag go narrower than what Full Height alone would
+		// need, even while dragging in Normal mode - see neoMinWidthHpAnyMode()'s own comment.
+		float minWidth = neoMinWidthHpAnyMode(NEO_ROW_HEADER_MIN_WIDTH_MM) * RACK_GRID_WIDTH;
 		float maxWidth = neoMaxWidthHp(module ? module->neoHost : nullptr, columnPitchMm, controlsWidthAtMinMm) * RACK_GRID_WIDTH;
-		// The 4-column guarantee always wins over the "don't show columns beyond the Host's real
-		// content" cap (2026-07-21 fix) - a connected Host whose longest channel is shorter than
-		// NEO_MIN_VISIBLE_COLS steps would otherwise make maxWidth < minWidth, and Rack's own
-		// clamp() returns `a` (the min) whenever `b < a` - meaning EVERY drag frame, regardless of
-		// mouse position, snapped straight to the same fixed minWidth, making resize appear
-		// completely unresponsive the moment a Host with short content was connected (confirmed
-		// live, 2026-07-21 - nothing to do with locking, purely connected-vs-not).
+		// Kept as cheap insurance (2026-07-21 fix, still relevant even with no column-count floor
+		// anymore) - Rack's own clamp() returns `a` (the min) whenever `b < a`, so if maxWidth
+		// ever ended up smaller than minWidth for any reason, every drag frame would silently snap
+		// to the same fixed minWidth regardless of mouse position. Flooring maxWidth to minWidth
+		// here guarantees that can never happen.
 		maxWidth = std::max(maxWidth, minWidth);
 		newBox.size.x += deltaX;
 		newBox.size.x = clamp(newBox.size.x, minWidth, maxWidth);
@@ -1113,6 +1129,12 @@ struct NeoRowCellsWidget : TransparentWidget
 
 	int stepAtLocalX(float x, float pitchPx, int visibleCols)
 	{
+		// -1 = no valid step (2026-07-22) - visibleCols can genuinely be 0 now (no minimum column
+		// count guarantee anymore), which would otherwise make visibleCols-1 go negative -
+		// clamp(v, 0, -1) doesn't crash (Rack's own clamp() just returns the lower bound), but it
+		// would silently return step 0 as if it were valid, which it isn't.
+		if (visibleCols <= 0)
+			return -1;
 		return clamp((int) (x / pitchPx), 0, visibleCols - 1);
 	}
 
@@ -1188,18 +1210,23 @@ struct NeoRowCellsWidget : TransparentWidget
 				int visibleCols = m->getVisibleColumns();
 				float pitchPx = mm2px(m->getColumnPitchMm());
 				int candidateStep = stepAtLocalX(e.pos.x, pitchPx, visibleCols);
-				int channel = m->getRowChannel(row);
-				int page = (int) m->OL_state[ROW_PAGE_JSON + row];
-				int step = page * visibleCols + candidateStep;
-				// "It does not make sense to edit anything beyond LEN" (Dieter's own instruction,
-				// 2026-07-20) - a step this widget would otherwise never even draw (see draw()'s
-				// own loopLen break above) must not be editable either, so a click landing in
-				// that trailing dead space on the loop's last page simply starts no drag at all.
-				if (step < m->neoHost->getLoopLen(channel))
+				// candidateStep < 0 means no valid step at all (visibleCols is 0 - 2026-07-22, no
+				// minimum column count guarantee anymore) - nothing to click on, start no drag.
+				if (candidateStep >= 0)
 				{
-					dragStep = candidateStep;
-					int track = m->getRowTrack(row);
-					dragStartValue = m->neoHost->getTrackStep(track, channel, step);
+					int channel = m->getRowChannel(row);
+					int page = (int) m->OL_state[ROW_PAGE_JSON + row];
+					int step = page * visibleCols + candidateStep;
+					// "It does not make sense to edit anything beyond LEN" (Dieter's own instruction,
+					// 2026-07-20) - a step this widget would otherwise never even draw (see draw()'s
+					// own loopLen break above) must not be editable either, so a click landing in
+					// that trailing dead space on the loop's last page simply starts no drag at all.
+					if (step < m->neoHost->getLoopLen(channel))
+					{
+						dragStep = candidateStep;
+						int track = m->getRowTrack(row);
+						dragStartValue = m->neoHost->getTrackStep(track, channel, step);
+					}
 				}
 			}
 			e.consume(this);
@@ -1910,6 +1937,7 @@ struct NeoWidget : ModuleWidget
 	XExtStripWidget *extStripLeft = nullptr;
 	OLLabelButton *lockButton = nullptr;
 	OLLabelButton *globalFollowButton = nullptr;
+	OLLabelButton *fullHeightButton = nullptr;
 	OLLabelButton *unbindButton = nullptr;
 
 	NeoWidget(Neo *module)
@@ -2000,6 +2028,37 @@ struct NeoWidget : ModuleWidget
 		globalFollowButton->box.pos = mm2px(Vec(NEO_FOLLOW_BUTTON_X_MM, NEO_FOLLOW_BUTTON_Y_MM));
 		globalFollowButton->box.size = mm2px(Vec(NEO_FOLLOW_BUTTON_WIDTH_MM, NEO_FOLLOW_BUTTON_HEIGHT_MM));
 		addChild(globalFollowButton);
+
+		// Global FULL HEIGHT (2026-07-22) - moved from the right-click "Full Height" menu item
+		// (Neo::toggleFullHeight() has the unchanged toggle logic). Same button shape, stacked
+		// directly below FOLLOW. Label reads the action a click performs, same convention as
+		// LOCK/UNLOCK - "FULL" while in Normal mode, "NORMAL" while in Full Height mode. Plain
+		// orange either way for now (Dieter's own call) - NEO_FULLHEIGHT_ON_COLOR/OFF_COLOR are
+		// still two separate constants so either can change independently later.
+		fullHeightButton = new OLLabelButton();
+		fullHeightButton->fontSize = mm2px(Vec(NEO_GLOBAL_AREA_BUTTON_FONT_SIZE_MM, 0.f)).x;
+		fullHeightButton->cornerRadiusPx = mm2px(NEO_ROW_DISPLAY_RADIUS_MM);
+		fullHeightButton->strokeWidthPx = mm2px(NEO_FRAME_STROKE_MM);
+		fullHeightButton->textYNudgePx = mm2px(0.2f);
+		fullHeightButton->getFillColor = [module]() {
+			float style = module ? module->OL_state[STYLE_JSON] : STYLE_ORANGE;
+			return (style == STYLE_DARK) ? X_BUTTON_FILL_DARK : (style == STYLE_BRIGHT) ? X_BUTTON_FILL_BRIGHT : X_BUTTON_FILL_ORANGE;
+		};
+		fullHeightButton->getAccentColor = [module]() {
+			bool fullHeight = module && module->OL_state[FULL_HEIGHT_JSON] > 0.5f;
+			return fullHeight ? NEO_FULLHEIGHT_ON_COLOR : NEO_FULLHEIGHT_OFF_COLOR;
+		};
+		fullHeightButton->getLabel = [module]() {
+			bool fullHeight = module && module->OL_state[FULL_HEIGHT_JSON] > 0.5f;
+			return std::string(fullHeight ? "NORMAL" : "FULL");
+		};
+		fullHeightButton->onClick = [module]() {
+			if (module)
+				module->toggleFullHeight();
+		};
+		fullHeightButton->box.pos = mm2px(Vec(NEO_FULLHEIGHT_BUTTON_X_MM, NEO_FULLHEIGHT_BUTTON_Y_MM));
+		fullHeightButton->box.size = mm2px(Vec(NEO_FULLHEIGHT_BUTTON_WIDTH_MM, NEO_FULLHEIGHT_BUTTON_HEIGHT_MM));
+		addChild(fullHeightButton);
 
 		// Global UNBIND (2026-07-21) - a placeholder for now (Dieter's own words: "we do not yet
 		// know whether we will keep this button"). Calls the same disconnectNeoHost() the
@@ -2124,7 +2183,10 @@ struct NeoWidget : ModuleWidget
 				int visibleCols = m->getVisibleColumns();
 				int page = (int) m->OL_state[ROW_PAGE_JSON + r];
 				int loopLen = std::max(1, m->neoHost->getLoopLen(channel));
-				int numPages = std::max(1, (loopLen + visibleCols - 1) / visibleCols);
+				// visibleCols can genuinely be 0 now (2026-07-22, no minimum column count
+				// guarantee anymore) - nothing to page through, so just show 1 page rather than
+				// dividing by zero.
+				int numPages = (visibleCols > 0) ? std::max(1, (loopLen + visibleCols - 1) / visibleCols) : 1;
 				// Right-align the WHOLE "page/pages" string within a 7-char field using spaces,
 				// not each number padded individually (Dieter's own correction, 2026-07-20 -
 				// "____1/1" and "__12/64", 7 chars total either way).
@@ -2251,75 +2313,19 @@ struct NeoWidget : ModuleWidget
 			// columns is always header-at-minimum plus exactly N columns' worth of pitch.
 			float controlsWidthAtMinMm = neoRowAreaControlsWidthMm(fullHeight, NEO_ROW_HEADER_MIN_WIDTH_MM);
 
-			// KISS (Dieter's own instruction, 2026-07-20): NEO never auto-resizes itself just
-			// because Grid Rows/Full Height changed the cell pitch - it simply shows as many
-			// whole columns as currently fit (getVisibleColumns(), already floor-based), padded
-			// to the frame the same way every other edge already is. The module's own width only
-			// ever changes from an explicit user drag (NeoResizeHandle), the Lock group's own
-			// target-width convergence below, or the one deliberate exception right below this
-			// comment (preserving column count across a Full Height toggle) - never as an
-			// automatic side effect of a cell-size change on its own.
-
-			// Auto-widen to preserve column count across a Full Height <-> Normal toggle
-			// (2026-07-21, Dieter's own spec: "we never change the number of columns when
-			// switching modes... module should automatically widen to the right if possible").
-			// neoPendingColumnTarget is the one-shot signal NeoFullHeightItem::onAction() left
-			// behind (see its own comment) - consumed here, the only place with real box/
-			// requestModulePos() access. One try, no search (confirmed with Dieter, 2026-07-21:
-			// no search anywhere, ever, including this one-shot jump) - if the exact needed width
-			// is blocked, the module just stays at its current width; Full Height still toggles,
-			// just without preserving the exact prior column count in that rare case.
-			if (neoModule->neoPendingColumnTarget >= 0)
-			{
-				int desiredCols = neoModule->neoPendingColumnTarget;
-				float neededWidthMm = controlsWidthAtMinMm + (float) desiredCols * columnPitchMm;
-				float minHp = neoMinWidthHp(columnPitchMm, controlsWidthAtMinMm);
-				float maxHp = neoMaxWidthHp(neoModule->neoHost, columnPitchMm, controlsWidthAtMinMm);
-				// The 4-column guarantee always wins over the content-length cap - see
-				// NeoResizeHandle::onDragMove()'s own comment for why this max/min ordering isn't
-				// automatic once a real (possibly short-content) Host is connected.
-				maxHp = std::max(maxHp, minHp);
-				int neededHp = (int) clamp(std::ceil(mm2px(neededWidthMm) / RACK_GRID_WIDTH), minHp, maxHp);
-
-				if (locked && lockDataValid)
-				{
-					// Only ever GROWS the shared target, never shrinks it as an incidental side
-					// effect of one instance's own toggle. Every other locked instance - including
-					// any that can't immediately grow because a neighbor blocks it - picks this up
-					// for free via the EXISTING width-convergence retry loop right below: it
-					// already keeps retrying every tick without resetting the target on failure
-					// (Dieter's own spec, 2026-07-21: "should not reset the current locked target
-					// size but automatically grab space as soon as it becomes free"), and a
-					// restricted instance goes back to chasing the target normally the instant it
-					// gets manually resized itself (Dieter's own follow-up) - no special-casing
-					// needed for either, both already fall out of that same existing loop.
-					if (neededHp > lockData.widthHp)
-					{
-						lockData.widthHp = neededHp;
-						neoModule->writeLockData(lockData);
-					}
-					neoModule->neoPendingColumnTarget = -1;
-				}
-				else
-				{
-					// Unlocked - resize directly, same collision-checked pattern the drag handle/
-					// lock convergence both already use. One shot, cleared either way - a blocked
-					// attempt just leaves the module at its current width, no retry loop.
-					int currentHp = (int) std::round(neoModule->OL_state[PANEL_WIDTH_HP_JSON]);
-					if (neededHp > currentHp)
-					{
-						Rect oldBox = box;
-						Rect newBox = box;
-						newBox.size.x = (float) neededHp * RACK_GRID_WIDTH;
-						box = newBox;
-						if (APP->scene->rack->requestModulePos(this, newBox.pos))
-							neoModule->OL_setOutState(PANEL_WIDTH_HP_JSON, (float) neededHp);
-						else
-							box = oldBox; // blocked - stay at the current width
-					}
-					neoModule->neoPendingColumnTarget = -1;
-				}
-			}
+			// KISS (Dieter's own instruction, 2026-07-20, reaffirmed/strengthened 2026-07-22): NEO
+			// never auto-resizes itself just because Grid Rows/Full Height changed the cell pitch
+			// or the mode's own controlsWidthMm - it simply shows as many whole columns as
+			// currently fit (getVisibleColumns(), already floor-based, possibly zero), padded to
+			// the frame the same way every other edge already is. The module's own width ONLY
+			// EVER changes from an explicit user drag (NeoResizeHandle) or the Lock group's own
+			// target-width convergence below - never as an automatic side effect of anything else.
+			// The earlier "auto-widen to preserve column count across a Full Height toggle"
+			// mechanism that used to live here is gone (2026-07-22, Dieter's own KISS
+			// simplification) - it was itself the thing violating this same rule, resizing the
+			// module every time Normal and Full Height needed different widths for the same
+			// column count. See NEO_DEFAULT_WIDTH_HP's own comment (Neo.hpp) for what replaced the
+			// guarantee it used to serve.
 
 			// Lock sync (width half) - width, unlike rows, is "weak" (Dieter's own framing) - a
 			// locked instance always keeps its own adopted row count, but only matches the common
@@ -2332,10 +2338,11 @@ struct NeoWidget : ModuleWidget
 			// incidental/blocked width back as the group's new target, fighting a manual drag on a
 			// completely different instance): this block is now READ-ONLY with respect to
 			// lockData.widthHp - it only ever reads the target and tries to match it, never writes
-			// it. The ONLY writers of lockData.widthHp are the instance actually being resized
-			// (NeoResizeHandle::onDragMove(), live during a manual drag) and the instance that just
-			// toggled Full Height (NeoFullHeightItem::onAction()'s neoPendingColumnTarget handling,
-			// above). Every other locked instance - a pure follower - just keeps retrying to grow
+			// it. The ONLY writer of lockData.widthHp is the instance actually being resized
+			// (NeoResizeHandle::onDragMove(), live during a manual drag) - Full Height/Grid Rows no
+			// longer write it at all (2026-07-22, see neoPendingColumnTarget's own removal comment
+			// above: the panel's own width now only ever changes from an actual drag). Every other
+			// locked instance - a pure follower - just keeps retrying to grow
 			// or shrink toward whatever the target currently is, same as before; if blocked, its own
 			// column count just stays reduced for now and it grabs the space automatically the
 			// moment room frees up (Dieter's own spec: "wait means they will grab space until they
@@ -2359,14 +2366,13 @@ struct NeoWidget : ModuleWidget
 				int myWidthHp = (int) std::round(neoModule->OL_state[PANEL_WIDTH_HP_JSON]);
 				if (myWidthHp != lockData.widthHp)
 				{
-					// Both-modes worst case (2026-07-21) - see neoMinWidthHpAnyMode()'s own
-					// comment. Measured against the header's own MINIMUM width, same reasoning as
-					// the drag handle's own clamp above - there is no "current" header value.
-					float minWidthPx = neoMinWidthHpAnyMode(rowsDisplayed, NEO_ROW_HEADER_MIN_WIDTH_MM) * RACK_GRID_WIDTH;
+					// Both-modes worst case - see neoMinWidthHpAnyMode()'s own comment. Measured
+					// against the header's own MINIMUM width, same reasoning as the drag handle's
+					// own clamp above - there is no "current" header value.
+					float minWidthPx = neoMinWidthHpAnyMode(NEO_ROW_HEADER_MIN_WIDTH_MM) * RACK_GRID_WIDTH;
 					float maxWidthPx = neoMaxWidthHp(neoModule->neoHost, columnPitchMm, controlsWidthAtMinMm) * RACK_GRID_WIDTH;
-					// The 4-column guarantee always wins over the content-length cap - see
-					// NeoResizeHandle::onDragMove()'s own comment for why this max/min ordering
-					// isn't automatic once a real (possibly short-content) Host is connected.
+					// Kept as cheap insurance, same reasoning as the drag handle's own comment -
+					// guarantees maxWidthPx can never end up smaller than minWidthPx.
 					maxWidthPx = std::max(maxWidthPx, minWidthPx);
 					int minWidthHp = (int) std::round(minWidthPx / RACK_GRID_WIDTH);
 					int maxWidthHp = (int) std::round(maxWidthPx / RACK_GRID_WIDTH);
@@ -2390,18 +2396,31 @@ struct NeoWidget : ModuleWidget
 
 			float widthMm = neoModule->OL_state[PANEL_WIDTH_HP_JSON] * 5.08f; // may have just changed above
 
-			// Refresh the cached layout (header width/controls width/visible columns) unless a
-			// drag - this instance's own, or any other locked instance's, via
-			// NeoLockData::dragging - is actively in progress (2026-07-21 redesign, replacing the
-			// old per-tick "close the header gap" repair entirely: there's nothing left to repair,
-			// since the header is never a stored value that can fall out of sync in the first
-			// place - it's simply whatever neoComputeLayout() says for the current width,
-			// recomputed here). Freezing during a live drag is what actually prevents the whole
-			// grid visibly jittering every frame (Dieter's own catch, 2026-07-21, live-testing) -
-			// NEO_HEADER_LIVE_REFLOW (Neo.hpp) flips this back to continuous-every-tick if ever
-			// reconsidered.
+			// Hybrid live/frozen split during a drag (2026-07-22, Dieter's own refinement): the
+			// HEADER's own width stays frozen for the duration of a drag - this instance's own, or
+			// any other locked instance's, via NeoLockData::dragging - so its right edge (and thus
+			// every column's own x-position) never shifts mid-drag, which is what actually caused
+			// the visible jitter (not the column count changing). The visible COLUMN COUNT still
+			// updates live throughout, though - columns simply appear/disappear at the grid's own
+			// trailing edge as the current total width changes, computed fresh every tick against
+			// that same frozen header (no leftover absorbed into the header itself yet). Only once
+			// the drag actually ends does the header do its one real "right alignment" pass -
+			// absorbing whatever leftover space is left over into itself - via the normal, full
+			// neoComputeLayout() settle.
 			bool groupDragging = locked && lockDataValid && lockData.dragging;
-			if (NEO_HEADER_LIVE_REFLOW || !(resizeHandle->isDragging || groupDragging))
+			bool dragging = resizeHandle->isDragging || groupDragging;
+			if (dragging)
+			{
+				float frozenControlsWidthMm = neoRowAreaControlsWidthMm(fullHeight, neoModule->neoCachedLayout.headerWidthMm);
+				int liveVisibleCols;
+				float liveLeftoverMm;
+				neoColumnFit(widthMm, frozenControlsWidthMm, columnPitchMm, liveVisibleCols, liveLeftoverMm);
+				neoModule->neoCachedLayout.visibleCols = liveVisibleCols;
+				neoModule->neoCachedLayout.cellsWidthMm = (float) liveVisibleCols * columnPitchMm;
+				// headerWidthMm/controlsWidthMm/leftoverMm deliberately left untouched here - they
+				// only change once the drag ends and the full settle below runs.
+			}
+			else
 				neoModule->neoCachedLayout = neoComputeLayout(widthMm, fullHeight, rowsDisplayed);
 
 			box.size.x = mm2px(widthMm);
@@ -2452,6 +2471,21 @@ struct NeoWidget : ModuleWidget
 				float headerBoundaryMm = NEO_GLOBAL_AREA_WIDTH_MM + rowHeaderWidthMm;
 				float rowAreaFrameLeftMm = NEO_GLOBAL_AREA_WIDTH_MM + NEO_FRAME_GAP_MM / 2.f;
 				float headerFrameLeftMm = rowAreaFrameLeftMm + NEO_FRAME_GAP_MM;
+				// Full Height mode never draws the row area's own outer frame at all
+				// (NeoPanelWidget::draw() - "chrome-free rectangle") - the nested one-frame-gap
+				// inset just above assumed nesting INSIDE that (now-nonexistent) frame, so left
+				// as-is it leaves a visibly dead, ugly gap between the global area's own frame and
+				// the row-header-frame's own left edge, right where a connecting frame line used to
+				// be (Dieter's own catch, 2026-07-22, live-testing). Reclaim exactly the two things
+				// that used to justify that space - one frame-gap-unit of nested padding, plus the
+				// row-area frame's own stroke width - by pulling the row-header-frame's own left
+				// edge back by that amount. headerFrameRightMm below is untouched, so the frame
+				// simply grows wider to fill the reclaimed space - none of the actual controls
+				// inside it (track/channel/name) need to move, they're independently anchored to
+				// NEO_GLOBAL_AREA_WIDTH_MM with their own padding, unrelated to this frame's own
+				// decorative boundary.
+				if (fullHeight)
+					headerFrameLeftMm -= (NEO_FRAME_GAP_MM + NEO_FRAME_STROKE_MM);
 				// Right edge inset from headerBoundaryMm by HALF a column gap, not a full
 				// NEO_FRAME_GAP_MM (Dieter's own catch, 2026-07-21) - the step-cell grid already
 				// insets its own first cell by half a column gap from ITS OWN origin
@@ -2596,26 +2630,12 @@ struct NeoWidget : ModuleWidget
 			int count;
 			void onAction(const event::Action &e) override
 			{
-				// Reducing row count makes each cell (and thus each column) BIGGER, which can
-				// retroactively drop below the 4-column guarantee at the module's CURRENT width
-				// even where a higher row count was fine (2026-07-21, Dieter's own catch). Search
-				// UPWARD from the requested count toward the current (higher) one for the lowest
-				// row count that still satisfies NEO_MIN_VISIBLE_COLS at the current width - never
-				// deny the change outright (Dieter's own words: "you reduce because you want to
-				// see cells better... find the lowest is the most comfortable"). Guaranteed to
-				// terminate by NEO_ROWS_MAX (== NEO_ROWS_DEFAULT, the row count
-				// NEO_DEFAULT_WIDTH_HP/neoMinWidthHpAnyMode()'s own floor was derived against - the
-				// easiest case, smallest possible cells).
-				float totalWidthMm = module->OL_state[PANEL_WIDTH_HP_JSON] * 5.08f;
-				bool fullHeight = module->OL_state[FULL_HEIGHT_JSON] > 0.5f;
-				int actualCount = count;
-				for (; actualCount < NEO_ROWS_MAX; actualCount++)
-				{
-					NeoLayoutResult layout = neoComputeLayout(totalWidthMm, fullHeight, actualCount);
-					if (layout.visibleCols >= NEO_MIN_VISIBLE_COLS)
-						break;
-				}
-				module->OL_setOutState(ROWS_DISPLAYED_JSON, (float) actualCount);
+				// No validation needed (2026-07-22, Dieter's own KISS simplification) - NEO no
+				// longer guarantees any minimum visible column count (see NEO_DEFAULT_WIDTH_HP's
+				// own comment, Neo.hpp), so reducing Grid Rows can no longer "retroactively"
+				// violate anything - however many columns the current width produces at the new
+				// row count is simply accepted, same as everywhere else in this file.
+				module->OL_setOutState(ROWS_DISPLAYED_JSON, float(count));
 			}
 			void step() override
 			{
@@ -2640,32 +2660,9 @@ struct NeoWidget : ModuleWidget
 		}
 	};
 
-	// See FULL_HEIGHT_JSON's own comment (Neo.hpp) for what this actually does to the layout.
-	struct NeoFullHeightItem : MenuItem
-	{
-		Neo *module;
-		void onAction(const event::Action &e) override
-		{
-			// Captured BEFORE the toggle below - this is the only moment "how many columns were
-			// visible a second ago" is still knowable (see neoPendingColumnTarget's own comment
-			// and NeoWidget::step() for what consumes it - preserving this exact count is Dieter's
-			// own documented invariant, 2026-07-21: "we never change the number of columns when
-			// switching modes").
-			module->neoPendingColumnTarget = module->getVisibleColumns();
-			module->OL_setOutState(FULL_HEIGHT_JSON, module->OL_state[FULL_HEIGHT_JSON] > 0.5f ? 0.f : 1.f);
-			// Nothing else needed here (2026-07-21 redesign) - neoRowAreaControlsWidthMm()'s own
-			// right-padding term differs between Full Height and Normal mode, but the header is no
-			// longer a stored value that can go stale across the flip: NeoWidget::step() recomputes
-			// neoModule->neoCachedLayout from neoComputeLayout() every tick (unless a drag is in
-			// progress, which a plain menu click never coincides with), so the very next tick after
-			// this click already reflects the new mode correctly with no explicit call needed here.
-		}
-		void step() override
-		{
-			if (module)
-				rightText = (module->OL_state[FULL_HEIGHT_JSON] > 0.5f) ? "✔" : "";
-		}
-	};
+	// NeoFullHeightItem removed 2026-07-22 (Dieter's own instruction) - "Full Height" moved from
+	// this right-click menu item to a global-area button (see NeoWidget's own fullHeightButton,
+	// and Neo::toggleFullHeight() for the same logic this item's own onAction() used to run).
 
 	// Per-row "Cell Type" submenu - two-level, "Rows" -> "Row N" -> the cell-type choices, same
 	// setSize()-required pattern as CLAUDE.md's documented "Channels" submenu convention. Used to
@@ -2787,11 +2784,7 @@ struct NeoWidget : ModuleWidget
 		gridRowsItem->text = "Grid Rows";
 		gridRowsItem->rightText = RIGHT_ARROW;
 		menu->addChild(gridRowsItem);
-
-		NeoFullHeightItem *fullHeightItem = new NeoFullHeightItem();
-		fullHeightItem->module = module;
-		fullHeightItem->text = "Full Height";
-		menu->addChild(fullHeightItem);
+		// "Full Height" menu item removed 2026-07-22 - now a global-area button (fullHeightButton).
 
 		spacerLabel = new MenuLabel();
 		menu->addChild(spacerLabel);
