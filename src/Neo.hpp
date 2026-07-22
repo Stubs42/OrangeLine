@@ -468,6 +468,17 @@ inline float neoRowAreaControlsWidthMm(bool fullHeight, float rowHeaderWidthMm)
 #define NEO_CELL_BG_COLOR_BRIGHT X_STRIP_BG_BRIGHT
 #define NEO_CELL_BG_COLOR_DARK   X_STRIP_BG_DARK
 
+// Ctrl/Cmd fine-tuning drag divisor (2026-07-22, Dieter's own request: "real knobs allow for
+// holding left ctrl... to get a fine tuning possibility which reduces the sensitivity" - same
+// convention every real Rack Knob/ParamWidget already offers, replicated here since NEO's own
+// step-cell dragging is a custom widget, not a real ParamWidget). Applies generically to EVERY
+// NeoCellEditor's own dragValue() via NeoRowCellsWidget::onDragMove() - not cell-type-specific,
+// so it lives here rather than in the fallback editor's own section below. Divides the effective
+// mouseDelta.y BEFORE it reaches dragValue() while RACK_MOD_CTRL (Ctrl on Windows/Linux, Cmd on
+// Mac - see widget/event.hpp) is held, so every editor's own drag automatically gets slower/
+// finer control with no per-editor changes needed. First-pass value, not yet feel-tuned live.
+#define NEO_FINE_TUNE_DRAG_DIVISOR 4.f
+
 // Default head-position marker (2026-07-22) - NeoCellEditor::drawHeadFrame()'s own default body
 // draws this small frame; NEO calls drawHeadFrame() directly whenever a visible cell is the
 // channel's current play cursor, no separate query beforehand (Dieter's own correction of an

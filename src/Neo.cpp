@@ -1628,8 +1628,16 @@ struct NeoRowCellsWidget : TransparentWidget
 
 		// e.mouseDelta is already zoom-corrected by Rack - accumulate it directly rather than
 		// re-deriving from absolute position, simplest correct approach for a continuous drag.
+		// Ctrl/Cmd fine-tuning (2026-07-22) - DragMoveEvent itself carries no modifier state (see
+		// its own comment, Rack SDK widget/Widget.hpp), so the CURRENT mod state is read directly
+		// via APP->window->getMods() instead, same as a real Rack Knob/ParamWidget would. Divides
+		// the effective delta BEFORE it reaches dragValue(), so every NeoCellEditor gets this for
+		// free with no per-editor changes.
+		float effectiveDeltaY = e.mouseDelta.y;
+		if ((APP->window->getMods() & RACK_MOD_MASK) == RACK_MOD_CTRL)
+			effectiveDeltaY /= NEO_FINE_TUNE_DRAG_DIVISOR;
 		NeoCellEditor *editor = neoCellEditorForRow(m->getRowCellType(row), m->rowProperties[row]);
-		float newValue = editor->dragValue(dragStartValue, e.mouseDelta.y, box.size.y, m->rowProperties[row].rangeMin, m->rowProperties[row].rangeMax);
+		float newValue = editor->dragValue(dragStartValue, effectiveDeltaY, box.size.y, m->rowProperties[row].rangeMin, m->rowProperties[row].rangeMax);
 		dragStartValue = newValue;
 
 		m->neoHost->setTrackStep(track, channel, step, newValue);
