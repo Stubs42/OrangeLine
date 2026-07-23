@@ -479,17 +479,26 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, NeoHostInterface, Exp
 		}
 		// Right-click Initialize also releases every X-family candidate binding - a fresh/reset
 		// Morpheus should not silently keep controlling some Expander's knobs (Dieter's own call).
-		// Routed through resetXParam() (not a direct clear) so the bound Expander also gets
-		// pushed a "you're not bound anymore" notification - never leaves it holding a stale id.
+		// Routed through resetXParamNoLock() - NEVER the ordinary resetXParam() - so the bound
+		// Expander still gets pushed a "you're not bound anymore" notification without ever
+		// leaving it holding a stale id, WITHOUT deadlocking: moduleReset() runs from onReset(),
+		// which Rack calls from Engine::resetModule() (Right-click "Initialize") while THAT
+		// method still holds the engine's own EXCLUSIVE lock for the entire callback - exactly
+		// the same lock-holding shape onRemove()/removeModule() has below, just discovered later.
+		// Real bug, gdb-confirmed live (2026-07-23): the ordinary resetXParam() used to be called
+		// here, and its own share-locking getModule() call self-deadlocked the UI thread the
+		// instant any X-family candidate was actually bound - reproducible via "connect an X8 to
+		// Morpheus, then right-click Morpheus -> Initialize." See resetXParamNoLock()'s own
+		// interface comment (XShared.hpp) and CLAUDE.md's Pitfalls section for the general lesson.
 		for (int i = 0; i < NUM_X_CANDIDATES; i++)
-			resetXParam(i);
+			resetXParamNoLock(i);
 		styleChanged = true;
 	}
 
 	// Rack's own module-lifecycle event - fires right before this Morpheus is actually destroyed,
 	// WHILE Rack's own removeModule() still holds an exclusive lock for the entire callback (see
-	// resetXParamDuringRemoval()'s own interface comment, XShared.hpp) - must use that method
-	// here, NEVER the ordinary resetXParam() (its own getModule() call would deadlock). Proactively
+	// resetXParamNoLock()'s own interface comment, XShared.hpp) - must use that method here,
+	// NEVER the ordinary resetXParam() (its own getModule() call would deadlock). Proactively
 	// clears every candidate binding this instance still holds, using ONLY the stable ids already
 	// known (xCandidates[]'s own boundExpanderId) - a handful of single targeted lookups, never a
 	// rack-wide scan. Symmetric with each Expander's own onRemove() (X8ModuleCommon.hpp), which
@@ -500,7 +509,7 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, NeoHostInterface, Exp
 	{
 		for (int i = 0; i < NUM_X_CANDIDATES; i++)
 			if (xCandidates[i].boundExpanderId != -1)
-				resetXParamDuringRemoval(i);
+				resetXParamNoLock(i);
 		// Separate, newer mechanism (ExpanderBridge.hpp) covering XO-family Expanders and any
 		// NEO instance that cached a raw pointer to this Morpheus as their Host - unlike the
 		// X-family candidates above, these were never tracked via a fixed-size array with its own
@@ -1357,13 +1366,14 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, NeoHostInterface, Exp
 			resetXParam(index); // disengage (toggle) - also pushes setXBoundHostId(-1)
 		// else: taken by someone else, or cable-connected - no-op
 	}
-	// Shared by resetXParam() and resetXParamDuringRemoval() below - the ONLY place that clears a
+	// Shared by resetXParam() and resetXParamNoLock() below - the ONLY place that clears a
 	// candidate binding, so the push-notify can never be missed by a future edit that adds yet
 	// another clearing path. noLock selects APP->engine->getModule_NoLock() instead of the
-	// regular, share-locking getModule() - required when called as part of an onRemove() chain
-	// (see resetXParamDuringRemoval()'s own interface comment, XShared.hpp, for why), harmless
-	// overhead-wise either way for the normal (non-removal) case since it's still just one single
-	// targeted lookup, not a scan.
+	// regular, share-locking getModule() - required whenever called from a context that already
+	// holds Rack's own engine exclusive lock, onRemove() OR onReset()/Initialize (see
+	// resetXParamNoLock()'s own interface comment, XShared.hpp, for why), harmless overhead-wise
+	// either way for the normal (non-locked) case since it's still just one single targeted
+	// lookup, not a scan.
 	inline void clearXParamBinding(int index, bool noLock)
 	{
 		int64_t expanderId = xCandidates[index].boundExpanderId;
@@ -1378,9 +1388,9 @@ struct Morpheus : Module, XHostInterface, XOHostInterface, NeoHostInterface, Exp
 		xCandidates[index].boundExpander = nullptr;
 	}
 	void resetXParam(int index) override { clearXParamBinding(index, false); }
-	// See XHostInterface::resetXParamDuringRemoval()'s own comment (XShared.hpp) for why this
-	// exists as a separate method at all, rather than just always using resetXParam().
-	void resetXParamDuringRemoval(int index) override { clearXParamBinding(index, true); }
+	// See XHostInterface::resetXParamNoLock()'s own comment (XShared.hpp) for why this exists as
+	// a separate method at all, rather than just always using resetXParam().
+	void resetXParamNoLock(int index) override { clearXParamBinding(index, true); }
 	// See XHostInterface::recoverXParamBinding()'s own interface comment (XShared.hpp) - a raw
 	// overwrite with no push to anyone, safe to call even before this Morpheus has ever ticked
 	// process() (touches only the candidate array, already valid straight out of the

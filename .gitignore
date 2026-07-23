@@ -8,3 +8,4 @@ token
 setenv.sh
 .claude/settings.json
 .claude/settings.local.json
+tools/*.log

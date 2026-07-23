@@ -160,7 +160,7 @@ struct ExpanderBridgeInterface
 	// across ticks (XO/XR/LANES/NEO all do this - see XOShared.hpp's resolveXOHostBridge(),
 	// LanesShared.hpp's resolveLanesHubBridge(), Neo.cpp's own inline equivalent; X-family
 	// doesn't use any of this, it already has its own older, bespoke equivalent - the
-	// xCandidates[] array + XHostInterface::resetXParamDuringRemoval(), Morpheus.cpp). The whole
+	// xCandidates[] array + XHostInterface::resetXParamNoLock(), Morpheus.cpp). The whole
 	// point: NEVER call APP->engine->getModule() from inside moduleProcess() to keep a cached
 	// pointer valid - that was confirmed (gdb, live freeze, 2026-07-19) to occasionally race a
 	// queued exclusive lock request (module add/remove) and deadlock the engine. Instead, a

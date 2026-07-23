@@ -133,17 +133,24 @@ struct XHostInterface
 	// genuinely fresh clone of this exact Host (mismatched: getXSelfId() != this module's own
 	// Rack id) apart from a settled, long-standing one - see xIsFreshClone() below.
 	virtual int64_t getXSelfId() = 0;
-	// Identical effect to resetXParam() above, but MUST be used instead whenever called as part
-	// of an onRemove() chain (this Host's own, or a bound Expander's own) - never call this from
-	// anywhere else. Rack's own removeModule() holds an EXCLUSIVE lock for the entire duration of
-	// any onRemove() callback it triggers, and the ordinary resetXParam() internally calls the
-	// regular, share-locking APP->engine->getModule() - calling that from within an
-	// already-exclusively-locked callback is a guaranteed deadlock (the same thread re-entering a
-	// non-reentrant lock; Rack's own Engine.hpp documents "exclusively locking methods cannot be
-	// called simultaneously or recursively with a share-locking method"). This variant uses
+	// Identical effect to resetXParam() above, but MUST be used instead whenever called from a
+	// context that ALREADY holds Rack's own engine exclusive lock - onRemove() (this Host's own,
+	// or a bound Expander's own) AND onReset()/moduleReset() (Right-click "Initialize") are BOTH
+	// such contexts - never call this from anywhere else. Rack's own removeModule() AND
+	// resetModule() each hold an EXCLUSIVE lock for the entire duration of the onRemove()/onReset()
+	// callback they trigger, and the ordinary resetXParam() internally calls the regular,
+	// share-locking APP->engine->getModule() - calling that from within an already-exclusively-
+	// locked callback is a guaranteed deadlock (the same thread re-entering a non-reentrant lock;
+	// Rack's own Engine.hpp documents "exclusively locking methods cannot be called simultaneously
+	// or recursively with a share-locking method"). This variant uses
 	// APP->engine->getModule_NoLock() instead, which is only safe because the caller is already
-	// guaranteed to be running inside that same lock. See CLAUDE.md's own Pitfalls entry on this.
-	virtual void resetXParamDuringRemoval(int index) = 0;
+	// guaranteed to be running inside that same lock. Originally named "...DuringRemoval" (only
+	// onRemove() was known to need it at the time) - Morpheus's own moduleReset() calling the
+	// ordinary resetXParam() turned out to hit the EXACT same deadlock via Right-click Initialize
+	// (gdb-confirmed, 2026-07-23: UI thread self-deadlocked inside Engine::resetModule()'s own
+	// exclusive lock -> Morpheus::onReset() -> the locking getModule()), so this was renamed to
+	// reflect that it's not removal-specific. See CLAUDE.md's own Pitfalls entry on this.
+	virtual void resetXParamNoLock(int index) = 0;
 
 	// "The value this Host was actually using for this channel", in this candidate's own
 	// human-readable DISPLAY units (e.g. steps for a loop-length candidate, percent for a

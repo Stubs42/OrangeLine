@@ -488,12 +488,12 @@ inline void moduleReflectChanges() {}
 //
 // Rack's own removeModule() holds an exclusive lock for the ENTIRE duration of this callback, so
 // EVERY engine lookup anywhere in this call chain must use the *_NoLock variant - both the direct
-// getModule() call right here AND the Host's own clearing method (resetXParamDuringRemoval(), not
-// the ordinary resetXParam(), which internally uses the regular locking getModule() and would
-// deadlock if reached from here). See XHostInterface::resetXParamDuringRemoval()'s own interface
-// comment (XShared.hpp) and CLAUDE.md's Pitfalls entry for the full reasoning - a share-locking
-// call from within an already-exclusively-locked callback is a guaranteed self-deadlock,
-// regardless of how many function calls deep it happens.
+// getModule() call right here AND the Host's own clearing method (resetXParamNoLock(), not the
+// ordinary resetXParam(), which internally uses the regular locking getModule() and would
+// deadlock if reached from here). See XHostInterface::resetXParamNoLock()'s own interface comment
+// (XShared.hpp) and CLAUDE.md's Pitfalls entry for the full reasoning - a share-locking call from
+// within an already-exclusively-locked callback is a guaranteed self-deadlock, regardless of how
+// many function calls deep it happens.
 void onRemove(const RemoveEvent &e) override
 {
 	if (xBoundHostId != -1)
@@ -506,7 +506,7 @@ void onRemove(const RemoveEvent &e) override
 			for (int i = 0; i < count; i++)
 				if (host->getXParamBoundId(i) == (int64_t) this->id)
 				{
-					host->resetXParamDuringRemoval(i); // NOT resetXParam() - see comment above
+					host->resetXParamNoLock(i); // NOT resetXParam() - see comment above
 					break; // single-binding invariant - never more than one match
 				}
 		}
