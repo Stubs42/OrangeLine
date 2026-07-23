@@ -3463,6 +3463,18 @@ struct NeoWidget : ModuleWidget
 			// rowPitchMm/cellHeightMm/columnPitchMm are now all exactly the same number by
 			// construction (neoRowLayout() itself sets outRowPitchMm = outCellHeightMm directly).
 			float columnPitchMm = cellHeightMm;
+
+			// Row-HEADER content stays a FIXED height - always exactly what a cell would be at
+			// NEO_ROWS_MAX (8) rows, regardless of the CURRENT Grid Rows count - top-aligned with
+			// its own (possibly taller) step-grid cells, rather than stretching/centering to fill
+			// the full real row height (2026-07-23 experiment, Dieter's own instruction: "keeping
+			// it always the same height it would be with 8 rows and top align it with its cells to
+			// the right... would look much better and more consistent"). Only the HEADER side uses
+			// this fixed reference - the step-grid cells themselves (rowCells[r] below) still use
+			// the real, live `cellHeightMm` unchanged, since THEY are the ones meant to grow taller
+			// as fewer rows are shown.
+			float refFirstRowYMm, refCellHeightMm, refRowPitchMm;
+			neoRowLayout(fullHeight, NEO_ROWS_MAX, refFirstRowYMm, refCellHeightMm, refRowPitchMm);
 			// "Needed width for N columns" always uses the header's own MINIMUM width - there is no
 			// "current" header value to reference anymore (2026-07-21 redesign, see
 			// NeoLayoutResult's own comment, Neo.hpp) - the tightest possible total width for N
@@ -3638,7 +3650,9 @@ struct NeoWidget : ModuleWidget
 					continue;
 
 				float y = firstRowYMm + (float) r * rowPitchMm;
-				float centerY = y + cellHeightMm / 2.f;
+				// Fixed 8-row reference height, top-aligned to the row's own real top edge `y` -
+				// see the fixed refCellHeightMm computation above for why.
+				float centerY = y + refCellHeightMm / 2.f;
 
 				// Header-data frame: this is a NESTED frame inside the row area's own outer frame
 				// (matches NEO_ROW_HEADER_LEFT_RADIUS_MM's own comment, Neo.hpp - "separated from
@@ -3684,13 +3698,16 @@ struct NeoWidget : ModuleWidget
 				// NeoCellEditor's own drawCell() leaves (2026-07-22, Dieter's own instruction:
 				// "the row headers have to keep their vertical padding and displayed centered to
 				// the row... the cell editor will if he conforms to recommended self padding...
-				// have a visible boundary matching the headers") - inset symmetrically top/bottom
-				// so the header frame stays centered on the row (same centerY every control inside
-				// it already uses) while its own top/bottom edges line up with a self-padded cell's
-				// own frame, rather than the header frame spanning the full row height edge-to-edge.
+				// have a visible boundary matching the headers") - inset top/bottom from the row's
+				// own real top edge `y`. Height uses the FIXED refCellHeightMm, not the row's own
+				// real (possibly taller) cellHeightMm (2026-07-23 - see refCellHeightMm's own
+				// comment above) - the header frame TOP-ALIGNS with its own step-grid cells to the
+				// right rather than stretching to match their full height, so a self-padded cell's
+				// own frame lines up with the header frame's TOP edge only, not necessarily its
+				// bottom edge once Grid Rows < 8 (the cell is taller than the header in that case).
 				float headerFramePadMm = NEO_CELL_RECOMMENDED_PADDING_MM;
 				rowHeaderFrames[r]->box.pos = calculateCoordinates(headerFrameLeftMm, y + headerFramePadMm, 0.f);
-				rowHeaderFrames[r]->box.size = mm2px(Vec(std::max(1.f, headerFrameRightMm - headerFrameLeftMm), std::max(1.f, cellHeightMm - 2.f * headerFramePadMm)));
+				rowHeaderFrames[r]->box.size = mm2px(Vec(std::max(1.f, headerFrameRightMm - headerFrameLeftMm), std::max(1.f, refCellHeightMm - 2.f * headerFramePadMm)));
 
 				// Track/channel displays are vertically centered on the row (Dieter's own
 				// follow-up spec, 2026-07-20) - X stays a plain left edge, only Y shifts up by
@@ -3785,7 +3802,10 @@ struct NeoWidget : ModuleWidget
 				// the row edges) - Dieter's own catch, live-testing: "used only half of the
 				// framepadding, use full framepadding."
 				float headerFrameTopMm = y + headerFramePadMm;
-				float headerFrameInnerHeightMm = cellHeightMm - 2.f * headerFramePadMm;
+				// Fixed refCellHeightMm, not the row's own real cellHeightMm (2026-07-23 - see its
+				// own comment above) - the pool block lives inside the header frame, which is now
+				// itself a fixed height regardless of Grid Rows.
+				float headerFrameInnerHeightMm = refCellHeightMm - 2.f * headerFramePadMm;
 				float poolPaddingMm = NEO_FRAME_GAP_MM;
 				float poolDisplayHeightMm = std::max(1.f, (headerFrameInnerHeightMm - 3.f * poolPaddingMm) / 2.f);
 				float poolTopRowCenterY = headerFrameTopMm + poolPaddingMm + poolDisplayHeightMm / 2.f;
