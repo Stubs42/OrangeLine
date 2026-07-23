@@ -404,6 +404,45 @@ future module needs the same capability:
   "the visible column count doesn't change momentarily") both hold given the actual bounds
   involved, don't add extra compensating code to enforce the second one manually - verify it
   already falls out for free first.
+- **The canonical resize-drag lifecycle for a fixed-size sub-component that "beautifies" itself
+  when idle (absorbing leftover space, e.g. NEO's row header) has exactly three phases, dictated
+  precisely by Dieter after several partial fixes missed pieces of it (2026-07-23):** (1) drag
+  START snaps the sub-component to its bare MINIMUM size immediately - not "whatever it happened
+  to be cached at" from the idle state; (2) for the ENTIRE remainder of the drag, that
+  sub-component's size stays PINNED at the minimum and is never recomputed, while whatever DOES
+  need to update live (e.g. visible column count) keeps recomputing every tick against the current,
+  changing total size - the padding/spacing during this phase is deliberately allowed to be
+  slightly wrong, since live-correcting it is what actually causes jitter/flicker, not the
+  live-updating quantity itself; (3) only once the drag actually ENDS does the sub-component do its
+  one real "absorb leftover, restore correct spacing" settle pass. The core invariant this whole
+  shape exists to guarantee: a drag-start immediately followed by a drag-end with zero net movement
+  must never add or remove whatever the live-updating quantity is. Get this for free BY
+  CONSTRUCTION, not by coincidence, if the live-updating quantity is derived via the exact same
+  underlying fit-function in both the "at minimum" state and the "idle/settled" state (only what
+  the SIZE field itself reports should differ between the two - see `neoComputeLayoutAtMinHeader()`
+  vs. `neoComputeLayout()`, Neo.hpp, which both call the identical `neoColumnFit()` against the
+  identical `controlsWidthAtMinMm`). A stale comment claiming "nothing to snap anymore" (left over
+  from an earlier redesign that removed a PERSISTED width value, wrongly generalized to mean the
+  live CACHED value never needs resetting either) silently regressed phase (1) for a full session
+  before being caught live - a lifecycle spec this precise is worth writing down completely rather
+  than re-deriving from partial memory of "it used to work."
+- **When a redesign removes a reserved padding/spacing term because "the thing next to it already
+  supplies its own half," audit EVERY OTHER place that borrowed room from that same removed term -
+  don't assume the one call site you were looking at was the only beneficiary.** NEO's own
+  2026-07-22 "remove inter-cell/inter-row padding" simplification correctly removed one padding
+  reservation, but at least THREE separate, unrelated call sites had each been quietly relying on
+  a share of that same now-gone space (a row header frame's own top/bottom inset needing an extra
+  half-gap from the panel's outer margin to reach a full gap; the grid's own right-hand trailing
+  margin needing to reach a SURROUNDING DECORATIVE FRAME with a full gap in one mode but the true
+  module border with only a half gap in the other, not the same value in both; a "shift the grid's
+  drawn position right so the first cell doesn't sit flush against the header" cosmetic nudge that
+  had no reserved space of its own at all and had been silently borrowing from the exact
+  half-gap the simplification removed). Each was found only via live screenshots, one at a time,
+  over a single session, because each looked like an independent, unrelated symptom (wrong top
+  padding, wrong right padding, a gap that wouldn't close after a drag) rather than three instances
+  of the same root cause. When a shared "who reserves this space" formula changes, grep for every
+  OTHER formula/comment that references the same constants or describes itself as "the other half"
+  of some pairing, rather than fixing symptoms one screenshot at a time.
 
 ## Pitfalls learned the hard way (read before writing `moduleProcess()`)
 
