@@ -93,23 +93,45 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 // Still MUST be the max across BOTH Normal and Full Height - same reasoning as before, just
 // without the column term: switching modes must never require MORE width than the module already
 // has, so the floor has to cover whichever mode's own controlsWidthMm is larger. rightPaddingMm
-// is now the SAME value in both modes (2026-07-22 simplification, see
-// neoRowAreaControlsWidthMm()'s own comment) - NEO_CELL_RECOMMENDED_PADDING_MM/2 = 0.762/2 =
-// 0.381. NEO_ROW_HEADER_MIN_WIDTH_MM enlarged from 32HP to 38HP the same day (Dieter's own
-// instruction, "enlarge the row header in width by 6HP to make some space") - recomputed below.
+// is now MODE-DEPENDENT again (2026-07-23 fix - see neoRowAreaControlsWidthMm()'s own comment for
+// the full derivation): Normal = NEO_CELL_RECOMMENDED_PADDING_MM + NEO_FRAME_MARGIN_MM = 0.762 +
+// 0.762 = 1.524; Full Height = 0. A SEPARATE 2026-07-23 fix (same function, found via live
+// screenshots showing the right-side padding still visibly too small even after the above) added
+// a previously-unaccounted "grid start inset" term (NEO_CELL_RECOMMENDED_PADDING_MM / 2 = 0.381,
+// BOTH modes) - see that function's own comment for the full reasoning.
+//
+// RECOMPUTED 2026-07-23 - the header-widget pool (built the day before) plus the new per-row
+// FOLLOW-override button (built this session) together made the row header's own real content
+// require more width than the still-38HP floor allowed for: the LEFT-anchored chain (name field
+// -> celltype knob/display -> pool) and the RIGHT-anchored chain (position display -> RIGHT ->
+// LEFT -> FOLLOW-override) were actually OVERLAPPING by ~10mm (~2HP) at 38HP - found live
+// ("the display sticks out to the right, looks like 1 HP is missing"), confirmed by writing a
+// small standalone program that includes Neo.hpp directly and prints every real chain-width
+// constant rather than re-deriving them by hand (this exact section had already drifted out of
+// sync with the real code once - see the git-history note above - so a hand recompute alone
+// wasn't trusted this time). NEO_ROW_HEADER_MIN_WIDTH_MM raised from 38HP to 41HP (the smallest
+// whole-HP value that gives the two chains one full NEO_FRAME_GAP_MM of clearance) - recomputed
+// below with the ACTUAL neoRowAreaControlsWidthMm()/neoMinWidthHp() functions, not by hand (and
+// re-run a THIRD time after the two separate rightPaddingMm/gridStartInsetMm fixes above, since
+// both change controlsWidthMm too - the numbers below are the FINAL, post-all-three-fixes values):
 //   Normal:      controlsWidthMm = NEO_GLOBAL_AREA_WIDTH_MM (30.48) + NEO_ROW_HEADER_MIN_WIDTH_MM
-//                                 (193.04) + rightPaddingMm (0.381) = 223.901
-//                minWidthHp = ceil(223.901 / 5.08) = 45
-//   Full Height: controlsWidthMm = 30.48 + 193.04 + NEO_RESIZE_RESERVED_WIDTH_MM (5.08)
-//                                 + rightPaddingMm (0.381) = 228.981
-//                minWidthHp = ceil(228.981 / 5.08) = 46
-//   NEO_DEFAULT_WIDTH_HP = max(45, 46) = 46 (see neoMinWidthHpAnyMode() below - this hand
+//                                 (208.28) + gridStartInsetMm (0.381) + rightPaddingMm (1.524)
+//                                 = 240.665
+//                minWidthHp = ceil(240.665 / 5.08) = 48
+//   Full Height: controlsWidthMm = 30.48 + 208.28 + gridStartInsetMm (0.381)
+//                                 + NEO_RESIZE_RESERVED_WIDTH_MM (5.08) + rightPaddingMm (0)
+//                                 = 244.221
+//                minWidthHp = ceil(244.221 / 5.08) = 49
+//   NEO_DEFAULT_WIDTH_HP = max(48, 49) = 49 (see neoMinWidthHpAnyMode() below - this hand
 //                          derivation must always match what that function would compute for this
 //                          same config, so the two never silently diverge)
-// Recompute by hand and update this constant if NEO_ROW_HEADER_MIN_WIDTH_MM,
-// NEO_GLOBAL_AREA_WIDTH_HP, NEO_RESIZE_RESERVED_WIDTH_HP, neoRowAreaControlsWidthMm()'s own
-// right-padding formula, or the frame-margin constants above ever change.
-#define NEO_DEFAULT_WIDTH_HP 46
+// Recompute (and re-verify with a throwaway standalone Neo.hpp-including program, NOT by hand
+// alone - see this section's own note above for why) if NEO_ROW_HEADER_MIN_WIDTH_MM,
+// NEO_GLOBAL_AREA_WIDTH_HP, NEO_RESIZE_RESERVED_WIDTH_HP, any header-content chain element's own
+// size (including the still-placeholder NEO_POOL_TINY_* constants once Trimpot is measured),
+// neoRowAreaControlsWidthMm()'s own right-padding formula, or the frame-margin constants above
+// ever change.
+#define NEO_DEFAULT_WIDTH_HP 49
 
 // Reserved left-hand sidebar, full panel height, for module-wide (not per-row) controls -
 // sockets, knobs, displays, whatever NEO eventually needs that isn't tied to one specific row.
@@ -126,14 +148,17 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 // above - about 4x the row header's original 40mm (2026-07-20 - it needs much more room, e.g.
 // for a fuller Morpheus-style cell-type preview), enlarged a further 6HP on top of that
 // (2026-07-22, Dieter's own instruction: "enlarge the row header in width by 6HP to make some
-// space" - was 32HP, now 38HP). This is a pure FLOOR, never a snap-target: the row header's
-// actual current width is not stored anywhere, it's recomputed fresh every time via
-// neoComputeLayout() (below) as NEO_ROW_HEADER_MIN_WIDTH_MM + whatever leftover space the
-// floor-based column count couldn't use (2026-07-21 redesign, replacing an earlier "snap to a
-// target width at drag-start, absorb leftover past it at drag-end" model that persisted an
-// incrementally-grown header width and caused a series of lock-sync regressions - see
-// XHostImplementationGuide.md-adjacent session notes / neoComputeLayout()'s own comment).
-#define NEO_ROW_HEADER_MIN_WIDTH_MM (38 * 5.08f)
+// space" - was 32HP, now 38HP), and enlarged AGAIN 2026-07-23 to 41HP once the header-widget pool
+// (built the day before) and the new per-row FOLLOW-override button (built this session) actually
+// made the row's own real content wider than 38HP allowed - see NEO_DEFAULT_WIDTH_HP's own
+// comment above for the full incident and the exact recomputation. This is a pure FLOOR, never a
+// snap-target: the row header's actual current width is not stored anywhere, it's recomputed
+// fresh every time via neoComputeLayout() (below) as NEO_ROW_HEADER_MIN_WIDTH_MM + whatever
+// leftover space the floor-based column count couldn't use (2026-07-21 redesign, replacing an
+// earlier "snap to a target width at drag-start, absorb leftover past it at drag-end" model that
+// persisted an incrementally-grown header width and caused a series of lock-sync regressions -
+// see XHostImplementationGuide.md-adjacent session notes / neoComputeLayout()'s own comment).
+#define NEO_ROW_HEADER_MIN_WIDTH_MM (41 * 5.08f)
 
 // Resize handle geometry - the same small icon (right upper corner, vertically centered on the
 // same y as the title text) is used in BOTH Normal and Full Height mode as of 2026-07-22 (see
@@ -220,28 +245,68 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define NEO_FULLHEIGHT_ON_COLOR  ORANGE
 #define NEO_FULLHEIGHT_OFF_COLOR ORANGE
 
+// Per-row FOLLOW-override 3-state button (2026-07-23) - re-uses the ROW_FOLLOW_PARAM/JSON slots
+// that were reserved-but-unused since the 2026-07-21 global-FOLLOW redesign (see their own
+// comments) rather than adding new ones. States (Dieter's own spec): 0 = "G" grey/default (row
+// obeys whatever the global FOLLOW button currently says), 1 = "F" green (row ALWAYS follows,
+// independent of the global state), 2 = "L" red (row NEVER follows/page stays "Locked",
+// independent of the global state). NEO_ROW_FOLLOW_OVERRIDE_ON_COLOR reuses NEO_LOCK_ON_COLOR's
+// own established green (same "this is actively forced on" meaning); OFF gets its own new red -
+// no existing red constant in this codebase to reuse.
+#define NEO_ROW_FOLLOW_OVERRIDE_GLOBAL_COLOR X_COLOR_INACTIVE_GREY
+#define NEO_ROW_FOLLOW_OVERRIDE_ON_COLOR     NEO_LOCK_ON_COLOR
+#define NEO_ROW_FOLLOW_OVERRIDE_OFF_COLOR    nvgRGB(0xdd, 0x33, 0x22)
+
 // How much width is "spent" on either side of the step-column grid, total - the global area,
 // plus the row header's own CURRENT width (a computed-fresh-every-time value now, see
 // neoComputeLayout()'s own comment below - callers either already have a NeoLayoutResult in hand,
 // or pass NEO_ROW_HEADER_MIN_WIDTH_MM itself where no module instance/layout exists yet), plus Full Height's
 // own reserved resize-handle strip when active - all on the LEFT - plus a right-hand trailing
 // margin so the grid's own last column doesn't run flush to the panel's right edge OR row-area
-// frame. Simplified 2026-07-22 (Dieter's own instruction, directly following the padding-removal
-// work the same day - "the padding of the grid to frame on the right (normal mode) or module
-// boundary (full mode) should be just 1/2 padding because the cell is doing the other half"):
-// both modes now use the SAME half-recommended-padding margin, exactly mirroring how the grid's
-// own LEFT start (header-to-first-cell) already works - NEO itself only ever reserves HALF of
-// NEO_CELL_RECOMMENDED_PADDING_MM at any boundary it doesn't fully own, and a conforming last
-// cell's own drawCell() self-inset supplies the other half, summing back to one full padding unit
-// total, same as any ordinary cell-to-cell gap. Replaces the older, asymmetric Normal-vs-Full-
-// Height formula (a peer-frame half-gap plus, in Normal mode only, a further full gap) that
-// predates the cell-owns-its-own-padding redesign. THE one place this decision is made; every
-// width/column computation in Neo.cpp threads its result through rather than computing it
-// separately.
+// frame.
+//
+// CORRECTED 2026-07-23 (same regression class as neoRowLayout()'s own top/bottom fix - both
+// trace back to the SAME 2026-07-22 simplification going one step too far): Normal mode's own
+// trailing margin needs to reach the row-area's own SURROUNDING DECORATIVE FRAME (drawn by
+// NeoPanelWidget - its own right edge sits at `box.size.x - NEO_FRAME_MARGIN_MM`, NOT the true
+// panel border) with a FULL `NEO_FRAME_GAP_MM`, exactly the same "one full gap from the
+// surrounding frame's edge" rule confirmed for the header frame's own top edge (see
+// neoRowLayout()'s own comment) - Full Height (no frame drawn at all, genuinely chrome-free) only
+// ever needs HALF a gap directly to the TRUE module border, and gets that ENTIRELY for free from
+// the last cell's own unconditional `NEO_CELL_RECOMMENDED_PADDING_MM` self-inset (same "cell
+// supplies its own half" mechanism that already existed) - no separate term needed there at all.
+// Derivation (measuring from the last cell's own DRAWN edge, i.e. AFTER its own self-inset, to
+// the actual target - the cell's self-inset itself is unconditional/mode-independent, already
+// "spent" before either of these formulas even apply):
+//   Normal:      drawnEdge = frameRightEdge - NEO_FRAME_GAP_MM
+//                          = (box.size.x - NEO_FRAME_MARGIN_MM) - NEO_FRAME_GAP_MM
+//                => rightPaddingMm = NEO_FRAME_MARGIN_MM + NEO_CELL_RECOMMENDED_PADDING_MM
+//                   (the last NEO_CELL_RECOMMENDED_PADDING_MM term is because NEO_FRAME_GAP_MM
+//                   is 2x it, and the cell's own self-inset already accounts for one of those two)
+//   Full Height: drawnEdge = box.size.x - NEO_CELL_RECOMMENDED_PADDING_MM directly
+//                => rightPaddingMm = 0 (the cell's own self-inset alone already achieves this)
+// THE one place this decision is made; every width/column computation in Neo.cpp threads its
+// result through rather than computing it separately.
+//
+// GRID-START INSET now ALSO accounted for here (2026-07-23 fix, found via live screenshots
+// showing too little right-side padding even after the rightPaddingMm fix above) -
+// NeoWidget::step() shifts the grid's own DRAWN position right by NEO_CELL_RECOMMENDED_PADDING_MM
+// / 2 (so the first cell's own self-inset doesn't sit flush against the header - see
+// rowCells[r]->box.pos's own comment, Neo.cpp) WITHOUT shrinking box.size.x to compensate - that
+// shift was flagged "decorative-only, doesn't feed back into layout math," which was true only
+// as long as neoColumnPitchMm() itself still reserved a matching half-gap of its own; the
+// 2026-07-22 KISS simplification removed that reservation (columnPitchMm now equals plain
+// columnWidthMm) without re-homing this shift anywhere - it was left silently eating into the
+// right-side margin instead, shrinking the ACTUAL visible gap by this same amount versus what
+// rightPaddingMm alone would suggest. Reserved here instead, unconditionally (the shift itself
+// applies in both modes), so cellsWidthMm/columnPitchMm stay exactly uniform per column (no
+// column gets silently narrowed to compensate) and the true trailing gap matches rightPaddingMm's
+// own target exactly.
 inline float neoRowAreaControlsWidthMm(bool fullHeight, float rowHeaderWidthMm)
 {
-	float rightPaddingMm = NEO_CELL_RECOMMENDED_PADDING_MM / 2.f; // same margin in both modes now
-	return NEO_GLOBAL_AREA_WIDTH_MM + rowHeaderWidthMm + (fullHeight ? NEO_RESIZE_RESERVED_WIDTH_MM : 0.f) + rightPaddingMm;
+	float rightPaddingMm = fullHeight ? 0.f : (NEO_CELL_RECOMMENDED_PADDING_MM + NEO_FRAME_MARGIN_MM);
+	float gridStartInsetMm = NEO_CELL_RECOMMENDED_PADDING_MM / 2.f;
+	return NEO_GLOBAL_AREA_WIDTH_MM + rowHeaderWidthMm + gridStartInsetMm + (fullHeight ? NEO_RESIZE_RESERVED_WIDTH_MM : 0.f) + rightPaddingMm;
 }
 
 // Column width used to live here as a fixed 4mm constant - 2026-07-20, Dieter's own instruction:
@@ -405,12 +470,15 @@ inline float neoRowAreaControlsWidthMm(bool fullHeight, float rowHeaderWidthMm)
 #define NEO_POOL_TRACK_DISPLAY_WIDTH_MM olDisplayWidthMm(NEO_POOL_TRACK_DISPLAY_MAX_CHARS, NEO_POOL_TINY_FONT_SIZE_MM, NEO_ROW_DISPLAY_TEXT_INSET_MM)
 #define NEO_POOL_CHANNEL_DISPLAY_MAX_CHARS 2
 #define NEO_POOL_CHANNEL_DISPLAY_WIDTH_MM olDisplayWidthMm(NEO_POOL_CHANNEL_DISPLAY_MAX_CHARS, NEO_POOL_TINY_FONT_SIZE_MM, NEO_ROW_DISPLAY_TEXT_INSET_MM)
-// Header floor: NEO_ROW_HEADER_MIN_WIDTH_MM/NEO_DEFAULT_WIDTH_HP deliberately NOT changed yet -
-// Option C's real footprint depends on Trimpot's actual measured size, unknown until built. Build
-// the pool with the placeholder constants above, measure the real resulting width live in Rack,
-// THEN do the same hand-derivation NEO_DEFAULT_WIDTH_HP's own comment already documents
-// (recompute neoRowAreaControlsWidthMm() for both modes, ceil() each to HP, take the max) - do not
-// skip this step once the real numbers are in.
+// Header floor: NEO_ROW_HEADER_MIN_WIDTH_MM/NEO_DEFAULT_WIDTH_HP WERE recomputed 2026-07-23
+// (38HP/46HP -> 41HP/49HP - see NEO_DEFAULT_WIDTH_HP's own comment for the full incident/derivation),
+// but using the STILL-PLACEHOLDER NEO_POOL_TINY_* constants above, since Option C's real footprint
+// still depends on Trimpot's actual measured size, unknown until built. This recompute was
+// necessary NOW regardless (the row header's own real content was actively overlapping/
+// overflowing at the old 38HP floor, a live-blocking bug, not just an eventual precision
+// improvement) - but expect to redo this SAME derivation once more, later, once Trimpot's real
+// on-screen size replaces the placeholders and the pool's own true footprint is known - do not
+// skip that follow-up pass once the real numbers are in.
 
 // NEO_ROW_NAME_WIDTH_MM/FOLLOW_X_MM/LEFT_X_MM/RIGHT_X_MM used to be static #defines here, chained
 // off the field's own BASE width - removed 2026-07-21 (Dieter's own catch: FOLLOW/LEFT/RIGHT kept
@@ -425,9 +493,14 @@ inline float neoRowAreaControlsWidthMm(bool fullHeight, float rowHeaderWidthMm)
 // favor of one global FOLLOW button (see NEO_FOLLOW_BUTTON_*_MM above) - kept here, unused, for
 // the same reason ROW_FOLLOW_JSON/PARAM are kept: re-introducing a per-row toggle later shouldn't
 // need to re-derive its size from scratch.
-#define NEO_ROW_TOGGLE_WIDTH_MM  6.f  // FOLLOW toggle button
+#define NEO_ROW_TOGGLE_WIDTH_MM  6.f  // FOLLOW-override button (re-purposed 2026-07-23 - see
+                                      // NEO_ROW_FOLLOW_OVERRIDE_*_COLOR's own comment)
 #define NEO_ROW_TOGGLE_HEIGHT_MM 4.f
 #define NEO_ROW_PAGEBTN_SIZE_MM  4.f  // LEFT/RIGHT paging buttons (square)
+// Single-character "G"/"F"/"L" label size for the FOLLOW-override button above - small enough to
+// fit comfortably inside NEO_ROW_TOGGLE_HEIGHT_MM (4mm), same proportion every other small NEO
+// button/display leaves around its own font.
+#define NEO_ROW_FOLLOW_OVERRIDE_FONT_SIZE_MM 2.8f
 
 // Right-aligned page/position display (2026-07-20 addition, Dieter's own spec: "pp/PP:sss/SSS
 // with pp current page, PP number of pages and sss current step pos and SSS LEN", later split
@@ -590,7 +663,11 @@ inline float neoRowAreaControlsWidthMm(bool fullHeight, float rowHeaderWidthMm)
 // This does NOT apply to NEO_CELL_RECOMMENDED_PADDING_MM/NEO_FRAME_GAP_MM themselves - those are a
 // separate, already-established, genuinely fixed-mm convention shared across every cell editor
 // and the row header, not something this section redefines.
-#define NEO_FALLBACK_REFERENCE_CELL_HEIGHT_MM ((PANELHEIGHT - NEO_FRAME_TOP_MM - NEO_FRAME_BOTTOM_MM) / (float) NEO_ROWS_MAX)
+// Kept in sync BY HAND with neoRowLayout()'s own Normal-mode formula (2026-07-23 fix added the
+// trailing `- 2.f * NEO_CELL_RECOMMENDED_PADDING_MM` term there; this reference constant must
+// always match whatever that function would actually compute at NEO_ROWS_MAX rows, Normal mode -
+// see neoRowLayout()'s own comment for why that extra term exists at all).
+#define NEO_FALLBACK_REFERENCE_CELL_HEIGHT_MM ((PANELHEIGHT - NEO_FRAME_TOP_MM - NEO_FRAME_BOTTOM_MM - 2.f * NEO_CELL_RECOMMENDED_PADDING_MM) / (float) NEO_ROWS_MAX)
 #define NEO_FALLBACK_REFERENCE_SCALE(cellHeightPx) ((cellHeightPx) / mm2px(NEO_FALLBACK_REFERENCE_CELL_HEIGHT_MM))
 //
 // Vertical stack, top to bottom, every gap exactly NEO_CELL_RECOMMENDED_PADDING_MM (2026-07-22,
@@ -613,7 +690,7 @@ inline float neoRowAreaControlsWidthMm(bool fullHeight, float rowHeaderWidthMm)
 #define NEO_FALLBACK_KNOB_RING_STROKE_RATIO      0.12f
 #define NEO_FALLBACK_KNOB_POINTER_STROKE_RATIO   0.15f
 #define NEO_FALLBACK_KNOB_POINTER_START_RATIO    0.f
-#define NEO_FALLBACK_KNOB_POINTER_END_RATIO      0.8f
+#define NEO_FALLBACK_KNOB_POINTER_END_RATIO      0.7f
 // Floor under both the ring and pointer stroke widths above, in raw px (not mm - a sub-1px stroke
 // would simply vanish at typical zoom, regardless of how small the knob itself has scaled down).
 #define NEO_FALLBACK_KNOB_MIN_STROKE_PX 1.f
@@ -630,9 +707,17 @@ inline float neoRowAreaControlsWidthMm(bool fullHeight, float rowHeaderWidthMm)
 // own center, tuned by eye at 8 rows, scaled by NEO_FALLBACK_REFERENCE_SCALE() at other row
 // counts - same "small residual tunable nudge" pattern as OLLabelButton's own textYNudgePx (see
 // CLAUDE.md) - a formula gets you close, this is for whatever correction still looks needed after.
-#define NEO_FALLBACK_KNOB_SIZE_RATIO 1.f
+#define NEO_FALLBACK_KNOB_SIZE_RATIO 1.05f
 #define NEO_FALLBACK_KNOB_X_NUDGE_MM 0.f
-#define NEO_FALLBACK_KNOB_Y_NUDGE_MM 0.f
+#define NEO_FALLBACK_KNOB_Y_NUDGE_MM 0.8f
+// Display strip's own Y position fine-tune (2026-07-22, added when Dieter went looking for a
+// height-nudge constant and found none - the display's own vertical SLOT position is fully
+// determined by the padding-stack math above (displayAreaTopPx, Neo.cpp) with no independent
+// tunable, unlike the knob which already got X/Y nudges the same session. Same shape as
+// NEO_FALLBACK_KNOB_Y_NUDGE_MM: a plain mm offset from the slot's own derived position, ABSOLUTE
+// POSITION/SIZE CONVENTION (tuned at 8 rows, scaled by NEO_FALLBACK_REFERENCE_SCALE() elsewhere),
+// default 0 so today's look is unchanged until actually tuned.
+#define NEO_FALLBACK_DISPLAY_Y_NUDGE_MM 0.8f
 
 // Drag sensitivity (2026-07-22, Dieter's own catch: "the react a bit too hard on the mouse...
 // too little mouse move between min and max") - NeoFallbackCellEditor::dragValue() originally
@@ -759,11 +844,31 @@ inline float neoMaxWidthHp(NeoHostInterface *host, float columnWidthMm, float co
 	NEO_FRAME_BOTTOM_MM) - that's the panel's own OUTER frame margin, a completely different,
 	untouched concept from the inter-row padding removed here; Full Height still uses the full
 	0..PANELHEIGHT (no frame margin at all), now truly edge-to-edge with zero inset from either.
+
+	BUG FOUND AND FIXED 2026-07-23 (regression from the very simplification described above,
+	commit f80adbe - Dieter's own catch, live-testing, unable to pin down exactly when it broke:
+	"we had that correct some time before but can not say at what point we lost it"): Normal
+	mode's own `contentTopMm`/`contentBottomMm` need ONE MORE half-gap inset
+	(`NEO_CELL_RECOMMENDED_PADDING_MM`) beyond the plain `NEO_FRAME_TOP_MM`/`NEO_FRAME_BOTTOM_MM`
+	panel margin - without it, the FIRST/LAST row's own header frame (which already self-insets by
+	that same half-gap, to line up with a conforming cell editor's own frame - see
+	`NeoRowHeaderFrameWidget`'s own comment, Neo.cpp) ends up only a HALF gap away from the
+	panel's own top/bottom margin, not a FULL gap. Reference check Dieter used to confirm this:
+	the first row header's own drawn top edge must land at the EXACT same absolute Y as the LOCK
+	button in the global area beside it (`NEO_LOCK_BUTTON_Y_MM = NEO_FRAME_TOP_MM +
+	NEO_FRAME_GAP_MM` - a plain, un-halved full gap). This mirrors the same "adjoining elements
+	each supply half a gap, summing to one full gap" principle already used for cell-to-cell
+	spacing (`NEO_CELL_RECOMMENDED_PADDING_MM`'s own comment) - here the GRID's own outer boundary
+	supplies one half (this fix) and the header frame's own self-inset supplies the other half
+	(already correct, untouched), together summing to one full `NEO_FRAME_GAP_MM` in Normal mode.
+	Full Height mode deliberately does NOT get this extra term - it intentionally stays a bare
+	half-gap from the panel edge to the header frame (the "chrome-free," truly-edge-to-edge
+	convention, unaffected) - only Normal mode was missing its own contribution.
 */
 inline void neoRowLayout(bool fullHeight, int rowsDisplayed, float &outFirstRowYMm, float &outCellHeightMm, float &outRowPitchMm)
 {
-	float contentTopMm = fullHeight ? 0.f : NEO_FRAME_TOP_MM;
-	float contentBottomMm = fullHeight ? PANELHEIGHT : (PANELHEIGHT - NEO_FRAME_BOTTOM_MM);
+	float contentTopMm = fullHeight ? 0.f : (NEO_FRAME_TOP_MM + NEO_CELL_RECOMMENDED_PADDING_MM);
+	float contentBottomMm = fullHeight ? PANELHEIGHT : (PANELHEIGHT - NEO_FRAME_BOTTOM_MM - NEO_CELL_RECOMMENDED_PADDING_MM);
 	float rangeMm = contentBottomMm - contentTopMm;
 	outCellHeightMm = std::max(0.1f, rangeMm / (float) rowsDisplayed);
 	outRowPitchMm = outCellHeightMm;
@@ -913,6 +1018,41 @@ inline NeoLayoutResult neoComputeLayout(float totalWidthMm, bool fullHeight, int
 	NeoLayoutResult r;
 	r.headerWidthMm = NEO_ROW_HEADER_MIN_WIDTH_MM + leftoverMm;
 	r.controlsWidthMm = controlsWidthAtMinMm + leftoverMm;
+	r.visibleCols = visibleCols;
+	r.leftoverMm = leftoverMm;
+	r.cellsWidthMm = (float) visibleCols * columnPitchMm;
+	return r;
+}
+
+// Drag-start/during-drag ONLY variant (2026-07-23) - Dieter's own precise spec, dictated step by
+// step after the resize-padding regressions this session: (1) AT THE MOMENT a drag starts, the
+// header snaps to its bare minimum width (NOT the leftover-absorbed "beautified" rest-state width
+// neoComputeLayout() above always produces) - this had regressed silently (a stale comment on
+// NeoResizeHandle::onDragStart() claimed "nothing to snap anymore," which was true for the OLD
+// persisted-width model that comment was written for, but not for what the header should visually
+// DO the instant a drag begins). (2) For the ENTIRE remainder of the drag, headerWidthMm stays
+// pinned at this same minimum - never recomputed - while the visible column count keeps updating
+// live every tick against the module's current (changing) total width. (3) Only once the drag
+// actually ENDS does the header do its one real "absorb leftover, restore correct padding" pass -
+// via the ordinary neoComputeLayout() above, unchanged.
+//
+// Critically, this produces the EXACT SAME visibleCols/leftoverMm as neoComputeLayout() would for
+// the identical totalWidthMm - both ultimately call neoColumnFit() against the same
+// controlsWidthAtMinMm basis; the ONLY difference is what headerWidthMm/controlsWidthMm report
+// (bare minimum here vs. minimum+leftover there). This is precisely why toggling into or out of a
+// drag with zero actual mouse movement can never add or remove a visible column - the header
+// visually resizing (shrinking at drag-start, growing back at drag-end) never changes what
+// neoColumnFit() itself computes, by construction, not by coincidence.
+inline NeoLayoutResult neoComputeLayoutAtMinHeader(float totalWidthMm, bool fullHeight, int rowsDisplayed)
+{
+	float columnPitchMm = neoColumnPitchMm(fullHeight, rowsDisplayed);
+	float controlsWidthAtMinMm = neoRowAreaControlsWidthMm(fullHeight, NEO_ROW_HEADER_MIN_WIDTH_MM);
+	int visibleCols;
+	float leftoverMm;
+	neoColumnFit(totalWidthMm, controlsWidthAtMinMm, columnPitchMm, visibleCols, leftoverMm);
+	NeoLayoutResult r;
+	r.headerWidthMm = NEO_ROW_HEADER_MIN_WIDTH_MM; // pinned - no leftover absorption while dragging
+	r.controlsWidthMm = controlsWidthAtMinMm;      // NOT + leftoverMm - the header itself isn't growing here
 	r.visibleCols = visibleCols;
 	r.leftoverMm = leftoverMm;
 	r.cellsWidthMm = (float) visibleCols * columnPitchMm;

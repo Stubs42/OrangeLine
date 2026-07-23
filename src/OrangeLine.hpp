@@ -568,6 +568,58 @@ struct OLLabelButton : OpaqueWidget
 	}
 };
 
+// Direction for olDrawArrow() below (2026-07-23) - first concrete piece of a small, reusable
+// NanoVG-drawn icon set for buttons/displays that need a symbol instead of (or alongside) plain
+// text - queued as an idea earlier ("buttons currently only display text labels, but they should
+// also be able to show drawn symbols... arrows left up down right for paging a lock and unlock
+// icon and so on") and now getting its first real caller: NEO's own page back/forward buttons.
+enum OLArrowDirection
+{
+	OL_ARROW_LEFT,
+	OL_ARROW_RIGHT,
+	OL_ARROW_UP,
+	OL_ARROW_DOWN
+};
+
+// Draws a solid, plain-filled triangle arrow centered at `center`, spanning `size` (the
+// triangle's own bounding-box side length, already in PIXELS - caller does its own mm2px, same
+// convention as every other raw NanoVG draw call in this codebase). No stroke - matches the
+// existing plain-fill convention for small status/direction glyphs elsewhere (e.g.
+// NeoResizeHandle's own grip lines are plain strokes, no fill/stroke combo needed for a symbol
+// this simple).
+inline void olDrawArrow(NVGcontext *vg, Vec center, float size, NVGcolor color, OLArrowDirection dir)
+{
+	float h = size / 2.f;
+	nvgBeginPath(vg);
+	switch (dir)
+	{
+		case OL_ARROW_LEFT:
+			nvgMoveTo(vg, center.x + h, center.y - h);
+			nvgLineTo(vg, center.x - h, center.y);
+			nvgLineTo(vg, center.x + h, center.y + h);
+			break;
+		case OL_ARROW_RIGHT:
+			nvgMoveTo(vg, center.x - h, center.y - h);
+			nvgLineTo(vg, center.x + h, center.y);
+			nvgLineTo(vg, center.x - h, center.y + h);
+			break;
+		case OL_ARROW_UP:
+			nvgMoveTo(vg, center.x - h, center.y + h);
+			nvgLineTo(vg, center.x, center.y - h);
+			nvgLineTo(vg, center.x + h, center.y + h);
+			break;
+		case OL_ARROW_DOWN:
+		default:
+			nvgMoveTo(vg, center.x - h, center.y - h);
+			nvgLineTo(vg, center.x, center.y + h);
+			nvgLineTo(vg, center.x + h, center.y - h);
+			break;
+	}
+	nvgClosePath(vg);
+	nvgFillColor(vg, color);
+	nvgFill(vg);
+}
+
 // Shared "digital display" background colors (2026-07-21, lifted out of NEO's own
 // NEO_ROW_DISPLAY_BG_* - see CLAUDE.md's "Code-drawn digital displays and knob rings" section)
 // - a genuinely darker, distinct color from the plain panel/strip background, for a true LCD-

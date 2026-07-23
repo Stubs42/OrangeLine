@@ -665,6 +665,11 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 	// before EVER starting an edit gesture on this row.
 	bool getRowWritable(int row) { return neoHost ? neoHost->getTrackWritable(getRowTrack(row)) : true; }
 
+	// Per-row FOLLOW-override (2026-07-23) - 0=Global (obey GLOBAL_FOLLOW_JSON), 1=Force-on,
+	// 2=Force-off. See NEO_ROW_FOLLOW_OVERRIDE_*_COLOR's own comment (Neo.hpp) for the full
+	// 3-state design. Same clamping-accessor shape as every other row-selection value above.
+	int getRowFollowOverride(int row) { return clamp((int) std::round(getStateParam(ROW_FOLLOW_PARAM + row)), 0, 2); }
+
 	// This row's own (track,channel)-owned identity color, unpacked into an NVGcolor (2026-07-22) -
 	// the same conversion NeoRowCellsWidget/NeoRowNameField each used to do inline, now shared so
 	// the row-header frame/display/knob-ring widgets can use it too (Dieter's own request: "the
@@ -692,6 +697,13 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 	// about what's actually on screen during a drag. Default-initialized against
 	// NEO_DEFAULT_WIDTH_HP so a sensible value exists even before the first step() tick runs.
 	NeoLayoutResult neoCachedLayout = neoComputeLayout((float) NEO_DEFAULT_WIDTH_HP * 5.08f, false, NEO_ROWS_DEFAULT);
+	// Tracks whether THIS instance was already in the "dragging" state as of the previous
+	// NeoWidget::step() tick (2026-07-23) - lets step() detect the exact tick dragging FIRST
+	// becomes true (for either this instance's own resize handle, or a lock-group follower whose
+	// own `dragging` only ever goes true via the shared NeoLockData::dragging flag, never its own
+	// onDragStart()) and snap neoCachedLayout to neoComputeLayoutAtMinHeader() right then - see
+	// step()'s own comment for why a follower needs this (its own onDragStart() never fires).
+	bool neoWasDraggingLastTick = false;
 
 	float getRowHeaderWidthMm() { return neoCachedLayout.headerWidthMm; }
 	float getControlsWidthMm() { return neoCachedLayout.controlsWidthMm; }
@@ -762,7 +774,12 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 			// sets it there anymore).
 			configParam(ROW_CELLTYPE_PARAM + r, 0.f, (float) (neoCellEditorRegistry().size() - 1), 1.f, string::f("Row %d Cell Type", r + 1));
 			paramQuantities[ROW_CELLTYPE_PARAM + r]->snapEnabled = true;
-			configParam(ROW_FOLLOW_PARAM + r, 0.f, 1.f, 0.f, string::f("Row %d Follow", r + 1));
+			// Re-purposed 2026-07-23 as the 3-state FOLLOW-override (0=Global/grey, 1=Force-on/
+			// green, 2=Force-off/red - see NEO_ROW_FOLLOW_OVERRIDE_*_COLOR's own comment, Neo.hpp)
+			// - was a plain 0..1 boolean, reserved-but-unused, since the 2026-07-21 global-FOLLOW
+			// redesign.
+			configParam(ROW_FOLLOW_PARAM + r, 0.f, 2.f, 0.f, string::f("Row %d Follow Override", r + 1));
+			paramQuantities[ROW_FOLLOW_PARAM + r]->snapEnabled = true;
 			configParam(ROW_LEFT_PARAM + r, 0.f, 1.f, 0.f, string::f("Row %d Page Back", r + 1));
 			configParam(ROW_RIGHT_PARAM + r, 0.f, 1.f, 0.f, string::f("Row %d Page Forward", r + 1));
 
@@ -924,16 +941,19 @@ struct Neo : Module, XExpanderInterface, XOExpanderInterface, NeoExpanderInterfa
 			refreshChannelTable();
 
 		int visibleCols = getVisibleColumns();
-		// One global FOLLOW applies to every row (2026-07-21) - per-row FOLLOW is deferred for now
-		// (the old ROW_FOLLOW_JSON/PARAM per-row toggle is unused dead infrastructure, kept only so
-		// re-introducing it later doesn't need to renumber every Param after it - see Neo.hpp).
-		bool follow = OL_state[GLOBAL_FOLLOW_JSON] > 0.5f;
+		// Global FOLLOW is the default every row obeys (2026-07-21) - a per-row FOLLOW-override
+		// (2026-07-23, re-using the ROW_FOLLOW_JSON/PARAM slots reserved back then) lets a row
+		// force itself on/off independent of this global state - see getRowFollowOverride()'s own
+		// comment.
+		bool globalFollow = OL_state[GLOBAL_FOLLOW_JSON] > 0.5f;
 
 		for (int r = 0; r < NEO_NUM_ROWS; r++)
 		{
 			if (neoHost)
 			{
 				int channel = getRowChannel(r);
+				int followOverride = getRowFollowOverride(r);
+				bool follow = (followOverride == 1) ? true : (followOverride == 2) ? false : globalFollow;
 				// Live channel properties (2026-07-22, infrastructure only - see
 				// NeoChannelProperties' own comment). Range is keyed by this row's own current
 				// (track, channel) selection, expressed as a list of named dimension coordinates
@@ -1065,11 +1085,28 @@ struct NeoResizeHandle : OpaqueWidget
 		assert(mw);
 		originalBox = mw->box;
 
-		// Nothing to snap anymore (2026-07-21 redesign) - the row header is no longer a stored
-		// value, it's recomputed fresh via neoComputeLayout() the next time NeoWidget::step() is
-		// allowed to refresh its cache (the tick after this drag ends). Just tell every other
-		// locked instance to freeze its own display for the duration too, same reason this
-		// instance does (see NeoLockData::dragging's own comment).
+		// The header snaps to its bare MINIMUM width the instant a drag starts (2026-07-23,
+		// Dieter's own precise spec, dictated step by step - see neoComputeLayoutAtMinHeader()'s
+		// own comment, Neo.hpp, for the full reasoning). This corrects a stale claim in an earlier
+		// version of this comment ("nothing to snap anymore") - that was true only in the sense
+		// that no value is PERSISTED across drags anymore, but the CACHED layout used to draw this
+		// exact frame still needs to be snapped right here, not left at whatever the rest-state
+		// (leftover-absorbed) computation last produced - otherwise the header only visually
+		// shrinks one tick late, and the freeze-during-drag logic in NeoWidget::step() would freeze
+		// at the WRONG (rest-state) width for the whole drag instead.
+		if (module)
+		{
+			bool fullHeight = module->OL_state[FULL_HEIGHT_JSON] > 0.5f;
+			int rowsDisplayed = clamp((int) module->OL_state[ROWS_DISPLAYED_JSON], NEO_ROWS_MIN, NEO_ROWS_MAX);
+			float currentWidthMm = module->OL_state[PANEL_WIDTH_HP_JSON] * 5.08f;
+			module->neoCachedLayout = neoComputeLayoutAtMinHeader(currentWidthMm, fullHeight, rowsDisplayed);
+		}
+
+		// Tell every other locked instance to freeze its own display for the duration too, same
+		// reason this instance does (see NeoLockData::dragging's own comment). Each of THOSE
+		// instances snaps its own header to its own minimum independently, the next time its own
+		// NeoWidget::step() sees lockData.dragging go true - not done here directly, since this
+		// widget has no direct handle to any other instance's own Neo module/cached layout.
 		if (module && module->OL_state[LOCKED_JSON] > 0.5f)
 		{
 			Neo::NeoLockData lockData = module->readLockData();
@@ -1610,7 +1647,7 @@ struct NeoFallbackCellEditor : NeoValueCellEditorBase
 			nvgFontSize(args.vg, displayHeightPx * NEO_FALLBACK_DISPLAY_FONT_SIZE_RATIO);
 			nvgFillColor(args.vg, color);
 			nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-			nvgText(args.vg, cx, displayAreaTopPx + displayHeightPx / 2.f, text.c_str(), nullptr);
+			nvgText(args.vg, cx, displayAreaTopPx + displayHeightPx / 2.f + mm2px(NEO_FALLBACK_DISPLAY_Y_NUDGE_MM) * nudgeScale, text.c_str(), nullptr);
 		}
 	}
 
@@ -2722,14 +2759,29 @@ struct NeoPanelWidget : Widget
 };
 
 /**
-	Small square/pill toggle button shared by the per-row LEFT/RIGHT paging Params (FOLLOW moved
-	to a single global button, 2026-07-21 - see NeoWidget's own globalFollowButton) - file-scope
-	(not a constructor-local type) so NeoWidget can hold typed arrays of these and reposition them
-	every step() as the row layout changes (Grid Rows / Full Height).
+	Small square page back/forward button shared by the per-row LEFT/RIGHT paging Params (FOLLOW
+	moved to a single global button, 2026-07-21 - see NeoWidget's own globalFollowButton) -
+	file-scope (not a constructor-local type) so NeoWidget can hold typed arrays of these and
+	reposition them every step() as the row layout changes (Grid Rows / Full Height).
+
+	True momentary click (2026-07-23, Dieter's own instruction: "of course they have to be click
+	buttons") - fixes a real bug in the previous click-to-TOGGLE version: clicking only paged on
+	every OTHER click (moduleProcess()'s own SchmittTrigger only fires on the 0->1 rising edge, but
+	the old onButton() toggled the param 0<->1 on every press, so the button stayed lit "on" after
+	the first click and the second click's 1->0 transition silently paged nothing). setValue(1) on
+	press / setValue(0) on release instead makes every physical click produce exactly one rising
+	edge - same press/release idiom this codebase's own X8ButtonBase already established
+	(X8Common.hpp) for a real momentary control.
 */
 struct NeoRowButton : ParamWidget
 {
 	NVGcolor onColor = ORANGE;
+	// Which way this button's own arrow points (2026-07-23) - set by the caller right after
+	// construction (leftBtn = OL_ARROW_LEFT, rightBtn = OL_ARROW_RIGHT), first real caller of the
+	// new shared olDrawArrow() (OrangeLine.hpp) - see its own comment for the broader "drawn
+	// symbols instead of just text" idea this is the first piece of.
+	OLArrowDirection direction = OL_ARROW_RIGHT;
+
 	void draw(const DrawArgs &args) override
 	{
 		engine::ParamQuantity *pq = getParamQuantity();
@@ -2738,13 +2790,65 @@ struct NeoRowButton : ParamWidget
 		nvgRoundedRect(args.vg, 0.f, 0.f, box.size.x, box.size.y, 1.f);
 		nvgFillColor(args.vg, on ? onColor : nvgRGB(0x30, 0x30, 0x30));
 		nvgFill(args.vg);
+		// Arrow drawn on top, in whichever color contrasts against the CURRENT background (the
+		// background itself flips dark/lit while held, unlike a themed display's fixed
+		// background) - first-pass fixed colors, not yet theme-aware, live-tune later if needed.
+		NVGcolor arrowColor = on ? nvgRGB(0x00, 0x00, 0x00) : nvgRGB(0xdd, 0xdd, 0xdd);
+		olDrawArrow(args.vg, Vec(box.size.x / 2.f, box.size.y / 2.f), std::min(box.size.x, box.size.y) * 0.6f, arrowColor, direction);
 	}
+	void onButton(const event::Button &e) override
+	{
+		engine::ParamQuantity *pq = getParamQuantity();
+		if (e.button == GLFW_MOUSE_BUTTON_LEFT && pq)
+		{
+			if (e.action == GLFW_PRESS)
+			{
+				pq->setValue(1.f);
+				e.consume(this);
+			}
+			else if (e.action == GLFW_RELEASE)
+			{
+				pq->setValue(0.f);
+			}
+		}
+		ParamWidget::onButton(e);
+	}
+};
+
+/**
+	Per-row 3-state FOLLOW-override button (2026-07-23) - "G"/"F"/"L", see
+	NEO_ROW_FOLLOW_OVERRIDE_*_COLOR's own comment (Neo.hpp) for the full state meaning: G(rey,
+	default) = obey the global FOLLOW button, F(green) = force this row to always follow, L(red) =
+	force this row to never follow (page stays "Locked" to manual). A real ParamWidget bound to
+	ROW_FOLLOW_PARAM (re-using the slot reserved-but-unused since the 2026-07-21 global-FOLLOW
+	redesign) - every other per-row control (track/channel/celltype/range/secondary) is also a
+	real Param, unlike the global FOLLOW/LOCK buttons (OLLabelButton, plain OL_state). Draws via
+	the shared olDrawLabelButton() (OrangeLine.hpp) directly rather than through OLLabelButton
+	itself, since that widget is an OpaqueWidget, not Param-bound.
+*/
+struct NeoRowFollowButton : ParamWidget
+{
+	void draw(const DrawArgs &args) override
+	{
+		engine::ParamQuantity *pq = getParamQuantity();
+		Neo *m = pq ? dynamic_cast<Neo*>(pq->module) : nullptr;
+		int mode = pq ? (int) std::round(pq->getValue()) : 0;
+		NVGcolor accent = (mode == 1) ? NEO_ROW_FOLLOW_OVERRIDE_ON_COLOR : (mode == 2) ? NEO_ROW_FOLLOW_OVERRIDE_OFF_COLOR : NEO_ROW_FOLLOW_OVERRIDE_GLOBAL_COLOR;
+		const char *label = (mode == 1) ? "F" : (mode == 2) ? "L" : "G";
+		float style = m ? m->OL_state[STYLE_JSON] : STYLE_ORANGE;
+		NVGcolor fill = (style == STYLE_DARK) ? X_BUTTON_FILL_DARK : (style == STYLE_BRIGHT) ? X_BUTTON_FILL_BRIGHT : X_BUTTON_FILL_ORANGE;
+		olDrawLabelButton(args.vg, box.size, fill, accent, label,
+			"res/repetition-scrolling.regular.ttf", mm2px(Vec(NEO_ROW_FOLLOW_OVERRIDE_FONT_SIZE_MM, 0.f)).x,
+			mm2px(NEO_ROW_DISPLAY_RADIUS_MM), mm2px(NEO_FRAME_STROKE_MM), mm2px(0.2f));
+	}
+	// Click cycles 0 -> 1 -> 2 -> 0 (Global -> Force-on -> Force-off -> Global).
 	void onButton(const event::Button &e) override
 	{
 		engine::ParamQuantity *pq = getParamQuantity();
 		if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_PRESS && pq)
 		{
-			pq->setValue(pq->getValue() > 0.5f ? 0.f : 1.f);
+			int mode = (int) std::round(pq->getValue());
+			pq->setValue((float) ((mode + 1) % 3));
 			e.consume(this);
 		}
 		ParamWidget::onButton(e);
@@ -2799,6 +2903,8 @@ struct NeoWidget : ModuleWidget
 	NeoRowTextDisplayWidget *positionDisplays[NEO_NUM_ROWS] = {};
 	NeoRowButton *leftBtns[NEO_NUM_ROWS] = {};
 	NeoRowButton *rightBtns[NEO_NUM_ROWS] = {};
+	// Per-row FOLLOW-override (2026-07-23) - "G"/"F"/"L", see NeoRowFollowButton's own comment.
+	NeoRowFollowButton *followOverrideBtns[NEO_NUM_ROWS] = {};
 	// Seam-bridging strips, reused verbatim from XShared.hpp (XExtStripWidget is already fully
 	// family-agnostic - Neo already implements XExpanderInterface::getXStyle() for the X-family
 	// relay above, which is all getXNeighborStyle()/updateXExtStrip() need to work here too).
@@ -3230,15 +3336,23 @@ struct NeoWidget : ModuleWidget
 			addChild(positionDisplay);
 			positionDisplays[r] = positionDisplay;
 
-			// Per-row FOLLOW button removed 2026-07-21 (Dieter's own call, deferred in favor of
-			// the single global FOLLOW button in the global area - see moduleProcess()'s comment).
+			// Per-row FOLLOW-override button, re-introduced 2026-07-23 (was removed 2026-07-21 in
+			// favor of the single global FOLLOW button - see moduleProcess()'s comment) - now a
+			// 3-state override ON TOP of the global button, not a replacement for it.
+			NeoRowFollowButton *followOverrideBtn = createParam<NeoRowFollowButton>(Vec(), module, ROW_FOLLOW_PARAM + r);
+			followOverrideBtn->box.size = mm2px(Vec(NEO_ROW_TOGGLE_WIDTH_MM, NEO_ROW_TOGGLE_HEIGHT_MM));
+			addParam(followOverrideBtn);
+			followOverrideBtns[r] = followOverrideBtn;
+
 			NeoRowButton *leftBtn = createParam<NeoRowButton>(Vec(), module, ROW_LEFT_PARAM + r);
 			leftBtn->box.size = mm2px(Vec(NEO_ROW_PAGEBTN_SIZE_MM, NEO_ROW_PAGEBTN_SIZE_MM));
+			leftBtn->direction = OL_ARROW_LEFT;
 			addParam(leftBtn);
 			leftBtns[r] = leftBtn;
 
 			NeoRowButton *rightBtn = createParam<NeoRowButton>(Vec(), module, ROW_RIGHT_PARAM + r);
 			rightBtn->box.size = mm2px(Vec(NEO_ROW_PAGEBTN_SIZE_MM, NEO_ROW_PAGEBTN_SIZE_MM));
+			rightBtn->direction = OL_ARROW_RIGHT;
 			addParam(rightBtn);
 			rightBtns[r] = rightBtn;
 
@@ -3453,6 +3567,16 @@ struct NeoWidget : ModuleWidget
 			bool dragging = resizeHandle->isDragging || groupDragging;
 			if (dragging)
 			{
+				// The exact FIRST tick dragging becomes true for THIS instance (2026-07-23,
+				// Dieter's own precise spec) - snap the header to its bare minimum right here,
+				// same as NeoResizeHandle::onDragStart() already does for the actively-dragged
+				// instance directly (this is what makes it also work for a LOCK-GROUP FOLLOWER,
+				// whose own onDragStart() never fires - its `dragging` only ever goes true via the
+				// shared NeoLockData::dragging flag, so this transition-detection is the only
+                // place a follower ever gets its own header snapped). Harmless, idempotent repeat
+				// of the same snap for the actively-dragged instance itself.
+				if (!neoModule->neoWasDraggingLastTick)
+					neoModule->neoCachedLayout = neoComputeLayoutAtMinHeader(widthMm, fullHeight, rowsDisplayed);
 				float frozenControlsWidthMm = neoRowAreaControlsWidthMm(fullHeight, neoModule->neoCachedLayout.headerWidthMm);
 				int liveVisibleCols;
 				float liveLeftoverMm;
@@ -3464,6 +3588,7 @@ struct NeoWidget : ModuleWidget
 			}
 			else
 				neoModule->neoCachedLayout = neoComputeLayout(widthMm, fullHeight, rowsDisplayed);
+			neoModule->neoWasDraggingLastTick = dragging;
 
 			box.size.x = mm2px(widthMm);
 			// Read from the cache (not a fresh recompute) so this widget's own positioning always
@@ -3505,6 +3630,7 @@ struct NeoWidget : ModuleWidget
 				secondaryChannelKnobs[r]->visible = false;
 				secondaryChannelKnobRings[r]->visible = false;
 				positionDisplays[r]->visible = rowVisible;
+				followOverrideBtns[r]->visible = rowVisible;
 				leftBtns[r]->visible = rowVisible;
 				rightBtns[r]->visible = rowVisible;
 				rowCells[r]->visible = rowVisible;
@@ -3695,6 +3821,43 @@ struct NeoWidget : ModuleWidget
 				secondaryTrackDisplays[r]->box.pos = calculateCoordinates(secondaryDisplayXMm + NEO_GLOBAL_AREA_WIDTH_MM, poolTopRowCenterY, 0.f).minus(Vec(0.f, secondaryTrackDisplays[r]->box.size.y / 2.f));
 				secondaryChannelDisplays[r]->box.pos = calculateCoordinates(secondaryDisplayXMm + NEO_GLOBAL_AREA_WIDTH_MM, poolBottomRowCenterY, 0.f).minus(Vec(0.f, secondaryChannelDisplays[r]->box.size.y / 2.f));
 
+				// Height DERIVED from the row header frame's own real inner height (2026-07-23,
+				// Dieter's own request to check this: "when 8 rows are displayed [this display]
+				// should have the frame padding to its surrounding row header frame") - replaces
+				// NEO_ROW_POSITION_DISPLAY_HEIGHT_MM's old fixed-at-the-knob-ring-size experiment
+				// (Neo.hpp, explicitly flagged there as "not yet a confirmed final choice"), which
+				// was a Grid-Rows-INDEPENDENT constant and so could only ever coincidentally match
+				// one exact padding gap at one specific row count. Same "padding-display-padding"
+				// principle already used for the header-widget pool (see CLAUDE.md's "Code-drawn
+				// digital displays" section) - here a single-display case, not the pool's 2-row
+				// split: headerFrameInnerHeightMm (the row header frame's own already-inset
+				// height) minus one more padding top AND bottom.
+				//
+				// The padding unit here is the FULL frame-gap unit (NEO_FRAME_GAP_MM), NOT
+				// headerFramePadMm (= NEO_CELL_RECOMMENDED_PADDING_MM, half a gap unit) - same
+				// "half vs. full" mix-up already caught once this session for the pool displays
+				// ("used only half of the framepadding, use full framepadding") and repeated here
+				// on the first pass (Dieter's own catch: "now the padding is too small looks like
+				// half padding"). headerFramePadMm is a genuinely different, unrelated convention
+				// (the row header frame's OWN outer inset from the row edges) - it just happens to
+				// share the same numeric value as half a gap unit, which is what made the mistake
+				// easy to repeat.
+				//
+				// Also corrects for stroke bleed (Dieter's own follow-up catch: "or you missed the
+				// stroke width of the frames") - both the row header frame's own stroke
+				// (NeoRowHeaderFrameWidget::draw()) and this display's own frame stroke
+				// (olDrawDisplayFrame(), NEO_ROW_DISPLAY_STROKE_MM = NEO_FRAME_STROKE_MM) are drawn
+				// via plain `nvgRoundedRect(0,0,size.x,size.y,...)` + `nvgStroke()` with NO inset
+				// correction - NanoVG centers a stroke ON the path, so each frame's own visible ink
+				// actually extends STROKE/2 beyond its own nominal box edge, eating into the gap
+				// between them from both sides. The geometric box-to-box distance therefore needs
+				// to be a full NEO_FRAME_STROKE_MM (half from each side) MORE than the target
+				// visible gap, or the two frames' drawn lines end up closer together than the
+				// padding value alone would suggest - subtracted twice below (once per side, top
+				// and bottom) same as the padding term itself.
+				float positionDisplayHeightMm = std::max(1.f, headerFrameInnerHeightMm - 2.f * (NEO_FRAME_GAP_MM + NEO_FRAME_STROKE_MM));
+				positionDisplays[r]->box.size = mm2px(Vec(NEO_ROW_POSITION_DISPLAY_WIDTH_MM, positionDisplayHeightMm));
+
 				// Right-aligned against the header's own actual current right edge (headerFrameRightMm,
 				// already computed above) minus its own width and a small margin - unlike every
 				// other row control, this one's x genuinely depends on the header's current
@@ -3725,6 +3888,13 @@ struct NeoWidget : ModuleWidget
 				float leftLeftMm = rightLeftMm - NEO_FRAME_GAP_MM - NEO_ROW_PAGEBTN_SIZE_MM;
 				float leftCenterMm = leftLeftMm + NEO_ROW_PAGEBTN_SIZE_MM / 2.f;
 				leftBtns[r]->box.pos = calculateCoordinates(leftCenterMm, centerY, 0.f).minus(leftBtns[r]->box.size.div(2.f));
+
+				// FOLLOW-override (2026-07-23) - sits one frame-gap further left of LEFT, same
+				// right-aligned chain, functionally grouped with the paging buttons since it also
+				// governs this row's own paging behavior.
+				float followOverrideLeftMm = leftLeftMm - NEO_FRAME_GAP_MM - NEO_ROW_TOGGLE_WIDTH_MM;
+				float followOverrideCenterMm = followOverrideLeftMm + NEO_ROW_TOGGLE_WIDTH_MM / 2.f;
+				followOverrideBtns[r]->box.pos = calculateCoordinates(followOverrideCenterMm, centerY, 0.f).minus(followOverrideBtns[r]->box.size.div(2.f));
 
 				// Drawn position shifts right by HALF the recommended cell padding (2026-07-22,
 				// Dieter's own catch: the grid's own start was sitting exactly on the header
