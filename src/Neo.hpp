@@ -354,13 +354,15 @@ inline float neoRowAreaControlsWidthMm(bool fullHeight, float rowHeaderWidthMm)
 // frame styling - Dieter's own instruction: build it as its own separable widget/option here,
 // don't retrofit it onto any OTHER module's knobs yet ("will use the drawn version in future
 // because it makes layout much easier").
-// NEO_ROW_TRACK_DISPLAY_X_MM (2026-07-20, Dieter's own correction): the first display needs the
-// SAME padding from the row-header-frame's own left edge that the row-header-frame itself has
-// from ITS surrounding (row area) frame in Normal mode - that inset is exactly NEO_FRAME_GAP_MM
-// (see headerFrameLeftMm's own comment, NeoWidget::step()). headerFrameLeftMm itself, relative
-// to the global area edge, is (NEO_FRAME_GAP_MM / 2 + NEO_FRAME_GAP_MM) = 1.5x the gap - add one
-// more full gap for the display's own inset: 2.5x total.
-#define NEO_ROW_TRACK_DISPLAY_X_MM      (2.5f * NEO_FRAME_GAP_MM)
+// NEO_ROW_TRACK_KNOB_X_MM (2026-07-20, Dieter's own correction, ORDER swapped 2026-07-23 -
+// "exchanged the order of knob and display for track and channel" in his own hand-tuned reference
+// SVG): the first element of the chain needs the SAME padding from the row-header-frame's own
+// left edge that the row-header-frame itself has from ITS surrounding (row area) frame in Normal
+// mode - that inset is exactly NEO_FRAME_GAP_MM (see headerFrameLeftMm's own comment,
+// NeoWidget::step()). headerFrameLeftMm itself, relative to the global area edge, is
+// (NEO_FRAME_GAP_MM / 2 + NEO_FRAME_GAP_MM) = 1.5x the gap - add one more full gap for the first
+// element's own inset: 2.5x total. The chain is now KNOB, then DISPLAY (previously the reverse)
+// for both Track and Channel - same gap arithmetic throughout, only the order changed.
 #define NEO_ROW_TRACK_DISPLAY_WIDTH_MM  olDisplayWidthMm(4, NEO_ROW_NUMBER_DISPLAY_FONT_SIZE_MM, NEO_ROW_DISPLAY_TEXT_INSET_MM)
 #define NEO_ROW_CHANNEL_DISPLAY_WIDTH_MM olDisplayWidthMm(2, NEO_ROW_NUMBER_DISPLAY_FONT_SIZE_MM, NEO_ROW_DISPLAY_TEXT_INSET_MM)
 #define NEO_ROW_NUMBER_DISPLAY_HEIGHT_MM 6.1f
@@ -372,13 +374,15 @@ inline float neoRowAreaControlsWidthMm(bool fullHeight, float rowHeaderWidthMm)
                                                                   // ring exactly (radius = 3x gap)
 #define NEO_ROW_NUMBER_DISPLAY_FONT_SIZE_MM 6.f
 
-// Derived, not hand-picked - see NEO_ROW_TRACK_DISPLAY_X_MM's own comment. Kept as real
+// Derived, not hand-picked - see NEO_ROW_TRACK_KNOB_X_MM's own comment. Kept as real
 // constant-expressions (not runtime code) so they're still usable as compile-time #defines
-// everywhere the older hand-picked ones were.
-#define NEO_ROW_TRACK_KNOB_X_MM    (NEO_ROW_TRACK_DISPLAY_X_MM + NEO_ROW_TRACK_DISPLAY_WIDTH_MM + NEO_FRAME_GAP_MM + NEO_ROW_SELECT_KNOB_SIZE_MM / 2.f)
-#define NEO_ROW_CHANNEL_DISPLAY_X_MM (NEO_ROW_TRACK_KNOB_X_MM + NEO_ROW_SELECT_KNOB_SIZE_MM / 2.f + NEO_FRAME_GAP_MM)
-#define NEO_ROW_CHANNEL_KNOB_X_MM    (NEO_ROW_CHANNEL_DISPLAY_X_MM + NEO_ROW_CHANNEL_DISPLAY_WIDTH_MM + NEO_FRAME_GAP_MM + NEO_ROW_SELECT_KNOB_SIZE_MM / 2.f)
-#define NEO_ROW_NAME_X_MM            (NEO_ROW_CHANNEL_KNOB_X_MM + NEO_ROW_SELECT_KNOB_SIZE_MM / 2.f + NEO_FRAME_GAP_MM)
+// everywhere the older hand-picked ones were. Chain order: TrackKnob, TrackDisplay, ChannelKnob,
+// ChannelDisplay, Name (2026-07-23, swapped from Display-then-Knob).
+#define NEO_ROW_TRACK_KNOB_X_MM      (2.5f * NEO_FRAME_GAP_MM + NEO_ROW_SELECT_KNOB_SIZE_MM / 2.f)
+#define NEO_ROW_TRACK_DISPLAY_X_MM   (NEO_ROW_TRACK_KNOB_X_MM + NEO_ROW_SELECT_KNOB_SIZE_MM / 2.f + NEO_FRAME_GAP_MM)
+#define NEO_ROW_CHANNEL_KNOB_X_MM    (NEO_ROW_TRACK_DISPLAY_X_MM + NEO_ROW_TRACK_DISPLAY_WIDTH_MM + NEO_FRAME_GAP_MM + NEO_ROW_SELECT_KNOB_SIZE_MM / 2.f)
+#define NEO_ROW_CHANNEL_DISPLAY_X_MM (NEO_ROW_CHANNEL_KNOB_X_MM + NEO_ROW_SELECT_KNOB_SIZE_MM / 2.f + NEO_FRAME_GAP_MM)
+#define NEO_ROW_NAME_X_MM            (NEO_ROW_CHANNEL_DISPLAY_X_MM + NEO_ROW_CHANNEL_DISPLAY_WIDTH_MM + NEO_FRAME_GAP_MM)
 
 // On-panel editable channel-identity field (2026-07-21, replacing the old flat 16mm placeholder
 // now that the right-click "Channels" menu is gone - see CLAUDE.md's own note on this being

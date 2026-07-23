@@ -3801,15 +3801,30 @@ struct NeoWidget : ModuleWidget
 				// is a separate, unrelated convention: the row header frame's OWN outer inset from
 				// the row edges) - Dieter's own catch, live-testing: "used only half of the
 				// framepadding, use full framepadding."
-				float headerFrameTopMm = y + headerFramePadMm;
 				// Fixed refCellHeightMm, not the row's own real cellHeightMm (2026-07-23 - see its
 				// own comment above) - the pool block lives inside the header frame, which is now
 				// itself a fixed height regardless of Grid Rows.
 				float headerFrameInnerHeightMm = refCellHeightMm - 2.f * headerFramePadMm;
 				float poolPaddingMm = NEO_FRAME_GAP_MM;
 				float poolDisplayHeightMm = std::max(1.f, (headerFrameInnerHeightMm - 3.f * poolPaddingMm) / 2.f);
-				float poolTopRowCenterY = headerFrameTopMm + poolPaddingMm + poolDisplayHeightMm / 2.f;
-				float poolBottomRowCenterY = poolTopRowCenterY + poolPaddingMm + poolDisplayHeightMm;
+				// Top/bottom row centers are symmetric around centerY, spaced apart by distributing
+				// the header frame's own real inner height EVENLY into 3 margins (top/middle/
+				// bottom) around the two knob rings - (headerFrameInnerHeightMm - 2*ringSize)/3
+				// each. A first pass here just added one flat frame-gap unit between the two rings
+				// (poolPaddingMm/2 + ringRadius) - technically satisfied the "one full gap minimum"
+				// rule, but Dieter found it "way too far apart" once actually seen live and
+				// hand-tuned the reference SVG to the tighter, evenly-distributed spacing captured
+				// here instead (2026-07-23) - re-derived from his own edited positions rather than
+				// guessed, then simplified algebraically to a single closed form:
+				//   offset = headerFrameInnerHeightMm/2 - margin - ringRadius, margin = (H-2*ringSize)/3
+				//          = (H + ringSize) / 6
+				// (H = headerFrameInnerHeightMm). Reproduces his hand-tuned value to within ~0.04mm
+				// (hand-drag imprecision, well under one grid step) - no longer guarantees a full
+				// frame-gap between the two ring edges (deliberately superseded by this live-tuned
+				// value; the displays' own extra clearance in their row is unaffected either way).
+				float poolRowCenterOffsetMm = (headerFrameInnerHeightMm + NEO_POOL_TINY_KNOB_RING_SIZE_MM) / 6.f;
+				float poolTopRowCenterY = centerY - poolRowCenterOffsetMm;
+				float poolBottomRowCenterY = centerY + poolRowCenterOffsetMm;
 				float poolChainXMm = cellTypeDisplayXMm + NEO_ROW_CELLTYPE_DISPLAY_WIDTH_MM + NEO_FRAME_GAP_MM;
 
 				rangeMinDisplays[r]->box.size = mm2px(Vec(NEO_ROW_RANGE_DISPLAY_WIDTH_MM, poolDisplayHeightMm));

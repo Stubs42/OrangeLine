@@ -334,6 +334,18 @@ scratch, and apply the same proportions:
   knob → display → knob → ...), derive every later position from the previous element's own edge
   plus one frame-gap unit, rather than independent constants for each - that way "the padding
   stays the same" automatically even if one element's own size changes later.
+  **Exception: two SIBLING rows sharing one small nested sub-block (e.g. NEO's header-widget pool
+  own two stacked knob rows) may end up needing LESS than one full gap between them once actually
+  seen live** - a first pass at this literally applied the "one full gap minimum" rule (top/bottom
+  row centers split by `poolPaddingMm/2 + ringRadius`), which technically satisfied the rule but
+  read as "way too far apart" once live (Dieter's own catch, 2026-07-23). Fixed by abandoning the
+  fixed-gap rule for this specific case and instead distributing the sub-block's own real leftover
+  height evenly into 3 margins (top/middle/bottom) around the two rings -
+  `offset = (containerInnerHeight + ringSize) / 6` (`Neo.cpp`, the pool row-center split) -
+  re-derived from Dieter's own hand-tuned reference SVG positions, not re-guessed. The "one full
+  gap" floor is still the right DEFAULT for a chain of independently-sized elements; a tightly
+  nested pair/group that's visually read as one unit can call for tighter, evenly-distributed
+  spacing instead - trust a live-tuned reference over the abstract rule when they disagree.
 - **A shared, reusable button widget already exists - `OLLabelButton` (`OrangeLine.hpp`).** Filled
   rounded rect + stroke + centered label, all in one caller-supplied accent color; the caller
   wires up `getFillColor`/`getAccentColor`/`getLabel`/`onClick` as `std::function`s rather than
@@ -343,6 +355,78 @@ scratch, and apply the same proportions:
   "filled bar, themed accent color, centered label" control rather than writing a new one-off
   `draw()` - `X8ButtonBase` itself is a queued (not yet done) candidate to migrate onto it, see
   the `project_shared_button_widget_refactor` memory note for the current state of that.
+
+### Workflow: generating a reference SVG to fine-tune a code-drawn layout
+
+First built for NEO's row-header pool layout (2026-07-23), confirmed working ("perfect") and
+meant to be reused verbatim for any future code-drawn widget cluster that needs the same kind of
+sub-mm positional tuning (a cell editor's own internal layout, a future header block, etc.) -
+possibly at a finer grid than 0.254mm for something smaller-scale, per Dieter's own note. Steps:
+
+1. **Write a standalone C++ program that `#include`s the module's own real layout header(s)
+   directly** (e.g. `Neo.hpp`/`NeoShared.hpp`/`OrangeLine.hpp`) and computes every widget's
+   CURRENT real position/size using the *exact same formulas* the live widget code uses - never
+   hand-copy numbers. Emit each element as a plain, unfilled SVG shape (`fill="none"`,
+   `stroke-width="0.3"` matching `NEO_FRAME_STROKE_MM`) tagged with a stable, descriptive `id`
+   matching the constant/widget it represents (e.g. `id="hdr-pool-rangemin-knob"`). **Rectangular
+   elements → `<rect x y width height>`; round elements (knobs/rings) → `<circle cx cy r>`, never
+   a bounding-box rect** - the circle's own center point IS the real reference the widget code
+   centers on, so reading it back needs no bounding-box-to-center reconstruction (Dieter's own
+   refinement, 2026-07-23: "wenn du runde Objekte wie Knobs hast, kannst du die auch als circles im
+   Reference svg anlegen, dann ist der Centerpoint die Referenz").
+2. **Crop the generated document to just the region actually being tuned, not the whole panel.**
+   Compute every element's position in real, absolute panel mm as always (so the formulas still
+   match the live widget code verbatim), then shift everything into local/cropped document space
+   once, right at output time, via one shared `(offsetX, offsetY)` = the region's own top-left
+   corner minus a small fixed margin (e.g. 0.15mm) - not `0 0 <full panel width> <PANELHEIGHT>`.
+   A first pass here regenerated a full-panel-width document out of habit and it was immediately
+   flagged ("please generate only the row header as svg").
+3. **Embed a fixed `sodipodi:namedview`/`inkscape:grid` block in the generated file itself**
+   (0.254mm spacing, matching this doc's own "Inkscape document grid" convention - see
+   `PanelDesignGuide.md`) rather than expecting Dieter to reconfigure Inkscape's grid by hand after
+   every regeneration. Do NOT try to preserve his own manually-placed `sodipodi:guide` alignment
+   lines from a previous round though - those are tied to the OLD geometry and go stale the instant
+   positions change; only the grid/units settings are geometry-independent and worth
+   auto-including. (A first pass here skipped this entirely and a live regeneration silently wiped
+   out Dieter's own hand-configured grid/document state - see the pitfall two paragraphs below.)
+4. **Compile+link against the real Rack SDK** (`libRack.dll.a` for linking, the real Rack install's
+   `libRack.dll` on `PATH` at runtime - the SDK's own directory doesn't ship the runtime DLL) so
+   every real constant/function is genuinely used, not hand-transcribed - see the Build section's
+   space-free-`RACK_DIR` workaround for the exact compile-check command shape.
+5. **Dieter opens the generated SVG in Inkscape**, drags/resizes elements to fine-tune (grid
+   already active per step 3), saves.
+6. **Extract the tuned values back by diffing, not by eye.** Before touching any code: run the
+   *same, unmodified* generator again to a throwaway path and diff it element-by-element (by `id`)
+   against Dieter's saved file - this immediately separates "genuinely repositioned by hand" from
+   "completely unchanged" and surfaces the exact delta for each. A delta under roughly one grid
+   step (0.254mm, or half that for a deliberate half-grid nudge) across the board is snap noise
+   from hand-dragging a whole cluster - not a signal to rewrite a formula over. A delta that's
+   large, consistent across sibling elements, and/or represents a structural change (elements
+   swapped order, a row-to-row spacing shrank by nearly half a knob-diameter) is the real signal.
+7. **Re-derive a clean, general formula from the tuned delta - don't just hardcode the measured
+   number.** Work out algebraically what rule reproduces the measured position (e.g. "the leftover
+   space is being split evenly into 3 margins around the two rings" rather than "the gap is now
+   3.03mm"), verify it lands within snap-noise tolerance of the actual measured value, and only
+   then encode that formula in the module's real header/`.cpp` - see the "minimum spacing between
+   drawn objects" exception above for a worked example of exactly this reasoning.
+8. **Keep the generator script itself in sync with every such formula change** (it's disposable
+   scratch code, not committed, but it's what produces next round's reference SVG) - if a live-code
+   formula changes, mirror the same change into the generator before the next regeneration, or the
+   next reference SVG will silently start from the OLD, superseded geometry again.
+9. **Compile-check the real module after applying the derived formula**, then let Dieter confirm
+   live before committing - same "verify, don't just believe the derivation" discipline as
+   everywhere else in this codebase.
+
+**Hard-won pitfall: once Dieter starts hand-tuning a generated reference file in Inkscape, that
+file becomes stateful working data, not a disposable intermediate.** A bare re-run of the
+generator will happily overwrite the working-tree SVG with fresh, un-tuned geometry and zero
+Inkscape settings, silently destroying his grid/zoom/window state and every position he's already
+tuned - it was only recoverable the first time this happened because Dieter had proactively copied
+the file aside to `..._old.svg` before asking for a regeneration, not because the workflow protected
+it. Steps 2-3 above exist specifically to stop this from being necessary - a proper regeneration
+should never require Dieter to make his own backup copy first. If ever in doubt whether a
+regeneration might clobber unsaved tuning, copy the current file aside before running the
+generator, exactly like step 6 already does for the diff itself.
 
 ## Resizable panel design (first built for NEO)
 
