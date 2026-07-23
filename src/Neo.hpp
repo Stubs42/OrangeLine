@@ -489,16 +489,19 @@ inline float neoRowAreaControlsWidthMm(bool fullHeight, float rowHeaderWidthMm)
 // of sync with the field's real edge. LEFT/RIGHT's own x-positions are now computed directly in
 // NeoWidget::step() from the field's own real current right edge every frame instead - see that
 // function for the actual math.
-// NEO_ROW_TOGGLE_WIDTH_MM/HEIGHT_MM sized the old per-row FOLLOW button, removed 2026-07-21 in
-// favor of one global FOLLOW button (see NEO_FOLLOW_BUTTON_*_MM above) - kept here, unused, for
-// the same reason ROW_FOLLOW_JSON/PARAM are kept: re-introducing a per-row toggle later shouldn't
-// need to re-derive its size from scratch.
-#define NEO_ROW_TOGGLE_WIDTH_MM  6.f  // FOLLOW-override button (re-purposed 2026-07-23 - see
-                                      // NEO_ROW_FOLLOW_OVERRIDE_*_COLOR's own comment)
-#define NEO_ROW_TOGGLE_HEIGHT_MM 4.f
-#define NEO_ROW_PAGEBTN_SIZE_MM  4.f  // LEFT/RIGHT paging buttons (square)
+// LEFT/RIGHT/FOLLOW-override now form a 2-row block (2026-07-23, re-derived from Dieter's own
+// grid-snapped reference SVG, res/NeoRowHeaderReference.svg - see NeoWidget::step()'s own comment
+// for the full layout): LEFT+RIGHT sit side by side in a top row, FOLLOW-override sits in a
+// bottom row spanning their combined width - so FOLLOW-override's own size is now DERIVED from
+// NEO_ROW_PAGEBTN_SIZE_MM + NEO_FRAME_GAP_MM, not an independent constant (NEO_ROW_TOGGLE_WIDTH_MM/
+// HEIGHT_MM are gone - two independently-tunable constants that had to be kept in sync by hand
+// was exactly the kind of thing this grid-based redesign was meant to avoid).
+#define NEO_ROW_PAGEBTN_SIZE_MM  3.937f // LEFT/RIGHT paging buttons (square) - snapped to Dieter's
+                                        // own 0.254mm reference grid (half-grid-point: 31*0.127)
+#define NEO_ROW_FOLLOW_OVERRIDE_WIDTH_MM  (2.f * NEO_ROW_PAGEBTN_SIZE_MM + NEO_FRAME_GAP_MM)
+#define NEO_ROW_FOLLOW_OVERRIDE_HEIGHT_MM NEO_ROW_PAGEBTN_SIZE_MM
 // Single-character "G"/"F"/"L" label size for the FOLLOW-override button above - small enough to
-// fit comfortably inside NEO_ROW_TOGGLE_HEIGHT_MM (4mm), same proportion every other small NEO
+// fit comfortably inside NEO_ROW_FOLLOW_OVERRIDE_HEIGHT_MM (~3.9mm), same proportion every other small NEO
 // button/display leaves around its own font.
 #define NEO_ROW_FOLLOW_OVERRIDE_FONT_SIZE_MM 2.8f
 

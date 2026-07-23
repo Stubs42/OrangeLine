@@ -244,6 +244,18 @@ scratch, and apply the same proportions:
   background frame, its much to high"), and a follow-up pass used only half the frame-gap unit for
   the padding split before being corrected to the full unit ("used only half of the framepadding,
   use full framepadding").
+- **When computing a frame-to-frame (or frame-to-display) padding distance for a code-drawn
+  (NanoVG) element, use the plain grid distance (`NEO_FRAME_GAP_MM`) directly - do NOT subtract
+  stroke width to compensate for stroke bleed.** NanoVG centers a stroke on its own path, so two
+  adjacent frames' drawn ink technically encroaches on the nominal gap between them by
+  `strokeWidth/2` per side - a stroke-width-aware version of a padding formula (subtracting an
+  extra `NEO_FRAME_STROKE_MM` term) was tried once (NEO's position-display height) and technically
+  more "correct," but Dieter deliberately simplified it back out after comparing the plain-grid
+  version against his own hand-tuned, grid-snapped reference SVG: "in future when you calculate
+  frame to frame padding you can work with the grid distance 1.524 for the padding and neglect the
+  stroke in the calculation." The plain version already lands close enough (a fraction of a grid
+  step) once real values are grid-snapped - not worth the extra formula complexity for the tiny
+  visual difference. Applies generally, not just to that one case.
 - **Display width should be derived from a shared `f(numChars, fontSizeMm)` formula, not an
   independent hand-picked constant per field.** NEO's `neoDisplayWidthMm()` (`Neo.hpp`) does
   `numChars * fontSizeMm * CHAR_WIDTH_RATIO + 2*insetMm`, with `CHAR_WIDTH_RATIO` (≈0.553 for

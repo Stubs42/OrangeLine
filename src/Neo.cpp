@@ -3340,7 +3340,7 @@ struct NeoWidget : ModuleWidget
 			// favor of the single global FOLLOW button - see moduleProcess()'s comment) - now a
 			// 3-state override ON TOP of the global button, not a replacement for it.
 			NeoRowFollowButton *followOverrideBtn = createParam<NeoRowFollowButton>(Vec(), module, ROW_FOLLOW_PARAM + r);
-			followOverrideBtn->box.size = mm2px(Vec(NEO_ROW_TOGGLE_WIDTH_MM, NEO_ROW_TOGGLE_HEIGHT_MM));
+			followOverrideBtn->box.size = mm2px(Vec(NEO_ROW_FOLLOW_OVERRIDE_WIDTH_MM, NEO_ROW_FOLLOW_OVERRIDE_HEIGHT_MM));
 			addParam(followOverrideBtn);
 			followOverrideBtns[r] = followOverrideBtn;
 
@@ -3863,19 +3863,17 @@ struct NeoWidget : ModuleWidget
 				// share the same numeric value as half a gap unit, which is what made the mistake
 				// easy to repeat.
 				//
-				// Also corrects for stroke bleed (Dieter's own follow-up catch: "or you missed the
-				// stroke width of the frames") - both the row header frame's own stroke
-				// (NeoRowHeaderFrameWidget::draw()) and this display's own frame stroke
-				// (olDrawDisplayFrame(), NEO_ROW_DISPLAY_STROKE_MM = NEO_FRAME_STROKE_MM) are drawn
-				// via plain `nvgRoundedRect(0,0,size.x,size.y,...)` + `nvgStroke()` with NO inset
-				// correction - NanoVG centers a stroke ON the path, so each frame's own visible ink
-				// actually extends STROKE/2 beyond its own nominal box edge, eating into the gap
-				// between them from both sides. The geometric box-to-box distance therefore needs
-				// to be a full NEO_FRAME_STROKE_MM (half from each side) MORE than the target
-				// visible gap, or the two frames' drawn lines end up closer together than the
-				// padding value alone would suggest - subtracted twice below (once per side, top
-				// and bottom) same as the padding term itself.
-				float positionDisplayHeightMm = std::max(1.f, headerFrameInnerHeightMm - 2.f * (NEO_FRAME_GAP_MM + NEO_FRAME_STROKE_MM));
+				// Stroke bleed (NanoVG centers a stroke ON the path, so a frame's own visible ink
+				// extends STROKE/2 beyond its own nominal box edge either side) is DELIBERATELY
+				// IGNORED here (2026-07-23, Dieter's own simplification after comparing against his
+				// own grid-snapped reference SVG: "in future when you calculate frame to frame
+				// padding you can work with the grid distance 1.524 for the padding and neglect the
+				// stroke in the calculation") - a stroke-width-aware version of this formula was
+				// tried first (subtracting an extra NEO_FRAME_STROKE_MM), but the plain
+				// grid-distance version below already lands, after Dieter's own grid-snapping,
+				// almost exactly on his hand-tuned reference value (9.395mm computed vs. 9.398mm
+				// snapped to his 0.254mm grid) - simpler AND correct, no need for the stroke term.
+				float positionDisplayHeightMm = std::max(1.f, headerFrameInnerHeightMm - 2.f * NEO_FRAME_GAP_MM);
 				positionDisplays[r]->box.size = mm2px(Vec(NEO_ROW_POSITION_DISPLAY_WIDTH_MM, positionDisplayHeightMm));
 
 				// Right-aligned against the header's own actual current right edge (headerFrameRightMm,
@@ -3902,19 +3900,31 @@ struct NeoWidget : ModuleWidget
 				// intended gap. Fixed by explicitly computing each button's own LEFT edge first,
 				// then converting to a center by adding back that SAME button's own half-width only
 				// at the point where it's fed into the centering call - never skip that step.
+				// LEFT/RIGHT/FOLLOW-override now form a 2-row block (2026-07-23, re-derived from
+				// Dieter's own grid-snapped reference SVG): LEFT+RIGHT sit side by side in a TOP
+				// row aligned with the position display's own "page/pages" line, FOLLOW-override
+				// sits in a BOTTOM row aligned with the "step/steps" line, spanning the exact same
+				// total width LEFT+gap+RIGHT occupy (its own left edge matches LEFT's own left
+				// edge). Same top/bottom-row-split shape already used for the header-widget pool
+				// (poolTopRowCenterY/poolBottomRowCenterY) - one gap between the two rows, each
+				// centered the same distance above/below centerY.
+				float buttonRowCenterOffsetMm = NEO_FRAME_GAP_MM / 2.f + NEO_ROW_PAGEBTN_SIZE_MM / 2.f;
+				float topRowCenterY = centerY - buttonRowCenterOffsetMm;
+				float bottomRowCenterY = centerY + buttonRowCenterOffsetMm;
+
 				float rightLeftMm = positionDisplayXMm - NEO_FRAME_GAP_MM - NEO_ROW_PAGEBTN_SIZE_MM;
 				float rightCenterMm = rightLeftMm + NEO_ROW_PAGEBTN_SIZE_MM / 2.f;
-				rightBtns[r]->box.pos = calculateCoordinates(rightCenterMm, centerY, 0.f).minus(rightBtns[r]->box.size.div(2.f));
+				rightBtns[r]->box.pos = calculateCoordinates(rightCenterMm, topRowCenterY, 0.f).minus(rightBtns[r]->box.size.div(2.f));
 				float leftLeftMm = rightLeftMm - NEO_FRAME_GAP_MM - NEO_ROW_PAGEBTN_SIZE_MM;
 				float leftCenterMm = leftLeftMm + NEO_ROW_PAGEBTN_SIZE_MM / 2.f;
-				leftBtns[r]->box.pos = calculateCoordinates(leftCenterMm, centerY, 0.f).minus(leftBtns[r]->box.size.div(2.f));
+				leftBtns[r]->box.pos = calculateCoordinates(leftCenterMm, topRowCenterY, 0.f).minus(leftBtns[r]->box.size.div(2.f));
 
-				// FOLLOW-override (2026-07-23) - sits one frame-gap further left of LEFT, same
-				// right-aligned chain, functionally grouped with the paging buttons since it also
-				// governs this row's own paging behavior.
-				float followOverrideLeftMm = leftLeftMm - NEO_FRAME_GAP_MM - NEO_ROW_TOGGLE_WIDTH_MM;
-				float followOverrideCenterMm = followOverrideLeftMm + NEO_ROW_TOGGLE_WIDTH_MM / 2.f;
-				followOverrideBtns[r]->box.pos = calculateCoordinates(followOverrideCenterMm, centerY, 0.f).minus(followOverrideBtns[r]->box.size.div(2.f));
+				// FOLLOW-override - same LEFT edge as the LEFT button, width spans exactly to the
+				// RIGHT button's own right edge (2*NEO_ROW_PAGEBTN_SIZE_MM + one gap between them).
+				float followOverrideWidthMm = 2.f * NEO_ROW_PAGEBTN_SIZE_MM + NEO_FRAME_GAP_MM;
+				float followOverrideCenterMm = leftLeftMm + followOverrideWidthMm / 2.f;
+				followOverrideBtns[r]->box.size = mm2px(Vec(followOverrideWidthMm, NEO_ROW_PAGEBTN_SIZE_MM));
+				followOverrideBtns[r]->box.pos = calculateCoordinates(followOverrideCenterMm, bottomRowCenterY, 0.f).minus(followOverrideBtns[r]->box.size.div(2.f));
 
 				// Drawn position shifts right by HALF the recommended cell padding (2026-07-22,
 				// Dieter's own catch: the grid's own start was sitting exactly on the header
